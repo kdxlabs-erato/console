@@ -100,7 +100,12 @@ import {
   withLogin,
   withoutLogin,
 } from "./credentials.js";
-import { type DirectorySettings, type DirectoryStore, THE_SENTENCE } from "./directory.js";
+import {
+  DIRECTORY_FILE,
+  type DirectorySettings,
+  type DirectoryStore,
+  THE_SENTENCE,
+} from "./directory.js";
 import {
   calledOf,
   deciderLogins,
@@ -344,6 +349,31 @@ interface Session {
   project(): Promise<ProjectClient>;
   /** The key of that project, or nothing when none is named. */
   projectKey(): Promise<string | undefined>;
+  /** The key with what named it, for `whoami` to say (ADR-0112); nothing when none is named. */
+  projectNamed(): { readonly key: string; readonly source: ProjectSource } | undefined;
+}
+
+/**
+ * What named the project a command works in, in the order they win: the flag, the environment,
+ * the directory's file, with the directory that holds it where the store says.
+ */
+type ProjectSource =
+  | { readonly kind: "flag" }
+  | { readonly kind: "environment" }
+  | { readonly kind: "directory"; readonly directory: string | undefined };
+
+/** Where a project's key came from, as `whoami` and its refusal say it. */
+function sourceWords(source: ProjectSource): string {
+  switch (source.kind) {
+    case "flag":
+      return "--project";
+    case "environment":
+      return "CONSOLE_PROJECT";
+    case "directory":
+      return source.directory === undefined
+        ? DIRECTORY_FILE
+        : `${DIRECTORY_FILE} in ${source.directory}`;
+  }
 }
 
 const NO_PROJECT =
@@ -427,8 +457,19 @@ async function open(io: CliIo, values: Values): Promise<Session> {
       : undefined,
   );
   const client = clientOf(io, url, token);
-  const projectKey = async () =>
-    text(values, "project") ?? io.env.CONSOLE_PROJECT ?? directory?.project;
+  const projectNamed = (): ReturnType<Session["projectNamed"]> => {
+    const flagged = text(values, "project");
+    if (flagged !== undefined) {
+      return { key: flagged, source: { kind: "flag" } };
+    }
+    if (io.env.CONSOLE_PROJECT !== undefined) {
+      return { key: io.env.CONSOLE_PROJECT, source: { kind: "environment" } };
+    }
+    return directory === undefined
+      ? undefined
+      : { key: directory.project, source: { kind: "directory", directory: directory.directory } };
+  };
+  const projectKey = async () => projectNamed()?.key;
   return {
     client,
     url,
@@ -438,6 +479,7 @@ async function open(io: CliIo, values: Values): Promise<Session> {
     credentials,
     json: on(values, "json"),
     projectKey,
+    projectNamed,
     async project() {
       const key = await projectKey();
       if (key === undefined) {
@@ -1035,7 +1077,29 @@ const whoami: Command = async (args, io) => {
     throw failed("The console does not know this token. Sign in again: console login");
   }
   await rememberZone(io, session, me.workspace.timeZone ?? undefined);
-  const key = await session.projectKey();
+  // The project the directory names is asked of the console (ADR-0112): a key repeated from a
+  // file says nothing of whether this console has the project, or shows it to this member, and
+  // an agreement has its agents check the binding with this command before the first one on
+  // the board. Where the key came from is said either way, since that is where it is mended.
+  const named = session.projectNamed();
+  const key = named?.key;
+  let projectName: string | undefined;
+  if (named !== undefined) {
+    try {
+      projectName = (await session.client.project(named.key).get()).name;
+    } catch (error) {
+      if (!(error instanceof ApiError && error.code === "project.not_found")) {
+        throw error;
+      }
+    }
+  }
+  const missing = named !== undefined && projectName === undefined;
+  const projectWords =
+    named === undefined
+      ? "; no project named here"
+      : projectName === undefined
+        ? `; project ${named.key}, named by ${sourceWords(named.source)}, which this console does not have or does not show you`
+        : `; project ${named.key} (${projectName}), named by ${sourceWords(named.source)}`;
   const command = parseVersion(io.version);
   const server = parseVersion(me.console?.version);
   const verdict =
@@ -1058,11 +1122,13 @@ const whoami: Command = async (args, io) => {
       ...me,
       console: me.console ?? null,
       project: key ?? null,
+      projectName: projectName ?? null,
+      projectSource: named?.source ?? null,
       command: { version: io.version ?? null, install: io.install ?? null },
     },
     () =>
       [
-        `${whoOf(person)} at ${me.workspace.name}, ${session.url}${key === undefined ? "; no project named here" : `; project ${key}`}${me.session?.kind === "command" ? "; signed in as the account itself" : ""}`,
+        `${whoOf(person)} at ${me.workspace.name}, ${session.url}${projectWords}${me.session?.kind === "command" ? "; signed in as the account itself" : ""}`,
         // The pack's rules send an agent here first; from here the rules and the skill are the next
         // steps. In a directory that names no project too: an agent account's desk names none,
         // the command's help sends an agent here for where the skill is, and the workspace has
@@ -1078,6 +1144,13 @@ const whoami: Command = async (args, io) => {
             : []),
       ].join("\n"),
   );
+  if (missing && named !== undefined) {
+    // Who and where are said above, which is what mends it; the command still ends as refused,
+    // so that a check of the binding never passes on a key alone.
+    throw failed(
+      `project.not_found: ${session.url} has no project ${named.key}, or it is not yours to see. The key is named by ${sourceWords(named.source)}. console projects lists the projects you may work in at this console; console use <key> binds this directory to one of them.`,
+    );
+  }
   return EXIT.ok;
 };
 

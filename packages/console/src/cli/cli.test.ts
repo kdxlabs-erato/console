@@ -784,12 +784,13 @@ describe("the console command", () => {
     expect(await runCli(["use", "nothing"], unknown.io)).toBe(EXIT.failed);
     expect(unknown.err()).toContain("not_found");
     const who = harness({
-      fetch: fakeConsole({ "GET /api/v1/me": { body: ME } }).fetch,
+      fetch: fakeConsole({ "GET /api/v1/me": { body: ME }, [`GET ${IN}`]: { body: PROJECT } })
+        .fetch,
       env: SIGNED_IN,
     });
     expect(await runCli(["whoami"], who.io)).toBe(EXIT.ok);
     expect(who.out()).toBe(
-      `alice (member) at Acme, ${ORIGIN}; project web\nWhat this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command (console skills says where it is).\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.18 <0.2.0; this command works with a console from 0.0.0 on.\n`,
+      `alice (member) at Acme, ${ORIGIN}; project web (The web app), named by CONSOLE_PROJECT\nWhat this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command (console skills says where it is).\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.18 <0.2.0; this command works with a console from 0.0.0 on.\n`,
     );
   });
 
@@ -3421,6 +3422,7 @@ describe("configuring, as the person", () => {
       [`GET ${IN}/members`]: {
         body: { items: [{ person: PERSON, role: "owner", addedAt: WHEN, listed: true }] },
       },
+      [`GET ${IN}`]: { body: PROJECT },
     });
     const store = memoryStore({
       default: ORIGIN,
@@ -4478,13 +4480,16 @@ describe("the versions of the command and the console (ADR-0025)", () => {
   };
 
   it("names itself on every request, and says where it is installed and what the console takes", async () => {
-    const { fetch, calls } = fakeConsole({ "GET /api/v1/me": { body: ME } }, SAYS);
+    const { fetch, calls } = fakeConsole(
+      { "GET /api/v1/me": { body: ME }, [`GET ${IN}`]: { body: PROJECT } },
+      SAYS,
+    );
     const userAgent = "skillcdn-console/0.1.18 (cli; node 24.11.0; win32)";
     const h = harness({ fetch, env: SIGNED_IN, version: "0.1.18", userAgent, install: GLOBAL });
     expect(await runCli(["whoami"], h.io)).toBe(EXIT.ok);
     expect(new Headers(calls[0]?.init?.headers).get("user-agent")).toBe(userAgent);
     expect(h.out()).toBe(
-      `alice (member) at Acme, ${ORIGIN}; project web\nWhat this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command (console skills says where it is).\nThis command is 0.1.18, installed for the machine with npm in C:/Users/alice/AppData/Roaming/npm; the console is 0.1.18 and takes >=0.1.18 <0.2.0; this command works with a console from 0.1.0 on.\n`,
+      `alice (member) at Acme, ${ORIGIN}; project web (The web app), named by CONSOLE_PROJECT\nWhat this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command (console skills says where it is).\nThis command is 0.1.18, installed for the machine with npm in C:/Users/alice/AppData/Roaming/npm; the console is 0.1.18 and takes >=0.1.18 <0.2.0; this command works with a console from 0.1.0 on.\n`,
     );
     expect(h.err()).toBe("");
     // Where the skill working-the-board is, as the machine writes paths, when the command knows.
@@ -4572,7 +4577,8 @@ describe("the versions of the command and the console (ADR-0025)", () => {
     expect(mute.err()).toBe("");
     // whoami says it itself, every time, in its own words.
     const who = harness({
-      fetch: fakeConsole({ "GET /api/v1/me": { body: ME } }, SAYS).fetch,
+      fetch: fakeConsole({ "GET /api/v1/me": { body: ME }, [`GET ${IN}`]: { body: PROJECT } }, SAYS)
+        .fetch,
       env: SIGNED_IN,
       version: "0.1.19",
       install: GLOBAL,
@@ -4655,13 +4661,14 @@ describe("the versions of the command and the console (ADR-0025)", () => {
   it("still reads a console older than the rule, and says that it does not say its version", async () => {
     const { console: _, ...older } = ME;
     const h = harness({
-      fetch: fakeConsole({ "GET /api/v1/me": { body: older } }).fetch,
+      fetch: fakeConsole({ "GET /api/v1/me": { body: older }, [`GET ${IN}`]: { body: PROJECT } })
+        .fetch,
       env: SIGNED_IN,
       version: "0.1.18",
     });
     expect(await runCli(["whoami"], h.io)).toBe(EXIT.ok);
     expect(h.out()).toBe(
-      `alice (member) at Acme, ${ORIGIN}; project web\nWhat this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command (console skills says where it is).\nThis command is 0.1.18; the console does not say its version, so it is older than 0.1.18.\n`,
+      `alice (member) at Acme, ${ORIGIN}; project web (The web app), named by CONSOLE_PROJECT\nWhat this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command (console skills says where it is).\nThis command is 0.1.18; the console does not say its version, so it is older than 0.1.18.\n`,
     );
     expect(h.err()).toBe("");
   });
@@ -4940,6 +4947,107 @@ describe("the consoles the command is signed in to (ADR-0027)", () => {
     expect(await runCli(["use", "web"], alone.io)).toBe(EXIT.ok);
     expect(one.kept()).toEqual({ project: "web", url: ORIGIN });
     expect(JSON.stringify([directory.kept(), plain.kept(), named.kept()])).not.toContain("cns_t_");
+  });
+
+  it("asks the console for the project a directory names, and says where its key came from (ADR-0112)", async () => {
+    const LINES =
+      "What this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command (console skills says where it is).\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.18 <0.2.0; this command works with a console from 0.0.0 on.\n";
+    const table = { "GET /api/v1/me": { body: ME }, [`GET ${IN}`]: { body: PROJECT } };
+    const pair = { CONSOLE_URL: ORIGIN, CONSOLE_TOKEN: "cns_t_secret" };
+    // Named by the directory's file: the directory that holds it is said, since a file of a
+    // folder above the checkout is the one nobody looks for.
+    const { fetch, calls } = fakeConsole(table);
+    const found = { store: memoryDirectory({ project: "web" }).store };
+    const above: DirectoryStore = {
+      load: async () => ({ project: "web", url: ORIGIN, directory: "/work" }),
+      save: found.store.save,
+    };
+    const fromFile = harness({ fetch, env: pair, directory: above });
+    expect(await runCli(["whoami"], fromFile.io)).toBe(EXIT.ok);
+    expect(fromFile.out()).toBe(
+      `alice (member) at Acme, ${ORIGIN}; project web (The web app), named by .skillcdn-console.json in /work\n${LINES}`,
+    );
+    expect(calls.map((call) => call.key)).toEqual(["GET /api/v1/me", `GET ${IN}`]);
+    // A store that keeps no files says the file alone.
+    const plain = harness({ fetch, env: pair, directory: found.store });
+    expect(await runCli(["whoami"], plain.io)).toBe(EXIT.ok);
+    expect(plain.out()).toContain("; project web (The web app), named by .skillcdn-console.json\n");
+    // The environment wins over the file, and the flag over both; each is named as what decided.
+    const fromEnvironment = harness({ fetch, env: SIGNED_IN, directory: above });
+    expect(await runCli(["whoami"], fromEnvironment.io)).toBe(EXIT.ok);
+    expect(fromEnvironment.out()).toContain(
+      "; project web (The web app), named by CONSOLE_PROJECT\n",
+    );
+    const fromFlag = harness({
+      fetch,
+      env: { ...pair, CONSOLE_PROJECT: "ops" },
+      directory: above,
+    });
+    expect(await runCli(["whoami", "--project", "web"], fromFlag.io)).toBe(EXIT.ok);
+    expect(fromFlag.out()).toContain("; project web (The web app), named by --project\n");
+    // --json carries the key as before, and the name and the source beside it.
+    const json = harness({ fetch, env: pair, directory: above });
+    expect(await runCli(["whoami", "--json"], json.io)).toBe(EXIT.ok);
+    expect(JSON.parse(json.out())).toMatchObject({
+      project: "web",
+      projectName: "The web app",
+      projectSource: { kind: "directory", directory: "/work" },
+    });
+    // No project named: nothing is asked of the console about one, and the command ends well.
+    const none = fakeConsole(table);
+    const unnamed = harness({ fetch: none.fetch, env: pair });
+    expect(await runCli(["whoami"], unnamed.io)).toBe(EXIT.ok);
+    expect(unnamed.out()).toBe(
+      `alice (member) at Acme, ${ORIGIN}; no project named here\n${LINES}`,
+    );
+    expect(none.calls.map((call) => call.key)).toEqual(["GET /api/v1/me"]);
+    const unnamedJson = harness({ fetch: none.fetch, env: pair });
+    expect(await runCli(["whoami", "--json"], unnamedJson.io)).toBe(EXIT.ok);
+    expect(JSON.parse(unnamedJson.out())).toMatchObject({
+      project: null,
+      projectName: null,
+      projectSource: null,
+    });
+    // A project the console does not have, or does not show: who and where are still said, and
+    // the command ends as refused, so that a check of the binding does not pass on a key alone.
+    const gone = fakeConsole({
+      "GET /api/v1/me": { body: ME },
+      "GET /api/v1/projects/elsewhere": {
+        status: 404,
+        body: { error: { code: "project.not_found", message: "The project was not found." } },
+      },
+    });
+    const stale: DirectoryStore = {
+      load: async () => ({ project: "elsewhere", directory: "/work/app" }),
+      save: found.store.save,
+    };
+    const missing = harness({ fetch: gone.fetch, env: pair, directory: stale });
+    expect(await runCli(["whoami"], missing.io)).toBe(EXIT.failed);
+    expect(missing.out()).toBe(
+      `alice (member) at Acme, ${ORIGIN}; project elsewhere, named by .skillcdn-console.json in /work/app, which this console does not have or does not show you\n${LINES}`,
+    );
+    expect(missing.err()).toBe(
+      `project.not_found: ${ORIGIN} has no project elsewhere, or it is not yours to see. The key is named by .skillcdn-console.json in /work/app. console projects lists the projects you may work in at this console; console use <key> binds this directory to one of them.\n`,
+    );
+    const missingJson = harness({ fetch: gone.fetch, env: pair, directory: stale });
+    expect(await runCli(["whoami", "--json"], missingJson.io)).toBe(EXIT.failed);
+    expect(JSON.parse(missingJson.out())).toMatchObject({
+      project: "elsewhere",
+      projectName: null,
+      projectSource: { kind: "directory", directory: "/work/app" },
+    });
+    expect(missingJson.err()).toContain("project.not_found: ");
+    // Any other refusal of that request is the refusal itself, as of any command.
+    const refusing = fakeConsole({
+      "GET /api/v1/me": { body: ME },
+      [`GET ${IN}`]: {
+        status: 403,
+        body: { error: { code: "auth.deactivated", message: "The person is out." } },
+      },
+    });
+    const out = harness({ fetch: refusing.fetch, env: SIGNED_IN });
+    expect(await runCli(["whoami"], out.io)).toBe(EXIT.failed);
+    expect(out.err()).toContain("auth.deactivated");
   });
 
   it("does not follow a redirect with the token, and takes an http console on this machine alone", async () => {
@@ -5752,6 +5860,7 @@ describe("the console the command works with (ADR-0038)", () => {
     const routes = {
       "GET /api/v1/me": { body: ME },
       "GET /api/v1/projects": { body: { items: [] } },
+      [`GET ${IN}`]: { body: PROJECT },
     };
     const old = harness({
       fetch: fakeConsole(routes, { version: "0.3.1", clientRange: ">=0.3.0 <0.4.0" }).fetch,

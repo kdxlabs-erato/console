@@ -37,9 +37,19 @@ export interface DirectorySettings {
   readonly account?: string | undefined;
 }
 
+/** What a directory says, with where it was said: the working directory, or one above it. */
+export interface DirectoryFound extends DirectorySettings {
+  /**
+   * The directory whose file said so, for `console whoami` to name (ADR-0112): a checkout that
+   * works in the wrong project is mended where the key came from, and a file of a folder above
+   * the checkout is the one nobody looks for. Left out by a store that keeps no files.
+   */
+  readonly directory?: string | undefined;
+}
+
 export interface DirectoryStore {
   /** The settings of the working directory, or of the nearest directory above it that has them. */
-  load(): Promise<DirectorySettings | undefined>;
+  load(): Promise<DirectoryFound | undefined>;
   /** Writes the settings into the working directory and answers where. */
   save(settings: DirectorySettings): Promise<string>;
 }
@@ -79,7 +89,8 @@ export function createDirectoryStore(cwd: string): DirectoryStore {
             return undefined;
           }
           try {
-            return parseDirectorySettings(JSON.parse(content));
+            const settings = parseDirectorySettings(JSON.parse(content));
+            return settings === undefined ? undefined : { ...settings, directory };
           } catch {
             return undefined;
           }

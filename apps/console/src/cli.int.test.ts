@@ -352,9 +352,26 @@ describe("the command line", () => {
     expect(hidden.err).toContain("project.not_found");
     expect(hidden.err).toContain("console projects");
     expect((await console_(["projects"])).out).not.toContain("secret");
+    // whoami asks the console for the project (ADR-0112): one that is not Alice's to see is not
+    // found, with who she is and where still said, and the place the key came from.
+    const elsewhere = await console_(["whoami"], aliceToken, { project: "secret" });
+    expect(elsewhere.code).toBe(EXIT.failed);
+    expect(elsewhere.out).toContain(
+      `Alice (member) at Acme, ${SIGN_IN_URL}; project secret, named by CONSOLE_PROJECT, which this console does not have or does not show you\n`,
+    );
+    expect(elsewhere.err).toBe(
+      `project.not_found: ${SIGN_IN_URL} has no project secret, or it is not yours to see. The key is named by CONSOLE_PROJECT. console projects lists the projects you may work in at this console; console use <key> binds this directory to one of them.\n`,
+    );
+    // The directory's file is named as what decided, and no project named ends well.
+    const bound = await console_(["whoami"], aliceToken, { project: undefined, directory });
+    expect(bound.code, bound.err).toBe(EXIT.ok);
+    expect(bound.out).toContain("; project web (The web app), named by .skillcdn-console.json\n");
+    const unbound = await console_(["whoami"], aliceToken, { project: undefined });
+    expect(unbound.code, unbound.err).toBe(EXIT.ok);
+    expect(unbound.out).toContain("; no project named here\n");
     const who = await console_(["whoami"]);
     expect(who.out).toBe(
-      `Alice (member) at Acme, ${SIGN_IN_URL}; project web\nWhat this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command (console skills says where it is).\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.0 <0.2.0; this command works with a console from 0.5.0 on.\n`,
+      `Alice (member) at Acme, ${SIGN_IN_URL}; project web (The web app), named by CONSOLE_PROJECT\nWhat this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command (console skills says where it is).\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.0 <0.2.0; this command works with a console from 0.5.0 on.\n`,
     );
   });
 
@@ -476,7 +493,7 @@ describe("the command line", () => {
     expect(theirs.out).toBe("No runs.\n");
     const whoami = await console_(["whoami"], bobToken);
     expect(whoami.out).toBe(
-      `bob (member) at Acme, ${SIGN_IN_URL}; project web\nWhat this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command (console skills says where it is).\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.0 <0.2.0; this command works with a console from 0.5.0 on.\n`,
+      `bob (member) at Acme, ${SIGN_IN_URL}; project web (The web app), named by CONSOLE_PROJECT\nWhat this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command (console skills says where it is).\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.0 <0.2.0; this command works with a console from 0.5.0 on.\n`,
     );
   });
 

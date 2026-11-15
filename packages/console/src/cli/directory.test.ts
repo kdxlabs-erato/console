@@ -50,12 +50,20 @@ describe("what a directory says of its project", () => {
       JSON.stringify({ project: "web", url: "https://b.test", token: "cns_t_leaked" }),
     );
     const store = createDirectoryStore(nested);
-    expect(await store.load()).toEqual({ project: "web", url: "https://b.test" });
+    // With where it was found: the directory above, which is what `console whoami` names.
+    expect(await store.load()).toEqual({ project: "web", url: "https://b.test", directory: root });
     const path = await store.save({ project: "ops", url: "https://b.test", account: "bob" });
     expect(path).toBe(join(nested, DIRECTORY_FILE));
     const written = await readFile(path, "utf8");
     expect(JSON.parse(written)).toEqual({ project: "ops", url: "https://b.test", account: "bob" });
     expect(written).not.toContain("token");
+    // The nearest file is the one read: the working directory's own, once it has one.
+    expect(await store.load()).toEqual({
+      project: "ops",
+      url: "https://b.test",
+      account: "bob",
+      directory: nested,
+    });
     // A file that is not the settings, or is far too large, is as good as none.
     await writeFile(path, "not json");
     expect(await store.load()).toBeUndefined();
