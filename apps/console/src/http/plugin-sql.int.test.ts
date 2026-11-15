@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,9 +9,10 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createPgBlobStore } from "../adapters/pg-blob-store.js";
 import { createSecrets } from "../auth/secrets.js";
-import { drizzleOf } from "../db/client.js";
+import { createDatabase, type Database, drizzleOf } from "../db/client.js";
 import { findPerson, type PersonRecord } from "../db/queries/people.js";
-import { ensureWorkspace } from "../db/queries/workspaces.js";
+import { enableInstall, findInstall } from "../db/queries/plugins.js";
+import { ensureWorkspace, type WorkspaceRecord } from "../db/queries/workspaces.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "../db/testing.js";
 import { discoverPlugins } from "../plugins/discovery.js";
 import { PluginHost } from "../plugins/host.js";
@@ -51,12 +53,12 @@ async function schemaExists(): Promise<boolean> {
   return result.rows[0]?.n === 1;
 }
 
-beforeAll(async () => {
-  testDatabase = await createTestDatabase(process.env.TEST_DATABASE_URL ?? DEV_DATABASE_URL);
-  root = await writePluginsDir(await mkdtemp(join(tmpdir(), "console-plugin-sql-")), [
-    { name: "console-plugin-tally", dir: SQL_PLUGIN_DIR },
-  ]);
-  const logger = pino({ level: "warn" }, { write: () => {} });
+const logger = pino({ level: "warn" }, { write: () => {} });
+const provider = createFixtureProvider("gh");
+let workspace: WorkspaceRecord;
+
+/** The plugins of a console whose plugins' schemas are made by `sqlService`, in a host of their own, started. */
+async function pluginsWith(sqlService: PluginSqlService): Promise<Plugins> {
   const holder: { current: Plugins | undefined } = { current: undefined };
   const host = new PluginHost({
     entry: HOST_ENTRY,
@@ -68,19 +70,7 @@ beforeAll(async () => {
         ? Promise.reject(new Error("not started"))
         : holder.current.contextHandler(call),
   });
-  const provider = createFixtureProvider("gh");
-  h = createHarness(testDatabase, { providers: [provider], admins: ["alice"] });
-  admin = await h.signIn("alice");
-  const workspace = await ensureWorkspace(testDatabase.database, { name: "Acme", now: new Date() });
-  const me = (await (await h.request(REST_ROUTES.me, { headers: { cookie: admin } })).json()) as {
-    person: { id: string };
-  };
-  const found = await findPerson(testDatabase.database, workspace.id, me.person.id);
-  if (found === undefined) {
-    throw new Error("alice is not a person");
-  }
-  alice = found;
-  plugins = new Plugins({
+  const made = new Plugins({
     database: testDatabase.database,
     workspace: async () => workspace,
     host,
@@ -93,19 +83,41 @@ beforeAll(async () => {
       clock: { now: () => new Date() },
       fileBytesAtMost: undefined,
     }),
-    sql: new PluginSqlService({
+    sql: sqlService,
+    clock: { now: () => new Date() },
+    logger,
+    timeouts: { command: 15_000, query: 5_000, lifecycle: 5_000 },
+  });
+  holder.current = made;
+  await host.start();
+  await made.start();
+  return made;
+}
+
+beforeAll(async () => {
+  testDatabase = await createTestDatabase(process.env.TEST_DATABASE_URL ?? DEV_DATABASE_URL);
+  root = await writePluginsDir(await mkdtemp(join(tmpdir(), "console-plugin-sql-")), [
+    { name: "console-plugin-tally", dir: SQL_PLUGIN_DIR },
+  ]);
+  h = createHarness(testDatabase, { providers: [provider], admins: ["alice"] });
+  admin = await h.signIn("alice");
+  workspace = await ensureWorkspace(testDatabase.database, { name: "Acme", now: new Date() });
+  const me = (await (await h.request(REST_ROUTES.me, { headers: { cookie: admin } })).json()) as {
+    person: { id: string };
+  };
+  const found = await findPerson(testDatabase.database, workspace.id, me.person.id);
+  if (found === undefined) {
+    throw new Error("alice is not a person");
+  }
+  alice = found;
+  plugins = await pluginsWith(
+    new PluginSqlService({
       database: testDatabase.database,
       connectionString: testDatabase.connectionString,
       ca: undefined,
       logger,
     }),
-    clock: { now: () => new Date() },
-    logger,
-    timeouts: { command: 15_000, query: 5_000, lifecycle: 5_000 },
-  });
-  holder.current = plugins;
-  await host.start();
-  await plugins.start();
+  );
   h = createHarness(testDatabase, { providers: [provider], admins: ["alice"], plugins });
 }, 120_000);
 
@@ -125,6 +137,105 @@ const invoker = (): Invoker => ({
   run: undefined,
   project: undefined,
   language: "en",
+});
+
+describe("a plugin with a schema of its own, where the console may not close the schema public", () => {
+  // As an operator may set a console up: the database is another's, and the console's user may
+  // make roles and use `public` through PUBLIC, which only the schema's owner may take from it
+  // (ADR-0133). It runs first, while the database is as it was made; its role is this run's.
+  const run = randomBytes(4).toString("hex");
+  const user = `console_test_${run}_user`;
+  const password = randomBytes(18).toString("base64url");
+  const statement = `GRANT USAGE, CREATE ON SCHEMA "public" TO "${user}"; REVOKE ALL ON SCHEMA "public" FROM PUBLIC;`;
+  let userDatabase: Database | undefined;
+  let refusing: Plugins | undefined;
+  let refusingHarness: Harness | undefined;
+
+  beforeAll(async () => {
+    const operator = drizzleOf(testDatabase.database);
+    await operator.execute(
+      sql.raw(`create role "${user}" with login createrole password '${password}'`),
+    );
+    await operator.execute(sql.raw(`grant create on schema public to "${user}"`));
+    const url = new URL(testDatabase.connectionString);
+    url.username = user;
+    url.password = password;
+    userDatabase = createDatabase({ connectionString: url.href, maxConnections: 2 });
+    // Enabled before, on a console that could: this start is the next boot.
+    const tally = (await discoverPlugins(root)).plugins.find((plugin) => plugin.key === "tally");
+    if (tally === undefined) {
+      throw new Error("the fixture is not there");
+    }
+    await enableInstall(testDatabase.database, {
+      workspaceId: workspace.id,
+      key: "tally",
+      packageName: tally.packageName,
+      version: tally.version,
+      dataVersion: tally.manifest.dataVersion,
+      consent: ["storage:sql"],
+      boardProjectId: undefined,
+      projects: "all",
+      settings: {},
+      name: "Tally",
+      actor: { id: alice.id },
+      now: new Date(),
+    });
+    refusing = await pluginsWith(
+      new PluginSqlService({
+        database: userDatabase,
+        connectionString: url.href,
+        ca: undefined,
+        logger,
+      }),
+    );
+    refusingHarness = createHarness(testDatabase, {
+      providers: [provider],
+      admins: ["alice"],
+      plugins: refusing,
+    });
+  }, 120_000);
+
+  afterAll(async () => {
+    await refusing?.stop();
+    await refusingHarness?.close();
+    await userDatabase?.close();
+    const operator = drizzleOf(testDatabase.database);
+    await operator.execute(sql.raw(`revoke all on schema public from "${user}"`));
+    await operator.execute(sql.raw(`drop role if exists "${user}"`));
+  });
+
+  it("holds an enabled plugin failed at start, with what the database's owner runs as its problem", async () => {
+    const detail = await refusing?.get("tally", alice);
+    expect(detail?.problems).toEqual([expect.stringContaining(`once: ${statement}`)]);
+    const failed = await drizzleOf(testDatabase.database).execute<{ problem: string }>(
+      sql`select data->>'problem' as problem from events where kind = 'plugin.failed' and data->>'key' = 'tally'`,
+    );
+    expect(failed.rows).toEqual([{ problem: expect.stringContaining(`once: ${statement}`) }]);
+    expect(await schemaExists()).toBe(false);
+    await expect(
+      refusing?.invoke("tally", "command", "count", {}, invoker()),
+    ).rejects.toMatchObject({ code: "plugin.unavailable" });
+  });
+
+  it("is refused enabling in the same words, and left disabled with nothing made", async () => {
+    const cookie = await refusingHarness?.signIn("alice");
+    const refused = await refusingHarness?.request(
+      pluginPath("tally", "enable"),
+      json({ consent: ["storage:sql"], board: null, projects: "all" }, cookie ?? ""),
+    );
+    expect(refused?.status).toBe(503);
+    const body = restErrorSchema.parse(await refused?.json());
+    expect(body.error.code).toBe("plugin.unavailable");
+    expect(body.error.message).toContain(`The database's owner runs, once: ${statement}`);
+    expect(await schemaExists()).toBe(false);
+    expect((await findInstall(testDatabase.database, workspace.id, "tally"))?.state).toBe(
+      "disabled",
+    );
+    const usage = await drizzleOf(testDatabase.database).execute<{ everyone: boolean }>(sql`
+      select exists (select 1 from aclexplode(n.nspacl) a where a.grantee = 0) as everyone
+      from pg_namespace n where n.nspname = 'public'`);
+    expect(usage.rows).toEqual([{ everyone: true }]);
+  });
 });
 
 describe("a plugin with a schema of its own", () => {

@@ -4,6 +4,11 @@
 // a connection limit; the console draws the role's password at every boot and keeps it in memory
 // alone. The plugin's migrations are applied as the role, and `ctx.sql` runs on a pool of the
 // role in the parent, its results bounded. Purge drops the schema and the role.
+//
+// The role may use no schema of the console's (ADR-0133): a role that may use a schema may name a
+// table in it, and naming a table takes a lock on it before any right on the table is asked for.
+// What every role holds through PUBLIC is taken from PUBLIC, which only a schema's owner may do;
+// where the console's role may not, provisioning is refused with what the owner runs.
 import { randomBytes } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -47,6 +52,12 @@ export interface SqlResult {
   readonly rowCount: number;
 }
 
+/**
+ * The console's own schemas: its tables, the record of its migrations, the transcript and the
+ * feeds' order. No plugin's role may use any of them, nor another plugin's schema (ADR-0133).
+ */
+export const CONSOLE_SCHEMAS: readonly string[] = ["public", "drizzle", "transcript", "feed_order"];
+
 /** The schema and the role of a plugin: its key, with `-` as `_`, after `plugin_`. */
 export function sqlNameOf(key: string): string {
   return `plugin_${key.replaceAll("-", "_")}`;
@@ -55,6 +66,42 @@ export function sqlNameOf(key: string): string {
 /** An identifier quoted for a statement that cannot take it as a parameter. */
 function quoted(identifier: string): string {
   return `"${identifier.replaceAll('"', '""')}"`;
+}
+
+/** Schemas as a refusal names them. */
+function schemasNamed(schemas: readonly string[]): string {
+  return `${schemas.length === 1 ? "the schema" : "the schemas"} ${schemas.map(quoted).join(", ")}`;
+}
+
+/**
+ * What the database's owner runs, once, where the console's role may not take from PUBLIC what
+ * it holds on the schemas named: the console's role is given by name what it may have had through
+ * PUBLIC, then PUBLIC loses it.
+ */
+export function closingStatement(schemas: readonly string[], consoleUser: string): string {
+  return schemas
+    .map(
+      (schema) =>
+        `GRANT USAGE, CREATE ON SCHEMA ${quoted(schema)} TO ${quoted(consoleUser)}; REVOKE ALL ON SCHEMA ${quoted(schema)} FROM PUBLIC;`,
+    )
+    .join(" ");
+}
+
+/**
+ * Whether the database refused a statement for want of a right (`42501`): a revoke by a role that
+ * holds nothing on the schema. The ORM throws an error of its own with the driver's as its cause.
+ */
+function refusedForWantOfRight(error: unknown): boolean {
+  for (let at: unknown = error, depth = 0; depth < 4; depth += 1) {
+    if (typeof at !== "object" || at === null) {
+      return false;
+    }
+    if ("code" in at && at.code === "42501") {
+      return true;
+    }
+    at = "cause" in at ? at.cause : undefined;
+  }
+  return false;
 }
 
 /** A literal quoted for a statement that cannot take it as a parameter: a password. */
@@ -90,15 +137,94 @@ export class PluginSqlService {
   }
 
   /**
+   * The console's schemas and the plugins' that PUBLIC holds a right on: every role may use
+   * such a schema, a plugin's among them.
+   */
+  private async openToPublic(): Promise<string[]> {
+    const result = await drizzleOf(this.options.database).execute<{ schema: string }>(sql`
+      select n.nspname as schema from pg_namespace n
+      where (n.nspname in (${sql.join(
+        CONSOLE_SCHEMAS.map((schema) => sql`${schema}`),
+        sql`, `,
+      )}) or starts_with(n.nspname, 'plugin_'))
+        and exists (
+          select 1 from aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
+          where a.grantee = 0)
+      order by n.nspname`);
+    return result.rows.map((row) => row.schema);
+  }
+
+  /**
+   * The console's schemas and the other plugins' that the plugin's role may use or create in,
+   * by a grant of its own or through PUBLIC: none, once it is provisioned.
+   */
+  private async reachableBy(name: string): Promise<string[]> {
+    const result = await drizzleOf(this.options.database).execute<{ schema: string }>(sql`
+      select n.nspname as schema from pg_namespace n
+      where (n.nspname in (${sql.join(
+        CONSOLE_SCHEMAS.map((schema) => sql`${schema}`),
+        sql`, `,
+      )}) or (starts_with(n.nspname, 'plugin_') and n.nspname <> ${name}))
+        and has_schema_privilege(${name}::name, n.oid, 'USAGE, CREATE')
+      order by n.nspname`);
+    return result.rows.map((row) => row.schema);
+  }
+
+  /**
+   * Takes from PUBLIC what it holds on the console's schemas and the plugins', so that no
+   * plugin's role can name a table there (ADR-0133). Only a schema's owner may: where the
+   * console's role is not, and PUBLIC keeps its right, `storage:sql` is refused with the statement
+   * the database's owner runs. Every role of the database loses what it had through PUBLIC, which
+   * the log says.
+   */
+  private async closeToPublic(): Promise<void> {
+    const open = await this.openToPublic();
+    if (open.length === 0) {
+      return;
+    }
+    const db = drizzleOf(this.options.database);
+    for (const schema of open) {
+      try {
+        await db.execute(sql.raw(`revoke all on schema ${quoted(schema)} from public`));
+      } catch (error) {
+        // A role with no right on the schema is refused outright; one with a right it may not
+        // pass on is only warned, and nothing is revoked. Both are seen below.
+        if (!refusedForWantOfRight(error)) {
+          throw error;
+        }
+      }
+    }
+    const still = await this.openToPublic();
+    const closed = open.filter((schema) => !still.includes(schema));
+    if (closed.length > 0) {
+      this.options.logger.warn(
+        { schemas: closed },
+        "PUBLIC may no longer use these schemas, so that no plugin's role can name a table of the console's; a role of this database that used them through PUBLIC is to be granted USAGE by name",
+      );
+    }
+    if (still.length > 0) {
+      const user = await db.execute<{ user: string }>(sql`select current_user as user`);
+      throw new PluginRefusal(
+        "plugin.unavailable",
+        `storage:sql needs ${schemasNamed(still)} closed to every role not granted it by name, and only a schema's owner may close it, which the console's database user is not. The database's owner runs, once: ${closingStatement(still, user.rows[0]?.user ?? "")}`,
+      );
+    }
+  }
+
+  /**
    * Makes the plugin's schema and role, or brings them to what they must be, and draws the role's
-   * password anew. The role may use and create in its schema and nothing in `public`; its
-   * statements time out and its connections are few.
+   * password anew. The role may use and create in its schema and use no other of the console's or
+   * the plugins'; its statements time out and its connections are few. Refused, with nothing
+   * made, where the console's schemas cannot be closed to PUBLIC.
    */
   async provision(key: string): Promise<void> {
     const name = sqlNameOf(key);
+    await this.closeToPublic();
     const password = randomBytes(32).toString("base64url");
     const db = drizzleOf(this.options.database);
     await db.execute(sql.raw(`create schema if not exists ${quoted(name)}`));
+    // The schema is its role's alone, whatever default privileges the database's keeper set.
+    await db.execute(sql.raw(`revoke all on schema ${quoted(name)} from public`));
     const roles = await db.execute<Record<(typeof ROLE_POWERS)[number][0], boolean>>(
       sql`select ${sql.raw(ROLE_POWERS.map(([column]) => column).join(", "))} from pg_roles where rolname = ${name}`,
     );
@@ -126,13 +252,30 @@ export class PluginSqlService {
       ),
     );
     await db.execute(sql.raw(`grant usage, create on schema ${quoted(name)} to ${quoted(name)}`));
-    await db.execute(sql.raw(`revoke all on schema public from ${quoted(name)}`));
-    this.passwords.set(key, password);
+    // What the role was given by name elsewhere, by whoever gave it.
+    for (const schema of await this.reachableBy(name)) {
+      try {
+        await db.execute(sql.raw(`revoke all on schema ${quoted(schema)} from ${quoted(name)}`));
+      } catch (error) {
+        if (!refusedForWantOfRight(error)) {
+          throw error;
+        }
+      }
+    }
     const pool = this.pools.get(key);
     if (pool !== undefined) {
       this.pools.delete(key);
       await pool.end().catch(() => undefined);
     }
+    const reachable = await this.reachableBy(name);
+    if (reachable.length > 0) {
+      this.passwords.delete(key);
+      throw new PluginRefusal(
+        "plugin.unavailable",
+        `the role ${quoted(name)} may use ${schemasNamed(reachable)}, which no plugin's role may, and the console's database user may not take it back. The database's owner runs, once: ${reachable.map((schema) => `REVOKE ALL ON SCHEMA ${quoted(schema)} FROM ${quoted(name)};`).join(" ")}`,
+      );
+    }
+    this.passwords.set(key, password);
   }
 
   /** The pool of the plugin's role, made with the password drawn at this boot. */

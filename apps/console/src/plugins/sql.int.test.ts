@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { sql } from "drizzle-orm";
+import { Client } from "pg";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { drizzleOf } from "../db/client.js";
@@ -10,7 +11,7 @@ import { settledEnd } from "../db/queries/event-order.js";
 import { recordEvent } from "../db/queries/events.js";
 import { ensureWorkspace } from "../db/queries/workspaces.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "../db/testing.js";
-import { PluginSqlService, sqlNameOf } from "./sql.js";
+import { CONSOLE_SCHEMAS, PluginSqlService, sqlNameOf } from "./sql.js";
 
 // A plugin's schema and role against a real database (docs/specs/plugins.md, "SQL"): made with
 // rights on its own schema alone, its migrations applied as the role, its statements bounded, its
@@ -21,6 +22,16 @@ import { PluginSqlService, sqlNameOf } from "./sql.js";
 let testDatabase: TestDatabase;
 let service: PluginSqlService;
 let migrations: string;
+const logged: Record<string, unknown>[] = [];
+
+/** The schemas the service said it closed to PUBLIC, since the last look. */
+function closedSaid(): unknown[] {
+  const said = logged
+    .filter((line) => typeof line.msg === "string" && line.msg.startsWith("PUBLIC may no longer"))
+    .map((line) => line.schemas);
+  logged.length = 0;
+  return said;
+}
 
 beforeAll(async () => {
   testDatabase = await createTestDatabase(process.env.TEST_DATABASE_URL ?? DEV_DATABASE_URL);
@@ -28,7 +39,10 @@ beforeAll(async () => {
     database: testDatabase.database,
     connectionString: testDatabase.connectionString,
     ca: undefined,
-    logger: pino({ level: "warn" }, { write: () => {} }),
+    logger: pino(
+      { level: "warn" },
+      { write: (line: string) => void logged.push(JSON.parse(line) as Record<string, unknown>) },
+    ),
   });
   migrations = await mkdtemp(join(tmpdir(), "console-plugin-migrations-"));
   await writeFile(
@@ -55,6 +69,8 @@ describe("a plugin's schema", () => {
 
   it("is made with a role that reaches its own schema and nothing of the console's", async () => {
     await service.provision("tallytest");
+    // A new database lets every role use `public`: provisioning took that from PUBLIC, and said so.
+    expect(closedSaid()).toEqual([["public"]]);
     expect(await service.applyMigrations("tallytest", migrations)).toBe(2);
     expect(await service.applyMigrations("tallytest", migrations)).toBe(0);
     const inserted = await service.query(
@@ -78,6 +94,137 @@ describe("a plugin's schema", () => {
     const path = await service.query("tallytest", "show search_path", []);
     expect(path.rows[0]).toEqual({ search_path: "plugin_tallytest" });
   });
+
+  it("uses no schema of the console's or of another plugin's, and is refused a table there before any lock (ADR-0133)", async () => {
+    const db = drizzleOf(testDatabase.database);
+    // What a keeper of the database opened to every role is closed again when a plugin is next
+    // provisioned: the console's schemas, and another plugin's.
+    await db.execute(sql`create schema plugin_elsewhere`);
+    await db.execute(sql`create table plugin_elsewhere.kept (id int)`);
+    await db.execute(sql`grant usage on schema public, transcript, plugin_elsewhere to public`);
+    await service.provision("tallytest");
+    expect(closedSaid()).toEqual([["plugin_elsewhere", "public", "transcript"]]);
+    const schemas = await db.execute<{ schema: string; everyone: boolean; plugin: boolean }>(sql`
+      select n.nspname as schema,
+             exists (select 1 from aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
+                     where a.grantee = 0) as everyone,
+             has_schema_privilege('plugin_tallytest', n.oid, 'USAGE, CREATE') as plugin
+      from pg_namespace n
+      where not starts_with(n.nspname, 'pg_temp_') and not starts_with(n.nspname, 'pg_toast_temp_')
+      order by n.nspname`);
+    expect(schemas.rows).toEqual([
+      { schema: "drizzle", everyone: false, plugin: false },
+      { schema: "feed_order", everyone: false, plugin: false },
+      { schema: "information_schema", everyone: true, plugin: true },
+      { schema: "pg_catalog", everyone: true, plugin: true },
+      { schema: "pg_toast", everyone: false, plugin: false },
+      { schema: "plugin_elsewhere", everyone: false, plugin: false },
+      { schema: "plugin_tallytest", everyone: false, plugin: true },
+      { schema: "public", everyone: false, plugin: false },
+      { schema: "transcript", everyone: false, plugin: false },
+    ]);
+    // Every schema the migrations make is one the service closes: a new one is added there.
+    expect(
+      schemas.rows
+        .map((row) => row.schema)
+        .filter(
+          (name) =>
+            !name.startsWith("pg_") && !name.startsWith("plugin_") && name !== "information_schema",
+        ),
+    ).toEqual([...CONSOLE_SCHEMAS].sort());
+
+    const toast = await db.execute<{ name: string }>(
+      sql`select reltoastrelid::regclass::text as name from pg_class where oid = 'public.tasks'::regclass`,
+    );
+    // Each way of naming a table there is tried while the console holds the tables as a migration
+    // would: a way that reached for a lock on one would wait for it until its statement's time.
+    const blocker = new Client({ connectionString: testDatabase.connectionString });
+    await blocker.connect();
+    try {
+      await blocker.query("begin");
+      await blocker.query(
+        "lock table public.tasks, transcript.events, drizzle.__drizzle_migrations, feed_order.events, plugin_elsewhere.kept in access exclusive mode",
+      );
+      const named: readonly (readonly [string, string])[] = [
+        ["select 1 from public.tasks", "public"],
+        ["select 1 from public.tasks for update", "public"],
+        ["prepare held as select 1 from public.tasks for share", "public"],
+        ["lock table public.tasks in access share mode", "public"],
+        ["create table part partition of public.tasks for values in (1)", "public"],
+        ["create table copied (like public.tasks)", "public"],
+        ["create table kid () inherits (public.tasks)", "public"],
+        ["alter table things inherit public.tasks", "public"],
+        ["create table pointing (task uuid references public.tasks (id))", "public"],
+        ["create view seen as select * from public.tasks", "public"],
+        ["create materialized view kept as select * from public.tasks with no data", "public"],
+        [
+          "create function counted() returns bigint language sql begin atomic select count(*) from public.tasks; end",
+          "public",
+        ],
+        [
+          "create trigger watching before update on public.tasks for each row execute function suppress_redundant_updates_trigger()",
+          "public",
+        ],
+        ["create rule never as on insert to public.tasks do instead nothing", "public"],
+        ["create statistics together on title, body from public.tasks", "public"],
+        ["create index on public.tasks (title)", "public"],
+        ["alter table public.tasks add column mine int", "public"],
+        ["comment on table public.tasks is 'mine'", "public"],
+        ["analyze public.tasks", "public"],
+        ["explain select 1 from public.tasks", "public"],
+        ["grant select on public.tasks to public", "public"],
+        ["select 'public.tasks'::regclass", "public"],
+        ["select pg_relation_size('public.tasks')", "public"],
+        ["select null::public.tasks", "public"],
+        ["select 1 from transcript.events", "transcript"],
+        [
+          "create table part partition of transcript.events for values in ('2000-01')",
+          "transcript",
+        ],
+        ["select 1 from drizzle.__drizzle_migrations", "drizzle"],
+        ["select 1 from feed_order.events", "feed_order"],
+        ["select 1 from plugin_elsewhere.kept", "plugin_elsewhere"],
+        [`select 1 from ${toast.rows[0]?.name ?? "pg_toast.none"}`, "pg_toast"],
+      ];
+      const refusedAtOnce = async (statement: string, schema: string, tx?: string) => {
+        const began = performance.now();
+        await expect(
+          service.query("tallytest", statement, [], tx),
+          statement,
+        ).rejects.toMatchObject({
+          code: "plugin.invalid_args",
+          message: expect.stringContaining(`permission denied for schema ${schema}`),
+        });
+        expect(performance.now() - began, statement).toBeLessThan(1000);
+      };
+      for (const [statement, schema] of named) {
+        const tx = await service.begin("tallytest");
+        try {
+          await refusedAtOnce(statement, schema, tx);
+        } finally {
+          await service.rollback(tx);
+        }
+      }
+      // A function of the plugin's own that names the table is refused when it runs.
+      const tx = await service.begin("tallytest");
+      try {
+        await service.query(
+          "tallytest",
+          "create function peeked() returns bigint language plpgsql as $$ begin return (select count(*) from public.tasks); end $$",
+          [],
+          tx,
+        );
+        await refusedAtOnce("select peeked()", "public", tx);
+      } finally {
+        await service.rollback(tx);
+      }
+      // A vacuum runs outside a transaction.
+      await refusedAtOnce("vacuum public.tasks", "public");
+    } finally {
+      await blocker.query("rollback");
+      await blocker.end();
+    }
+  }, 60_000);
 
   it("holds up no event and no reader of the feed with a lock it may take (ADR-0125)", async () => {
     const workspace = await ensureWorkspace(testDatabase.database, {

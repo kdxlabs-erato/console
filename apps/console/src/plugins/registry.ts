@@ -577,7 +577,12 @@ export class Plugins {
             { err: error, plugin: install.key },
             "the plugin's schema could not be provisioned",
           );
-          entry.problems.push("the plugin's schema could not be provisioned");
+          // A refusal of the console's own says what to do; what the database said stays in the log.
+          entry.problems.push(
+            error instanceof PluginRefusal
+              ? `the plugin's schema could not be provisioned: ${error.message}`
+              : "the plugin's schema could not be provisioned",
+          );
         }
       }
       if (entry.problems.length > 0 && install.state === "enabled") {
