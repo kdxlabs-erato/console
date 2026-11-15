@@ -210,22 +210,10 @@ export interface PersonDeskInput {
 }
 
 /**
- * What a person's desk is called by: the part of their login before an `@`, in lowercase, with
- * a hyphen for whatever is not a letter, a digit or a hyphen, and none at either end.
+ * The folder a desk is made in where none is named (ADR-0117): a person's desk is named as an
+ * agent account's is, `desk`, the repository `<account>/desk` at the member's own git account.
  */
-export function deskHandleOf(login: string): string {
-  const at = login.indexOf("@");
-  const handle = (at === -1 ? login : login.slice(0, at))
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9-]+/g, "-")
-    .replaceAll(/^-+|-+$/g, "");
-  return handle.length === 0 ? "my" : handle;
-}
-
-/** The folder a person's desk is made in, where none is named: `<handle>-desk`. */
-export function deskFolderOf(login: string): string {
-  return `${deskHandleOf(login)}-desk`;
-}
+export const DESK_FOLDER = "desk";
 
 /** A login inside a code span, as text: nothing that ends the span or the line. */
 const inCode = (text: string): string =>
@@ -239,10 +227,11 @@ const inCode = (text: string): string =>
     .trim();
 
 /**
- * The desk's title as the dashboard's shell takes it (`__TITLE__` in `template/desk-web`): the
+ * The desk's title as the shell of its pages takes it (`__TITLE__` in `template/desk-web`): the
  * person's name in letters, digits, spaces, full stops, commas and hyphens, and an apostrophe
  * that is no quote of any language the template is written in, so that the title stands as it
- * is in a page, in a JSON string and in a string of a script alike.
+ * is in a page, in a JSON string and in a string of a script alike. A name that leaves nothing
+ * leaves the desk the person's own.
  */
 export function deskWebTitleOf(person: PersonDeskInput["person"]): string {
   const name = person.name
@@ -250,7 +239,7 @@ export function deskWebTitleOf(person: PersonDeskInput["person"]): string {
     .replaceAll(/[^\p{L}\p{M}\p{N} .,-]+/gu, " ")
     .replaceAll(/ {2,}/g, " ")
     .trim();
-  return `${name.length === 0 ? deskHandleOf(person.login) : name}${String.fromCodePoint(0x2019)}s desk`;
+  return name.length === 0 ? "My desk" : `${name}${String.fromCodePoint(0x2019)}s desk`;
 }
 
 function personReadme(input: PersonDeskInput): string {
@@ -264,7 +253,7 @@ This repository is my desk: how an agent works for me, the projects I work on, a
 - \`AGENTS.md\`: the instructions of an agent that works here, read as they are by whichever agent product I use.
 - \`CLAUDE.md\`: one line that points a product to them.
 - \`work/\`: the projects I work on, checked out here, each a repository of its own; ignored by this repository.
-- \`web/\`: my dashboard, where I have one: a console of my own that shows my work, served from this machine by \`console serve\`.
+- \`web/\`: this desk's pages, where I have them: my own extension of the console's pages, served from this machine by \`console serve\`.
 
 What I do is on the console's board, under my own name. No secret is kept here.
 `;
@@ -317,7 +306,7 @@ work/
 id_rsa*
 id_ed25519*
 
-# Dependencies, what my dashboard builds, logs, and what an operating system or an editor leaves behind.
+# Dependencies, what the desk's pages build, logs, and what an operating system or an editor leaves behind.
 node_modules/
 web/dist/
 *.log

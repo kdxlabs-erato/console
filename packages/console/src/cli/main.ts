@@ -32,7 +32,7 @@ const manifest = z
 const version = manifest.success ? manifest.data.version : undefined;
 /** The console's own skills, shipped with the package beside dist/ (ADR-0015); not there in a checkout before packing. */
 const skillsDir = fileURLToPath(new URL("../../skills/", import.meta.url));
-/** The shell of a person's dashboard, shipped with the package beside dist/ as the plugin's template is (ADR-0115). */
+/** The shell of a desk's pages, shipped with the package beside dist/ as the plugin's template is (ADR-0115). */
 const deskWebDir = join(packageDir, "template", "desk-web");
 const configDir = defaultConfigDir(process.env);
 
@@ -138,7 +138,7 @@ process.exitCode = await runCli(process.argv.slice(2), {
       },
     };
   },
-  // The shell of a person's dashboard (ADR-0115), read when `desk --web` asks for it.
+  // The shell of a desk's pages (ADR-0115), read when `desk --web` asks for it.
   deskWebTemplate: async () => {
     if (!existsSync(deskWebDir)) {
       return undefined;

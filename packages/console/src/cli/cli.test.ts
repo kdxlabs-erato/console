@@ -4671,7 +4671,7 @@ describe("a person's desk on the command line (ADR-0115)", () => {
   const FILES = ["README.md", "AGENTS.md", "CLAUDE.md", ".gitignore", "records/README.md"];
   const SENTENCE =
     'Set this desk up as a repository of mine, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup"';
-  /** The shell of a dashboard as a package would carry it: the two words the command fills in, and a folder. */
+  /** The shell of a desk's pages as a package would carry it: the two words the command fills in, and a folder. */
   const SHELL = new Map([
     ["README.md", "# __TITLE__\n\nBuilt on @skillcdn/console __VERSION__.\n"],
     ["package.json", '{ "dependencies": { "@skillcdn/console": "__VERSION__" } }\n'],
@@ -4716,26 +4716,24 @@ describe("a person's desk on the command line (ADR-0115)", () => {
   const consoleFor = (me: unknown) => fakeConsole({ "GET /api/v1/me": { body: me } });
   const signedIn = () => memoryStore(one(ORIGIN, "cns_a_token", "alice@acme.example")).store;
 
-  it("writes the four files into <handle>-desk here, asks the console who it is and nothing else, and ends with the sentence for the agent", async () => {
+  it("writes the desk's files into desk here, as an agent account's is called, asks the console who it is and nothing else, and ends with the sentence for the agent", async () => {
     const { fetch, calls } = consoleFor(ALICE);
     const at = fakeFiles("/work");
     const run = harness({ fetch, store: signedIn(), machine: at.machine });
     expect(await runCli(["desk"], run.io)).toBe(EXIT.ok);
     expect(calls.map((call) => call.key)).toEqual(["GET /api/v1/me"]);
-    expect(at.written).toEqual(
-      FILES.map((name) => ({ path: `/work/alice-desk/${name}`, mode: 0o644 })),
-    );
+    expect(at.written).toEqual(FILES.map((name) => ({ path: `/work/desk/${name}`, mode: 0o644 })));
     // What it writes is the package's template for the person the command is signed in as.
-    const instructions = at.files.get("/work/alice-desk/AGENTS.md") ?? "";
+    const instructions = at.files.get("/work/desk/AGENTS.md") ?? "";
     expect(instructions).toContain(
       "I am Alice Kim (`alice@acme.example`), a member of Acme (https://console.test).",
     );
     expect(instructions).toContain("This desk is bound to no project");
-    expect(at.files.get("/work/alice-desk/CLAUDE.md")).toBe("@AGENTS.md\n");
+    expect(at.files.get("/work/desk/CLAUDE.md")).toBe("@AGENTS.md\n");
     expect([...at.files.keys()].some((path) => path.endsWith("runner.json"))).toBe(false);
     expect(run.out()).toBe(
       [
-        "A new desk is written at /work/alice-desk (README.md, AGENTS.md, CLAUDE.md, .gitignore, records/README.md), for alice@acme.example. It is yours from now on: to edit, and to make a repository of.",
+        "A new desk is written at /work/desk (README.md, AGENTS.md, CLAUDE.md, .gitignore, records/README.md), for alice@acme.example. It is yours from now on: to edit, and to make a repository of.",
         "Next, open your agent in that folder and say:",
         "",
         SENTENCE,
@@ -4752,7 +4750,7 @@ describe("a person's desk on the command line (ADR-0115)", () => {
       machine: plain.machine,
     });
     expect(await runCli(["desk"], unnamed.io)).toBe(EXIT.ok);
-    expect(plain.files.get("/work/alice-desk/AGENTS.md")).toContain("I am alice (`alice`)");
+    expect(plain.files.get("/work/desk/AGENTS.md")).toContain("I am alice (`alice`)");
   });
 
   it("writes into the directory named, this one as a full stop, and takes at most one", async () => {
@@ -4790,8 +4788,8 @@ describe("a person's desk on the command line (ADR-0115)", () => {
 
   it("writes over no file that is there, and says which it wrote and which it left", async () => {
     const half = fakeFiles("/work", {
-      "/work/alice-desk/AGENTS.md": "# My own words\n",
-      "/work/alice-desk/notes/today.md": "mine\n",
+      "/work/desk/AGENTS.md": "# My own words\n",
+      "/work/desk/notes/today.md": "mine\n",
     });
     const run = harness({
       fetch: consoleFor(ALICE).fetch,
@@ -4799,14 +4797,14 @@ describe("a person's desk on the command line (ADR-0115)", () => {
       machine: half.machine,
     });
     expect(await runCli(["desk"], run.io)).toBe(EXIT.ok);
-    expect(half.files.get("/work/alice-desk/AGENTS.md")).toBe("# My own words\n");
+    expect(half.files.get("/work/desk/AGENTS.md")).toBe("# My own words\n");
     expect(half.written.map((file) => file.path)).toEqual(
       ["README.md", "CLAUDE.md", ".gitignore", "records/README.md"].map(
-        (name) => `/work/alice-desk/${name}`,
+        (name) => `/work/desk/${name}`,
       ),
     );
     expect(run.out()).toContain(
-      "The desk at /work/alice-desk gains README.md, CLAUDE.md, .gitignore, records/README.md; AGENTS.md was there and is left as it is.",
+      "The desk at /work/desk gains README.md, CLAUDE.md, .gitignore, records/README.md; AGENTS.md was there and is left as it is.",
     );
     // A second run finds everything there, changes nothing, and still says what comes next.
     const again = harness({
@@ -4819,7 +4817,7 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     expect(half.written).toHaveLength(before);
     expect(again.out()).toBe(
       [
-        "The desk at /work/alice-desk is there already, and is left as it is.",
+        "The desk at /work/desk is there already, and is left as it is.",
         "Next, open your agent in that folder and say:",
         "",
         SENTENCE,
@@ -4865,11 +4863,11 @@ describe("a person's desk on the command line (ADR-0115)", () => {
       machine: at.machine,
       directory: memoryDirectory({ project: "web" }).store,
     });
-    expect(await runCli(["desk", "/home/alice/alice-desk"], elsewhere.io)).toBe(EXIT.ok);
+    expect(await runCli(["desk", "/home/alice/desk"], elsewhere.io)).toBe(EXIT.ok);
     expect(at.written).toHaveLength(FILES.length);
   });
 
-  it("writes the shell of the dashboard into web/ with --web, the version and the title filled in", async () => {
+  it("writes the shell of the desk's pages into web/ with --web, the version and the title filled in", async () => {
     const at = fakeFiles("/work");
     const run = harness({
       fetch: consoleFor(ALICE).fetch,
@@ -4880,28 +4878,26 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     });
     expect(await runCli(["desk", "--web"], run.io)).toBe(EXIT.ok);
     const title = `Alice Kim${String.fromCodePoint(0x2019)}s desk`;
-    expect(at.files.get("/work/alice-desk/web/package.json")).toBe(
+    expect(at.files.get("/work/desk/web/package.json")).toBe(
       '{ "dependencies": { "@skillcdn/console": "0.5.1" } }\n',
     );
-    expect(at.files.get("/work/alice-desk/web/index.html")).toBe(`<title>${title}</title>\n`);
-    expect(at.files.get("/work/alice-desk/web/src/main.tsx")).toBe(
-      `export const title = "${title}";\n`,
-    );
-    expect(at.files.get("/work/alice-desk/web/README.md")).toContain("@skillcdn/console 0.5.1");
+    expect(at.files.get("/work/desk/web/index.html")).toBe(`<title>${title}</title>\n`);
+    expect(at.files.get("/work/desk/web/src/main.tsx")).toBe(`export const title = "${title}";\n`);
+    expect(at.files.get("/work/desk/web/README.md")).toContain("@skillcdn/console 0.5.1");
     expect(at.written.every((file) => file.mode === 0o644)).toBe(true);
     expect(run.out()).toBe(
       [
-        "A new desk is written at /work/alice-desk (README.md, AGENTS.md, CLAUDE.md, .gitignore, records/README.md), for alice@acme.example. It is yours from now on: to edit, and to make a repository of.",
-        "The shell of its dashboard is written in /work/alice-desk/web (README.md, package.json, index.html, src/main.tsx): a console of your own on @skillcdn/console 0.5.1, which shows your work across your projects and is served from this machine by console serve once it is built; its README.md says how.",
+        "A new desk is written at /work/desk (README.md, AGENTS.md, CLAUDE.md, .gitignore, records/README.md), for alice@acme.example. It is yours from now on: to edit, and to make a repository of.",
+        "The shell of its pages is written in /work/desk/web (README.md, package.json, index.html, src/main.tsx): your own extension of the console's pages, on @skillcdn/console 0.5.1, served from this machine by console serve once it is built; its README.md says how.",
         "Next, open your agent in that folder and say:",
         "",
-        'Set this desk up as a repository of mine and bring its dashboard up, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup"',
+        'Set this desk up as a repository of mine and bring its pages up, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup"',
         "",
       ].join("\n"),
     );
 
-    // A web/ that holds something is the person's: left as it is, and the sentence still asks for the dashboard.
-    const held = fakeFiles("/work", { "/work/alice-desk/web/package.json": "{}\n" });
+    // A web/ that holds something is the person's: left as it is, and the sentence still asks for the pages.
+    const held = fakeFiles("/work", { "/work/desk/web/package.json": "{}\n" });
     const kept = harness({
       fetch: consoleFor(ALICE).fetch,
       store: signedIn(),
@@ -4910,12 +4906,10 @@ describe("a person's desk on the command line (ADR-0115)", () => {
       deskWebTemplate: async () => SHELL,
     });
     expect(await runCli(["desk", "--web"], kept.io)).toBe(EXIT.ok);
-    expect(held.files.get("/work/alice-desk/web/package.json")).toBe("{}\n");
+    expect(held.files.get("/work/desk/web/package.json")).toBe("{}\n");
     expect(held.written.some((file) => file.path.includes("/web/"))).toBe(false);
-    expect(kept.out()).toContain(
-      "/work/alice-desk/web holds something already, and is left as it is.",
-    );
-    expect(kept.out()).toContain("and bring its dashboard up");
+    expect(kept.out()).toContain("/work/desk/web holds something already, and is left as it is.");
+    expect(kept.out()).toContain("and bring its pages up");
 
     // --json says what was written and the sentence, for a script.
     const json = harness({
@@ -4927,15 +4921,15 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     });
     expect(await runCli(["desk", "--web", "--json"], json.io)).toBe(EXIT.ok);
     expect(JSON.parse(json.out())).toEqual({
-      directory: "/work/alice-desk",
+      directory: "/work/desk",
       written: FILES,
       kept: [],
       web: {
-        directory: "/work/alice-desk/web",
+        directory: "/work/desk/web",
         written: ["README.md", "package.json", "index.html", "src/main.tsx"],
         version: "0.5.1",
       },
-      say: 'Set this desk up as a repository of mine and bring its dashboard up, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup"',
+      say: 'Set this desk up as a repository of mine and bring its pages up, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup"',
     });
   });
 
@@ -4954,7 +4948,7 @@ describe("a person's desk on the command line (ADR-0115)", () => {
       });
       expect(await runCli(["desk", "--web"], run.io)).toBe(EXIT.failed);
       expect(run.err()).toContain(
-        "This command's package carries no shell of a dashboard (template/desk-web): nothing is written. Without --web, the desk alone is written.",
+        "This command's package carries no shell of a desk's pages (template/desk-web): nothing is written. Without --web, the desk alone is written.",
       );
       expect(at.written).toEqual([]);
       expect(run.out()).toBe("");
@@ -4983,9 +4977,9 @@ describe("a person's desk on the command line (ADR-0115)", () => {
         ]),
     });
     expect(await runCli(["desk", "--web"], guarded.io)).toBe(EXIT.ok);
-    expect(sly.files.get("/work/alice-desk/AGENTS.md")).toContain("# AGENTS.md");
+    expect(sly.files.get("/work/desk/AGENTS.md")).toContain("# AGENTS.md");
     expect([...sly.files.keys()].filter((path) => path.includes("/web/"))).toEqual([
-      "/work/alice-desk/web/index.html",
+      "/work/desk/web/index.html",
     ]);
   });
 
@@ -5011,7 +5005,7 @@ describe("the check of a desk's records on the command line (ADR-0117)", () => {
     const recordsAt: NonNullable<CliIo["recordsAt"]> = (directory) => {
       asked.push(directory);
       return {
-        directory: directory === "." ? "/work/alice-desk" : directory,
+        directory: directory === "." ? "/work/desk" : directory,
         files: {
           read: async (path) =>
             path in files && typeof files[path] !== "number" ? text(files[path]) : undefined,
@@ -5059,7 +5053,7 @@ describe("the check of a desk's records on the command line (ADR-0117)", () => {
     expect(at.asked).toEqual(["."]);
     expect(run.out()).toBe(
       [
-        "The records in /work/alice-desk read right: 1 collection.",
+        "The records in /work/desk read right: 1 collection.",
         "  ad-creatives: 1 item, 1 use, 1 row of figures",
         "",
       ].join("\n"),
@@ -5083,7 +5077,7 @@ describe("the check of a desk's records on the command line (ADR-0117)", () => {
     });
     expect(await runCli(["desk", "check"], run.io)).toBe(EXIT.ok);
     expect(run.out()).toBe(
-      "No records yet in /work/alice-desk: records/index.json is not there. records/README.md says how the first is written.\n",
+      "No records yet in /work/desk: records/index.json is not there. records/README.md says how the first is written.\n",
     );
   });
 
@@ -5107,7 +5101,7 @@ describe("the check of a desk's records on the command line (ADR-0117)", () => {
       ].join("\n"),
     );
     expect(run.err()).toContain(
-      "2 problems in the records of /work/alice-desk. Mend the files and run this again.",
+      "2 problems in the records of /work/desk. Mend the files and run this again.",
     );
     // One file wrong, and the collection that still reads is said with it.
     const partly = harness({
@@ -5126,7 +5120,7 @@ describe("the check of a desk's records on the command line (ADR-0117)", () => {
         "",
       ].join("\n"),
     );
-    expect(partly.err()).toContain("1 problem in the records of /work/alice-desk.");
+    expect(partly.err()).toContain("1 problem in the records of /work/desk.");
   });
 
   it("notes a file that git LFS has not fetched here, which is nothing wrong with the record", async () => {
@@ -5140,7 +5134,7 @@ describe("the check of a desk's records on the command line (ADR-0117)", () => {
     expect(run.out()).toBe(
       [
         "note: records/ad-creatives/items.json: [0] (c-001) file files/c-001.mp4 is a git LFS pointer, not fetched on this machine: git lfs pull fetches it",
-        "The records in /work/alice-desk read right: 1 collection.",
+        "The records in /work/desk read right: 1 collection.",
         "  ad-creatives: 1 item, 1 use, 1 row of figures",
         "",
       ].join("\n"),
@@ -5151,7 +5145,7 @@ describe("the check of a desk's records on the command line (ADR-0117)", () => {
     const run = harness({ fetch: silent, recordsAt: recordsOf(RECORDS).recordsAt });
     expect(await runCli(["desk", "check", "--json"], run.io)).toBe(EXIT.ok);
     expect(JSON.parse(run.out())).toEqual({
-      directory: "/work/alice-desk",
+      directory: "/work/desk",
       found: true,
       problems: [],
       notes: [],

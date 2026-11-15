@@ -12,11 +12,10 @@ export {
   runnerConfigSchema,
 } from "./runner/config.js";
 export {
+  DESK_FOLDER,
   DESK_SECTIONS,
   type DeskInput,
   deskFiles,
-  deskFolderOf,
-  deskHandleOf,
   deskServicesOf,
   deskWebTitleOf,
   PERSON_DESK_SECTIONS,

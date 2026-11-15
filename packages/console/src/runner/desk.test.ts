@@ -16,11 +16,10 @@ import {
 } from "../records.js";
 import { DEFAULT_RUNNER_CONFIG, parseRunnerConfig } from "./config.js";
 import {
+  DESK_FOLDER,
   DESK_SECTIONS,
   type DeskInput,
   deskFiles,
-  deskFolderOf,
-  deskHandleOf,
   deskServicesOf,
   deskWebTitleOf,
   PERSON_DESK_SECTIONS,
@@ -298,17 +297,11 @@ describe("a person's desk", () => {
     }
   });
 
-  it("names the desk's folder by the login: what stands before an @, in lowercase, hyphens for the rest", () => {
-    expect(deskHandleOf("alice@acme.example")).toBe("alice");
-    expect(deskHandleOf("Alice.Kim+board@acme.example")).toBe("alice-kim-board");
-    expect(deskHandleOf("samo-lucid")).toBe("samo-lucid");
-    expect(deskHandleOf("_Bob_")).toBe("bob");
-    // A login that leaves nothing still names a folder.
-    expect(deskHandleOf("@acme.example")).toBe("my");
-    expect(deskFolderOf("alice@acme.example")).toBe("alice-desk");
+  it("is made in a folder called as an agent account's desk is", () => {
+    expect(DESK_FOLDER).toBe("desk");
   });
 
-  it("gives the dashboard a title that stands as it is in a page, a JSON string and a script", () => {
+  it("gives the desk's pages a title that stands as it is in a page, a JSON string and a script", () => {
     const title = deskWebTitleOf(ALICE.person);
     expect(title).toBe(`Alice Kim${String.fromCodePoint(0x2019)}s desk`);
     const hostile = deskWebTitleOf({
@@ -316,10 +309,8 @@ describe("a person's desk", () => {
       login: "alice@acme.example",
     });
     expect(hostile).toBe(`title script x amp${String.fromCodePoint(0x2019)}s desk`);
-    // A name of no letters leaves the handle.
-    expect(deskWebTitleOf({ name: "<>", login: "alice@acme.example" })).toBe(
-      `alice${String.fromCodePoint(0x2019)}s desk`,
-    );
+    // A name of no letters leaves the desk the person's own.
+    expect(deskWebTitleOf({ name: "<>", login: "alice@acme.example" })).toBe("My desk");
     // A name in another script is a name.
     expect(deskWebTitleOf({ name: "김지민", login: "jimin@acme.example" })).toBe(
       `김지민${String.fromCodePoint(0x2019)}s desk`,

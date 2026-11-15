@@ -46,8 +46,8 @@ import { checkRecords, RECORDS_DIR, RECORDS_INDEX_FILE, type RecordsFiles } from
 import { fillRules, RULES_PATH, RULES_TITLE } from "../rules.js";
 import { DEFAULT_RUNNER_CONFIG, parseRunnerConfig } from "../runner/config.js";
 import {
+  DESK_FOLDER,
   deskFiles,
-  deskFolderOf,
   deskServicesOf,
   deskWebTitleOf,
   personDeskFiles,
@@ -284,9 +284,9 @@ export interface CliIo {
   /** What `agent setup` needs of the machine (ADR-0088), and `desk` of its files; left out, the command sets none up and writes no desk. */
   readonly machine?: SetupMachine | undefined;
   /**
-   * The shell of a person's dashboard as the package carries it (ADR-0115), `template/desk-web`
+   * The shell of a desk's pages as the package carries it (ADR-0115), `template/desk-web`
    * beside `dist/`: its files as text, by their path in it with forward slashes; nothing where
-   * the package carries none. Left out, `desk --web` has no dashboard to write.
+   * the package carries none. Left out, `desk --web` has no shell to write.
    */
   readonly deskWebTemplate?: (() => Promise<ReadonlyMap<string, string> | undefined>) | undefined;
   /**
@@ -5076,10 +5076,10 @@ const DESK_USAGE = "Say at most one directory: console desk [<directory>] [--web
 
 /** The sentence a person says to their agent in a new desk: the last line `desk` prints (ADR-0115). */
 function deskSentence(web: boolean): string {
-  return `Set this desk up as a repository of mine${web ? " and bring its dashboard up" : ""}, with the skill for it in the organization's pack where it has one: console skills --search "desk setup"`;
+  return `Set this desk up as a repository of mine${web ? " and bring its pages up" : ""}, with the skill for it in the organization's pack where it has one: console skills --search "desk setup"`;
 }
 
-/** The files of the dashboard's shell as they are written: the two words the template leaves filled in. */
+/** The files of the shell of a desk's pages as they are written: the two words the template leaves filled in. */
 function deskWebFiles(
   template: ReadonlyMap<string, string>,
   version: string,
@@ -5100,7 +5100,7 @@ const counted = (count: number, one: string, many = `${one}s`): string =>
 // The check of a desk's records (ADR-0117): every file under `records/` read as the format's
 // schemas read it, and each problem said with its file. It asks nothing of the console and
 // needs no sign-in: an agent that wrote a record runs it before it commits, and nobody needs
-// the dashboard to know that the records are right.
+// a page to know that the records are right.
 const deskCheck = async (args: readonly string[], io: CliIo): Promise<number> => {
   const { values, positionals } = parse(args, {});
   if (positionals.length > 1) {
@@ -5148,9 +5148,10 @@ const deskCheck = async (args: readonly string[], io: CliIo): Promise<number> =>
 
 // A person's desk (ADR-0115): its fixed files, the format of its records among them
 // (ADR-0117), each only where no file of that name is
-// there, in `<handle>-desk` here or the directory named; with --web, the shell of the dashboard
-// in `web/`, where that holds nothing yet. The command writes and stops: making the desk a
-// repository and bringing the dashboard up is a skill's, of the organization's pack, and the
+// there, in `desk` here, as an agent account's is called, or the directory named; with --web,
+// the shell of the desk's pages in `web/`, where that holds nothing yet. The command writes and
+// stops: making the desk a repository and bringing its pages up is a skill's, of the
+// organization's pack, and the
 // last line is the sentence that asks an agent for it. An agent account's desk is setup's.
 const desk: Command = async (args, io) => {
   if (args[0] === "check") {
@@ -5184,12 +5185,12 @@ const desk: Command = async (args, io) => {
       `This directory works in the project ${above.project} (${DIRECTORY_FILE} here or in a directory above), and a desk made inside it would work there too. A desk is bound to no project: make it elsewhere, console desk <directory>.`,
     );
   }
-  const dir = machine.path(named ?? deskFolderOf(person.login));
+  const dir = machine.path(named ?? DESK_FOLDER);
   const input = {
     person: { name: person.name ?? person.login, login: person.login },
     console: { url: session.url, workspace: me.workspace.name },
   };
-  // The dashboard's shell is settled before anything is written, so that a command that cannot
+  // The shell of the pages is settled before anything is written, so that a command that cannot
   // write it writes nothing.
   const webDir = machine.path(dir, "web");
   const webKept = on(values, "web") && (await machine.holds(webDir));
@@ -5198,12 +5199,12 @@ const desk: Command = async (args, io) => {
     const template = await io.deskWebTemplate?.();
     if (template === undefined || template.size === 0) {
       throw failed(
-        "This command's package carries no shell of a dashboard (template/desk-web): nothing is written. Without --web, the desk alone is written.",
+        "This command's package carries no shell of a desk's pages (template/desk-web): nothing is written. Without --web, the desk alone is written.",
       );
     }
     if (io.version === undefined) {
       throw failed(
-        "This command does not know its version, so it cannot say which package a dashboard is built on: nothing is written. Without --web, the desk alone is written.",
+        "This command does not know its version, so it cannot say which package the desk's pages are built on: nothing is written. Without --web, the desk alone is written.",
       );
     }
     shell = deskWebFiles(template, io.version, deskWebTitleOf(input.person));
@@ -5232,7 +5233,7 @@ const desk: Command = async (args, io) => {
   }
   if (shell !== undefined) {
     lines.push(
-      `The shell of its dashboard is written in ${webDir} (${shellNames.join(", ")}): a console of your own on @skillcdn/console ${io.version}, which shows your work across your projects and is served from this machine by console serve once it is built${shellNames.includes("README.md") ? "; its README.md says how" : ""}.`,
+      `The shell of its pages is written in ${webDir} (${shellNames.join(", ")}): your own extension of the console's pages, on @skillcdn/console ${io.version}, served from this machine by console serve once it is built${shellNames.includes("README.md") ? "; its README.md says how" : ""}.`,
     );
   } else if (webKept) {
     lines.push(`${webDir} holds something already, and is left as it is.`);
