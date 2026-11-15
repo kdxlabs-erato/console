@@ -380,11 +380,14 @@ export function formatTask(
   decisions?: readonly RestDecision[],
   runs?: readonly RestRunBrief[],
   comments?: readonly RestComment[],
+  /** The address of the task's page at the console, where the command knows it: what a person is given to open. */
+  page?: string,
 ): string {
   const lines = [
     `#${task.number} ${task.title}`,
     `state: ${task.state}  priority: ${task.priority}  owner: ${calledOf(task.owner)}  workers: ${task.workers.length === 0 ? "nobody" : logins(task.workers)}`,
     `id: ${task.id}${task.parentId === null ? "" : `  part of: ${task.parentId}`}`,
+    ...(page === undefined ? [] : [pageLine(page)]),
     ...(task.agent == null ? [] : [`written through: ${task.agent}`]),
     ...scheduleLines(task),
   ];
@@ -786,13 +789,24 @@ export function formatAnswer(decision: RestDecision): string {
 }
 
 /**
+ * The address of a task's or a decision's page, on a line of its own: what an agent gives a
+ * person to open, in place of the console's front page, or of a number a git host would take
+ * for an issue of its own.
+ */
+export const pageLine = (page: string): string => `page: ${page}`;
+
+/**
  * One decision in full. A decision reached at its own address (ADR-0068), outside the project the
  * command works in, names its files with the command that reads them there, by the decision too:
  * the project's own address knows nothing of it.
  */
 export function formatDecision(
   decision: RestDecision,
-  options: { readonly atItsAddress?: boolean } = {},
+  options: {
+    readonly atItsAddress?: boolean;
+    /** The address of the decision's page at the console, where the command knows it. */
+    readonly page?: string | undefined;
+  } = {},
 ): string {
   const reads = (fileId: string): string =>
     options.atItsAddress === true
@@ -801,6 +815,7 @@ export function formatDecision(
   const lines = [
     `decision ${decision.id}: ${decision.question}`,
     `asked by ${asker(decision)}${addressed(decision)}${decision.taskNumber === null ? "" : `, about task #${decision.taskNumber}`}, at ${moment(decision.createdAt)}`,
+    ...(options.page === undefined ? [] : [pageLine(options.page)]),
   ];
   if (decision.body.trim().length > 0) {
     lines.push("", decision.body.trimEnd());

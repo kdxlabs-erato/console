@@ -1402,6 +1402,72 @@ describe("the console command", () => {
     expect(l.out()).not.toContain("a person makes at");
   });
 
+  it("says the address of a task's page and of a decision's, made from the console's origin and asked of no console", async () => {
+    const TASK_PAGE = "page: https://console.test/projects/web/tasks/7";
+    const IN_PROJECT = `page: https://console.test/projects/web/decisions/${DECISION.id}`;
+    const ITS_OWN = `page: https://console.test/decisions/${DECISION.id}`;
+    const { fetch, calls } = fakeConsole({
+      [`GET ${IN}/tasks/7`]: { body: TASK },
+      [`PATCH ${IN}/tasks/${TASK.id}`]: { body: TASK },
+      [`GET ${IN}/decisions?task=${TASK.id}`]: { body: { more: false, items: [] } },
+      [`GET ${IN}/runs?task=${TASK.id}&brief=true`]: { body: { more: false, items: [] } },
+      [`GET ${IN}/tasks/${TASK.id}/comments`]: { body: { items: [] } },
+      [`POST ${IN}/runs`]: { status: 201, body: RUN },
+      [`GET ${IN}/rules`]: { body: RULES },
+      "GET /api/v1/me": { body: ME },
+      [OPEN_RUNS]: { body: { more: false, items: [RUN] } },
+      [`POST ${IN}/decisions`]: { status: 201, body: DECISION },
+      [`GET ${IN}/decisions/${DECISION.id}`]: { body: DECISION },
+      [`POST ${IN}/decisions/${DECISION.id}/answer`]: { body: ANSWERED },
+      [`GET /api/v1/decisions/${DECISION.id}`]: {
+        body: {
+          decision: DECISION,
+          project: { key: "leave", name: "Leave", color: null, symbol: null, icon: null },
+        },
+      },
+    });
+    // A task read, and a task changed: the address after its id, on a line of its own.
+    const read = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["task", "7"], read.io)).toBe(EXIT.ok);
+    expect(read.out()).toContain(`\nid: ${TASK.id}\n${TASK_PAGE}\n`);
+    const edited = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["task", "edit", "7", "--priority", "high"], edited.io)).toBe(EXIT.ok);
+    expect(edited.out()).toContain(`\n${TASK_PAGE}\n`);
+    // A task taken says it once, in the task's own lines.
+    const taken = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["take", "7"], taken.io)).toBe(EXIT.ok);
+    expect(taken.out().split(TASK_PAGE)).toHaveLength(2);
+    // A decision raised, read and answered in the project the command works in: the project's page.
+    const asked = harness({ fetch, env: SIGNED_IN });
+    expect(
+      await runCli(["ask", "Which?", "--option", "a", "--option", "b", "--wait", "0"], asked.io),
+    ).toBe(EXIT.waiting);
+    expect(asked.out()).toContain(`\ndecision id: ${DECISION.id}\n${IN_PROJECT}\n`);
+    const one = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["decision", DECISION.id], one.io)).toBe(EXIT.ok);
+    expect(one.out()).toContain(`\n${IN_PROJECT}\n`);
+    const answered = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["answer", DECISION.id, "--option", "2"], answered.io)).toBe(EXIT.ok);
+    expect(answered.out()).toContain(`\n${IN_PROJECT}\n`);
+    // A decision reached wherever it is (ADR-0068), with no project named: its own address,
+    // which whoever it reaches may open, in that project or not.
+    const anywhere = harness({
+      fetch,
+      env: { CONSOLE_URL: ORIGIN, CONSOLE_TOKEN: "cns_t_secret" },
+    });
+    expect(await runCli(["decision", DECISION.id], anywhere.io)).toBe(EXIT.ok);
+    expect(anywhere.out()).toContain(`\n${ITS_OWN}\n`);
+    expect(anywhere.out()).not.toContain("/projects/");
+    // --json is the console's own answer, as it was: no address is added to it.
+    const json = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["decision", DECISION.id, "--json"], json.io)).toBe(EXIT.ok);
+    expect(JSON.parse(json.out())).toEqual(DECISION);
+    // Nothing was asked of the console for an address: no request names a page.
+    expect(calls.some((call) => call.key.includes("/connect") || call.key.endsWith("/pages"))).toBe(
+      false,
+    );
+  });
+
   it("reads the listings of a console from before the brief form, which answers them whole (0.5.0)", async () => {
     // A 0.5.0 console does not know `brief=true`: it ignores the word and answers each task with
     // its body and each run with its reports. The command reads either, and counts the reports
@@ -1726,7 +1792,10 @@ describe("the console command", () => {
     const plain = fakeConsole(table);
     const written = harness({ fetch: plain.fetch, env: SIGNED_IN });
     expect(await runCli(["task", "new", "Fix the parser"], written.io)).toBe(EXIT.ok);
-    expect(written.out()).toBe(`Task #7 written: Fix the parser\ntask id: ${TASK.id}\n`);
+    // With the address of its page, for the person told of it.
+    expect(written.out()).toBe(
+      `Task #7 written: Fix the parser\ntask id: ${TASK.id}\npage: https://console.test/projects/web/tasks/7\n`,
+    );
     expect(plain.calls.map((call) => call.key)).toEqual([`POST ${IN}/tasks`]);
     expect(plain.calls[0]?.body).toEqual({ title: "Fix the parser" });
   });
@@ -2280,6 +2349,70 @@ describe("the console command", () => {
     ).toBe(EXIT.waiting);
     expect(person.out()).toContain(`console decision ${DECISION.id} --wait 100`);
     expect(person.out()).not.toContain("The answer wakes you");
+  });
+
+  it("ends a wait on a decision in the account's words where the command is signed in as the account that raised it", async () => {
+    const mira = { ...PERSON, login: "acme-mira", name: "Mira", kind: "agent", handle: "mira" };
+    const raised = { ...DECISION, raisedBy: mira };
+    const waits = {
+      [`GET ${IN}/decisions/${DECISION.id}`]: { body: raised },
+      [`GET ${IN}/decisions/${DECISION.id}?wait=5`]: { body: raised },
+    };
+    const passing = () => {
+      let clock = 0;
+      return () => {
+        clock += 5000;
+        return clock;
+      };
+    };
+    // The login kept says what the command is: the account itself (`login --self`).
+    const itself: Credentials = {
+      default: ORIGIN,
+      logins: [
+        {
+          url: ORIGIN,
+          account: "acme-mira",
+          token: "cns_a_session",
+          agent: undefined,
+          since: undefined,
+          self: true,
+        },
+      ],
+    };
+    const account = harness({
+      fetch: fakeConsole(waits).fetch,
+      store: memoryStore(itself).store,
+      env: { CONSOLE_PROJECT: "web" },
+      now: passing(),
+    });
+    expect(await runCli(["decision", DECISION.id, "--wait", "5"], account.io)).toBe(EXIT.waiting);
+    expect(account.out()).toBe(
+      `Decision ${DECISION.id} still waits for a person. The answer wakes you: go on with other work meanwhile, and with its run when it comes (--run ${RUN.id}). The run stays open while the decision waits.\n`,
+    );
+    // A person's agent that waits for the same decision is told how to wait on: the decision
+    // says an account raised it, and not who asks.
+    const agent = harness({
+      fetch: fakeConsole(waits).fetch,
+      store: memoryStore(one(ORIGIN, "cns_t_secret")).store,
+      env: { CONSOLE_PROJECT: "web" },
+      now: passing(),
+    });
+    expect(await runCli(["decision", DECISION.id, "--wait", "5"], agent.io)).toBe(EXIT.waiting);
+    expect(agent.out()).toContain(`Keep waiting with: console decision ${DECISION.id} --wait 100`);
+    expect(agent.out()).not.toContain("The answer wakes you");
+    // An account that waits for a decision another raised is not woken by its answer, and is
+    // not told it will be.
+    const other = harness({
+      fetch: fakeConsole({
+        [`GET ${IN}/decisions/${DECISION.id}`]: { body: DECISION },
+        [`GET ${IN}/decisions/${DECISION.id}?wait=5`]: { body: DECISION },
+      }).fetch,
+      store: memoryStore(itself).store,
+      env: { CONSOLE_PROJECT: "web" },
+      now: passing(),
+    });
+    expect(await runCli(["decision", DECISION.id, "--wait", "5"], other.io)).toBe(EXIT.waiting);
+    expect(other.out()).toContain("Keep waiting with");
   });
 
   it("asks, waits for the answer, and says when the decision still waits", async () => {

@@ -52,6 +52,7 @@ import {
 import { capabilityWords } from "../plugin/capabilities.js";
 import { PLUGIN_LIST_LIMIT } from "../plugin/limits.js";
 import { checkRecords, RECORDS_DIR, RECORDS_INDEX_FILE, type RecordsFiles } from "../records.js";
+import { decisionHref, myDecisionHref, taskHref } from "../router.js";
 import { fillRules, RULES_PATH, RULES_TITLE } from "../rules.js";
 import { DEFAULT_RUNNER_CONFIG, parseRunnerConfig } from "../runner/config.js";
 import {
@@ -181,6 +182,7 @@ import {
   formatWorkspace,
   localized,
   moment,
+  pageLine,
   rulesMark,
   setMomentZone,
 } from "./format.js";
@@ -971,6 +973,39 @@ async function settle(
     );
   }
   return outcome.answer === null ? EXIT.waiting : EXIT.ok;
+}
+
+/**
+ * Whether the command is signed in as the account itself (ADR-0084), which is how an agent
+ * account's own command is: what the login kept says, and nothing the environment's pair does.
+ */
+function signedInAsItself(session: Session): boolean {
+  return (
+    session.via === "login" &&
+    session.credentials?.logins.find(
+      (kept) => kept.url === session.url && kept.account === session.account,
+    )?.self === true
+  );
+}
+
+/**
+ * The address of a task's page at the console the command talks to: the console's origin and
+ * the path the pages route a task by (ADR-0010), made here and asked of no console. An agent
+ * that tells a person of a task links this, and not the console's front page; nothing where
+ * the command works in no project.
+ */
+async function taskPage(session: Session, number: number): Promise<string | undefined> {
+  const key = await session.projectKey();
+  return key === undefined ? undefined : `${session.url}${taskHref(key, number)}`;
+}
+
+/**
+ * The address of a decision's page: in the project the command reached it in, else the
+ * decision's own (ADR-0068), which whoever it reaches may open, in that project or not.
+ */
+async function decisionPage(session: Session, id: string, atItsAddress = false): Promise<string> {
+  const key = atItsAddress ? undefined : await session.projectKey();
+  return `${session.url}${key === undefined ? myDecisionHref(id) : decisionHref(key, id)}`;
 }
 
 type Command = (args: readonly string[], io: CliIo) => Promise<number>;
@@ -3122,7 +3157,12 @@ const newTask: Command = async (args, io) => {
   });
   const written = `Task #${made.number} written: ${made.title}\ntask id: ${made.id}`;
   if (!taken) {
-    answer(io, session, made, () => written);
+    // With the address of its page, for a person told of the task; a task taken at once says
+    // it in the task's own lines below, once.
+    const page = await taskPage(session, made.number);
+    answer(io, session, made, () =>
+      page === undefined ? written : `${written}\n${pageLine(page)}`,
+    );
     return EXIT.ok;
   }
   // The number first, before the take is asked for: whatever becomes of the take, the task is
@@ -3181,7 +3221,8 @@ const editTask: Command = async (args, io) => {
   }
   const found = await project.task(ref);
   const changed = await project.updateTask(found.id, patch);
-  answer(io, session, changed, () => formatTask(changed));
+  const page = await taskPage(session, changed.number);
+  answer(io, session, changed, () => formatTask(changed, undefined, undefined, undefined, page));
   return EXIT.ok;
 };
 
@@ -3249,11 +3290,12 @@ const task: Command = async (args, io) => {
     session.json ? project.runs({ task: found.id }) : project.runBriefs({ task: found.id }),
     project.comments(found.id),
   ]);
+  const page = await taskPage(session, found.number);
   answer(
     io,
     session,
     { task: found, decisions: decisions.items, runs: runs.items, comments: comments.items },
-    () => formatTask(found, decisions.items, runs.items, comments.items),
+    () => formatTask(found, decisions.items, runs.items, comments.items, page),
   );
   return EXIT.ok;
 };
@@ -3429,6 +3471,7 @@ async function taking(
   const answered =
     held === undefined ? [] : [held === mark ? formatRulesLeftOut(mark) : formatRulesChanged(held)];
   const ruled = held === mark ? [] : [formatRules(rules, language), ""];
+  const page = await taskPage(session, taken.number);
   return {
     value: { run, task: taken, comments: comments.items, rules: { ...rules, mark } },
     words: () =>
@@ -3439,7 +3482,7 @@ async function taking(
         `run id: ${run.id}  task id: ${found.id}  (task #${found.number})`,
         ...answered,
         "",
-        formatTask(taken, undefined, undefined, comments.items),
+        formatTask(taken, undefined, undefined, comments.items, page),
         "",
         ...ruled,
         'Say how it goes: console report "<what you found or did>". Hand in what you make: console hand-in <https url | file path>.',
@@ -3622,11 +3665,12 @@ const ask: Command = async (args, io) => {
   );
   const withFiles =
     files.length === 0 ? "" : `, with ${files.length} file${files.length === 1 ? "" : "s"}`;
-  // The id is printed before any waiting, so that a wait cut short loses nothing.
+  // The id is printed before any waiting, so that a wait cut short loses nothing; and the
+  // address of its page, which is what a person told of the decision is given to open.
   io.stdout(
     session.json
       ? `${JSON.stringify(raised, null, 2)}\n`
-      : `Decision ${raised.id} raised on run ${runId}${withFiles}; the run waits for ${deciderLogins(raised)}.\ndecision id: ${raised.id}\n${formatOptions(raised)}\n`,
+      : `Decision ${raised.id} raised on run ${runId}${withFiles}; the run waits for ${deciderLogins(raised)}.\ndecision id: ${raised.id}\n${pageLine(await decisionPage(session, raised.id))}\n${formatOptions(raised)}\n`,
   );
   // An agent account is attended by nobody, and the answer wakes it (ADR-0085): it waits at no
   // terminal unless it asked to, and is told to go on with other work, where an attended
@@ -3674,7 +3718,8 @@ const answering: Command = async (args, io) => {
     ...(own === undefined ? { option } : { own }),
     ...(note === undefined ? {} : { note }),
   });
-  answer(io, session, answered, () => formatDecision(answered, { atItsAddress }));
+  const page = await decisionPage(session, answered.id, atItsAddress);
+  answer(io, session, answered, () => formatDecision(answered, { atItsAddress, page }));
   return EXIT.ok;
 };
 
@@ -3813,22 +3858,34 @@ const decision: Command = async (args, io) => {
       }
     }
     const addressed = await project.addressDecision(id, deciderIds);
-    answer(io, session, addressed, () => formatDecision(addressed));
+    const page = await decisionPage(session, addressed.id);
+    answer(io, session, addressed, () => formatDecision(addressed, { page }));
     return EXIT.ok;
   }
   if (outcome !== undefined) {
     // What followed the decision: the record grows, and is printed as it stands.
     const project = await projectOfDecision(session, id);
     const grown = await project.updateDecision(id, { outcome });
-    answer(io, session, grown, () => formatDecision(grown));
+    const page = await decisionPage(session, grown.id);
+    answer(io, session, grown, () => formatDecision(grown, { page }));
     return EXIT.ok;
   }
   const { decision: found, waiter, atItsAddress } = await reachDecision(session, id);
   if (seconds === 0) {
-    answer(io, session, found, () => formatDecision(found, { atItsAddress }));
+    const page = await decisionPage(session, found.id, atItsAddress);
+    answer(io, session, found, () => formatDecision(found, { atItsAddress, page }));
     return EXIT.ok;
   }
-  return settle(io, session, waiter, found, seconds);
+  // An agent account is attended by nobody, and the answer to a decision it raised wakes it
+  // (ADR-0085): a wait of its own that runs out ends in the account's words, as ask's does, and
+  // not in how an attended agent waits on. Whether the command is the account is what the
+  // login kept says (`login --self`), since the decision alone does not: a person's agent may
+  // wait for a decision an account raised, and is told how to keep waiting.
+  const wakes =
+    signedInAsItself(session) && found.raisedBy.login === session.account
+      ? `Decision ${found.id} still waits for a person. The answer wakes you: go on with other work meanwhile, and with its run when it comes${found.run === null ? "" : ` (--run ${found.run.id})`}. The run stays open while the decision waits.`
+      : undefined;
+  return settle(io, session, waiter, found, seconds, false, wakes);
 };
 
 const docs: Command = async (args, io) => {
