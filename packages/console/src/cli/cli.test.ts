@@ -4591,6 +4591,30 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
     expect(at.opened).toEqual([PAGE]);
     expect(out).toContain(`The page is opened in this machine's browser: ${PAGE}.`);
     expect(out).toContain("check that the page shows the code WXYZ-2345, and say that it is you");
+    // The end of the wait is printed as every moment is, as a login's is: as the API gave it
+    // while no login at this console has kept the workspace's time zone, and in that zone where
+    // one has.
+    expect(out).toContain(`\nWaiting for that, until ${WHEN}.\n`);
+    const zoned = harness({
+      fetch: consoleOf().fetch,
+      machine: fakeMachine().machine,
+      store: memoryStore({
+        default: ORIGIN,
+        logins: [
+          {
+            url: ORIGIN,
+            account: "alice",
+            token: "cns_t_before",
+            agent: undefined,
+            since: undefined,
+            timeZone: "Asia/Seoul",
+          },
+        ],
+      }).store,
+      hostname: "mac-mini",
+    });
+    expect(await runCli(LINE, zoned.io)).toBe(EXIT.ok);
+    expect(zoned.out()).toContain("\nWaiting for that, until 2026-10-09T19:00:00+09:00.\n");
     // What it keeps is the account's own session, as the default here; its secret is said nowhere.
     expect(store.kept()).toMatchObject({
       default: ORIGIN,

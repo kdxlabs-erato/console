@@ -5110,8 +5110,12 @@ async function signInAsAccount(
     URL.canParse(begun.url) && new URL(begun.url).origin === url
       ? await machine.open(begun.url)
       : false;
+  // The end of the wait is a moment as any other the command prints (ADR-0035), as a login's
+  // is: in the workspace's time zone where a login at this console kept it, as the API gave it
+  // where none has.
+  setMomentZone(credentials.logins.find((kept) => kept.url === url)?.timeZone);
   io.stdout(
-    `${opened ? `The page is opened in this machine's browser: ${begun.url}` : `Open ${begun.url} in this machine's browser`}. Sign in there as ${login}, check that the page shows the code ${begun.code}, and say that it is you. On a machine without a screen, open the address in any browser that is signed in as the account.\nWaiting for that, until ${begun.expiresAt}.\n`,
+    `${opened ? `The page is opened in this machine's browser: ${begun.url}` : `Open ${begun.url} in this machine's browser`}. Sign in there as ${login}, check that the page shows the code ${begun.code}, and say that it is you. On a machine without a screen, open the address in any browser that is signed in as the account.\nWaiting for that, until ${moment(begun.expiresAt)}.\n`,
   );
   let secret: string;
   for (;;) {
