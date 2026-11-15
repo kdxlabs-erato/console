@@ -96,13 +96,13 @@ Only where the member asked to see something. Paths below are under the desk's `
    - `DeskFiguresView`: how many tasks were done and how the runs ended, then what was done by week, by project and by category.
    - `DeskArchive`: the closed tasks and the ended runs, found by words.
    - `readDeskRecords`: reads the collections for a page of one's own, every file bounded and parsed.
-6. **Build, serve, show.** `npm run build`, which went well where it ended in 0 and `dist/index.html` is there, not by what it printed; then `npm run serve` and `http://127.0.0.1:11197/`: the page answers, and `/api/v1/me` there names the member. The page is checked with what the desk keeps, an empty state where it keeps nothing yet: no sample is made to fill it. Then the member is given the address, with the server left up, and asked whether it is what they wanted to see; the run stops there for them, and phases 5 and 6 wait for their answer, so that what is written down and pushed is what they saw. The server is the agent's own to stop, by ending the process it started, once they have looked or said to: say that it was stopped, and how the pages are started again.
+6. **Build, serve, show.** `npm run build`, which went well where it ended in 0 and `dist/index.html` is there, not by what it printed; then `npm run serve` and `http://127.0.0.1:11197/`: the page answers, and `/api/v1/me` there names the member. The page is checked with what the desk keeps, an empty state where it keeps nothing yet: no sample is made to fill it. Then the member is given the address, with the server left up, and asked whether it is what they wanted to see; the run stops there for them, and phases 5 and 6 wait for their answer, so that what is written down and pushed is what they saw. The server is the agent's own to stop, by ending the process it started, once they have looked or said to: say that it was stopped, and how the pages are started again. Whether a server is up is asked of its address before it is said, since a session that comes back may no longer hold the process it started. A look at an empty state is a look at a sentence: once the first entry is kept, the member is offered the look again, at the page with it.
 
 Where a page shows what someone else wrote, the hard rules of [building-a-console](/skills/building-a-console/SKILL.md) hold for it.
 
 ### Phase 5: Write it down
 
-`AGENTS.md`, "This desk": one line for each thing the desk now keeps or shows, in the member's words. For what is kept: what, in which folder, and when a new entry is written. For a page: what it shows, and how it is opened. A later session records and shows from that line and the folder's `README.md` alone.
+`AGENTS.md`, "This desk": one line for each thing the desk now keeps or shows, in the member's words. For what is kept: what, in which folder, and when a new entry is written. For a page: what it shows, and how it is opened; and `web/README.md`, where it still says the page is empty, says what the page shows. A later session records and shows from that line and the folder's `README.md` alone.
 
 ### Phase 6: Check, commit and push
 
