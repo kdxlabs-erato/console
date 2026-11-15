@@ -1,7 +1,8 @@
 import type { EventKind, RestEventData } from "@skillcdn/console/api";
-import { and, asc, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lte, sql } from "drizzle-orm";
 import { type Database, drizzleOf, type Transaction } from "../client.js";
 import { events } from "../schema.js";
+import { holdEventOrder, settledEnd } from "./event-order.js";
 import { actors, type PersonRecord, personColumns, toPerson } from "./people.js";
 
 // Everything that happened to the board, written in the same transaction as the change it
@@ -68,7 +69,9 @@ export interface EventRecord {
 /**
  * Appends an event, inside the transaction that makes the change, so that nothing is recorded
  * that did not happen and nothing happens unrecorded; and nudges whoever listens, which the
- * database delivers when the transaction commits and not before.
+ * database delivers when the transaction commits and not before. The one place an event of the
+ * console is inserted: it holds the feed's order (ADR-0125) from before the event is numbered to
+ * the end of the transaction, so that no reader by number passes over it.
  */
 export async function recordEvent(
   tx: Transaction,
@@ -90,6 +93,7 @@ export async function recordEvent(
     readonly now: Date;
   },
 ): Promise<number> {
+  await holdEventOrder(tx, "console");
   const [row] = await tx
     .insert(events)
     .values({
@@ -115,6 +119,16 @@ export async function recordEvent(
   // The payload says nothing: a listener asks for what is after the last number it saw.
   await tx.execute(sql`select pg_notify(${EVENTS_CHANNEL}, '')`);
   return row.id;
+}
+
+/**
+ * Where a read of the feed by number ends (ADR-0125): the settled end the caller looked up,
+ * for one that reads more than once from one look, else the feed's as it stands now; and the
+ * beginning for a process that never saw the feed settle while a writer is under way, which
+ * reads nothing and asks again. No read by number goes without it.
+ */
+async function endOf(database: Database, through: number | undefined): Promise<number> {
+  return through ?? (await settledEnd(database, "console")) ?? 0;
 }
 
 /** For this file only: the select every read of the feed shares. */
@@ -179,60 +193,80 @@ function toEvent(row: EventRow): EventRecord {
 }
 
 /**
- * What happened within `scope` after event number `after`, oldest first, at most `limit` of
- * it, and whether there is more. `0` is the beginning.
+ * What happened within `scope` after event number `after` and up to the feed's settled end
+ * (`through`, or as it stands), oldest first, at most `limit` of it, and whether there is more
+ * within that end. `0` is the beginning. Whoever comes back with the last number they were given
+ * has passed over nothing: an event numbered below it that commits later is beyond the end
+ * until it has (ADR-0125).
  */
 export async function listEventsAfter(
   database: Database,
   scope: EventScope,
   after: number,
   limit: number,
+  through?: number,
 ): Promise<{ readonly items: EventRecord[]; readonly more: boolean }> {
+  const end = await endOf(database, through);
   const rows = await selectEvents(database)
-    .where(and(within(scope), gt(events.id, after)))
+    .where(and(within(scope), gt(events.id, after), lte(events.id, end)))
     .orderBy(asc(events.id))
     .limit(limit + 1);
   return { items: rows.slice(0, limit).map(toEvent), more: rows.length > limit };
 }
 
-/** Every event of the workspace after number `after`, whichever project it is in, oldest first: the stream the plugins' dispatcher reads. */
+/**
+ * Every event of the workspace after number `after` and up to the feed's settled end
+ * (`through`, or as it stands), whichever project it is in, oldest first: the stream the
+ * board's wakes and the plugins' dispatcher read.
+ */
 export async function listAllEventsAfter(
   database: Database,
   workspaceId: string,
   after: number,
   limit: number,
+  through?: number,
 ): Promise<EventRecord[]> {
+  const end = await endOf(database, through);
   const rows = await selectEvents(database)
-    .where(and(eq(events.workspaceId, workspaceId), gt(events.id, after)))
+    .where(and(eq(events.workspaceId, workspaceId), gt(events.id, after), lte(events.id, end)))
     .orderBy(asc(events.id))
     .limit(limit);
   return rows.map(toEvent);
 }
 
 /**
- * The newest `limit` events within `scope`, oldest first, and whether there are earlier ones:
- * how a page shows the feed as it stands without reading it from the beginning, which on a
- * board with a long history was a round trip per hundred events.
+ * The newest `limit` events within `scope` up to the feed's settled end, oldest first, and
+ * whether there are earlier ones: how a page shows the feed as it stands without reading it
+ * from the beginning, which on a board with a long history was a round trip per hundred events.
+ * The page's stream goes on from the last number it is given here, so that number is never
+ * beyond the end.
  */
 export async function listLatestEvents(
   database: Database,
   scope: EventScope,
   limit: number,
+  through?: number,
 ): Promise<{ readonly items: EventRecord[]; readonly more: boolean }> {
+  const end = await endOf(database, through);
   const rows = await selectEvents(database)
-    .where(within(scope))
+    .where(and(within(scope), lte(events.id, end)))
     .orderBy(desc(events.id))
     .limit(limit + 1);
   return { items: rows.slice(0, limit).reverse().map(toEvent), more: rows.length > limit };
 }
 
-/** The number of the newest event of the workspace, or `0` when nothing has happened yet. */
+/**
+ * The number of the workspace's newest event within the feed's settled end, or `0` when nothing
+ * has happened yet: where whoever waits for what happens next begins, so that an event numbered
+ * before it and committed after is theirs to hear of.
+ */
 export async function latestEventId(database: Database, workspaceId: string): Promise<number> {
+  const end = await endOf(database, undefined);
   const [row] = await drizzleOf(database)
-    .select({ latest: sql<number | null>`max(${events.id})`.mapWith(Number) })
+    .select({ latest: sql<number | string | null>`max(${events.id})` })
     .from(events)
-    .where(eq(events.workspaceId, workspaceId));
-  return row?.latest ?? 0;
+    .where(and(eq(events.workspaceId, workspaceId), lte(events.id, end)));
+  return Number(row?.latest ?? 0);
 }
 
 /**

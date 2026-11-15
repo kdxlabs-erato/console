@@ -5,7 +5,11 @@ import {
   restMeSchema,
   restTokenCreatedSchema,
 } from "@skillcdn/console/api";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { drizzleOf } from "./db/client.js";
+import { recordEvent } from "./db/queries/events.js";
+import { tasks } from "./db/schema.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "./db/testing.js";
 import { createFixtureProvider } from "./testing/fixture-provider.js";
 import { createHarness, type Harness, SIGN_IN_URL } from "./testing/harness.js";
@@ -196,6 +200,82 @@ describe("the live feed of a project", () => {
     const text = await reading.until(() => false, 5000);
     expect(reading.ended).toBe(true);
     expect(text).not.toContain("After Bob left");
+  });
+
+  it("shows a page nothing beyond what has settled, and its stream then carries an event numbered before another and committed after it (ADR-0125)", async () => {
+    expect((await writeTask("Numbered around")).status).toBe(201);
+    expect((await writeTask("Commented on meanwhile")).status).toBe(201);
+    const handle = drizzleOf(testDatabase.database);
+    const [task] = await handle.select().from(tasks).where(eq(tasks.title, "Numbered around"));
+    const [other] = await handle
+      .select()
+      .from(tasks)
+      .where(eq(tasks.title, "Commented on meanwhile"));
+    if (task === undefined || other === undefined) {
+      throw new Error("the tasks are not there");
+    }
+    const commentOn = (id: string, body: string) =>
+      h.request(`${IN}/tasks/${id}/comments`, {
+        method: "POST",
+        headers: { cookie: alice, origin: SIGN_IN_URL, "content-type": "application/json" },
+        body: JSON.stringify({ body }),
+      });
+    /** The feed as a page reads it to show the board, from which its stream goes on. */
+    const shown = async () =>
+      (
+        (await (
+          await h.request(`${IN}/events?latest=true`, { headers: { cookie: alice } })
+        ).json()) as { items: { id: number }[] }
+      ).items;
+    const settled = (await shown()).at(-1)?.id ?? 0;
+    // A change that is given its event's number and is slow to commit.
+    let numbered: () => void = () => {};
+    let commit: () => void = () => {};
+    const wasNumbered = new Promise<void>((resolve) => {
+      numbered = resolve;
+    });
+    const mayCommit = new Promise<void>((resolve) => {
+      commit = resolve;
+    });
+    const slow = handle.transaction(async (tx) => {
+      await recordEvent(tx, {
+        workspaceId: task.workspaceId,
+        projectId: task.projectId,
+        kind: "task.commented",
+        actor: undefined,
+        taskId: task.id,
+        data: { number: task.number, title: task.title, excerpt: "Slow to commit", files: 0 },
+        now: new Date(),
+      });
+      numbered();
+      await mayCommit;
+    });
+    let reading: ReturnType<typeof tail> | undefined;
+    try {
+      await wasNumbered;
+      // The next event is numbered after it and committed before it.
+      expect((await commentOn(other.id, "Committed first")).status).toBe(201);
+      // The page is shown neither, so the number its stream goes on from is before both.
+      expect((await shown()).at(-1)?.id).toBe(settled);
+      const stream = await h.request(`${IN}/events/stream?after=${settled}`, {
+        headers: { cookie: alice, accept: "text/event-stream" },
+      });
+      reading = tail(stream);
+      await reading.until((seen) => seen.includes(": ping"));
+      expect(eventsOf(reading.text)).toEqual([]);
+    } finally {
+      commit();
+      await slow;
+    }
+    // Once the slow change is committed the stream carries both, in the order they were numbered.
+    const text = await reading.until((seen) => seen.includes("Committed first"));
+    const carried = eventsOf(text);
+    expect(carried.map((entry) => entry.event.data.excerpt)).toEqual([
+      "Slow to commit",
+      "Committed first",
+    ]);
+    expect(carried.map((entry) => entry.id)).toEqual([settled + 1, settled + 2]);
+    await reading.cancel();
   });
 
   it("ends every stream when the feed closes, so that shutdown can finish", async () => {

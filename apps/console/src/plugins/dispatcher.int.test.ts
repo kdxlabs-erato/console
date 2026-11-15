@@ -3,9 +3,12 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { PluginHookEvent } from "@skillcdn/console/plugin";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDatabase, type Database } from "../db/client.js";
+import { createDatabase, type Database, drizzleOf } from "../db/client.js";
+import { holdEventOrder } from "../db/queries/event-order.js";
+import { recordEvent } from "../db/queries/events.js";
 import { emitPluginEvent } from "../db/queries/plugin-board.js";
 import { ensureWorkspace, type WorkspaceRecord } from "../db/queries/workspaces.js";
+import { pluginEvents } from "../db/schema.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "../db/testing.js";
 import type { Logger } from "../logger.js";
 import { type Dispatching, type DispatchTarget, PluginDispatcher } from "./dispatcher.js";
@@ -83,6 +86,172 @@ function dispatcherOn(database: Database, through: Dispatching, logger: Logger):
     logger,
   });
 }
+
+/**
+ * A change that is given its event's number and is slow to commit: resolves `numbered` once the
+ * number is given, and commits when `commit` is called.
+ */
+function slowChange(write: (tx: Parameters<typeof recordEvent>[0]) => Promise<unknown>) {
+  let commit: () => void = () => {};
+  let wasNumbered: () => void = () => {};
+  const mayCommit = new Promise<void>((resolve) => {
+    commit = resolve;
+  });
+  const numbered = new Promise<void>((resolve) => {
+    wasNumbered = resolve;
+  });
+  const done = drizzleOf(testDatabase.database).transaction(async (tx) => {
+    await write(tx);
+    wasNumbered();
+    await mayCommit;
+  });
+  return { numbered, commit, done };
+}
+
+describe("the order of the streams the dispatcher reads (ADR-0125)", () => {
+  it("delivers a plugin's event numbered before another and committed after it, in the order they were numbered", async () => {
+    const heard: unknown[] = [];
+    const { logger } = capture();
+    const dispatcher = dispatcherOn(
+      testDatabase.database,
+      plugins([target("order-listener", "order-source")], async (_key, event) => {
+        heard.push(event.data);
+        return delivered;
+      }),
+      logger,
+    );
+    await dispatcher.dispatch();
+    // As `emitPluginEvent` writes one, in a transaction held open past the next event's.
+    const slow = slowChange(async (tx) => {
+      await holdEventOrder(tx, "plugin");
+      await tx.insert(pluginEvents).values({
+        workspaceId: workspace.id,
+        pluginKey: "order-source",
+        kind: "ping",
+        data: "numbered first",
+        createdAt: new Date(),
+      });
+    });
+    try {
+      await slow.numbered;
+      await emitPluginEvent(testDatabase.database, {
+        workspaceId: workspace.id,
+        key: "order-source",
+        kind: "ping",
+        data: "numbered second",
+        now: new Date(),
+      });
+      await dispatcher.dispatch();
+      // Nothing yet: the second is committed, and beyond what has settled.
+      expect(heard).toEqual([]);
+    } finally {
+      slow.commit();
+      await slow.done;
+    }
+    await dispatcher.dispatch();
+    await dispatcher.dispatch();
+    expect(heard).toEqual(["numbered first", "numbered second"]);
+  });
+
+  it("delivers a console event numbered before another and committed after it, the same", async () => {
+    const heard: string[] = [];
+    const { logger } = capture();
+    const listener: DispatchTarget = {
+      key: "order-console",
+      hooks: ["console:plugin.failed"],
+      consent: ["events:console"],
+      boardProjectId: undefined,
+      projects: [],
+    };
+    const dispatcher = dispatcherOn(
+      testDatabase.database,
+      plugins([listener], async (_key, event) => {
+        heard.push(event.id);
+        return delivered;
+      }),
+      logger,
+    );
+    await dispatcher.dispatch();
+    // Two events the plugin itself caused, which concern it whatever it may read.
+    const failure = (tx: Parameters<typeof recordEvent>[0], problem: string) =>
+      recordEvent(tx, {
+        workspaceId: workspace.id,
+        kind: "plugin.failed",
+        actor: undefined,
+        plugin: "order-console",
+        data: { key: "order-console", problem },
+        now: new Date(),
+      });
+    let first = 0;
+    const slow = slowChange(async (tx) => {
+      first = await failure(tx, "numbered first");
+    });
+    let second = 0;
+    try {
+      await slow.numbered;
+      second = await drizzleOf(testDatabase.database).transaction((tx) =>
+        failure(tx, "numbered second"),
+      );
+      expect(second).toBeGreaterThan(first);
+      await dispatcher.dispatch();
+      expect(heard).toEqual([]);
+    } finally {
+      slow.commit();
+      await slow.done;
+    }
+    await dispatcher.dispatch();
+    await dispatcher.dispatch();
+    expect(heard).toEqual([`console:${first}`, `console:${second}`]);
+  });
+
+  it("counts a hook the console could not call as a try that failed, and skips the event after the last with the failure recorded", async () => {
+    const failures: string[] = [];
+    const heard: unknown[] = [];
+    const { logger, warnings } = capture();
+    const dispatcher = new PluginDispatcher({
+      database: testDatabase.database,
+      workspace: async () => workspace,
+      plugins: {
+        hookTargets: async () => [target("gone-listener", "gone-source")],
+        runHook: async (_key, _name, event) => {
+          if (event.data === "never ready") {
+            throw new Error("the host is gone");
+          }
+          heard.push(event.data);
+          return delivered;
+        },
+        recordFailure: async (_key, _projectId, problem) => {
+          failures.push(problem);
+        },
+      },
+      clock,
+      logger,
+      retries: 2,
+      backoffMs: () => 0,
+    });
+    await dispatcher.dispatch();
+    for (const data of ["never ready", "after it"]) {
+      await emitPluginEvent(testDatabase.database, {
+        workspaceId: workspace.id,
+        key: "gone-source",
+        kind: "ping",
+        data,
+        now: new Date(),
+      });
+    }
+    // The first try leaves the plugin at the event; the second skips it and goes on.
+    await dispatcher.dispatch();
+    expect([heard, failures]).toEqual([[], []]);
+    await dispatcher.dispatch();
+    expect(heard).toEqual(["after it"]);
+    expect(failures).toEqual([
+      expect.stringMatching(
+        /^the hook plugin:gone-source:ping failed 2 times on plugin event \d+ \(plugin\.failed\); the event was skipped$/,
+      ),
+    ]);
+    expect(warnings().filter((line) => line === "a hook could not be called")).toHaveLength(2);
+  });
+});
 
 describe("the dispatcher", () => {
   it("delivers to more plugins with hooks than the pool has connections, each hook free to use the pool", async () => {

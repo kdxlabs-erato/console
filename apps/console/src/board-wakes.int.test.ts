@@ -9,14 +9,16 @@ import {
   restSignalsSchema,
   restTaskSchema,
 } from "@skillcdn/console/api";
-import { inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { drizzleOf } from "./db/client.js";
+import { recordEvent } from "./db/queries/events.js";
 import { endUnheardRuns } from "./db/queries/runs.js";
-import { people, workspaces } from "./db/schema.js";
+import { people, tasks, workspaces } from "./db/schema.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "./db/testing.js";
 import { BoardWakes, dayIn } from "./jobs/board-wakes.js";
+import { createLogger } from "./logger.js";
 import { createFixtureProvider } from "./testing/fixture-provider.js";
 import { createHarness, type Harness, SIGN_IN_URL } from "./testing/harness.js";
 
@@ -501,5 +503,135 @@ describe("the board's wakes (ADR-0085)", () => {
     expect((await sent("mira")).map((signal) => [signal.key, signal.by])).toEqual([
       [`ops#${quiet.number}`, "Alice"],
     ]);
+  });
+
+  it("passes over no event that was numbered before another and committed after it (ADR-0125)", async () => {
+    const first = await task(alice, {
+      title: "Numbered first",
+      state: "ready",
+      workerIds: [miraId],
+    });
+    const second = await task(alice, {
+      title: "Numbered second",
+      state: "ready",
+      workerIds: [miraId],
+    });
+    await wakes.sweep();
+    const before = (await record("mira")).length;
+    const handle = drizzleOf(testDatabase.database);
+    const [row] = await handle
+      .select({ workspaceId: tasks.workspaceId, projectId: tasks.projectId })
+      .from(tasks)
+      .where(eq(tasks.id, first.id));
+    if (row === undefined) {
+      throw new Error("the task is not there");
+    }
+    // A change that is given its event's number and is slow to commit, as a request that began
+    // first and ended last is.
+    let numbered: () => void = () => {};
+    let commit: () => void = () => {};
+    const wasNumbered = new Promise<void>((resolve) => {
+      numbered = resolve;
+    });
+    const mayCommit = new Promise<void>((resolve) => {
+      commit = resolve;
+    });
+    const slow = handle.transaction(async (tx) => {
+      await recordEvent(tx, {
+        workspaceId: row.workspaceId,
+        projectId: row.projectId,
+        kind: "task.commented",
+        actor: { id: bobId },
+        taskId: first.id,
+        data: { number: first.number, title: first.title, excerpt: "Slow to commit", files: 0 },
+        now,
+      });
+      numbered();
+      await mayCommit;
+    });
+    try {
+      await wasNumbered;
+      // The next event is numbered after it and committed before it.
+      expect((await comment(bob, second.id, "Quick to commit")).status).toBe(201);
+      await wakes.sweep();
+      // Nothing yet: the second is committed, and beyond what has settled.
+      expect((await record("mira")).slice(before)).toEqual([]);
+    } finally {
+      commit();
+      await slow;
+    }
+    await wakes.sweep();
+    await wakes.sweep();
+    // Both are sent, in the order they were numbered: the pass read no further than what had settled.
+    expect((await record("mira")).slice(before).map((signal) => signal.key)).toEqual([
+      `ops#${first.number}`,
+      `ops#${second.number}`,
+    ]);
+  });
+
+  it("passes over an event whose wakes fail every time, after its tries, and says so in the log", async () => {
+    await wakes.sweep();
+    const before = (await record("mira")).length;
+    const handle = drizzleOf(testDatabase.database);
+    const lines: { level?: number; msg?: string; event?: number; kind?: string; tries?: number }[] =
+      [];
+    const patient = new BoardWakes({
+      database: testDatabase.database,
+      workspaceId: async () => (await handle.select().from(workspaces).limit(1))[0]?.id ?? "",
+      clock: { now: () => now },
+      // The image's own logger: an error is written as it keeps one, without what a statement was given.
+      logger: createLogger({
+        level: "error",
+        role: "worker",
+        destination: { write: (line: string) => lines.push(JSON.parse(line)) },
+      }),
+      tries: 3,
+    });
+    // A wake that can never be written, as a rule that fails on one event's content would have it.
+    await handle.execute(
+      sql.raw(`create function refuse_a_signal() returns trigger language plpgsql as $$
+        begin
+          if new.text like '%Never sent by the test%' then
+            raise exception 'a signal the test refuses';
+          end if;
+          return new;
+        end $$`),
+    );
+    await handle.execute(
+      sql.raw(
+        `create trigger refuse_a_signal before insert on agent_signals for each row execute function refuse_a_signal()`,
+      ),
+    );
+    const texts = async () =>
+      (await record("mira")).slice(before).map((signal) => signal.text.split(" is ready")[0]);
+    try {
+      for (const title of ["Sent before it", "Never sent by the test", "Sent after it"]) {
+        await task(alice, { title, state: "ready", workerIds: [miraId] });
+      }
+      // Two passes stop at it, and the place stays there: nothing after it is sent.
+      await patient.sweep();
+      await patient.sweep();
+      expect(await texts()).toEqual([expect.stringContaining('"Sent before it"')]);
+      expect(lines).toEqual([]);
+      // The third passes it over, says which event it was, and goes on with what came after it.
+      await patient.sweep();
+      expect(await texts()).toEqual([
+        expect.stringContaining('"Sent before it"'),
+        expect.stringContaining('"Sent after it"'),
+      ]);
+      expect(lines.map((line) => [line.msg, line.kind, line.tries])).toEqual([
+        ["an event's wakes failed every time and were passed over", "task.created", 3],
+      ]);
+      expect(lines[0]?.event).toBeGreaterThan(0);
+      // Nothing of the task is in the log, only the event's number and kind.
+      expect(JSON.stringify(lines)).not.toContain("Never sent by the test");
+    } finally {
+      await handle.execute(sql.raw(`drop trigger refuse_a_signal on agent_signals`));
+      await handle.execute(sql.raw(`drop function refuse_a_signal()`));
+      await patient.close();
+    }
+    // It stays passed over: the place is beyond it.
+    await wakes.sweep();
+    expect(await texts()).toHaveLength(2);
   });
 });

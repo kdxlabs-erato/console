@@ -11,7 +11,8 @@ import {
   secretsEnding,
   takeWakeCursor,
 } from "../db/queries/board-wakes.js";
-import { listAllEventsAfter } from "../db/queries/events.js";
+import { settledEnd } from "../db/queries/event-order.js";
+import { type EventRecord, listAllEventsAfter } from "../db/queries/events.js";
 import { readWorkspaceSettings } from "../db/queries/workspaces.js";
 import type { Logger } from "../logger.js";
 import type { Clock } from "../ports/clock.js";
@@ -31,6 +32,12 @@ const BATCH = 100;
 const MAX_BATCHES = 10;
 /** How many days before a secret's day its account is told of it. */
 export const SECRET_WARNING_DAYS = 30;
+/**
+ * How many passes in a row may fail at one event before it is passed over: a minute of them,
+ * which a database that was away for a moment does not fill and a wake that can never be sent
+ * always does.
+ */
+export const WAKE_TRIES = 12;
 
 /** The day it is in a time zone, as the board writes a day; in UTC where the zone is none or unknown. */
 export function dayIn(zone: string | null | undefined, now: Date): string {
@@ -60,13 +67,20 @@ export function dayIn(zone: string | null | undefined, now: Date): string {
  * record. One pass at a time, in whatever process: the place in the feed is the pass's lock.
  * An event's wakes are sent before the place moves past it, and the place is kept a batch at a
  * time: a pass that ends halfway sends again the wakes of the batch it was in, which an agent
- * reads as one, never those of the batches before it, and never loses one.
+ * reads as one, never those of the batches before it, and never loses one. A pass reads no
+ * further than the feed's settled end (ADR-0125): an event numbered before another and
+ * committed after it is read when it is there, never passed over. An event whose wakes fail
+ * pass after pass is passed over after `WAKE_TRIES` of them, with an error in the log that
+ * names it, so that one wake that can never be sent does not hold every wake after it.
  */
 export class BoardWakes {
   readonly #database: Database;
   readonly #workspaceId: () => Promise<string>;
   readonly #clock: Clock;
   readonly #logger: Logger;
+  readonly #tries: number;
+  /** The event the last failed pass stopped at, and how many passes in a row have: kept by this process. */
+  #stuck: { readonly event: number; readonly tries: number } | undefined;
   #timer: ReturnType<typeof setInterval> | undefined;
   #running: Promise<void> = Promise.resolve();
 
@@ -75,11 +89,14 @@ export class BoardWakes {
     readonly workspaceId: () => Promise<string>;
     readonly clock: Clock;
     readonly logger: Logger;
+    /** How many passes in a row may fail at one event before it is passed over; `WAKE_TRIES` when left out. */
+    readonly tries?: number | undefined;
   }) {
     this.#database = options.database;
     this.#workspaceId = options.workspaceId;
     this.#clock = options.clock;
     this.#logger = options.logger;
+    this.#tries = options.tries ?? WAKE_TRIES;
   }
 
   /** One pass. Resolves when it is done, or given up on: a failed pass is the next one's work. */
@@ -106,6 +123,10 @@ export class BoardWakes {
     // event before it: what was sent for the events before is not sent again.
     for (let batch = 0; batch < MAX_BATCHES; batch += 1) {
       const last = batch === MAX_BATCHES - 1;
+      // Asked before the place is taken, on a connection of its own: the lock it asks for is
+      // never held by the pass. Nothing where this process never saw the feed settle and a
+      // writer is under way: the events are the next pass's, and the schedule is still this one's.
+      const through = await settledEnd(database, "console");
       const read = await drizzleOf(database).transaction(async (tx) => {
         const now = this.#clock.now();
         const taken = await takeWakeCursor(tx, workspaceId, now);
@@ -116,10 +137,16 @@ export class BoardWakes {
         const today = dayIn(settings.timeZone, now);
         let after = taken;
         let woke = 0;
-        let failed: { readonly error: unknown } | undefined;
-        const events = await listAllEventsAfter(database, workspaceId, after, BATCH);
+        let failed: { readonly error: unknown; readonly event: EventRecord } | undefined;
+        let passedOver = false;
+        const events =
+          through === undefined
+            ? []
+            : await listAllEventsAfter(database, workspaceId, after, BATCH, through);
+        let at: EventRecord | undefined;
         try {
           for (const event of events) {
+            at = event;
             for (const wake of await boardWakesOf(database, event, today)) {
               await sendSignal(database, {
                 account: wake.account,
@@ -140,12 +167,33 @@ export class BoardWakes {
             after = event.id;
           }
         } catch (error) {
-          failed = { error };
+          if (at === undefined) {
+            throw error;
+          }
+          failed = { error, event: at };
+        }
+        if (failed !== undefined) {
+          const tries = this.#stuck?.event === failed.event.id ? this.#stuck.tries + 1 : 1;
+          this.#stuck = { event: failed.event.id, tries };
+          if (tries >= this.#tries) {
+            // A wake that fails every time would hold every wake after it for good. It is
+            // passed over, and said where the job's failures are said: nothing of the event but
+            // its number and its kind, which is all the log may hold of the board.
+            this.#logger.error(
+              { err: failed.error, event: failed.event.id, kind: failed.event.kind, tries },
+              "an event's wakes failed every time and were passed over",
+            );
+            after = failed.event.id;
+            this.#stuck = undefined;
+            failed = undefined;
+            passedOver = true;
+          }
         }
         if (after !== taken) {
           await moveWakeCursor(tx, workspaceId, after, now);
         }
-        const more = failed === undefined && events.length === BATCH;
+        // Passed over in the middle of a batch: the rest of it is read on from there.
+        const more = failed === undefined && (passedOver || events.length === BATCH);
         if (failed === undefined && (!more || last)) {
           // What the schedule sends, under the same lock: one pass at a time notes a day as sent.
           const scheduled = { now, today, clock: clockIn(settings.timeZone, now) };

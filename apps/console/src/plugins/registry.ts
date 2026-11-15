@@ -62,12 +62,8 @@ import { configuresPlugins, personVisibleTo } from "../auth/policy.js";
 import type { Secrets } from "../auth/secrets.js";
 import type { Database } from "../db/client.js";
 import { findDecisionReachable } from "../db/queries/decisions.js";
-import {
-  type Actor,
-  type EventRecord,
-  latestEventId,
-  listEventsOfPlugin,
-} from "../db/queries/events.js";
+import { settledEnd } from "../db/queries/event-order.js";
+import { type Actor, type EventRecord, listEventsOfPlugin } from "../db/queries/events.js";
 import {
   findPerson,
   hasActiveReports,
@@ -77,8 +73,8 @@ import {
 } from "../db/queries/people.js";
 import {
   beginCursor,
+  deleteCursor,
   emitPluginEvent,
-  latestPluginEventId,
   listPluginEventsOf,
   newestPluginEventOf,
   purgePluginStreams,
@@ -1256,14 +1252,23 @@ export class Plugins {
         throw error;
       }
     }
-    // Its hooks begin at the end of the streams: a plugin is not told of everything that ever happened.
-    await beginCursor(database, {
-      workspaceId: workspace.id,
-      key,
-      consoleAfter: await latestEventId(database, workspace.id),
-      pluginAfter: await latestPluginEventId(database, workspace.id),
-      now: this.options.clock.now(),
-    });
+    // Its hooks begin at the end of the streams: a plugin is not told of everything that ever
+    // happened. The settled end (ADR-0125), so that an event under way now is its to hear of;
+    // where this process never saw a stream settle and a writer is under way, the place it had
+    // is forgotten and the dispatcher's next pass begins it.
+    const consoleEnd = await settledEnd(database, "console");
+    const pluginEnd = await settledEnd(database, "plugin");
+    if (consoleEnd === undefined || pluginEnd === undefined) {
+      await deleteCursor(database, workspace.id, key);
+    } else {
+      await beginCursor(database, {
+        workspaceId: workspace.id,
+        key,
+        consoleAfter: consoleEnd,
+        pluginAfter: pluginEnd,
+        now: this.options.clock.now(),
+      });
+    }
     if (entry.description.onEnable) {
       const result = await this.host().call(key, {
         kind: "enable",
@@ -3146,9 +3151,11 @@ export class Plugins {
   }> {
     this.entryOf(key);
     const workspace = await this.options.workspace();
+    // One look for both: the page and where the stream stands end at the same number.
+    const through = (await settledEnd(this.options.database, "plugin")) ?? 0;
     const [read, newest] = await Promise.all([
-      listPluginEventsOf(this.options.database, workspace.id, key, page),
-      newestPluginEventOf(this.options.database, workspace.id, key),
+      listPluginEventsOf(this.options.database, workspace.id, key, page, through),
+      newestPluginEventOf(this.options.database, workspace.id, key, through),
     ]);
     return {
       items: read.items.map((event) => ({

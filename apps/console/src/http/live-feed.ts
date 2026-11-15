@@ -4,7 +4,10 @@ import { type EventRecord, type EventScope, listEventsAfter } from "../db/querie
 // The feed as it happens: every subscriber holds a cursor, the number of the last event it was
 // sent, and is woken to ask for what is after it whenever any process changes the board
 // (`recordEvent`'s nudge, delivered through the listener), on a timer in case a nudge was
-// missed, and for a heartbeat that keeps the connection known to be alive.
+// missed, and for a heartbeat that keeps the connection known to be alive. What it is given ends
+// at the feed's settled end (ADR-0125, `listEventsAfter`): an event committed while one numbered
+// before it is still under way is sent once that one has ended, so that the cursor never passes
+// an event that is still to come.
 
 export type FeedMessage =
   | { readonly kind: "events"; readonly items: readonly EventRecord[] }

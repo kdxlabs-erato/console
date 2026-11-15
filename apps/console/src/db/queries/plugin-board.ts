@@ -1,6 +1,7 @@
-import { and, asc, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lt, lte, sql } from "drizzle-orm";
 import { type Database, drizzleOf, type Transaction } from "../client.js";
 import { pluginCursors, pluginEvents, pluginJobs, pluginLinks, projects } from "../schema.js";
+import { holdEventOrder, settledEnd } from "./event-order.js";
 
 // What a plugin leaves on the board and in the stream of events (ADR-0052, docs/specs/plugins.md,
 // "The board" and "Events, hooks and jobs"): the mark on an item a plugin made, the events a
@@ -115,7 +116,12 @@ export interface PluginEventRecord {
   readonly createdAt: Date;
 }
 
-/** Keeps an event a plugin emitted, and answers its number in the stream. */
+/**
+ * Keeps an event a plugin emitted, and answers its number in the stream. The one place an event
+ * of the plugins is inserted: in a transaction of its own that holds the stream's order
+ * (ADR-0125) from before the event is numbered until it is committed, since two inserts that
+ * each commit by themselves commit in either order too.
+ */
 export async function emitPluginEvent(
   database: Database,
   input: {
@@ -126,33 +132,56 @@ export async function emitPluginEvent(
     readonly now: Date;
   },
 ): Promise<number> {
-  const [row] = await drizzleOf(database)
-    .insert(pluginEvents)
-    .values({
-      workspaceId: input.workspaceId,
-      pluginKey: input.key,
-      kind: input.kind,
-      data: input.data ?? null,
-      createdAt: input.now,
-    })
-    .returning({ id: pluginEvents.id });
-  if (row === undefined) {
-    throw new Error("plugin event insert returned no row");
-  }
-  return row.id;
+  return drizzleOf(database).transaction(async (tx) => {
+    await holdEventOrder(tx, "plugin");
+    const [row] = await tx
+      .insert(pluginEvents)
+      .values({
+        workspaceId: input.workspaceId,
+        pluginKey: input.key,
+        kind: input.kind,
+        data: input.data ?? null,
+        createdAt: input.now,
+      })
+      .returning({ id: pluginEvents.id });
+    if (row === undefined) {
+      throw new Error("plugin event insert returned no row");
+    }
+    return row.id;
+  });
 }
 
-/** The plugins' events after number `after`, oldest first: what the dispatcher delivers. */
+/**
+ * Where a read of the plugins' events by number ends (ADR-0125): the settled end the caller
+ * looked up, else the stream's as it stands now; and the beginning for a process that never saw
+ * it settle while a writer is under way, which reads nothing and asks again.
+ */
+async function endOf(database: Database, through: number | undefined): Promise<number> {
+  return through ?? (await settledEnd(database, "plugin")) ?? 0;
+}
+
+/**
+ * The plugins' events after number `after` and up to the stream's settled end (`through`, or
+ * as it stands), oldest first: what the dispatcher delivers.
+ */
 export async function listPluginEventsAfter(
   database: Database,
   workspaceId: string,
   after: number,
   limit: number,
+  through?: number,
 ): Promise<PluginEventRecord[]> {
+  const end = await endOf(database, through);
   const rows = await drizzleOf(database)
     .select()
     .from(pluginEvents)
-    .where(and(eq(pluginEvents.workspaceId, workspaceId), gt(pluginEvents.id, after)))
+    .where(
+      and(
+        eq(pluginEvents.workspaceId, workspaceId),
+        gt(pluginEvents.id, after),
+        lte(pluginEvents.id, end),
+      ),
+    )
     .orderBy(asc(pluginEvents.id))
     .limit(limit);
   return rows.map((row) => ({
@@ -164,13 +193,19 @@ export async function listPluginEventsAfter(
   }));
 }
 
-/** One plugin's events after number `after`, oldest first, a page at a time: what its frames and `GET .../plugin-events` read. */
+/**
+ * One plugin's events after number `after` and up to the stream's settled end (`through`, or
+ * as it stands), oldest first, a page at a time: what its frames and `GET .../plugin-events`
+ * read, each coming back with the last number it was given.
+ */
 export async function listPluginEventsOf(
   database: Database,
   workspaceId: string,
   key: string,
   page: { readonly after: number; readonly limit: number },
+  through?: number,
 ): Promise<{ readonly items: PluginEventRecord[]; readonly more: boolean }> {
+  const end = await endOf(database, through);
   const rows = await drizzleOf(database)
     .select()
     .from(pluginEvents)
@@ -179,6 +214,7 @@ export async function listPluginEventsOf(
         eq(pluginEvents.workspaceId, workspaceId),
         eq(pluginEvents.pluginKey, key),
         gt(pluginEvents.id, page.after),
+        lte(pluginEvents.id, end),
       ),
     )
     .orderBy(asc(pluginEvents.id))
@@ -195,16 +231,27 @@ export async function listPluginEventsOf(
   };
 }
 
-/** The number of a plugin's newest event, 0 where it has none: where its stream stands. */
+/**
+ * The number of a plugin's newest event within the stream's settled end (`through`, or as it
+ * stands), 0 where it has none: where its stream stands for whoever goes on from there.
+ */
 export async function newestPluginEventOf(
   database: Database,
   workspaceId: string,
   key: string,
+  through?: number,
 ): Promise<number> {
+  const end = await endOf(database, through);
   const [row] = await drizzleOf(database)
     .select({ newest: sql<number | string | null>`max(${pluginEvents.id})` })
     .from(pluginEvents)
-    .where(and(eq(pluginEvents.workspaceId, workspaceId), eq(pluginEvents.pluginKey, key)));
+    .where(
+      and(
+        eq(pluginEvents.workspaceId, workspaceId),
+        eq(pluginEvents.pluginKey, key),
+        lte(pluginEvents.id, end),
+      ),
+    );
   return Number(row?.newest ?? 0);
 }
 
@@ -403,16 +450,4 @@ export async function purgePluginStreams(
   await handle
     .delete(pluginJobs)
     .where(and(eq(pluginJobs.workspaceId, workspaceId), eq(pluginJobs.pluginKey, key)));
-}
-
-/** The newest event of the plugins' stream, or 0: where a new cursor begins. */
-export async function latestPluginEventId(
-  database: Database,
-  workspaceId: string,
-): Promise<number> {
-  const [row] = await drizzleOf(database)
-    .select({ latest: sql<number | null>`max(${pluginEvents.id})`.mapWith(Number) })
-    .from(pluginEvents)
-    .where(eq(pluginEvents.workspaceId, workspaceId));
-  return row?.latest ?? 0;
 }

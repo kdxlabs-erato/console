@@ -2,11 +2,11 @@ import type { PluginHookEvent } from "@skillcdn/console/plugin";
 import { PLUGIN_HOOK_MS, PLUGIN_HOOK_RETRIES } from "@skillcdn/console/plugin";
 import { sql } from "drizzle-orm";
 import { type Database, drizzleOf } from "../db/client.js";
-import { type EventRecord, latestEventId, listAllEventsAfter } from "../db/queries/events.js";
+import { settledEnd } from "../db/queries/event-order.js";
+import { type EventRecord, listAllEventsAfter } from "../db/queries/events.js";
 import {
   beginCursor,
   findProjectByKey,
-  latestPluginEventId,
   listPluginEventsAfter,
   type PluginCursor,
   type PluginEventRecord,
@@ -29,8 +29,11 @@ import { lockKeyOf } from "./scheduler.js";
 // room for everything else; delivered to the handler that named each kind. A console event
 // reaches a plugin for its board projects, the projects it is on, and the items it made. Delivery
 // is at least once: a handler that fails is tried again with backoff, five times, then the event
-// is skipped with a `plugin.failed` event. Runs in the worker role, or in the api role when it
-// carries the worker.
+// is skipped with a `plugin.failed` event; so is an event the console itself cannot make ready
+// for a hook, which would otherwise hold the plugin at it for good. Each stream is read no
+// further than its settled end (ADR-0125): an event numbered before another and committed after
+// it is delivered when it is there, never passed over. Runs in the worker role, or in the api
+// role when it carries the worker.
 
 /** How many events of each stream one pass reads for one plugin. */
 const BATCH = 100;
@@ -199,16 +202,24 @@ export class PluginDispatcher {
     const began = performance.now();
     const outOfTime = () => performance.now() - began > PLUGIN_PASS_MS;
     let cursor = await readCursor(database, workspace.id, target.key);
+    // Where each stream has settled: what is read, and where a cursor begins or keeps up to.
+    // Nothing for a stream this process never saw settle while a writer is under way: that
+    // stream is the next pass's.
+    const consoleEnd = await settledEnd(database, "console");
+    const pluginEnd = await settledEnd(database, "plugin");
     if (cursor === undefined) {
       // A plugin that was never told of anything begins at the end of the streams: it is not
-      // told of everything that ever happened.
-      await beginCursor(database, {
-        workspaceId: workspace.id,
-        key: target.key,
-        consoleAfter: await latestEventId(database, workspace.id),
-        pluginAfter: await latestPluginEventId(database, workspace.id),
-        now,
-      });
+      // told of everything that ever happened. The settled end, so that an event under way now
+      // is its to hear of.
+      if (consoleEnd !== undefined && pluginEnd !== undefined) {
+        await beginCursor(database, {
+          workspaceId: workspace.id,
+          key: target.key,
+          consoleAfter: consoleEnd,
+          pluginAfter: pluginEnd,
+          now,
+        });
+      }
       return;
     }
     if (cursor.nextAttemptAt !== undefined && cursor.nextAttemptAt.getTime() > now.getTime()) {
@@ -219,23 +230,33 @@ export class PluginDispatcher {
       target.consent.includes("events:console") &&
       target.hooks.some((h) => h.startsWith("console:"))
     ) {
-      const events = await listAllEventsAfter(database, workspace.id, cursor.consoleAfter, BATCH);
+      const events =
+        consoleEnd === undefined
+          ? []
+          : await listAllEventsAfter(
+              database,
+              workspace.id,
+              cursor.consoleAfter,
+              BATCH,
+              consoleEnd,
+            );
       for (const event of events) {
         const hook = `console:${event.kind}`;
-        const wanted =
-          target.hooks.includes(hook) &&
-          (await this.concerns(workspace, target, projectIds, event));
-        const outcome = wanted
-          ? await this.deliver(
+        const attempt = cursor.attempts + 1;
+        const outcome = !target.hooks.includes(hook)
+          ? "delivered"
+          : await this.deliver(
               workspace,
               target,
               cursor,
               hook,
-              await this.payloadOf(workspace, target, event, hook, cursor.attempts + 1),
+              async () =>
+                (await this.concerns(workspace, target, projectIds, event))
+                  ? this.payloadOf(workspace, target, event, hook, attempt)
+                  : undefined,
               event.projectId,
               `event ${event.id}`,
-            )
-          : "delivered";
+            );
         if (outcome === "waiting") {
           return;
         }
@@ -251,24 +272,32 @@ export class PluginDispatcher {
         }
       }
     } else {
-      cursor = await this.keptUp(workspace, target, cursor, {
-        consoleAfter: await latestEventId(database, workspace.id),
-      });
+      cursor = await this.keptUp(workspace, target, cursor, { consoleAfter: consoleEnd });
     }
     if (
       target.consent.includes("events:plugins") &&
       target.hooks.some((h) => h.startsWith("plugin:"))
     ) {
-      const events = await listPluginEventsAfter(database, workspace.id, cursor.pluginAfter, BATCH);
+      const events =
+        pluginEnd === undefined
+          ? []
+          : await listPluginEventsAfter(
+              database,
+              workspace.id,
+              cursor.pluginAfter,
+              BATCH,
+              pluginEnd,
+            );
       for (const event of events) {
         const hook = `plugin:${event.plugin}:${event.kind}`;
+        const attempt = cursor.attempts + 1;
         const outcome = target.hooks.includes(hook)
           ? await this.deliver(
               workspace,
               target,
               cursor,
               hook,
-              this.pluginPayloadOf(event, hook, cursor.attempts + 1),
+              async () => this.pluginPayloadOf(event, hook, attempt),
               target.boardProjectId,
               `plugin event ${event.id}`,
             )
@@ -288,23 +317,30 @@ export class PluginDispatcher {
         }
       }
     } else {
-      await this.keptUp(workspace, target, cursor, {
-        pluginAfter: await latestPluginEventId(database, workspace.id),
-      });
+      await this.keptUp(workspace, target, cursor, { pluginAfter: pluginEnd });
     }
   }
 
   /**
    * A stream the plugin does not hold, or has no hook on: what passes there is not its to hear of
-   * later, so that the cursor keeps up, and turning it on begins from then on.
+   * later, so that the cursor keeps up with the stream's settled end, and turning it on begins
+   * from then on. Never backwards: another process may have seen the stream settle further than
+   * this one has.
    */
   private async keptUp(
     workspace: WorkspaceRecord,
     target: DispatchTarget,
     cursor: PluginCursor,
-    latest: Pick<Partial<PluginCursor>, "consoleAfter" | "pluginAfter">,
+    end: {
+      readonly consoleAfter?: number | undefined;
+      readonly pluginAfter?: number | undefined;
+    },
   ): Promise<PluginCursor> {
-    const next = { ...cursor, ...latest };
+    const next = {
+      ...cursor,
+      consoleAfter: Math.max(cursor.consoleAfter, end.consoleAfter ?? 0),
+      pluginAfter: Math.max(cursor.pluginAfter, end.pluginAfter ?? 0),
+    };
     if (next.consoleAfter !== cursor.consoleAfter || next.pluginAfter !== cursor.pluginAfter) {
       await writeCursor(this.options.database, {
         workspaceId: workspace.id,
@@ -319,19 +355,36 @@ export class PluginDispatcher {
   /**
    * One delivery, with its retries: delivered, or skipped after the last try with a `plugin.failed`
    * event, both of which move the cursor on; or waiting for the next try, which leaves it.
+   * `payload` makes the event ready for the hook, or answers nothing where the event does not
+   * concern the plugin; where the console itself fails at that, the try has failed as a hook's
+   * does, so that an event it can never make ready is skipped in the end, and said, instead of
+   * holding the plugin at it.
    */
   private async deliver(
     workspace: WorkspaceRecord,
     target: DispatchTarget,
     cursor: PluginCursor,
     hook: string,
-    payload: PluginHookEvent,
+    payload: () => Promise<PluginHookEvent | undefined>,
     projectId: string | undefined,
     what: string,
   ): Promise<"delivered" | "waiting"> {
     const { database, clock, logger } = this.options;
     const retries = this.options.retries ?? PLUGIN_HOOK_RETRIES;
-    const result = await this.options.plugins.runHook(target.key, hook, payload);
+    let result: CallResult;
+    try {
+      const ready = await payload();
+      if (ready === undefined) {
+        return "delivered";
+      }
+      result = await this.options.plugins.runHook(target.key, hook, ready);
+    } catch (error) {
+      logger.warn({ err: error, plugin: target.key, hook, what }, "a hook could not be called");
+      result = {
+        ok: false,
+        error: { code: "plugin.failed", message: "The console could not call the hook." },
+      };
+    }
     if (result.ok) {
       return "delivered";
     }
