@@ -3077,11 +3077,12 @@ describe("the console command", () => {
   });
 
   it("ends a run as finished, failed or abandoned", async () => {
+    const END = `POST ${IN}/runs/${RUN.id}/end`;
+    const READ = `GET ${IN}/tasks/${TASK.id}`;
     const { fetch, calls } = fakeConsole({
       [OPEN_RUNS]: { body: { more: false, items: [RUN] } },
-      [`POST ${IN}/runs/${RUN.id}/end`]: {
-        body: { ...RUN, status: "finished", summary: "Done." },
-      },
+      [END]: { body: { ...RUN, status: "finished", summary: "Done." } },
+      [READ]: { body: { ...TASK, state: "in_review" } },
     });
     const h = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["finish", "--summary", "Done."], h.io)).toBe(EXIT.ok);
@@ -3090,8 +3091,94 @@ describe("the console command", () => {
     expect(await runCli(["fail"], harness({ fetch, env: SIGNED_IN }).io)).toBe(EXIT.ok);
     expect(calls[3]?.body).toEqual({ status: "failed" });
     expect(await runCli(["abandon", RUN.id], harness({ fetch, env: SIGNED_IN }).io)).toBe(EXIT.ok);
-    expect(calls[4]?.key).toBe(`POST ${IN}/runs/${RUN.id}/end`);
-    expect(calls[4]?.body).toEqual({ status: "abandoned" });
+    // The run named is not looked for; the task is read once the run is over, after fail too.
+    expect(calls.map((call) => call.key)).toEqual([
+      OPEN_RUNS,
+      END,
+      OPEN_RUNS,
+      END,
+      READ,
+      END,
+      READ,
+    ]);
+    expect(calls[5]?.body).toEqual({ status: "abandoned" });
+  });
+
+  it("says where the end of a run left its task as the console answers it, once the run is over (ADR-0114)", async () => {
+    const END = `POST ${IN}/runs/${RUN.id}/end`;
+    const READ = `GET ${IN}/tasks/${TASK.id}`;
+    /** A console that ends the run, and leaves its task in a state of its own choosing. */
+    const leaving = (status: "failed" | "abandoned", state: string) =>
+      fakeConsole({
+        [OPEN_RUNS]: { body: { more: false, items: [RUN] } },
+        [END]: { body: { ...RUN, status, endedAt: WHEN } },
+        [READ]: { body: { ...TASK, state } },
+      });
+    const said = async (args: string[], console_: ReturnType<typeof fakeConsole>) => {
+      const h = harness({ fetch: console_.fetch, env: SIGNED_IN });
+      expect(await runCli(args, h.io), h.err()).toBe(EXIT.ok);
+      return h.out();
+    };
+    // A console of 0.5.0 leaves the task at work whatever the run ended as, and one of now does
+    // where a person moved it meanwhile or another run is open on it: said as it is.
+    expect(await said(["fail", "--summary", "No."], leaving("failed", "in_progress"))).toBe(
+      `Run ${RUN.id} failed; task #7 is in_progress now.\n`,
+    );
+    expect(await said(["abandon"], leaving("abandoned", "in_progress"))).toBe(
+      `Run ${RUN.id} abandoned; task #7 is in_progress now.\n`,
+    );
+    // A console of now sends the task of a failed run to review.
+    const reviewed = leaving("failed", "in_review");
+    expect(await said(["fail"], reviewed)).toBe(
+      `Run ${RUN.id} failed; task #7 is in_review now.\n`,
+    );
+    // Read after the run is ended, not before: what the end made of the task is what is said.
+    expect(reviewed.calls.map((call) => call.key)).toEqual([OPEN_RUNS, END, READ]);
+    // And puts the task of a run given up back as the take found it: ready, or an idea.
+    expect(await said(["abandon"], leaving("abandoned", "ready"))).toBe(
+      `Run ${RUN.id} abandoned; task #7 is ready now.\n`,
+    );
+    expect(await said(["abandon", RUN.id], leaving("abandoned", "idea"))).toBe(
+      `Run ${RUN.id} abandoned; task #7 is idea now.\n`,
+    );
+    // A person moved it meanwhile: where they put it.
+    expect(await said(["fail"], leaving("failed", "done"))).toBe(
+      `Run ${RUN.id} failed; task #7 is done now.\n`,
+    );
+    // --json stays the run as the console answered it, and asks nothing more.
+    for (const [args, status] of [
+      [["fail", "--json"], "failed"],
+      [["abandon", "--json"], "abandoned"],
+    ] as const) {
+      const program = leaving(status, "in_review");
+      expect(JSON.parse(await said([...args], program))).toEqual({
+        ...RUN,
+        status,
+        endedAt: WHEN,
+      });
+      expect(program.calls.map((call) => call.key)).toEqual([OPEN_RUNS, END]);
+    }
+    // The run ended and the task not read: said first, so that the run is not ended twice,
+    // and then what the reading ended on, as on any command.
+    for (const [args, status] of [
+      [["fail"], "failed"],
+      [["abandon"], "abandoned"],
+    ] as const) {
+      const unread = fakeConsole({
+        [OPEN_RUNS]: { body: { more: false, items: [RUN] } },
+        [END]: { body: { ...RUN, status, endedAt: WHEN } },
+        [READ]: {
+          status: 500,
+          body: { error: { code: "internal", message: "Something failed." } },
+        },
+      });
+      const h = harness({ fetch: unread.fetch, env: SIGNED_IN });
+      expect(await runCli([...args], h.io)).toBe(EXIT.failed);
+      expect(h.out()).toBe("");
+      expect(h.err()).toBe(
+        `Run ${RUN.id} ${status}, and where that left task #7 was not read. The run is over: do not end it again. console task 7 shows the task. What the reading ended on:\ninternal: Something failed.\n`,
+      );
+    }
   });
 
   it("lists, reads, writes, attaches to, archives and restores the project's pages", async () => {

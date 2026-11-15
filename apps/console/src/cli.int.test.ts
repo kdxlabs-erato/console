@@ -512,7 +512,13 @@ describe("the command line", () => {
     expect(taken.out).toMatch(
       /Ask before pushing\.[\s\S]*# Rules for agents on this board[\s\S]*Say how it goes/,
     );
-    expect((await console_(["abandon"])).code).toBe(EXIT.ok);
+    // Given up, the task is back as the take found it, an idea, and the command says where it
+    // is from what the console answers once the run is over.
+    const left = await console_(["abandon"]);
+    expect(left.code, left.err).toBe(EXIT.ok);
+    expect(left.out).toMatch(
+      new RegExp(`^Run [0-9a-f-]{36} abandoned; task #${task.number} is idea now\\.\\n$`),
+    );
     // The mark changed with the project's rules: a take that names the mark of before gets the
     // rules whole and is told so; one that names the mark they have now gets a line in their place.
     const mark = /\nRules ([0-9a-f]{8}): /.exec(taken.out)?.[1] ?? "";
@@ -540,7 +546,12 @@ describe("the command line", () => {
     );
     expect(held.out).not.toContain("Ask before pushing.");
     expect(held.out).not.toContain("# Rules for agents on this board");
-    expect((await console_(["abandon"])).code).toBe(EXIT.ok);
+    // Failed, the task is up for review, and the command says so as the console answers it.
+    const failed = await console_(["fail", "--summary", "Could not be done."]);
+    expect(failed.code, failed.err).toBe(EXIT.ok);
+    expect(failed.out).toMatch(
+      new RegExp(`^Run [0-9a-f-]{36} failed; task #${task.number} is in_review now\\.\\n$`),
+    );
     // A member's agent may not write them; the workspace's take an administrator, which nobody here is.
     const bobToken = await tokenFor(bob, "Codex for Bob");
     const refused = await console_(["rules", "write", "--body", "# Mine"], bobToken);

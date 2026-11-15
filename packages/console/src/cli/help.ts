@@ -676,7 +676,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     usage: 'fail [--summary "<markdown>"|--file <path>] [--run <id>]',
     overview: 'fail [--summary "<markdown>"|--file <path>]',
     synopsis: "Ends the run: the work could not be done.",
-    about: `Ends the run: the work could not be done, and the task goes up for review, for a person to look at why (ADR-0114). The summary says why, and what is left. ${ON_THE_RUN}`,
+    about: `Ends the run: the work could not be done, and the task goes up for review, for a person to look at why (ADR-0114). The summary says why, and what is left. The command then reads the task and says the state it is in: a console before 0.5.1 leaves it in progress, and so does any where a person moved it meanwhile or another run is open on it. ${ON_THE_RUN}`,
     limits: [`summary: Markdown, up to ${MAX_SUMMARY_LENGTH} characters`],
     refusals: RUN_REFUSALS,
   },
@@ -684,7 +684,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     usage: 'abandon [<run id>] [--summary "<markdown>"]',
     synopsis: "Leaves a run and gives its task back.",
     about:
-      "Leaves a run, one taken by mistake or one that will not come back: the task goes back to the state the take found it in (ADR-0114), unless a person moved it meanwhile. A person gives up this way on a run of theirs, and an owner of the project on anyone's.",
+      "Leaves a run, one taken by mistake or one that will not come back: the task goes back to the state the take found it in (ADR-0114), unless a person moved it meanwhile. The command then reads the task and says the state it is in; a console before 0.5.1 leaves it in progress. A person gives up this way on a run of theirs, and an owner of the project on anyone's.",
     limits: [`summary: Markdown, up to ${MAX_SUMMARY_LENGTH} characters`],
     refusals: RUN_REFUSALS,
   },

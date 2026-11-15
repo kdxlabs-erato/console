@@ -4343,6 +4343,37 @@ const decisions: Command = async (args, io) => {
   return EXIT.ok;
 };
 
+/**
+ * Says how a run ended that was not finished, and where that left its task (ADR-0114). The
+ * console places the task, and where is not the command's to know: a console of before 0.5.1
+ * leaves it at work, and one of now does where a person moved it meanwhile or another run is
+ * open on it. So the task is read once the run is over, and its state said as it stands. On
+ * `--json` the answer is the run as the console gave it, and nothing more is asked.
+ */
+async function sayEnded(
+  io: CliIo,
+  session: Session,
+  project: ProjectClient,
+  run: RestRun,
+  status: "failed" | "abandoned",
+): Promise<void> {
+  let words = "";
+  if (!session.json) {
+    try {
+      const task = await project.task(run.taskId);
+      words = `Run ${run.id} ${status}; task #${task.number} is ${task.state} now.`;
+    } catch (error) {
+      // Said before the console's own words for what failed, which follow as on any command:
+      // the run is over whatever became of the reading, and is not to be ended again.
+      io.stderr(
+        `Run ${run.id} ${status}, and where that left task #${run.taskNumber} was not read. The run is over: do not end it again. console task ${run.taskNumber} shows the task. What the reading ended on:\n`,
+      );
+      throw error;
+    }
+  }
+  answer(io, session, run, () => words);
+}
+
 const ending =
   (status: "finished" | "failed"): Command =>
   async (args, io) => {
@@ -4359,11 +4390,11 @@ const ending =
       status,
       ...(summary === undefined ? {} : { summary }),
     });
-    answer(io, session, run, () =>
-      status === "finished"
-        ? `Run ${run.id} finished; the task is up for review.`
-        : `Run ${run.id} failed; the task is up for review.`,
-    );
+    if (status === "failed") {
+      await sayEnded(io, session, project, run, status);
+    } else {
+      answer(io, session, run, () => `Run ${run.id} finished; the task is up for review.`);
+    }
     return EXIT.ok;
   };
 
@@ -4384,7 +4415,7 @@ const abandon: Command = async (args, io) => {
     status: "abandoned",
     ...(summary === undefined ? {} : { summary }),
   });
-  answer(io, session, run, () => `Run ${run.id} abandoned; the task is back as the take found it.`);
+  await sayEnded(io, session, project, run, "abandoned");
   return EXIT.ok;
 };
 
