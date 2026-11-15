@@ -13,6 +13,7 @@ import { createFileStore, defaultConfigDir } from "./credentials.js";
 import { createDirectoryStore } from "./directory.js";
 import { detectInstall } from "./install.js";
 import { createNoticeStore } from "./notices.js";
+import { templateFiles } from "./plugin-init.js";
 import { createRunnerHost } from "./runner-host.js";
 import { listenOn } from "./serve.js";
 import { createSetupMachine } from "./setup-machine.js";
@@ -30,6 +31,8 @@ const manifest = z
 const version = manifest.success ? manifest.data.version : undefined;
 /** The console's own skills, shipped with the package beside dist/ (ADR-0015); not there in a checkout before packing. */
 const skillsDir = fileURLToPath(new URL("../../skills/", import.meta.url));
+/** The shell of a person's dashboard, shipped with the package beside dist/ as the plugin's template is (ADR-0115). */
+const deskWebDir = join(packageDir, "template", "desk-web");
 const configDir = defaultConfigDir(process.env);
 
 process.exitCode = await runCli(process.argv.slice(2), {
@@ -83,4 +86,15 @@ process.exitCode = await runCli(process.argv.slice(2), {
   runner: createRunnerHost(process.cwd(), process.env),
   // A machine is set up as the command was started: the same runtime, the same file, the same PATH.
   machine: createSetupMachine(process.env, process.argv[1]),
+  // The shell of a person's dashboard (ADR-0115), read when `desk --web` asks for it.
+  deskWebTemplate: async () => {
+    if (!existsSync(deskWebDir)) {
+      return undefined;
+    }
+    const files = new Map<string, string>();
+    for (const path of await templateFiles(deskWebDir)) {
+      files.set(path, await readFile(join(deskWebDir, ...path.split("/")), "utf8"));
+    }
+    return files;
+  },
 });

@@ -251,7 +251,7 @@ function personReadme(input: PersonDeskInput): string {
   const name = plain(input.person.name);
   return `# ${name}'s desk
 
-I am ${name} (\`${inCode(input.person.login)}\`), a member of the console of ${plain(input.console.workspace)}, at ${input.console.url}.
+I am ${name} (\`${inCode(input.person.login)}\`), a member of ${plain(input.console.workspace)} (${input.console.url}).
 
 This repository is my desk: how an agent works for me, the projects I work on, and whatever should outlive a session or a machine.
 
@@ -272,7 +272,7 @@ The instructions of ${name}'s desk, for whichever agent works here. Short on pur
 
 ## Who I am
 
-I am ${name} (\`${inCode(input.person.login)}\`), a member of the console of ${plain(input.console.workspace)} (${input.console.url}). An agent that works here acts as me there, through the \`console\` command I signed in, and no further.
+I am ${name} (\`${inCode(input.person.login)}\`), a member of ${plain(input.console.workspace)} (${input.console.url}). An agent that works here acts as me on that console, through the \`console\` command I signed in, and no further.
 
 ## Where the work is
 

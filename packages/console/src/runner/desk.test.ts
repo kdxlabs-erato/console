@@ -206,11 +206,11 @@ describe("a person's desk", () => {
       PERSON_DESK_SECTIONS.map((title) => `## ${title}`),
     );
     expect(instructions).toContain(
-      "I am Alice Kim (`alice@acme.example`), a member of the console of Acme (https://console.acme.example).",
+      "I am Alice Kim (`alice@acme.example`), a member of Acme (https://console.acme.example).",
     );
     // An agent there acts as the person, and no further.
     expect(instructions).toContain(
-      "acts as me there, through the `console` command I signed in, and no further",
+      "acts as me on that console, through the `console` command I signed in, and no further",
     );
     // The board, the plate, and where the rest is said: nothing of it is said again.
     expect(instructions).toContain("The console is my board, and `console work` is my plate.");
@@ -233,7 +233,7 @@ describe("a person's desk", () => {
     // The readme is for people.
     const readme = personDeskFiles(ALICE).get("README.md") ?? "";
     expect(readme.startsWith("# Alice Kim's desk\n")).toBe(true);
-    expect(readme).toContain("a member of the console of Acme, at https://console.acme.example.");
+    expect(readme).toContain("a member of Acme (https://console.acme.example).");
     expect(readme).not.toContain("AI agent");
   });
 

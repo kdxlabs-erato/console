@@ -1,4 +1,4 @@
-import { basename, extname } from "node:path";
+import { basename, extname, isAbsolute } from "node:path";
 import { parseArgs } from "node:util";
 import { deflateSync } from "node:zlib";
 import { avatarScanlines, MAX_AVATAR_PIXELS, pngFile } from "../avatar.js";
@@ -37,7 +37,13 @@ import { capabilityWords } from "../plugin/capabilities.js";
 import { PLUGIN_LIST_LIMIT } from "../plugin/limits.js";
 import { fillRules, RULES_PATH, RULES_TITLE } from "../rules.js";
 import { DEFAULT_RUNNER_CONFIG, parseRunnerConfig } from "../runner/config.js";
-import { deskFiles, deskServicesOf } from "../runner/desk.js";
+import {
+  deskFiles,
+  deskFolderOf,
+  deskServicesOf,
+  deskWebTitleOf,
+  personDeskFiles,
+} from "../runner/desk.js";
 import { ownRunnerModules } from "../runner/modules.js";
 import { createRunner, GIT_TOKEN_SECRET, type RunnerState } from "../runner/runner.js";
 import type { ServiceCommand } from "../runner/types.js";
@@ -269,8 +275,14 @@ export interface CliIo {
   readonly listen?: Listen | undefined;
   /** What `runner` needs of the machine (ADR-0085); left out, the command cannot run one. */
   readonly runner?: RunnerHost | undefined;
-  /** What `agent setup` needs of the machine (ADR-0088); left out, the command sets none up. */
+  /** What `agent setup` needs of the machine (ADR-0088), and `desk` of its files; left out, the command sets none up and writes no desk. */
   readonly machine?: SetupMachine | undefined;
+  /**
+   * The shell of a person's dashboard as the package carries it (ADR-0115), `template/desk-web`
+   * beside `dist/`: its files as text, by their path in it with forward slashes; nothing where
+   * the package carries none. Left out, `desk --web` has no dashboard to write.
+   */
+  readonly deskWebTemplate?: (() => Promise<ReadonlyMap<string, string> | undefined>) | undefined;
 }
 
 /** The command stops with an exit code and a word on stderr. */
@@ -4821,6 +4833,124 @@ const agentSetup = async (args: readonly string[], io: CliIo): Promise<number> =
   return EXIT.ok;
 };
 
+const DESK_USAGE = "Say at most one directory: console desk [<directory>] [--web]";
+
+/** The sentence a person says to their agent in a new desk: the last line `desk` prints (ADR-0115). */
+function deskSentence(web: boolean): string {
+  return `Set this desk up as a repository of mine${web ? " and bring its dashboard up" : ""}, with the skill for it in the organization's pack where it has one: console skills --search "desk setup"`;
+}
+
+/** The files of the dashboard's shell as they are written: the two words the template leaves filled in. */
+function deskWebFiles(
+  template: ReadonlyMap<string, string>,
+  version: string,
+  title: string,
+): [string, string][] {
+  return [...template]
+    .filter(([path]) => !path.split("/").some((part) => part === ".." || part.length === 0))
+    .map(([path, body]) => [
+      path,
+      body.replaceAll("__VERSION__", version).replaceAll("__TITLE__", title),
+    ]);
+}
+
+// A person's desk (ADR-0115): the four fixed files, each only where no file of that name is
+// there, in `<handle>-desk` here or the directory named; with --web, the shell of the dashboard
+// in `web/`, where that holds nothing yet. The command writes and stops: making the desk a
+// repository and bringing the dashboard up is a skill's, of the organization's pack, and the
+// last line is the sentence that asks an agent for it. An agent account's desk is setup's.
+const desk: Command = async (args, io) => {
+  const { values, positionals } = parse(args, { web: { type: "boolean" } });
+  if (positionals.length > 1) {
+    throw misuse(DESK_USAGE);
+  }
+  const session = await open(io, values);
+  const me = await session.client.me();
+  const person = me.person;
+  if (person === null) {
+    throw failed("The console does not know this token. Sign in again: console login");
+  }
+  if (person.kind === "agent") {
+    throw failed(
+      `${whoOf(person)} is an agent account: its desk is settled by console agent setup, on its own machine, and nothing is written here. In that desk, console agent setup --refresh derives it again.`,
+    );
+  }
+  const machine = io.machine;
+  if (machine === undefined) {
+    throw failed("A desk cannot be written from here.");
+  }
+  const [named] = positionals;
+  // A desk made under a directory that works in a project would work in it too, and every
+  // checkout under its work/ with it: what the folder above says, a desk must not inherit.
+  const above = named === undefined || !isAbsolute(named) ? await io.directory.load() : undefined;
+  if (above !== undefined) {
+    throw failed(
+      `This directory works in the project ${above.project} (${DIRECTORY_FILE} here or in a directory above), and a desk made inside it would work there too. A desk is bound to no project: make it elsewhere, console desk <directory>.`,
+    );
+  }
+  const dir = machine.path(named ?? deskFolderOf(person.login));
+  const input = {
+    person: { name: person.name ?? person.login, login: person.login },
+    console: { url: session.url, workspace: me.workspace.name },
+  };
+  // The dashboard's shell is settled before anything is written, so that a command that cannot
+  // write it writes nothing.
+  const webDir = machine.path(dir, "web");
+  const webKept = on(values, "web") && (await machine.holds(webDir));
+  let shell: [string, string][] | undefined;
+  if (on(values, "web") && !webKept) {
+    const template = await io.deskWebTemplate?.();
+    if (template === undefined || template.size === 0) {
+      throw failed(
+        "This command's package carries no shell of a dashboard (template/desk-web): nothing is written. Without --web, the desk alone is written.",
+      );
+    }
+    if (io.version === undefined) {
+      throw failed(
+        "This command does not know its version, so it cannot say which package a dashboard is built on: nothing is written. Without --web, the desk alone is written.",
+      );
+    }
+    shell = deskWebFiles(template, io.version, deskWebTitleOf(input.person));
+  }
+  const written: string[] = [];
+  const kept: string[] = [];
+  for (const [path, body] of personDeskFiles(input)) {
+    const file = machine.path(dir, path);
+    if (await machine.exists(file)) {
+      kept.push(path);
+    } else {
+      await machine.write(file, body, 0o644);
+      written.push(path);
+    }
+  }
+  const lines = [
+    written.length === 0
+      ? `The desk at ${dir} is there already, and is left as it is.`
+      : kept.length === 0
+        ? `A new desk is written at ${dir} (${written.join(", ")}), for ${person.login}. It is yours from now on: to edit, and to make a repository of.`
+        : `The desk at ${dir} gains ${written.join(", ")}; ${kept.join(", ")} ${kept.length === 1 ? "was there and is left as it is" : "were there and are left as they are"}.`,
+  ];
+  const shellNames = (shell ?? []).map(([path]) => path);
+  for (const [path, body] of shell ?? []) {
+    await machine.write(machine.path(webDir, ...path.split("/")), body, 0o644);
+  }
+  if (shell !== undefined) {
+    lines.push(
+      `The shell of its dashboard is written in ${webDir} (${shellNames.join(", ")}): a console of your own on @skillcdn/console ${io.version}, which shows your work across your projects and is served from this machine by console serve once it is built${shellNames.includes("README.md") ? "; its README.md says how" : ""}.`,
+    );
+  } else if (webKept) {
+    lines.push(`${webDir} holds something already, and is left as it is.`);
+  }
+  const web = on(values, "web")
+    ? { directory: webDir, written: shellNames, version: shell === undefined ? null : io.version }
+    : null;
+  const say = deskSentence(web !== null);
+  answer(io, session, { directory: dir, written, kept, web, say }, () =>
+    [...lines, "Next, open your agent in that folder and say:", "", say].join("\n"),
+  );
+  return EXIT.ok;
+};
+
 // One agent account by its handle; with --avatar, its picture written as a file (ADR-0084): the
 // parts are drawn here, by the package's own function, and the console sends no picture.
 const agent: Command = async (args, io) => {
@@ -5630,6 +5760,7 @@ const COMMANDS: Readonly<Record<string, Command>> = {
   whoami,
   serve,
   runner,
+  desk,
   projects,
   use,
   work,

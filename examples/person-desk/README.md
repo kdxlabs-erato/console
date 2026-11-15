@@ -1,6 +1,6 @@
 # Alice Kim's desk
 
-I am Alice Kim (`alice@acme.example`), a member of the console of Acme, at https://console.acme.example.
+I am Alice Kim (`alice@acme.example`), a member of Acme (https://console.acme.example).
 
 This repository is my desk: how an agent works for me, the projects I work on, and whatever should outlive a session or a machine.
 

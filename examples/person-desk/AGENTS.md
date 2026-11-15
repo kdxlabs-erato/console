@@ -4,7 +4,7 @@ The instructions of Alice Kim's desk, for whichever agent works here. Short on p
 
 ## Who I am
 
-I am Alice Kim (`alice@acme.example`), a member of the console of Acme (https://console.acme.example). An agent that works here acts as me there, through the `console` command I signed in, and no further.
+I am Alice Kim (`alice@acme.example`), a member of Acme (https://console.acme.example). An agent that works here acts as me on that console, through the `console` command I signed in, and no further.
 
 ## Where the work is
 

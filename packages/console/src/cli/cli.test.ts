@@ -395,10 +395,10 @@ describe("the console command", () => {
       "  console take <number|id> [--agent <name>]\n      Takes a task: a run begins",
     );
     expect(whole.out()).toContain("task new <title> [flags]");
-    // Every command is on the map, but the two that are started on a machine and left to run:
-    // the one a person serves a console of their own with, and an agent account's runner.
+    // Every command is on the map, but those a person or a machine runs for itself: the desk a
+    // person writes once, the console of their own they serve, and an agent account's runner.
     for (const [name, help] of Object.entries(COMMAND_HELP)) {
-      if (name !== "serve" && name !== "runner") {
+      if (name !== "desk" && name !== "serve" && name !== "runner") {
         expect(whole.out()).toContain(`  console ${help.overview ?? help.usage}\n`);
       }
     }
@@ -4464,6 +4464,340 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
     });
     expect(await runCli(["agent", "setup", "--refresh"], person.io)).toBe(EXIT.failed);
     expect(person.err()).toContain("A machine is refreshed by the agent account's own command");
+  });
+});
+
+describe("a person's desk on the command line (ADR-0115)", () => {
+  const ALICE = { ...ME, person: { ...PERSON, login: "alice@acme.example", name: "Alice Kim" } };
+  const FILES = ["README.md", "AGENTS.md", "CLAUDE.md", ".gitignore"];
+  const SENTENCE =
+    'Set this desk up as a repository of mine, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup"';
+  /** The shell of a dashboard as a package would carry it: the two words the command fills in, and a folder. */
+  const SHELL = new Map([
+    ["README.md", "# __TITLE__\n\nBuilt on @skillcdn/console __VERSION__.\n"],
+    ["package.json", '{ "dependencies": { "@skillcdn/console": "__VERSION__" } }\n'],
+    ["index.html", "<title>__TITLE__</title>\n"],
+    ["src/main.tsx", 'export const title = "__TITLE__";\n'],
+  ]);
+
+  /** The files of a machine in memory, with the directory the command is run in. */
+  function fakeFiles(cwd: string, initial: Readonly<Record<string, string>> = {}) {
+    const files = new Map(Object.entries(initial));
+    const written: { path: string; mode: number }[] = [];
+    const under = (path: string) => [...files.keys()].some((file) => file.startsWith(`${path}/`));
+    const machine: SetupMachine = {
+      platform: "linux",
+      user: "alice",
+      home: "/home/alice",
+      uid: 1000,
+      self: undefined,
+      searchPath: undefined,
+      path: (...parts) => {
+        const [first = "", ...rest] = parts;
+        const base = first === "." ? cwd : first.startsWith("/") ? first : `${cwd}/${first}`;
+        return [base, ...rest].join("/");
+      },
+      exists: async (path) => files.has(path) || under(path),
+      read: async (path) => files.get(path),
+      holds: async (path) => under(path),
+      write: async (path, text, mode) => {
+        files.set(path, text);
+        written.push({ path, mode });
+      },
+      run: async () => {
+        throw new Error("a desk runs nothing");
+      },
+      open: async () => {
+        throw new Error("a desk opens nothing");
+      },
+    };
+    return { machine, files, written };
+  }
+
+  const consoleFor = (me: unknown) => fakeConsole({ "GET /api/v1/me": { body: me } });
+  const signedIn = () => memoryStore(one(ORIGIN, "cns_a_token", "alice@acme.example")).store;
+
+  it("writes the four files into <handle>-desk here, asks the console who it is and nothing else, and ends with the sentence for the agent", async () => {
+    const { fetch, calls } = consoleFor(ALICE);
+    const at = fakeFiles("/work");
+    const run = harness({ fetch, store: signedIn(), machine: at.machine });
+    expect(await runCli(["desk"], run.io)).toBe(EXIT.ok);
+    expect(calls.map((call) => call.key)).toEqual(["GET /api/v1/me"]);
+    expect(at.written).toEqual(
+      FILES.map((name) => ({ path: `/work/alice-desk/${name}`, mode: 0o644 })),
+    );
+    // What it writes is the package's template for the person the command is signed in as.
+    const instructions = at.files.get("/work/alice-desk/AGENTS.md") ?? "";
+    expect(instructions).toContain(
+      "I am Alice Kim (`alice@acme.example`), a member of Acme (https://console.test).",
+    );
+    expect(instructions).toContain("This desk is bound to no project");
+    expect(at.files.get("/work/alice-desk/CLAUDE.md")).toBe("@AGENTS.md\n");
+    expect([...at.files.keys()].some((path) => path.endsWith("runner.json"))).toBe(false);
+    expect(run.out()).toBe(
+      [
+        "A new desk is written at /work/alice-desk (README.md, AGENTS.md, CLAUDE.md, .gitignore), for alice@acme.example. It is yours from now on: to edit, and to make a repository of.",
+        "Next, open your agent in that folder and say:",
+        "",
+        SENTENCE,
+        "",
+      ].join("\n"),
+    );
+    expect(run.err()).toBe("");
+    // A person the provider gave no name is called by their login, and the folder by what
+    // stands before an @.
+    const plain = fakeFiles("/work");
+    const unnamed = harness({
+      fetch: consoleFor(ME).fetch,
+      store: signedIn(),
+      machine: plain.machine,
+    });
+    expect(await runCli(["desk"], unnamed.io)).toBe(EXIT.ok);
+    expect(plain.files.get("/work/alice-desk/AGENTS.md")).toContain("I am alice (`alice`)");
+  });
+
+  it("writes into the directory named, this one as a full stop, and takes at most one", async () => {
+    const here = fakeFiles("/work/mine");
+    const dot = harness({
+      fetch: consoleFor(ALICE).fetch,
+      store: signedIn(),
+      machine: here.machine,
+    });
+    expect(await runCli(["desk", "."], dot.io)).toBe(EXIT.ok);
+    expect(here.written.map((file) => file.path)).toEqual(
+      FILES.map((name) => `/work/mine/${name}`),
+    );
+    expect(dot.out()).toContain("A new desk is written at /work/mine (");
+
+    const there = fakeFiles("/work");
+    const named = harness({
+      fetch: consoleFor(ALICE).fetch,
+      store: signedIn(),
+      machine: there.machine,
+    });
+    expect(await runCli(["desk", "/srv/desks/alice"], named.io)).toBe(EXIT.ok);
+    expect(there.written.map((file) => file.path)).toEqual(
+      FILES.map((name) => `/srv/desks/alice/${name}`),
+    );
+
+    const two = harness({
+      fetch: consoleFor(ALICE).fetch,
+      store: signedIn(),
+      machine: there.machine,
+    });
+    expect(await runCli(["desk", "one", "two"], two.io)).toBe(EXIT.usage);
+    expect(two.err()).toContain("Say at most one directory: console desk [<directory>] [--web]");
+  });
+
+  it("writes over no file that is there, and says which it wrote and which it left", async () => {
+    const half = fakeFiles("/work", {
+      "/work/alice-desk/AGENTS.md": "# My own words\n",
+      "/work/alice-desk/notes/today.md": "mine\n",
+    });
+    const run = harness({
+      fetch: consoleFor(ALICE).fetch,
+      store: signedIn(),
+      machine: half.machine,
+    });
+    expect(await runCli(["desk"], run.io)).toBe(EXIT.ok);
+    expect(half.files.get("/work/alice-desk/AGENTS.md")).toBe("# My own words\n");
+    expect(half.written.map((file) => file.path)).toEqual(
+      ["README.md", "CLAUDE.md", ".gitignore"].map((name) => `/work/alice-desk/${name}`),
+    );
+    expect(run.out()).toContain(
+      "The desk at /work/alice-desk gains README.md, CLAUDE.md, .gitignore; AGENTS.md was there and is left as it is.",
+    );
+    // A second run finds everything there, changes nothing, and still says what comes next.
+    const again = harness({
+      fetch: consoleFor(ALICE).fetch,
+      store: signedIn(),
+      machine: half.machine,
+    });
+    const before = half.written.length;
+    expect(await runCli(["desk"], again.io)).toBe(EXIT.ok);
+    expect(half.written).toHaveLength(before);
+    expect(again.out()).toBe(
+      [
+        "The desk at /work/alice-desk is there already, and is left as it is.",
+        "Next, open your agent in that folder and say:",
+        "",
+        SENTENCE,
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("writes nothing for an agent account, whose desk is setup's", async () => {
+    const mira = {
+      ...ME,
+      person: { ...PERSON, login: "acme-mira", name: "Mira", kind: "agent", handle: "mira" },
+      agent: null,
+      session: { kind: "command", name: "console as mira on mac-mini" },
+    };
+    const at = fakeFiles("/home/mira");
+    const run = harness({ fetch: consoleFor(mira).fetch, store: signedIn(), machine: at.machine });
+    expect(await runCli(["desk"], run.io)).toBe(EXIT.failed);
+    expect(run.err()).toContain(
+      "@mira (acme-mira, member) is an agent account: its desk is settled by console agent setup, on its own machine, and nothing is written here.",
+    );
+    expect(at.written).toEqual([]);
+    expect(run.out()).toBe("");
+  });
+
+  it("makes no desk inside a directory that works in a project, which the desk would work in too", async () => {
+    const at = fakeFiles("/work/app");
+    const bound = harness({
+      fetch: consoleFor(ALICE).fetch,
+      store: signedIn(),
+      machine: at.machine,
+      directory: memoryDirectory({ project: "web" }).store,
+    });
+    expect(await runCli(["desk"], bound.io)).toBe(EXIT.failed);
+    expect(bound.err()).toContain(
+      "This directory works in the project web (.skillcdn-console.json here or in a directory above), and a desk made inside it would work there too.",
+    );
+    expect(at.written).toEqual([]);
+    // A directory named in full is elsewhere, and is the person's to choose.
+    const elsewhere = harness({
+      fetch: consoleFor(ALICE).fetch,
+      store: signedIn(),
+      machine: at.machine,
+      directory: memoryDirectory({ project: "web" }).store,
+    });
+    expect(await runCli(["desk", "/home/alice/alice-desk"], elsewhere.io)).toBe(EXIT.ok);
+    expect(at.written).toHaveLength(FILES.length);
+  });
+
+  it("writes the shell of the dashboard into web/ with --web, the version and the title filled in", async () => {
+    const at = fakeFiles("/work");
+    const run = harness({
+      fetch: consoleFor(ALICE).fetch,
+      store: signedIn(),
+      machine: at.machine,
+      version: "0.5.1",
+      deskWebTemplate: async () => SHELL,
+    });
+    expect(await runCli(["desk", "--web"], run.io)).toBe(EXIT.ok);
+    const title = `Alice Kim${String.fromCodePoint(0x2019)}s desk`;
+    expect(at.files.get("/work/alice-desk/web/package.json")).toBe(
+      '{ "dependencies": { "@skillcdn/console": "0.5.1" } }\n',
+    );
+    expect(at.files.get("/work/alice-desk/web/index.html")).toBe(`<title>${title}</title>\n`);
+    expect(at.files.get("/work/alice-desk/web/src/main.tsx")).toBe(
+      `export const title = "${title}";\n`,
+    );
+    expect(at.files.get("/work/alice-desk/web/README.md")).toContain("@skillcdn/console 0.5.1");
+    expect(at.written.every((file) => file.mode === 0o644)).toBe(true);
+    expect(run.out()).toBe(
+      [
+        "A new desk is written at /work/alice-desk (README.md, AGENTS.md, CLAUDE.md, .gitignore), for alice@acme.example. It is yours from now on: to edit, and to make a repository of.",
+        "The shell of its dashboard is written in /work/alice-desk/web (README.md, package.json, index.html, src/main.tsx): a console of your own on @skillcdn/console 0.5.1, which shows your work across your projects and is served from this machine by console serve once it is built; its README.md says how.",
+        "Next, open your agent in that folder and say:",
+        "",
+        'Set this desk up as a repository of mine and bring its dashboard up, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup"',
+        "",
+      ].join("\n"),
+    );
+
+    // A web/ that holds something is the person's: left as it is, and the sentence still asks for the dashboard.
+    const held = fakeFiles("/work", { "/work/alice-desk/web/package.json": "{}\n" });
+    const kept = harness({
+      fetch: consoleFor(ALICE).fetch,
+      store: signedIn(),
+      machine: held.machine,
+      version: "0.5.1",
+      deskWebTemplate: async () => SHELL,
+    });
+    expect(await runCli(["desk", "--web"], kept.io)).toBe(EXIT.ok);
+    expect(held.files.get("/work/alice-desk/web/package.json")).toBe("{}\n");
+    expect(held.written.some((file) => file.path.includes("/web/"))).toBe(false);
+    expect(kept.out()).toContain(
+      "/work/alice-desk/web holds something already, and is left as it is.",
+    );
+    expect(kept.out()).toContain("and bring its dashboard up");
+
+    // --json says what was written and the sentence, for a script.
+    const json = harness({
+      fetch: consoleFor(ALICE).fetch,
+      store: signedIn(),
+      machine: fakeFiles("/work").machine,
+      version: "0.5.1",
+      deskWebTemplate: async () => SHELL,
+    });
+    expect(await runCli(["desk", "--web", "--json"], json.io)).toBe(EXIT.ok);
+    expect(JSON.parse(json.out())).toEqual({
+      directory: "/work/alice-desk",
+      written: FILES,
+      kept: [],
+      web: {
+        directory: "/work/alice-desk/web",
+        written: ["README.md", "package.json", "index.html", "src/main.tsx"],
+        version: "0.5.1",
+      },
+      say: 'Set this desk up as a repository of mine and bring its dashboard up, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup"',
+    });
+  });
+
+  it("writes nothing at all with --web where the package carries no shell, or the command does not know its version", async () => {
+    for (const io of [
+      { version: "0.5.1" },
+      { version: "0.5.1", deskWebTemplate: async () => undefined },
+      { version: "0.5.1", deskWebTemplate: async () => new Map<string, string>() },
+    ]) {
+      const at = fakeFiles("/work");
+      const run = harness({
+        fetch: consoleFor(ALICE).fetch,
+        store: signedIn(),
+        machine: at.machine,
+        ...io,
+      });
+      expect(await runCli(["desk", "--web"], run.io)).toBe(EXIT.failed);
+      expect(run.err()).toContain(
+        "This command's package carries no shell of a dashboard (template/desk-web): nothing is written. Without --web, the desk alone is written.",
+      );
+      expect(at.written).toEqual([]);
+      expect(run.out()).toBe("");
+    }
+    const at = fakeFiles("/work");
+    const unversioned = harness({
+      fetch: consoleFor(ALICE).fetch,
+      store: signedIn(),
+      machine: at.machine,
+      deskWebTemplate: async () => SHELL,
+    });
+    expect(await runCli(["desk", "--web"], unversioned.io)).toBe(EXIT.failed);
+    expect(unversioned.err()).toContain("This command does not know its version");
+    expect(at.written).toEqual([]);
+    // A path of the template that would leave web/ is written nowhere.
+    const sly = fakeFiles("/work");
+    const guarded = harness({
+      fetch: consoleFor(ALICE).fetch,
+      store: signedIn(),
+      machine: sly.machine,
+      version: "0.5.1",
+      deskWebTemplate: async () =>
+        new Map([
+          ["../AGENTS.md", "mine now\n"],
+          ["index.html", "ok\n"],
+        ]),
+    });
+    expect(await runCli(["desk", "--web"], guarded.io)).toBe(EXIT.ok);
+    expect(sly.files.get("/work/alice-desk/AGENTS.md")).toContain("# AGENTS.md");
+    expect([...sly.files.keys()].filter((path) => path.includes("/web/"))).toEqual([
+      "/work/alice-desk/web/index.html",
+    ]);
+  });
+
+  it("says itself in full in its own help, and stays off the map, as what a person runs for themselves does", async () => {
+    const { fetch } = fakeConsole({});
+    const own = harness({ fetch });
+    expect(await runCli(["help", "desk"], own.io)).toBe(EXIT.ok);
+    expect(own.out()).toContain("console desk [<directory>] [--web]");
+    expect(own.out()).toContain("A desk is bound to no project");
+    expect(own.out()).toContain("An agent account's desk is settled by console agent setup.");
+    const map = harness({ fetch });
+    expect(await runCli([], map.io)).toBe(EXIT.ok);
+    expect(map.out()).not.toContain("console desk");
   });
 });
 

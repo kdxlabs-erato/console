@@ -771,6 +771,17 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     about: "Brings an archived page back.",
     refusals: DOCUMENT_REFUSALS,
   },
+  desk: {
+    usage: "desk [<directory>] [--web]",
+    synopsis: "For a person: writes a desk of your own, the folder your agent begins in.",
+    about:
+      "For a person: writes your desk (ADR-0115), a folder of your own that your agent begins in and that you make a repository of. Four files: README.md; AGENTS.md, the instructions of an agent that works for you there; CLAUDE.md, which points a product to them; and .gitignore. Your projects are checked out under work/ in it. Written into <handle>-desk in this directory, the handle being your login up to an @, or into the directory named (. for this one); a file that is there is left as it is, and the command says which it wrote and which it left. A desk is bound to no project: a board command run in it names one with --project <key>, and a checkout under work/ carries its own binding. --web also writes the shell of your dashboard into web/, where that holds nothing yet: a console of your own on this command's version of the package, which shows your work across your projects and is served by console serve once it is built. The last line is the sentence to say to your agent in that folder: it has the desk set up as a repository, with the skill for that in your organization's pack where it has one (console skills --search \"desk setup\"). Needs no project. An agent account's desk is settled by console agent setup.",
+    refusals: [
+      "an agent account's desk is settled by console agent setup: nothing is written",
+      "this directory works in a project: a desk is bound to none, and is made elsewhere, console desk <directory>",
+      "no shell of a dashboard in this command's package, with --web: nothing is written",
+    ],
+  },
   serve: {
     usage: "serve [<dir>] [--port <n>]",
     synopsis:
