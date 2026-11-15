@@ -540,6 +540,61 @@ describe("the command line", () => {
     expect(after.out.startsWith(`Rules ${bare}: `)).toBe(true);
   });
 
+  it("writes a task and takes it in one command, the number first, under the mark a session holds", async () => {
+    const rules = await console_(["rules"]);
+    const mark = /^Rules ([0-9a-f]{8}): /.exec(rules.out)?.[1] ?? "";
+    expect(mark).not.toBe("");
+    const both = await console_([
+      "task",
+      "new",
+      "Do what the chat asked for",
+      "--body",
+      "As the person said.",
+      "--take",
+      "--rules",
+      mark,
+    ]);
+    expect(both.code, both.err).toBe(EXIT.ok);
+    // What task new prints, the number first, then what a take prints.
+    const number =
+      /^Task #(\d+) written: Do what the chat asked for\ntask id: \S+\nRun \S+ began on #(\d+) Do what the chat asked for, /.exec(
+        both.out,
+      )?.[1] ?? "";
+    expect(number).not.toBe("");
+    expect(both.out).toContain(
+      `\nRules ${mark}: left out, since they stand as this session read them. console rules prints them.\n\n#${number} Do what the chat asked for`,
+    );
+    expect(both.out).toContain("As the person said.");
+    expect(both.out).toContain("Say how it goes");
+    // Written ready and taken: in progress now, with the one run open on it.
+    const read = JSON.parse((await console_(["task", number, "--json"])).out) as {
+      task: { state: string; openRuns: number };
+    };
+    expect(read.task).toMatchObject({ state: "in_progress", openRuns: 1 });
+    expect((await console_(["finish", "--summary", "Done as asked."])).code).toBe(EXIT.ok);
+    // --json carries both: the task as it was written, and what a take answers.
+    const asJson = await console_(["task", "new", "Do the next thing", "--take", "--json"]);
+    expect(asJson.code, asJson.err).toBe(EXIT.ok);
+    const carried = JSON.parse(asJson.out) as {
+      written: { id: string; state: string };
+      run: { taskId: string };
+      task: { id: string; state: string };
+      rules: { mark: string };
+    };
+    expect(carried.written.state).toBe("ready");
+    expect(carried.task).toMatchObject({ id: carried.written.id, state: "in_progress" });
+    expect(carried.run.taskId).toBe(carried.written.id);
+    expect(carried.rules.mark).toBe(mark);
+    expect((await console_(["abandon"])).code).toBe(EXIT.ok);
+    // A task that cannot be taken is refused before it is written: the board holds none of it.
+    const closed = await console_(["task", "new", "Never written", "--state", "done", "--take"]);
+    expect(closed.code).toBe(EXIT.usage);
+    expect(closed.err).toContain("A task written as done is not taken");
+    expect((await console_(["tasks", "--search", "Never written", "--state", "done"])).out).toBe(
+      "No tasks.\n",
+    );
+  });
+
   it("keeps an agent to its person's runs, and says when a token is nothing", async () => {
     const nobody = await console_(["tasks"], "cns_t_nonsense");
     expect(nobody.code).toBe(EXIT.failed);

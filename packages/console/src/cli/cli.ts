@@ -74,6 +74,7 @@ import {
   type RestSkillLoad,
   type RestSkillRows,
   type RestSkills,
+  type RestTask,
   type RestTaskPatch,
 } from "../schemas.js";
 import { agentLoginOf, deskRemoteOf } from "../services.js";
@@ -2910,8 +2911,28 @@ const newTask: Command = async (args, io) => {
     ...TASK_FIELDS,
     body: { type: "string" },
     file: { type: "string" },
+    take: { type: "boolean" },
+    agent: { type: "string" },
+    rules: { type: "string" },
   });
   const title = theOne(positionals, 'Say the title: console task new "<title>"');
+  // Written and taken in one command (--take): work given in chat is both at once, and a
+  // session that sends its commands together cannot read the number between two of them,
+  // on a board where another agent may have written a task in the meantime.
+  const taken = on(values, "take");
+  if (!taken && (text(values, "rules") !== undefined || text(values, "agent") !== undefined)) {
+    throw misuse(
+      '--rules and --agent go with --take, which takes the task as it is written: console task new "<title>" --take [--rules <mark>] [--agent <name>]',
+    );
+  }
+  // Refused before anything is written: a task that is done or dropped is not taken, and
+  // written first it would stand on the board as the half of a command that failed.
+  const said = stateOf(text(values, "state"));
+  if (taken && (said === "done" || said === "dropped")) {
+    throw misuse(
+      `A task written as ${said} is not taken. Leave --state out, for ready; or leave --take out.`,
+    );
+  }
   const body = await bodyOf(io, values, text(values, "body"));
   const session = await open(io, values);
   const project = await session.project();
@@ -2919,14 +2940,41 @@ const newTask: Command = async (args, io) => {
   const made = await project.createTask({
     title,
     ...(body === undefined ? {} : { body }),
+    // An idea is not taken: what is written to be taken is ready, where no state is said.
+    ...(taken && said === undefined ? { state: "ready" as const } : {}),
     ...fields,
   });
-  answer(
-    io,
-    session,
-    made,
-    () => `Task #${made.number} written: ${made.title}\ntask id: ${made.id}`,
-  );
+  const written = `Task #${made.number} written: ${made.title}\ntask id: ${made.id}`;
+  if (!taken) {
+    answer(io, session, made, () => written);
+    return EXIT.ok;
+  }
+  // The number first, before the take is asked for: whatever becomes of the take, the task is
+  // on the board, and the session must know it by its number so as not to write it twice.
+  if (!session.json) {
+    io.stdout(`${written}\n`);
+  }
+  let run: RestRun | undefined;
+  let took: Taking;
+  try {
+    run = await runOn(project, made, values);
+    took = await taking(session, project, made, made.id, run, values);
+  } catch (error) {
+    // Said before the console's own words for what failed, which follow as on any command:
+    // which half stands, by the task's number, so that nothing is written or taken twice.
+    if (session.json) {
+      io.stdout(
+        `${JSON.stringify({ written: made, ...(run === undefined ? {} : { run }) }, null, 2)}\n`,
+      );
+    }
+    io.stderr(
+      run === undefined
+        ? `Task #${made.number} is written and was not taken: it stands on the board as written. Take it with console take ${made.number}, and do not write it again. What the take ended on:\n`
+        : `Task #${made.number} is written and taken, run ${run.id}, and what a take prints of it was not read. Do not write it or take it again: console task ${made.number} shows the task, console rules the rules. What the reading ended on:\n`,
+    );
+    throw error;
+  }
+  answer(io, session, { written: made, ...took.value }, took.words);
   return EXIT.ok;
 };
 
@@ -3130,20 +3178,40 @@ const file: Command = async (args, io) => {
   return EXIT.ok;
 };
 
-const take: Command = async (args, io) => {
-  const { values, positionals } = parse(args, {
-    agent: { type: "string" },
-    rules: { type: "string" },
-  });
-  const ref = theOne(positionals, "Say which task: console take <number|id> [--rules <mark>]");
-  const session = await open(io, values);
-  const project = await session.project();
-  const found = await project.task(ref);
+/** What a take answers: the value `--json` prints, and the words otherwise. */
+interface Taking {
+  value: {
+    run: RestRun;
+    task: RestTask;
+    comments: readonly unknown[];
+    rules: Record<string, unknown>;
+  };
+  words: () => string;
+}
+
+/** Begins a run on a task, as the agent `--agent` names where it is said: the take itself. */
+function runOn(project: ProjectClient, found: RestTask, values: Values): Promise<RestRun> {
   const agent = text(values, "agent");
-  const run = await project.startRun({
+  return project.startRun({
     taskId: found.id,
     ...(agent === undefined ? {} : { agent }),
   });
+}
+
+/**
+ * What a take answers, once its run began: the task as it stands taken, its comments and the
+ * rules under their mark, or left out by it (`--rules`, ADR-0119). `take` takes a task that
+ * was read by what the person said, `task new --take` the one it has just written; `ref` is
+ * what the task is read again by, now that it is taken.
+ */
+async function taking(
+  session: Session,
+  project: ProjectClient,
+  found: RestTask,
+  ref: string,
+  run: RestRun,
+  values: Values,
+): Promise<Taking> {
   // The rules come with the run, as they read for the person: everything from here acts
   // within them (ADR-0023); the task is read again, as it stands now that it is taken.
   const [ruling, me, taken, comments, openRuns] = await Promise.all([
@@ -3183,11 +3251,9 @@ const take: Command = async (args, io) => {
   const answered =
     held === undefined ? [] : [held === mark ? formatRulesLeftOut(mark) : formatRulesChanged(held)];
   const ruled = held === mark ? [] : [formatRules(rules, language), ""];
-  answer(
-    io,
-    session,
-    { run, task: taken, comments: comments.items, rules: { ...rules, mark } },
-    () =>
+  return {
+    value: { run, task: taken, comments: comments.items, rules: { ...rules, mark } },
+    words: () =>
       [
         `Run ${run.id} began on #${found.number} ${found.title}, as "${run.agent}" for ${calledOf(run.person)}. The task is in progress and theirs.${tookOver}${elsewhere}`,
         // The ids on a line of their own, each named: a run's and a task's begin alike, and a
@@ -3201,7 +3267,21 @@ const take: Command = async (args, io) => {
         'Say how it goes: console report "<what you found or did>". Hand in what you make: console hand-in <https url | file path>.',
         'Ask when a person must decide: console ask "<question>" --option "..." --option "...". A word for the task\'s people that is not a report: console comment <number> "<markdown>". End with: console finish --summary "<what was done, what is left>".',
       ].join("\n"),
-  );
+  };
+}
+
+const take: Command = async (args, io) => {
+  const { values, positionals } = parse(args, {
+    agent: { type: "string" },
+    rules: { type: "string" },
+  });
+  const ref = theOne(positionals, "Say which task: console take <number|id> [--rules <mark>]");
+  const session = await open(io, values);
+  const project = await session.project();
+  const found = await project.task(ref);
+  const run = await runOn(project, found, values);
+  const took = await taking(session, project, found, ref, run, values);
+  answer(io, session, took.value, took.words);
   return EXIT.ok;
 };
 

@@ -1156,6 +1156,168 @@ describe("the console command", () => {
     );
   });
 
+  it("writes a task and takes it in one command, the number first, with --take", async () => {
+    // Work given in chat is written and taken at once: a session that sends its commands
+    // together cannot read a number between them, and another agent writes on the same board.
+    const READY = { ...TASK, state: "ready" };
+    const table = {
+      [`POST ${IN}/tasks`]: { status: 201, body: READY },
+      [`POST ${IN}/runs`]: { status: 201, body: RUN },
+      [`GET ${IN}/rules`]: { body: RULES },
+      "GET /api/v1/me": { body: ME },
+      [`GET ${IN}/tasks/${TASK.id}`]: { body: TASK },
+      [`GET ${IN}/tasks/${TASK.id}/comments`]: { body: { items: [] } },
+      [OPEN_RUNS]: { body: { more: false, items: [RUN] } },
+    };
+    const { fetch, calls } = fakeConsole(table);
+    const h = harness({ fetch, env: SIGNED_IN });
+    expect(
+      await runCli(
+        [
+          "task",
+          "new",
+          "Fix the parser",
+          "--body",
+          "It fails.",
+          "--category",
+          "engineering",
+          "--take",
+        ],
+        h.io,
+      ),
+    ).toBe(EXIT.ok);
+    // The task first, as task new prints it, then the take, as take prints it.
+    expect(
+      h
+        .out()
+        .startsWith(
+          `Task #7 written: Fix the parser\ntask id: ${TASK.id}\nRun ${RUN.id} began on #7 Fix the parser, as "Claude Code" for alice. The task is in progress and theirs.\nrun id: ${RUN.id}  task id: ${TASK.id}  (task #7)\n`,
+        ),
+    ).toBe(true);
+    expect(h.out()).toContain("Ask before pushing.");
+    expect(h.out()).toContain("Say how it goes");
+    // Written before it is taken, and ready where no state is said: an idea is not taken.
+    const keys = calls.map((call) => call.key);
+    expect(keys.indexOf(`POST ${IN}/tasks`)).toBe(0);
+    expect(keys.indexOf(`POST ${IN}/runs`)).toBe(1);
+    expect(calls[0]?.body).toEqual({
+      title: "Fix the parser",
+      body: "It fails.",
+      state: "ready",
+      category: "engineering",
+    });
+    expect(calls[1]?.body).toEqual({ taskId: TASK.id });
+    // The mark and the agent's name go to the take, as console take has them.
+    const ruled = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["rules", "--json"], ruled.io)).toBe(EXIT.ok);
+    const mark = (JSON.parse(ruled.out()) as { mark: string }).mark;
+    const held = fakeConsole(table);
+    const again = harness({ fetch: held.fetch, env: SIGNED_IN });
+    expect(
+      await runCli(
+        ["task", "new", "Fix the parser", "--take", "--rules", mark, "--agent", "Codex"],
+        again.io,
+      ),
+    ).toBe(EXIT.ok);
+    expect(again.out()).toContain(
+      `\nrun id: ${RUN.id}  task id: ${TASK.id}  (task #7)\nRules ${mark}: left out, since they stand as this session read them. console rules prints them.\n`,
+    );
+    expect(again.out()).not.toContain("Ask before pushing.");
+    expect(held.calls[1]?.body).toEqual({ taskId: TASK.id, agent: "Codex" });
+    // A state said is the state written, where a run may begin on it.
+    const idea = fakeConsole(table);
+    expect(
+      await runCli(
+        ["task", "new", "Fix the parser", "--state", "idea", "--take"],
+        harness({ fetch: idea.fetch, env: SIGNED_IN }).io,
+      ),
+    ).toBe(EXIT.ok);
+    expect(idea.calls[0]?.body).toEqual({ title: "Fix the parser", state: "idea" });
+    // --json carries both: the task as it was written, and what a take answers.
+    const asJson = harness({ fetch: fakeConsole(table).fetch, env: SIGNED_IN });
+    expect(await runCli(["task", "new", "Fix the parser", "--take", "--json"], asJson.io)).toBe(
+      EXIT.ok,
+    );
+    expect(JSON.parse(asJson.out())).toEqual({
+      written: READY,
+      run: RUN,
+      task: TASK,
+      comments: [],
+      rules: { ...RULES, mark },
+    });
+    // A task that cannot be taken is not written to be: refused before anything is sent.
+    for (const state of ["done", "dropped"]) {
+      const closed = fakeConsole(table);
+      const refused = harness({ fetch: closed.fetch, env: SIGNED_IN });
+      expect(
+        await runCli(["task", "new", "Fix the parser", "--state", state, "--take"], refused.io),
+        state,
+      ).toBe(EXIT.usage);
+      expect(refused.err()).toContain(`A task written as ${state} is not taken`);
+      expect(closed.calls).toHaveLength(0);
+    }
+    // The mark and the agent's name are a take's: without --take they are not understood.
+    for (const args of [
+      ["--rules", mark],
+      ["--agent", "Codex"],
+    ]) {
+      const alone = fakeConsole(table);
+      const lone = harness({ fetch: alone.fetch, env: SIGNED_IN });
+      expect(await runCli(["task", "new", "Fix the parser", ...args], lone.io)).toBe(EXIT.usage);
+      expect(lone.err()).toContain("--rules and --agent go with --take");
+      expect(alone.calls).toHaveLength(0);
+    }
+    // The take refused after the task was written: said with the number, so that the task is
+    // taken by it and not written a second time.
+    const failing = fakeConsole({
+      ...table,
+      [`POST ${IN}/runs`]: {
+        status: 500,
+        body: { error: { code: "internal", message: "Something failed." } },
+      },
+    });
+    const half = harness({ fetch: failing.fetch, env: SIGNED_IN });
+    expect(await runCli(["task", "new", "Fix the parser", "--take"], half.io)).toBe(EXIT.failed);
+    expect(half.out()).toBe(`Task #7 written: Fix the parser\ntask id: ${TASK.id}\n`);
+    expect(half.err()).toBe(
+      "Task #7 is written and was not taken: it stands on the board as written. Take it with console take 7, and do not write it again. What the take ended on:\ninternal: Something failed.\n",
+    );
+    expect(failing.calls.filter((call) => call.key === `POST ${IN}/tasks`)).toHaveLength(1);
+    const halfJson = harness({ fetch: failing.fetch, env: SIGNED_IN });
+    expect(await runCli(["task", "new", "Fix the parser", "--take", "--json"], halfJson.io)).toBe(
+      EXIT.failed,
+    );
+    expect(JSON.parse(halfJson.out())).toEqual({ written: READY });
+    expect(halfJson.err()).toContain("Task #7 is written and was not taken");
+    // The run begun and the reading of what a take prints refused: the task is taken, and is
+    // not to be taken again, which would end the run that has just begun.
+    const unread = fakeConsole({
+      ...table,
+      [`GET ${IN}/rules`]: {
+        status: 500,
+        body: { error: { code: "internal", message: "Something failed." } },
+      },
+    });
+    const begun = harness({ fetch: unread.fetch, env: SIGNED_IN });
+    expect(await runCli(["task", "new", "Fix the parser", "--take"], begun.io)).toBe(EXIT.failed);
+    expect(begun.out()).toBe(`Task #7 written: Fix the parser\ntask id: ${TASK.id}\n`);
+    expect(begun.err()).toBe(
+      `Task #7 is written and taken, run ${RUN.id}, and what a take prints of it was not read. Do not write it or take it again: console task 7 shows the task, console rules the rules. What the reading ended on:\ninternal: Something failed.\n`,
+    );
+    const begunJson = harness({ fetch: unread.fetch, env: SIGNED_IN });
+    expect(await runCli(["task", "new", "Fix the parser", "--take", "--json"], begunJson.io)).toBe(
+      EXIT.failed,
+    );
+    expect(JSON.parse(begunJson.out())).toEqual({ written: READY, run: RUN });
+    // Without --take, a task is written as before, and nothing is taken.
+    const plain = fakeConsole(table);
+    const written = harness({ fetch: plain.fetch, env: SIGNED_IN });
+    expect(await runCli(["task", "new", "Fix the parser"], written.io)).toBe(EXIT.ok);
+    expect(written.out()).toBe(`Task #7 written: Fix the parser\ntask id: ${TASK.id}\n`);
+    expect(plain.calls.map((call) => call.key)).toEqual([`POST ${IN}/tasks`]);
+    expect(plain.calls[0]?.body).toEqual({ title: "Fix the parser" });
+  });
+
   it("reads the rules as they are for the person: {language} filled with the language they read in", async () => {
     const ruled = {
       ...RULES,
