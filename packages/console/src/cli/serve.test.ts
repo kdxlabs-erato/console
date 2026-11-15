@@ -194,6 +194,102 @@ describe("console serve", () => {
     expect(calls).toHaveLength(4);
   });
 
+  it("carries the files of a plugin's frame whatever page asks, with no token, and nothing else that way", async () => {
+    // A frame is sandboxed: its origin is opaque, so what it asks of the address it was read from
+    // is another site's request to the browser. The console answers these files to anyone.
+    const calls: Call[] = [];
+    const fetch: FetchLike = async (url, init) => {
+      calls.push({ url, init, headers: new Headers(init?.headers), body: "" });
+      return new Response("export {}", {
+        headers: {
+          "content-type": "text/javascript; charset=utf-8",
+          "access-control-allow-origin": "*",
+          "cache-control": "public, max-age=31536000, immutable",
+        },
+      });
+    };
+    const handler = handlerWith(fetch);
+    const fromFrame = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors", origin: "null" };
+    for (const path of [
+      "/api/v1/plugins/hr/web/0.4.0/index.js",
+      "/api/v1/plugins/hr/web/0.4.0/chunks/page-abc123.js",
+      "/api/v1/plugins/hr/web/0.4.0/index.css?v=1",
+      "/api/v1/plugin-runtime/console.css",
+      "/api/v1/plugin-runtime/fonts.css",
+      "/api/v1/plugin-runtime/assets/face-abc123.woff2",
+    ]) {
+      const answer = await handler(
+        new Request(`${AT}${path}`, {
+          headers: { ...fromFrame, cookie: "console_session=cns_s_browser" },
+        }),
+      );
+      expect(answer.status, path).toBe(200);
+      // The console's own headers stand: the frame's module and its faces are read across origins.
+      expect(answer.headers.get("access-control-allow-origin")).toBe("*");
+      expect(answer.headers.get("cache-control")).toContain("immutable");
+      const call = calls.at(-1);
+      expect(call?.url).toBe(`${UPSTREAM}${path}`);
+      // The person's standing does not travel: what is public at the console is asked as anyone.
+      expect(call?.headers.get("authorization")).toBeNull();
+      expect(call?.headers.get("cookie")).toBeNull();
+      expect(call?.headers.get("origin")).toBeNull();
+    }
+    // The person's own page reads the same files the same way: no file of a frame needs the token.
+    await handler(new Request(`${AT}/api/v1/plugin-runtime/console.css`, { headers: fromPage }));
+    expect(calls.at(-1)?.headers.get("authorization")).toBeNull();
+    // A path that only begins as a frame's file is asked of the console as anyone, too.
+    await handler(
+      new Request(`${AT}/api/v1/plugins/hr/web/0.4.0/..%2f..%2f..%2fme`, { headers: fromFrame }),
+    );
+    expect(calls.at(-1)?.headers.get("authorization")).toBeNull();
+    const carried = calls.length;
+
+    // What is not a file of a frame is refused to another site's page as ever, whatever it resembles.
+    for (const path of [
+      "/api/v1/me",
+      "/api/v1/plugins",
+      "/api/v1/plugins/hr",
+      "/api/v1/plugins/hr/frame?page=home",
+      "/api/v1/plugins/hr/records/requests",
+      "/api/v1/plugins/hr/web",
+      "/api/v1/plugins/hr/web/0.4.0",
+      "/api/v1/plugins/hr/web/0.4.0/",
+      "/api/v1/plugins/hr/web//index.js",
+      "/api/v1/plugins/HR/web/0.4.0/index.js",
+      "/api/v1/plugins/hr/x/web/0.4.0/index.js",
+      "/api/v1/plugins/hr/web/0.4.0/../../../me",
+      "/api/v1/plugins/hr/web/0.4.0/%2e%2e/%2e%2e/%2e%2e/me",
+      "/api/v1/plugin-runtime",
+      "/api/v1/plugin-runtime/",
+      "/api/v1/plugin-runtimes/console.css",
+      "/api/v1/projects/web/plugin-runtime/console.css",
+      "/api/v2/plugin-runtime/console.css",
+    ]) {
+      const answer = await handler(new Request(`${AT}${path}`, { headers: fromFrame }));
+      expect(answer.status, path).toBe(403);
+      expect(((await answer.json()) as { error: { code: string } }).error.code).toBe(
+        "auth.forbidden_origin",
+      );
+    }
+    // A frame's file is read, never written: any other method is refused to another site's page.
+    for (const method of ["POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]) {
+      const answer = await handler(
+        new Request(`${AT}/api/v1/plugins/hr/web/0.4.0/index.js`, { method, headers: fromFrame }),
+      );
+      expect(answer.status, method).toBe(403);
+    }
+    expect(calls).toHaveLength(carried);
+    // And from the person's own page such a request is the API's, carried with the token as before.
+    await handler(
+      new Request(`${AT}/api/v1/plugins/hr/web/0.4.0/index.js`, {
+        method: "POST",
+        headers: { ...fromPage, "content-type": "application/json" },
+        body: "{}",
+      }),
+    );
+    expect(calls.at(-1)?.headers.get("authorization")).toBe(`Bearer ${TOKEN}`);
+  });
+
   it("serves the build's page and files beside the API, and nothing without a build", async () => {
     const { fetch } = fakeConsole();
     const handler = handlerWith(fetch);

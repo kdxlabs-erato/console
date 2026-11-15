@@ -1,6 +1,11 @@
+import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { createServer } from "node:net";
+import { dirname, join } from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
+import { REST_ROUTES, restTokenCreatedSchema } from "@skillcdn/console/api";
 import { type Browser, chromium, type Frame, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -525,4 +530,103 @@ describe("the example plugin in a browser", () => {
     expect(response?.status()).toBe(404);
     await context.close();
   });
+});
+
+/** The package's command as a person has it installed, and the default UI's build as a console of their own. */
+const COMMAND = join(
+  dirname(createRequire(import.meta.url).resolve("@skillcdn/console/package.json")),
+  "dist/cli/main.js",
+);
+const WEB_DIST = fileURLToPath(new URL("../../web/dist/", import.meta.url));
+
+/** A port of this machine nothing listens on now. */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const address = probe.address();
+      const port = typeof address === "object" && address !== null ? address.port : 0;
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+describe("the example plugin behind console serve, on a person's own machine", () => {
+  it("shows its page and its widget in their frames: the frame's files are read as anyone, the rest with the token", async () => {
+    // A token of the administrator's, as their agent holds one, for the command to carry.
+    const cookie = await console_.harness.signIn(BROWSER_ADMIN);
+    const made = await console_.harness.request(REST_ROUTES.tokens, {
+      method: "POST",
+      headers: { cookie, origin: console_.publicUrl, "content-type": "application/json" },
+      body: JSON.stringify({ name: "my console" }),
+    });
+    expect(made.status, await made.clone().text()).toBe(201);
+    const { secret } = restTokenCreatedSchema.parse(await made.json());
+    const port = await freePort();
+    const said: string[] = [];
+    const serve = spawn(process.execPath, [COMMAND, "serve", WEB_DIST, "--port", String(port)], {
+      env: { ...process.env, CONSOLE_URL: console_.origin, CONSOLE_TOKEN: secret },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    serve.stdout.on("data", (chunk: Buffer) => said.push(chunk.toString("utf8")));
+    serve.stderr.on("data", (chunk: Buffer) => said.push(chunk.toString("utf8")));
+    const context = await browser.newContext({ locale: "en-US" });
+    try {
+      await expect.poll(() => said.join(""), { timeout: 30_000 }).toContain("Serving ");
+      const at = `http://127.0.0.1:${port}`;
+      const page = await context.newPage();
+      /** Every answer of 400 or above the page or a frame of it got behind the command. */
+      const refused: string[] = [];
+      /** Every file of a frame the browser asked the command for, with what answered. */
+      const frameFiles: string[] = [];
+      page.on("response", (response) => {
+        const url = new URL(response.url());
+        if (response.status() >= 400) {
+          refused.push(`${response.status()} ${url.pathname}`);
+        }
+        if (/^\/api\/v1\/(plugin-runtime|plugins\/hello\/web)\//.test(url.pathname)) {
+          frameFiles.push(`${response.status()} ${url.origin}`);
+        }
+      });
+      await page.goto(`${at}/plugins/hello/greetings`);
+      const frame = await frameOf(page, "iframe.sc-plugin-frame");
+      // The plugin's own script ran, and the page works through the bridge, on the token.
+      await frame.waitForSelector("input.sc-input").catch((error) => sayWhy(frame, error));
+      await page.waitForSelector(".sc-plugin-frame-wait", { state: "detached" });
+      // The console's stylesheet and faces reached the frame: a part is drawn as the part is,
+      // and the Korean face the build carries is there.
+      expect(await frame.evaluate("document.styleSheets.length")).toBeGreaterThan(0);
+      expect(
+        await frame.evaluate(
+          'getComputedStyle(document.querySelector("input.sc-input")).borderTopStyle',
+        ),
+      ).toBe("solid");
+      expect(
+        await frame.evaluate(
+          'document.fonts.load(\'1em "Pretendard Variable"\', "가").then((faces) => faces.length)',
+        ),
+      ).toBeGreaterThan(0);
+      await frame.fill("input.sc-input", "Dana");
+      await frame.click("button.sc-button");
+      await frame.waitForSelector("text=Hello, Dana!");
+      // The widget on the front page, in a frame of its own.
+      await page.goto(`${at}/`);
+      const widget = await frameOf(page, "iframe.sc-plugin-frame-widget");
+      await widget.waitForSelector(".pl-hello-text").catch((error) => sayWhy(widget, error));
+      expect(await widget.textContent(".pl-hello-text")).toBe("Hello, Dana!");
+      // Every file of the frames came from the command, and nothing else was refused. Two answers
+      // of the console's own stand here as on the console itself, and are not the command's: a
+      // token may not list tokens, which the pages ask for along with who is signed in, before
+      // they know a token asks; and the fixture's people have pictures at addresses nobody
+      // answers, which the console says of a picture it could not fetch.
+      expect(frameFiles.length).toBeGreaterThan(3);
+      expect(new Set(frameFiles)).toEqual(new Set([`200 ${at}`]));
+      const theConsolesOwn = new Set(["403 /api/v1/tokens", "502 /api/v1/pictures"]);
+      expect(refused.filter((line) => !theConsolesOwn.has(line))).toEqual([]);
+    } finally {
+      await context.close();
+      serve.kill();
+    }
+  }, 120_000);
 });

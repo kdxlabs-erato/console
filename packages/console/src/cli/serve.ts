@@ -118,11 +118,28 @@ function fromOwnPage(request: Request, origin: string): boolean {
   return from === null || from === origin;
 }
 
+/**
+ * The files a plugin's frame is made of (docs/specs/plugins.md, "The frame"): a file of a
+ * plugin's bundle at its version, and the console's stylesheet and faces for frames. The
+ * console answers them to anyone, with no session, and marks them for any origin to read: a
+ * frame is sandboxed, its origin opaque, so that what it asks of the address its document was
+ * read from reaches the browser as another site's request. The path as the browser's address
+ * holds it, dot segments resolved: a plugin's key, `web`, a version, and a file under it.
+ */
+const FRAME_FILE =
+  /^\/api\/v1\/(?:plugin-runtime\/[^/]|plugins\/[a-z][a-z0-9-]{1,31}\/web\/[^/]+\/[^/])/;
+
+/** Whether a request reads a file of a plugin's frame: a `GET` of such a path, and nothing else. */
+const readsFrameFile = (request: Request, url: URL): boolean =>
+  request.method === "GET" && FRAME_FILE.test(url.pathname);
+
 async function forward(
   request: Request,
   url: URL,
   upstream: string,
   options: ServeOptions,
+  /** Whether the request is carried with the person's token: not what the console answers to anyone. */
+  asPerson = true,
 ): Promise<Response> {
   const headers = new Headers();
   request.headers.forEach((value, name) => {
@@ -130,7 +147,9 @@ async function forward(
       headers.set(name, value);
     }
   });
-  headers.set("authorization", `Bearer ${options.token}`);
+  if (asPerson) {
+    headers.set("authorization", `Bearer ${options.token}`);
+  }
   headers.set("accept-encoding", "identity");
   const referrer = loopbackReferrer(request);
   if (referrer !== undefined) {
@@ -402,10 +421,11 @@ export async function loadRecordsRoot(directory: string): Promise<RecordsRoot> {
 
 /**
  * What the command answers: the API carried to the console with the token, for the page's own
- * requests; a desk's records under `/records/`, for the same pages and no other site's; the
- * build's files and its page for everything else, when there is a build; and nothing to a
- * request whose host is not this loopback, which is a page elsewhere whose name was made to
- * resolve here.
+ * requests; the files of a plugin's frame carried with none, for whatever page asks, since a
+ * frame's origin is no page's; a desk's records under `/records/`, for the same pages and no
+ * other site's; the build's files and its page for everything else, when there is a build; and
+ * nothing to a request whose host is not this loopback, which is a page elsewhere whose name
+ * was made to resolve here.
  */
 export function createServeHandler(options: ServeOptions): ServeHandler {
   const hosts = new Set([
@@ -420,6 +440,12 @@ export function createServeHandler(options: ServeOptions): ServeHandler {
       return plain(421, "This address is not the console's.");
     }
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
+      // A file of a plugin's frame is read whatever page asks, the frame itself first, and
+      // never with the person's token: it is public at the console, so that no other site's
+      // page reaches anything of the person's through it.
+      if (readsFrameFile(request, url)) {
+        return forward(request, url, upstream, options, false);
+      }
       if (!fromOwnPage(request, `http://${url.host}`)) {
         return json(
           403,
