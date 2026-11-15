@@ -1435,6 +1435,28 @@ export const workspacePackConnects = pgTable(
 );
 
 /**
+ * The feeds' order (ADR-0125), a schema of its own that nobody but the console's role may use.
+ * A role that may use a schema may lock a table in it without any right on the table: a
+ * statement prepared over it holds a lock until its transaction ends, and some statements queue
+ * for the table alone before they are refused. A plugin's role may use `public`; it cannot so
+ * much as name what is in here.
+ */
+export const feedOrder = pgSchema("feed_order");
+
+/**
+ * The order of the board's feed (ADR-0125): a table that holds no row and never will, which its
+ * constraint sees to. It is there to be locked. Whatever writes an event locks it shared, `ROW
+ * SHARE`, until its transaction ends, and whoever reads the feed by number asks for it alone,
+ * `EXCLUSIVE` and never waiting, which it is given only while no writer is under way. A table
+ * and not an advisory lock, which any role of the database may take, a plugin's own among them.
+ * Never altered while a console runs: a change of it would wait for the writers, and every
+ * writer after it behind it.
+ */
+export const eventsOrder = feedOrder.table("events", { nothing: boolean() }, () => [
+  check("events_empty", sql`false`),
+]);
+
+/**
  * Everything that happened to the board, in order: the live feed and the audit trail. Append
  * only. Numbered rather than keyed by uuid, since the feed is read from a point on and a number
  * says where; the row's own time is kept for people.
@@ -1779,6 +1801,11 @@ export const pluginLinks = pgTable(
     ),
   ],
 );
+
+/** The order of the plugins' events, held as the board's feed's is by `feed_order.events` (ADR-0125): no row, ever. */
+export const pluginEventsOrder = feedOrder.table("plugin_events", { nothing: boolean() }, () => [
+  check("plugin_events_empty", sql`false`),
+]);
 
 /**
  * An event a plugin emitted (`ctx.events.emit`, docs/specs/plugins.md, "Events, hooks and

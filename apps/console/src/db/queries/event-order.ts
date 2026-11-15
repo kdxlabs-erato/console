@@ -1,7 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { sql } from "drizzle-orm";
 import { type Database, drizzleOf, type Transaction } from "../client.js";
-import { events, pluginEvents } from "../schema.js";
+import { events, eventsOrder, pluginEvents, pluginEventsOrder } from "../schema.js";
 
 // The order of a feed (ADR-0125). An event is given its number when it is inserted and is seen
 // when its transaction commits, and the two orders differ: a change that was numbered first
@@ -13,32 +13,30 @@ import { events, pluginEvents } from "../schema.js";
 // lock alone: the moment it has it, no writer that was given a number is still under way, and
 // every number up to the highest it saw committed before is either there for good or never
 // will be. That number is the stream's settled end, and a reader goes no further than it.
+//
+// The lock is a table's, one table a stream, which holds no row (`feed_order.events`,
+// `feed_order.plugin_events`), in a schema nobody but the console's role may use. An advisory
+// lock, which held the order first, is any role's to take, and a plugin with a schema of its own
+// runs statements as a role of this database: it could have stopped every write of the board
+// with one statement, or every feed from settling. A table it may name it may lock as well,
+// whatever its rights on the table, and it may name what is in `public`: so not there either.
 
 /** The two streams that are read by number: the console's events and the plugins'. */
 export type EventStream = "console" | "plugin";
 
 /**
- * The first of the two keys of the lock, "evts" in ASCII. PostgreSQL keeps the locks taken with
- * two keys apart from those taken with one (a plugin's job), and this space apart from the
- * dispatcher's ("hook").
- */
-const ORDER_LOCK_SPACE = 0x65767473;
-const ORDER_LOCK_KEYS: Readonly<Record<EventStream, number>> = { console: 1, plugin: 2 };
-
-/** The lock one stream's order is kept under, as two keys. */
-export function orderLockOf(stream: EventStream): readonly [number, number] {
-  return [ORDER_LOCK_SPACE, ORDER_LOCK_KEYS[stream]];
-}
-
-/**
  * Taken by whatever writes an event of `stream`, inside the transaction that writes it and
- * before the row is inserted, which is when its number is given. Shared: writers never wait for
- * each other. Held to the end of the transaction, so that a number given is never under way
- * while a reader holds the lock alone.
+ * before the row is inserted, which is when its number is given. `ROW SHARE`, the mode that
+ * conflicts with nothing but a lock taken alone: writers never wait for each other, nor for a
+ * vacuum, an analyze or a dump of the table. Held to the end of the transaction, so that a
+ * number given is never under way while a reader holds the lock alone.
  */
 export async function holdEventOrder(tx: Transaction, stream: EventStream): Promise<void> {
-  const [space, key] = orderLockOf(stream);
-  await tx.execute(sql`select pg_advisory_xact_lock_shared(${space}, ${key})`);
+  await tx.execute(
+    stream === "console"
+      ? sql`lock table ${eventsOrder} in row share mode`
+      : sql`lock table ${pluginEventsOrder} in row share mode`,
+  );
 }
 
 /** How long a reader goes on asking for the lock before it reads within what it knew before. */
@@ -81,15 +79,20 @@ async function highestCommitted(database: Database, stream: EventStream): Promis
 }
 
 /**
- * Whether no writer of the stream is under way at this moment: the lock asked for alone, in a
- * statement of its own, never waited for, and given up as the statement ends. A reader that
- * waited would stand in the lock's queue, and every writer after it would wait behind it for as
- * long as the slowest writer before it took.
+ * Whether no writer of the stream is under way at this moment: the stream's table locked alone
+ * (`EXCLUSIVE`), never waited for, and let go as the statement ends. A reader that waited would
+ * stand in the lock's queue, and every writer after it would wait behind it for as long as the
+ * slowest writer before it took.
+ *
+ * Asked through a function of the console's own (`feed_order.writers_ended`, migration 0063),
+ * since PostgreSQL takes no `LOCK TABLE` outside a transaction block: a transaction opened for
+ * it here would hold the lock for a round trip to the database, or for as long as this process
+ * stalls. Inside the function the lock is had and given up within the one statement, and a lock
+ * that is refused is an answer and not an error.
  */
 async function noWriterUnderWay(database: Database, stream: EventStream): Promise<boolean> {
-  const [space, key] = orderLockOf(stream);
   const asked = await drizzleOf(database).execute<{ alone: boolean }>(
-    sql`select pg_try_advisory_xact_lock(${space}, ${key}) as alone`,
+    sql`select feed_order.writers_ended(${stream}) as alone`,
   );
   return asked.rows[0]?.alone === true;
 }

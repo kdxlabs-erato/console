@@ -3,7 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabase, type Database, drizzleOf } from "./client.js";
-import { holdEventOrder, orderLockOf, settledEnd } from "./queries/event-order.js";
+import { holdEventOrder, settledEnd } from "./queries/event-order.js";
 import { latestEventId, listEventsAfter, recordEvent } from "./queries/events.js";
 import { emitPluginEvent, listPluginEventsAfter } from "./queries/plugin-board.js";
 import { ensureWorkspace } from "./queries/workspaces.js";
@@ -80,6 +80,30 @@ function slowChange(stream: "console" | "plugin" = "console") {
 const scope = () => ({ workspaceId, projectId: null });
 
 describe("what the order of a feed rests on in PostgreSQL", () => {
+  /** The locks on a feed's table in this database: the server lists those of every database. */
+  const locksOn = (table: "feed_order.events" | "feed_order.plugin_events") =>
+    drizzleOf(database)
+      .execute<{ mode: string; granted: boolean }>(
+        sql`select mode, granted from pg_locks
+            where locktype = 'relation' and relation = ${table}::regclass
+              and database = (select oid from pg_database where datname = current_database())
+            order by mode`,
+      )
+      .then((found) => found.rows);
+  /** The reader's question, as `settledEnd` asks it: whether no writer of the feed is under way. */
+  const alone = (feed: "console" | "plugin" = "console") =>
+    drizzleOf(database)
+      .execute<{ alone: boolean }>(sql`select feed_order.writers_ended(${feed}) as alone`)
+      .then((asked) => asked.rows[0]?.alone);
+  /** Whether a lock of `mode` on the board's feed's table is given at once, in a transaction that ends with it. */
+  const given = (mode: string): Promise<boolean> =>
+    drizzleOf(database)
+      .transaction(async (tx) => {
+        await tx.execute(sql.raw(`lock table feed_order.events in ${mode} mode nowait`));
+        return true;
+      })
+      .catch(() => false);
+
   it("gives the numbers of both streams one at a time: no session keeps numbers ahead", async () => {
     // A sequence that cached numbers per session would give a lower number after a higher one
     // without any transaction being slow, and the proof of ADR-0125 would not hold.
@@ -92,51 +116,110 @@ describe("what the order of a feed rests on in PostgreSQL", () => {
     expect(rows.rows.map((row) => Number(row.cache))).toEqual([1, 1]);
   });
 
+  it("takes no lock on a table outside a transaction, which is why a reader asks through a function", async () => {
+    await expect(
+      drizzleOf(database).execute(sql`lock table feed_order.events in exclusive mode nowait`),
+    ).rejects.toMatchObject({ cause: { code: "25P01" } });
+    // The function's lock goes with the statement that called it: asked twice, given twice.
+    expect([await alone(), await alone(), await locksOn("feed_order.events")]).toEqual([
+      true,
+      true,
+      [],
+    ]);
+    await expect(
+      drizzleOf(database).execute(sql`select feed_order.writers_ended('neither')`),
+    ).rejects.toMatchObject({ cause: { message: "no such feed: neither" } });
+  });
+
+  it("holds no row in the tables it locks, ever", async () => {
+    for (const table of ["feed_order.events", "feed_order.plugin_events"]) {
+      await expect(
+        drizzleOf(database).execute(sql.raw(`insert into ${table} values (true)`)),
+      ).rejects.toMatchObject({ cause: { code: "23514" } });
+    }
+  });
+
   it("refuses a reader at once while a writer is under way, and leaves it in no queue: the next writer does not wait", async () => {
-    const [space, key] = orderLockOf("console");
     const slow = slowChange();
     await slow.number;
     try {
+      // The writer's lock is of the kind the server keeps with the session and not in its shared
+      // table, until someone asks for the table alone: the reader's try still meets it.
+      expect(await locksOn("feed_order.events")).toEqual([{ mode: "RowShareLock", granted: true }]);
       const began = performance.now();
-      const asked = await drizzleOf(database).execute<{ alone: boolean }>(
-        sql`select pg_try_advisory_xact_lock(${space}, ${key}) as alone`,
-      );
-      expect(asked.rows[0]?.alone).toBe(false);
+      expect(await alone()).toBe(false);
       expect(performance.now() - began).toBeLessThan(1000);
-      // Nothing waits for the lock: a reader that had queued would show here, not granted. The
-      // server lists the locks of every database, and other files hold the same keys in theirs.
-      const waiting = await drizzleOf(database).execute<{ waiting: string }>(
-        sql`select count(*) as waiting from pg_locks
-            where locktype = 'advisory' and classid = ${space} and objid = ${key} and not granted
-              and database = (select oid from pg_database where datname = current_database())`,
-      );
-      expect(Number(waiting.rows[0]?.waiting)).toBe(0);
+      // Nothing waits for the lock: a reader that had queued would show here, not granted.
+      expect(await locksOn("feed_order.events")).toEqual([{ mode: "RowShareLock", granted: true }]);
       // And the next writer is numbered and committed while the first is still under way.
       const next = await Promise.race([happen(), sleep(3000).then(() => "waited" as const)]);
       expect(next).toBeGreaterThan(await slow.number);
+      // The plugins' stream is another table: a writer of the one holds up no reader of the other.
+      expect(await alone("plugin")).toBe(true);
     } finally {
       slow.commit();
       await slow.done;
     }
-    // Once no writer is under way the lock is had, and given up with the statement that took it.
-    for (let asking = 0; asking < 2; asking += 1) {
-      const asked = await drizzleOf(database).execute<{ alone: boolean }>(
-        sql`select pg_try_advisory_xact_lock(${space}, ${key}) as alone`,
-      );
-      expect(asked.rows[0]?.alone).toBe(true);
+    expect(await alone()).toBe(true);
+  });
+
+  it("has a writer wait for nothing but a lock taken alone: a vacuum, an analyze and every weaker lock go beside it", async () => {
+    const slow = slowChange();
+    await slow.number;
+    try {
+      const beside: Record<string, boolean> = {};
+      for (const mode of [
+        "access share",
+        "row share",
+        "row exclusive",
+        "share update exclusive",
+        "share",
+        "share row exclusive",
+        "exclusive",
+        "access exclusive",
+      ]) {
+        beside[mode] = await given(mode);
+      }
+      expect(beside).toEqual({
+        "access share": true,
+        "row share": true,
+        "row exclusive": true,
+        "share update exclusive": true,
+        share: true,
+        "share row exclusive": true,
+        exclusive: false,
+        "access exclusive": false,
+      });
+      // What the server does to every table on its own takes the fourth of these.
+      await drizzleOf(database).execute(sql`analyze feed_order.events`);
+      await drizzleOf(database).execute(sql`vacuum feed_order.events`);
+    } finally {
+      slow.commit();
+      await slow.done;
     }
   });
 
+  it("refuses a reader beside whatever else holds the table, a dump's lock apart, and gives it nothing to wait for", async () => {
+    // A reader that is refused asks again: none of these is held for longer than a moment on a
+    // table with no row. A dump reads every table under the weakest lock, which it goes beside.
+    const beside: Record<string, boolean | undefined> = {};
+    for (const mode of ["access share", "share update exclusive", "share", "exclusive"]) {
+      await drizzleOf(database).transaction(async (tx) => {
+        await tx.execute(sql.raw(`lock table feed_order.events in ${mode} mode`));
+        beside[mode] = await alone();
+      });
+    }
+    expect(beside).toEqual({
+      "access share": true,
+      "share update exclusive": false,
+      share: false,
+      exclusive: false,
+    });
+    expect(await locksOn("feed_order.events")).toEqual([]);
+  });
+
   it("holds a writer's lock to the end of its transaction, and never past it", async () => {
-    const [space, key] = orderLockOf("console");
-    const held = () =>
-      drizzleOf(database)
-        .execute<{ held: string }>(
-          sql`select count(*) as held from pg_locks
-              where locktype = 'advisory' and classid = ${space} and objid = ${key} and granted
-                and database = (select oid from pg_database where datname = current_database())`,
-        )
-        .then((rows) => Number(rows.rows[0]?.held));
+    const held = async () => (await locksOn("feed_order.events")).length;
     const slow = slowChange();
     try {
       await slow.number;

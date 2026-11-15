@@ -2,7 +2,6 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { orderLockOf } from "./queries/event-order.js";
 
 // The order of a feed (ADR-0125) holds only while every event is inserted under the stream's
 // lock. One function inserts into each stream and takes it; this reads the sources for an insert
@@ -71,13 +70,33 @@ describe("the writers of the feeds", () => {
 });
 
 describe("the lock of a feed's order", () => {
-  it("is two keys, one space and a key a stream, each an integer as PostgreSQL takes them", () => {
-    const [space, consoleKey] = orderLockOf("console");
-    const [pluginSpace, pluginKey] = orderLockOf("plugin");
-    expect(pluginSpace).toBe(space);
-    expect(pluginKey).not.toBe(consoleKey);
-    for (const part of [space, consoleKey, pluginKey]) {
-      expect(Number.isInteger(part) && part >= -(2 ** 31) && part < 2 ** 31).toBe(true);
+  it("is a table's in a schema only the console's role may use, and never an advisory lock, which any role may take", () => {
+    // An advisory lock is any role's to take, a plugin's with a schema of its own among them:
+    // the order module names none, in a statement or in the function it calls. A table in a
+    // schema a role may use is that role's to lock too, `public` among them.
+    const order = readFileSync(join(SOURCES, "db/queries/event-order.ts"), "utf8");
+    const migration = readFileSync(
+      join(SOURCES, "..", "migrations", "0063_feed_order_locks.sql"),
+      "utf8",
+    );
+    for (const text of [order, migration]) {
+      expect(text).not.toMatch(/pg_(?:try_)?advisory/);
+    }
+    expect(order).toMatch(/lock table \$\{eventsOrder\} in row share mode/);
+    expect(order).toMatch(/lock table \$\{pluginEventsOrder\} in row share mode/);
+    // The tables are in a schema of their own and can hold no row, the reader's function is the
+    // only other thing that locks them, and nobody but its owner may call it.
+    for (const said of [
+      'REVOKE ALL ON SCHEMA "feed_order" FROM PUBLIC;',
+      'CREATE TABLE "feed_order"."events" (',
+      'CREATE TABLE "feed_order"."plugin_events" (',
+      'CONSTRAINT "events_empty" CHECK (false)',
+      'CONSTRAINT "plugin_events_empty" CHECK (false)',
+      'LOCK TABLE "feed_order"."events" IN EXCLUSIVE MODE NOWAIT;',
+      'LOCK TABLE "feed_order"."plugin_events" IN EXCLUSIVE MODE NOWAIT;',
+      'REVOKE ALL ON FUNCTION "feed_order"."writers_ended"(text) FROM PUBLIC;',
+    ]) {
+      expect(migration).toContain(said);
     }
   });
 });
