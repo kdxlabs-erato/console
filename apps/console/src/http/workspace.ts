@@ -31,12 +31,20 @@ export function restWorkspace(
 }
 
 /**
- * The workspace as nobody signed in is told of it: without its short name, its domain and the
- * services its agents work with (ADR-0089), which say what its accounts are named and where they
- * are kept, and are its members' to read. The sign-in page needs the name, the language and the
- * ways in; each of the three is read as optional.
+ * The workspace as nobody signed in is told of it: its name, and the language it speaks to
+ * whoever has none, which are what the sign-in page shows beside the ways in. Nothing else of
+ * it: not its short name, its domain and the services its agents work with (ADR-0089), which
+ * say what its accounts are named and where they are kept; not how long a token may last, where
+ * its skills are read or with what, who sees whom, the day its weeks begin or its time zone,
+ * which are its members' to read and say how the organization is set up. The two keys every
+ * answer has, `tokenDaysAtMost` and `skills`, are there and say nothing, so that a console
+ * built on any version of the package still reads the answer; the rest are read as optional.
  */
 export function restWorkspaceForNobody(workspace: RestWorkspace): RestWorkspace {
-  const { handle, domain, services, ...open } = workspace;
-  return open;
+  return {
+    name: workspace.name,
+    tokenDaysAtMost: null,
+    skills: { source: "", address: null },
+    ...(workspace.language === undefined ? {} : { language: workspace.language }),
+  };
 }

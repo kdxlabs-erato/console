@@ -653,7 +653,9 @@ export type RestWorkspacePatch = z.infer<typeof restWorkspacePatchSchema>;
 /**
  * `GET /api/v1/me`: the workspace, who the session cookie says is signed in (or `null`), the
  * language they chose (or `null`), and the identity providers people sign in through, none
- * where nobody can.
+ * where nobody can. Nobody signed in is told the workspace's name and its language alone: the
+ * most days of a token is `null` then, the skills' source is empty and their address `null`,
+ * and everything read as optional is left out.
  */
 export const restMeSchema = z.object({
   workspace: restWorkspaceSchema,

@@ -163,15 +163,14 @@ describe("signing in", () => {
       signIn: [{ key: "gh", label: "GitHub", admits: { organization: null, domains: [] } }],
     });
     expect(await me(h)).toEqual({
-      // Nobody is told what the organization's accounts are named from: its short name, its
-      // domain and the services its agents work with are its members' to read (ADR-0089).
+      // Nobody is told more of the workspace than the sign-in page shows: its name and the
+      // language it speaks to whoever has none. Its short name, its domain and the services its
+      // agents work with are its members' to read (ADR-0089), and so are its settings; the two
+      // keys every answer has are there, and say nothing.
       workspace: {
         name: "Acme",
         tokenDaysAtMost: null,
-        skills: { source: "https://skillcdn.ai", address: null, packToken: null },
-        peopleVisibility: "everyone",
-        weekStart: "auto",
-        timeZone: null,
+        skills: { source: "", address: null },
         language: null,
       },
       language: null,
@@ -184,6 +183,61 @@ describe("signing in", () => {
       decisions: null,
       signIn: [{ key: "gh", label: "GitHub", admits: { organization: null, domains: [] } }],
     });
+  });
+
+  it("tells nobody the workspace's settings: what a member reads of them, nobody signed in does", async () => {
+    const h = harness({ admins: ["alice"], tokenDaysAtMost: 30 });
+    const alice = await h.signIn("alice");
+    try {
+      const set = await h.request(REST_ROUTES.workspace, {
+        method: "PATCH",
+        headers: { cookie: alice, origin: SIGN_IN_URL, "content-type": "application/json" },
+        body: JSON.stringify({
+          peopleVisibility: "shared_projects",
+          weekStart: "monday",
+          timeZone: "Asia/Seoul",
+          language: "ko",
+        }),
+      });
+      expect(set.status).toBe(200);
+      // A member reads them all.
+      expect((await me(h, alice)).workspace).toMatchObject({
+        tokenDaysAtMost: 30,
+        skills: { source: "https://skillcdn.ai", address: null, packToken: null },
+        peopleVisibility: "shared_projects",
+        weekStart: "monday",
+        timeZone: "Asia/Seoul",
+        language: "ko",
+      });
+      // Nobody reads the name and the language the sign-in page is spoken in, and nothing else:
+      // not how long a token may last, where the skills are read, who sees whom, the week or
+      // the time zone.
+      const answer = await h.request(REST_ROUTES.me);
+      const raw = (await answer.json()) as { workspace: Record<string, unknown> };
+      expect(raw.workspace).toEqual({
+        name: "Acme",
+        tokenDaysAtMost: null,
+        skills: { source: "", address: null },
+        language: "ko",
+      });
+      expect(JSON.stringify(raw)).not.toMatch(/skillcdn\.ai|Asia\/Seoul|monday|shared_projects/);
+      // What the pages read before a sign-in is all there, in the shape every answer has.
+      const nobody = restMeSchema.parse(raw);
+      expect(nobody.person).toBeNull();
+      expect(nobody.signIn.map((provider) => provider.key)).toEqual(["gh"]);
+      expect(nobody.console?.version).toBe("0.1.18");
+    } finally {
+      await h.request(REST_ROUTES.workspace, {
+        method: "PATCH",
+        headers: { cookie: alice, origin: SIGN_IN_URL, "content-type": "application/json" },
+        body: JSON.stringify({
+          peopleVisibility: "everyone",
+          weekStart: "auto",
+          timeZone: null,
+          language: null,
+        }),
+      });
+    }
   });
 
   it("keeps nothing of the git host's credential, and logs none of it", async () => {
@@ -615,13 +669,11 @@ describe("a deployment where nobody signs in", () => {
   it("has no sign-in routes, and says so", async () => {
     const h = createHarness(testDatabase);
     expect(await me(h)).toEqual({
+      // Everyone is nobody here, and is told what nobody is.
       workspace: {
         name: "Acme",
         tokenDaysAtMost: null,
-        skills: { source: "https://skillcdn.ai", address: null, packToken: null },
-        peopleVisibility: "everyone",
-        weekStart: "auto",
-        timeZone: null,
+        skills: { source: "", address: null },
         language: null,
       },
       language: null,
