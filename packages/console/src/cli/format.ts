@@ -508,12 +508,13 @@ const formatRulesPart = (head: string, page: RestRules["page"], body: string): s
 /**
  * The workspace's rules as a console of before the parts answers them (ADR-0120): whole, the
  * console's own until an administrator writes the organization's in their place, which is
- * what holds on such a console.
+ * what holds on such a console. No command is named for writing them: this one writes what an
+ * organization adds, and refuses to on a console that would keep it as the whole.
  */
 function formatRulesWhole(rules: RestRules): string {
   const head =
     rules.source === "reference"
-      ? "Rules of the workspace: the console's own, until an administrator writes the organization's (console rules write --workspace)."
+      ? "Rules of the workspace: the console's own, until an administrator writes the organization's."
       : `Rules of the workspace${rulesFacts(rules.page) || " (written)"}:`;
   return `${head}\n\n${(rules.body ?? "").trimEnd()}`;
 }

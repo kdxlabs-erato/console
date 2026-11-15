@@ -385,10 +385,12 @@ describe("the rules as they are printed (ADR-0119, ADR-0120)", () => {
     expect(text.split("\n")[0]).toBe(
       `Rules ${mark}: this project's additions first (${OWN.length} characters), then the workspace's (${CONSOLE.length} characters), the earlier holding where they differ.${laterTake(mark)}`,
     );
-    // On such a console an organization still writes the whole, and the command says so.
+    // On such a console an organization still writes the whole, and the command says so. It
+    // names no command for it: the one it has writes what is added, and refuses there.
     expect(text).toContain(
-      "Rules of the workspace: the console's own, until an administrator writes the organization's (console rules write --workspace).",
+      "Rules of the workspace: the console's own, until an administrator writes the organization's.\n",
     );
+    expect(text).not.toContain("console rules write");
     expect(formatRules({ workspace: whole, project: none }, "en").split("\n")[0]).toContain(
       `: this project adds nothing; the workspace's follow (${CONSOLE.length} characters). A later take`,
     );

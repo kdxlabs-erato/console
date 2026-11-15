@@ -2082,6 +2082,91 @@ describe("the console command", () => {
     );
   });
 
+  it("writes nothing for the organization on a console of before 0.5.1, which keeps the organization's rules whole (ADR-0120)", async () => {
+    const REFUSAL =
+      "This console is older than 0.5.1 and keeps the organization's rules whole: what is written here would replace the console's rules, not add to them. Update the console first.\n";
+    // What a console of 0.5.0 answers: the rules that hold at the workspace, whole, and no parts.
+    const whole = {
+      source: "reference",
+      body: "# Rules for agents on this board\n\nThe console's own rules, until an administrator writes this organization's.",
+      page: null,
+      plugins: [],
+    };
+    // What it would answer the write with, had it been sent: the addition as the whole rules.
+    const replaced = { source: "written", body: "# Ours", page: { ...RULES_PAGE, version: 1 } };
+    const table = {
+      "GET /api/v1/rules": { body: whole },
+      "PUT /api/v1/rules": { body: replaced },
+      "POST /api/v1/rules/archive": { body: whole },
+      [`PUT ${IN}/docs/rules`]: { body: { ...RULES_DOC, version: 3 } },
+    };
+    const before = fakeConsole(table, { version: "0.5.0" });
+    const refused = harness({ fetch: before.fetch, env: SIGNED_IN });
+    expect(await runCli(["rules", "write", "--workspace", "--body", "# Ours"], refused.io)).toBe(
+      EXIT.failed,
+    );
+    expect(refused.out()).toBe("");
+    expect(refused.err()).toBe(REFUSAL);
+    // The console was asked what it keeps, and nothing was written.
+    expect(before.calls.map((call) => call.key)).toEqual(["GET /api/v1/rules"]);
+    // The same where its organization wrote the whole already, and for a program.
+    const written = fakeConsole({ ...table, "GET /api/v1/rules": { body: replaced } });
+    const again = harness({ fetch: written.fetch, env: SIGNED_IN });
+    expect(
+      await runCli(
+        ["rules", "write", "--workspace", "--body", "# Ours", "--base", "1", "--json"],
+        again.io,
+      ),
+    ).toBe(EXIT.failed);
+    expect(again.out()).toBe("");
+    expect(again.err()).toBe(REFUSAL);
+    expect(written.calls.map((call) => call.key)).toEqual(["GET /api/v1/rules"]);
+    // Putting the organization's away leaves the console's alone there too: done as asked.
+    const away = harness({ fetch: before.fetch, env: SIGNED_IN });
+    expect(await runCli(["rules", "write", "none", "--workspace"], away.io)).toBe(EXIT.ok);
+    expect(before.calls.at(-1)?.key).toBe("POST /api/v1/rules/archive");
+    // A project's rules added to the workspace's on such a console as they do now: written,
+    // and the workspace's are not asked for.
+    const asked = before.calls.length;
+    const project = harness({ fetch: before.fetch, env: SIGNED_IN });
+    expect(await runCli(["rules", "write", "--body", "# Ours"], project.io)).toBe(EXIT.ok);
+    expect(project.out()).toBe("Wrote what this project adds to the rules, version 3.\n");
+    expect(before.calls.slice(asked).map((call) => call.key)).toEqual([`PUT ${IN}/docs/rules`]);
+    // A console of now says the parts: asked first, then written as what is added.
+    const parts = {
+      source: "written",
+      body: `${RULES.workspace.body}\n\n# What this organization adds\n\n# Ours`,
+      page: { ...RULES_PAGE, version: 1 },
+      own: RULES.workspace.own,
+      added: { body: "# Ours", page: { ...RULES_PAGE, version: 1 } },
+    };
+    const now = fakeConsole(
+      { "GET /api/v1/rules": { body: RULES.workspace }, "PUT /api/v1/rules": { body: parts } },
+      { version: "0.5.1" },
+    );
+    const added = harness({ fetch: now.fetch, env: SIGNED_IN });
+    expect(await runCli(["rules", "write", "--workspace", "--body", "# Ours"], added.io)).toBe(
+      EXIT.ok,
+    );
+    expect(added.out()).toBe("Wrote what this organization adds to the rules, version 1.\n");
+    expect(now.calls.map((call) => call.key)).toEqual(["GET /api/v1/rules", "PUT /api/v1/rules"]);
+    expect(now.calls[1]?.body).toEqual({ body: "# Ours" });
+    // A console that refuses the question is refused as it says, and nothing is written.
+    const closed = fakeConsole({
+      "GET /api/v1/rules": {
+        status: 403,
+        body: { error: { code: "auth.forbidden", message: "Not yours." } },
+      },
+      "PUT /api/v1/rules": { body: parts },
+    });
+    const denied = harness({ fetch: closed.fetch, env: SIGNED_IN });
+    expect(await runCli(["rules", "write", "--workspace", "--body", "# Ours"], denied.io)).toBe(
+      EXIT.failed,
+    );
+    expect(denied.err()).toContain("auth.forbidden");
+    expect(closed.calls.map((call) => call.key)).toEqual(["GET /api/v1/rules"]);
+  });
+
   it("reports on the one open run, and asks which when there are several or none", async () => {
     const { fetch, calls } = fakeConsole({
       [OPEN_RUNS]: { body: { more: false, items: [RUN] } },

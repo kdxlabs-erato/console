@@ -3075,6 +3075,16 @@ const rules: Command = async (args, io) => {
         );
         return EXIT.ok;
       }
+      // A console of before 0.5.1 keeps what is written here as the organization's whole rules,
+      // in the place of its own (ADR-0120): what is added would be all that holds there. Its
+      // answer tells, since it says the workspace's rules whole and no parts, and it is asked
+      // before anything is written.
+      const held = await session.client.rules();
+      if (held.own === undefined) {
+        throw failed(
+          "This console is older than 0.5.1 and keeps the organization's rules whole: what is written here would replace the console's rules, not add to them. Update the console first.",
+        );
+      }
       const written = await session.client.writeRules({
         body: body ?? "",
         ...(baseVersion === undefined ? {} : { baseVersion }),
