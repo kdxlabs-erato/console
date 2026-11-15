@@ -153,7 +153,7 @@ describe("a desk's views", () => {
 });
 
 describe("what stands now", () => {
-  it("lists the open tasks by state, the decisions that wait and the open runs", () => {
+  it("lists the decisions that wait, the open runs and the open tasks by state, in that order", () => {
     const working = task({ state: "in_progress", number: 3, title: "At work", openRuns: 1 });
     const html = renderToStaticMarkup(
       <DeskStanding
@@ -170,13 +170,14 @@ describe("what stands now", () => {
         {...hrefs}
       />,
     );
-    // The states in the desk's order, a state with nothing in it left out.
+    // The states in the desk's order, a state with nothing in it left out, after what waits.
     const sections = [...html.matchAll(/<section class="sc-task-section" aria-label="([^"]+)"/g)];
+    // What waits for the person first, then what is under way, then the tasks by state.
     expect(sections.map((match) => match[1])).toEqual([
-      "In progress",
-      "Ready",
       "Decisions waiting for you",
       "Open runs",
+      "In progress",
+      "Ready",
     ]);
     expect(html).toContain('href="/projects/web/tasks/3"');
     expect(html).toContain('href="/projects/docs/tasks/9"');

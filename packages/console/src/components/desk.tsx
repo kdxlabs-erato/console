@@ -126,7 +126,10 @@ export interface DeskStandingProps {
   readonly decisionHref: (projectKey: string, decisionId: string) => string;
 }
 
-/** What stands now: the open tasks by state, the decisions that wait, and the runs that are open. */
+/**
+ * What stands on the board now, what holds something up first: the decisions that wait for
+ * the person, since a run waits on each; then the runs that are open; then the open tasks by state.
+ */
 export function DeskStanding(props: DeskStandingProps) {
   const words = useWords();
   const desk = words.desk;
@@ -134,27 +137,6 @@ export function DeskStanding(props: DeskStandingProps) {
   const groups = standingOf(props.tasks).filter((group) => group.tasks.length > 0);
   return (
     <div className="sc-desk-lists">
-      {groups.map((group) => (
-        <section
-          key={group.state}
-          className="sc-task-section"
-          aria-label={words.vocabulary.state[group.state]}
-        >
-          <h2 className="sc-section-title">
-            {words.vocabulary.state[group.state]}{" "}
-            <span className="sc-column-count">{group.tasks.length}</span>
-          </h2>
-          <TaskList
-            tasks={group.tasks.map((item) => item.task)}
-            taskHref={(task) => props.taskHref(projectOf.get(task.id)?.key ?? "", task.number)}
-            projectOf={(task) => {
-              const project = projectOf.get(task.id);
-              return project === undefined ? undefined : <ProjectName project={project} />;
-            }}
-            today={props.today}
-          />
-        </section>
-      ))}
       <section className="sc-task-section" aria-label={desk.now.decisions}>
         <h2 className="sc-section-title">
           {desk.now.decisions} <span className="sc-column-count">{props.decisions.length}</span>
@@ -202,6 +184,27 @@ export function DeskStanding(props: DeskStandingProps) {
           </ul>
         )}
       </section>
+      {groups.map((group) => (
+        <section
+          key={group.state}
+          className="sc-task-section"
+          aria-label={words.vocabulary.state[group.state]}
+        >
+          <h2 className="sc-section-title">
+            {words.vocabulary.state[group.state]}{" "}
+            <span className="sc-column-count">{group.tasks.length}</span>
+          </h2>
+          <TaskList
+            tasks={group.tasks.map((item) => item.task)}
+            taskHref={(task) => props.taskHref(projectOf.get(task.id)?.key ?? "", task.number)}
+            projectOf={(task) => {
+              const project = projectOf.get(task.id);
+              return project === undefined ? undefined : <ProjectName project={project} />;
+            }}
+            today={props.today}
+          />
+        </section>
+      ))}
     </div>
   );
 }
