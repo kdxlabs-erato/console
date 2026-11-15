@@ -24,7 +24,7 @@ import {
   type RecordsOverview,
   type RecordsReader,
   readCollection,
-  readRecords,
+  readDeskRecords,
   recordsAddressOf,
   recordsQuery,
   resultsOf,
@@ -83,7 +83,7 @@ export function DeskRecords(props: DeskRecordsProps) {
       return;
     }
     const controller = new AbortController();
-    readRecords(reader, controller.signal)
+    readDeskRecords(reader, controller.signal)
       .then((read) => {
         if (!controller.signal.aborted) {
           setOverview(read);

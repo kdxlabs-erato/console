@@ -1,13 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { bestItems, itemResults, resultsOf } from "../desk-records.js";
-import type {
-  RecordCollection,
-  RecordItem,
-  RecordMetricRow,
-  RecordUse,
-} from "../desk-records-format.js";
 import { ENGLISH, KOREAN, LanguageContext } from "../i18n/index.js";
+import type { RecordsCollection, RecordsItem, RecordsMetricRow, RecordsUse } from "../records.js";
 import {
   DeskCollectionResults,
   DeskCollections,
@@ -21,7 +16,7 @@ import {
   ratioWords,
 } from "./desk-records.js";
 
-const ads: RecordCollection = {
+const ads: RecordsCollection = {
   title: "Ad creatives",
   description: "What was made for the ads, and how each did.",
   statuses: [
@@ -44,9 +39,9 @@ const ads: RecordCollection = {
   ],
 };
 
-const documents: RecordCollection = { title: "Documents" };
+const documents: RecordsCollection = { title: "Documents" };
 
-const hook1: RecordItem = {
+const hook1: RecordsItem = {
   id: "hook-1",
   title: "The <b>first</b> hook",
   madeOn: "2026-11-02",
@@ -61,7 +56,7 @@ const hook1: RecordItem = {
   fields: { format: "Vertical, 9:16", length: 15, source: "https://drive.example/hook-1" },
   note: "Opens on the product.\nNo voice-over: <script>alert(1)</script>",
 };
-const hook2: RecordItem = {
+const hook2: RecordsItem = {
   id: "hook-2",
   title: "The second hook",
   madeOn: "2026-11-09",
@@ -69,7 +64,7 @@ const hook2: RecordItem = {
   fields: { format: "Square", source: "http://not-https.example/x" },
 };
 
-const rows: readonly RecordMetricRow[] = [
+const rows: readonly RecordsMetricRow[] = [
   { item: "hook-1", on: "2026-11-10", values: { impressions: 1000, clicks: 30, watched: 40 } },
   {
     item: "hook-1",
@@ -78,7 +73,7 @@ const rows: readonly RecordMetricRow[] = [
   },
 ];
 
-const uses: readonly RecordUse[] = [
+const uses: readonly RecordsUse[] = [
   { item: "hook-1", on: "2026-11-10", where: "The winter campaign <i>A</i>", note: "Arm B" },
 ];
 
@@ -277,7 +272,7 @@ describe("one collection", () => {
 });
 
 describe("one item", () => {
-  const view = (files: readonly DeskFile[], item: RecordItem = hook1) =>
+  const view = (files: readonly DeskFile[], item: RecordsItem = hook1) =>
     renderToStaticMarkup(
       <DeskItemView
         collectionKey="ad-creatives"

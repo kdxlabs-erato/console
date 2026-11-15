@@ -13,7 +13,7 @@ import {
   probeFile,
   type RecordsReader,
   readCollection,
-  readRecords,
+  readDeskRecords,
   recordsAddressOf,
   recordsQuery,
   resultsOf,
@@ -23,10 +23,10 @@ import {
   MAX_RECORD_COLLECTIONS,
   MAX_RECORD_FILE_BYTES,
   MAX_RECORD_ITEMS,
-  type RecordCollection,
-  type RecordItem,
-  type RecordMetricRow,
-} from "./desk-records-format.js";
+  type RecordsCollection,
+  type RecordsItem,
+  type RecordsMetricRow,
+} from "./records.js";
 
 /** What a file of the records is served as: JSON by default, with its words as they are. */
 interface Served {
@@ -68,7 +68,7 @@ function readerOf(files: Readonly<Record<string, Served | unknown>>): {
   };
 }
 
-const ads: RecordCollection = {
+const ads: RecordsCollection = {
   title: "Ad creatives",
   description: "What was made for the ads, and how each did.",
   statuses: [
@@ -93,7 +93,7 @@ const ads: RecordCollection = {
   ],
 };
 
-const item = (overrides: Partial<RecordItem> & Pick<RecordItem, "id">): RecordItem => ({
+const item = (overrides: Partial<RecordsItem> & Pick<RecordsItem, "id">): RecordsItem => ({
   title: `The ${overrides.id} cut`,
   madeOn: "2026-11-02",
   ...overrides,
@@ -103,17 +103,17 @@ const row = (
   itemId: string,
   on: string,
   values: Readonly<Record<string, number>>,
-): RecordMetricRow => ({ item: itemId, on, values });
+): RecordsMetricRow => ({ item: itemId, on, values });
 
 describe("the records of a desk, read", () => {
   it("are none where nothing is served at their address, or the server's own page is", async () => {
     const nothing = readerOf({});
-    expect(await readRecords(nothing.reader)).toEqual({ kind: "none" });
+    expect(await readDeskRecords(nothing.reader)).toEqual({ kind: "none" });
     expect(nothing.asked.map((one) => one.path)).toEqual(["/records/index.json"]);
     // Asked of the page's own origin, with what the browser holds for it, and never from a cache.
     expect(nothing.asked[0]?.init).toMatchObject({ cache: "no-store", credentials: "same-origin" });
     const page = readerOf({ "index.json": { body: "<!doctype html>", type: "text/html" } });
-    expect(await readRecords(page.reader)).toEqual({ kind: "none" });
+    expect(await readDeskRecords(page.reader)).toEqual({ kind: "none" });
   });
 
   it("are the collections the index names, each with its items counted by status", async () => {
@@ -134,7 +134,7 @@ describe("the records of a desk, read", () => {
       "documents/collection.json": { title: "Documents" },
       "documents/items.json": [],
     });
-    const overview = await readRecords(reader);
+    const overview = await readDeskRecords(reader);
     expect(overview).toEqual({
       kind: "read",
       problems: [],
@@ -192,7 +192,7 @@ describe("the records of a desk, read", () => {
       "notes/collection.json": { title: "Notes" },
       "notes/items.json": { items: [] },
     });
-    const overview = await readRecords(reader);
+    const overview = await readDeskRecords(reader);
     expect(overview.kind).toBe("read");
     if (overview.kind !== "read") {
       return;
@@ -214,13 +214,13 @@ describe("the records of a desk, read", () => {
 
   it("say so of an index that is wrong, and read no collection by it", async () => {
     const broken = readerOf({ "index.json": { body: "[" } });
-    expect(await readRecords(broken.reader)).toEqual({
+    expect(await readDeskRecords(broken.reader)).toEqual({
       kind: "read",
       collections: [],
       problems: [{ file: "index.json", kind: "not_json" }],
     });
     const wrong = readerOf({ "index.json": { collections: [{ key: "Up/../Out", title: "x" }] } });
-    expect(await readRecords(wrong.reader)).toEqual({
+    expect(await readDeskRecords(wrong.reader)).toEqual({
       kind: "read",
       collections: [],
       problems: [{ file: "index.json", kind: "not_as_format", at: "collections[0].key" }],
@@ -234,7 +234,7 @@ describe("the records of a desk, read", () => {
         })),
       },
     });
-    expect((await readRecords(many.reader)).kind).toBe("read");
+    expect((await readDeskRecords(many.reader)).kind).toBe("read");
     expect(many.asked).toHaveLength(1);
   });
 
@@ -242,7 +242,7 @@ describe("the records of a desk, read", () => {
     const declared = readerOf({
       "index.json": { body: "{}", length: String(MAX_RECORD_FILE_BYTES + 1) },
     });
-    expect(await readRecords(declared.reader)).toEqual({
+    expect(await readDeskRecords(declared.reader)).toEqual({
       kind: "read",
       collections: [],
       problems: [{ file: "index.json", kind: "too_large" }],
@@ -250,7 +250,7 @@ describe("the records of a desk, read", () => {
     const long = readerOf({
       "index.json": { body: `{"collections":[],"pad":"${"x".repeat(MAX_RECORD_FILE_BYTES)}"}` },
     });
-    expect(await readRecords(long.reader)).toEqual({
+    expect(await readDeskRecords(long.reader)).toEqual({
       kind: "read",
       collections: [],
       problems: [{ file: "index.json", kind: "too_large" }],
@@ -263,7 +263,7 @@ describe("the records of a desk, read", () => {
         throw new TypeError("Failed to fetch");
       },
     };
-    expect(await readRecords(reader)).toEqual({
+    expect(await readDeskRecords(reader)).toEqual({
       kind: "read",
       collections: [],
       problems: [{ file: "index.json", kind: "unreadable" }],

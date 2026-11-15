@@ -133,19 +133,24 @@ export function isLfsPointer(head: string): boolean {
 /** How large a git LFS pointer is at the most, in bytes: a file over it is no pointer, and need not be looked into. */
 export const MAX_LFS_POINTER_BYTES = 1024;
 
+/** A key, of a collection, a status, a field or a metric: lowercase letters, digits and hyphens. */
+export const RECORD_KEY = /^[a-z0-9][a-z0-9-]*$/;
+/** An item's id: letters, digits and hyphens. */
+export const RECORD_ID = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
+
 const key = z
   .string()
   .check(
     z.minLength(1),
     z.maxLength(MAX_RECORD_KEY_LENGTH),
-    z.regex(/^[a-z0-9][a-z0-9-]*$/, "is lowercase letters, digits and hyphens"),
+    z.regex(RECORD_KEY, "is lowercase letters, digits and hyphens"),
   );
 const itemId = z
   .string()
   .check(
     z.minLength(1),
     z.maxLength(MAX_RECORD_KEY_LENGTH),
-    z.regex(/^[A-Za-z0-9][A-Za-z0-9-]*$/, "is letters, digits and hyphens"),
+    z.regex(RECORD_ID, "is letters, digits and hyphens"),
   );
 const line = z.string().check(
   z.minLength(1),

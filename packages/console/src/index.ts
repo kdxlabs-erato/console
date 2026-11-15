@@ -407,7 +407,7 @@ export {
   type RecordsOverview,
   type RecordsReader,
   readCollection,
-  readRecords,
+  readDeskRecords,
   recordsAddressOf,
   recordsQuery,
   resultsOf,

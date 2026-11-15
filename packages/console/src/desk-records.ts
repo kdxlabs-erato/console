@@ -8,16 +8,16 @@ import {
   MAX_RECORD_USES,
   RECORD_ID,
   RECORD_KEY,
-  type RecordCollection,
-  type RecordItem,
-  type RecordMetricRow,
-  type RecordUse,
-  recordCollectionSchema,
-  recordItemSchema,
-  recordMetricRowSchema,
+  type RecordsCollection,
+  type RecordsItem,
+  type RecordsMetricRow,
+  type RecordsUse,
+  recordsCollectionSchema,
   recordsIndexSchema,
-  recordUseSchema,
-} from "./desk-records-format.js";
+  recordsItemSchema,
+  recordsMetricRowSchema,
+  recordsUseSchema,
+} from "./records.js";
 
 // A desk's records as the desk's pages read them (ADR-0117): what the desk's member made and what
 // became of it, kept as files under the desk's `records/` and served beside the pages at
@@ -217,8 +217,8 @@ export interface CollectionSummary {
 
 /** The items of a collection by status: one count for each status the collection names. */
 export function statusCounts(
-  collection: Pick<RecordCollection, "statuses"> | undefined,
-  items: readonly RecordItem[],
+  collection: Pick<RecordsCollection, "statuses"> | undefined,
+  items: readonly RecordsItem[],
 ): readonly StatusCount[] {
   return (collection?.statuses ?? []).map((status) => ({
     key: status.key,
@@ -228,7 +228,7 @@ export function statusCounts(
 }
 
 /** The latest day any of the items was made on. */
-export function lastMadeOn(items: readonly RecordItem[]): string | undefined {
+export function lastMadeOn(items: readonly RecordsItem[]): string | undefined {
   return items.reduce<string | undefined>(
     (latest, item) => (latest === undefined || item.madeOn > latest ? item.madeOn : latest),
     undefined,
@@ -249,7 +249,7 @@ export type RecordsOverview =
  * The collections of a desk with what each holds: the index, then each collection's own file
  * and its items, two requests a collection, `MAX_RECORD_COLLECTIONS` collections at most.
  */
-export async function readRecords(
+export async function readDeskRecords(
   reader: RecordsReader,
   signal?: AbortSignal,
 ): Promise<RecordsOverview> {
@@ -296,13 +296,13 @@ export async function readRecords(
 export interface CollectionRecords {
   readonly key: string;
   /** What the collection is; nothing where its own file is missing or wrong. */
-  readonly collection: RecordCollection | undefined;
+  readonly collection: RecordsCollection | undefined;
   /** What was made, the last made first. */
-  readonly items: readonly RecordItem[];
+  readonly items: readonly RecordsItem[];
   /** Where an item was used, the last first; of items the collection holds. */
-  readonly uses: readonly RecordUse[];
+  readonly uses: readonly RecordsUse[];
   /** How an item did, by day; of items the collection holds. */
-  readonly metrics: readonly RecordMetricRow[];
+  readonly metrics: readonly RecordsMetricRow[];
   readonly problems: readonly RecordProblem[];
   /** Whether anything of the collection was there to read. */
   readonly found: boolean;
@@ -338,11 +338,11 @@ export async function readCollection(
     only.items === true ? missing : readFile(reader, `${key}/metrics.json`, signal),
   ]);
   const problems: RecordProblem[] = [];
-  let collection: RecordCollection | undefined;
+  let collection: RecordsCollection | undefined;
   if (own.kind === "problem") {
     problems.push(own.problem);
   } else if (own.kind === "read") {
-    const parsed = parseOne(recordCollectionSchema, own.value);
+    const parsed = parseOne(recordsCollectionSchema, own.value);
     if ("value" in parsed) {
       collection = parsed.value;
     } else {
@@ -370,7 +370,7 @@ export async function readCollection(
   };
   // An id stands for one item: of two with the same, the first is the item.
   const seen = new Set<string>();
-  const items = list(itemsFile, "items.json", recordItemSchema, MAX_RECORD_ITEMS)
+  const items = list(itemsFile, "items.json", recordsItemSchema, MAX_RECORD_ITEMS)
     .filter((item) => {
       const first = !seen.has(item.id);
       seen.add(item.id);
@@ -382,13 +382,13 @@ export async function readCollection(
     key,
     collection,
     items,
-    uses: list(usesFile, "uses.json", recordUseSchema, MAX_RECORD_USES)
+    uses: list(usesFile, "uses.json", recordsUseSchema, MAX_RECORD_USES)
       .filter(held)
       .sort((a, b) => b.on.localeCompare(a.on)),
     metrics: list(
       metricsFile,
       "metrics.json",
-      recordMetricRowSchema,
+      recordsMetricRowSchema,
       MAX_RECORD_METRIC_ROWS,
     ).filter(held),
     problems,
@@ -584,8 +584,8 @@ export type FieldValue =
  * not of its field's kind is shown as the text it is: a link that is not https is words.
  */
 export function fieldsOf(
-  collection: Pick<RecordCollection, "fields"> | undefined,
-  item: Pick<RecordItem, "fields">,
+  collection: Pick<RecordsCollection, "fields"> | undefined,
+  item: Pick<RecordsItem, "fields">,
 ): readonly { readonly key: string; readonly label: string; readonly value: FieldValue }[] {
   return (collection?.fields ?? []).flatMap((field) => {
     const raw = item.fields?.[field.key];
@@ -606,11 +606,11 @@ export function fieldsOf(
   });
 }
 
-type Metric = NonNullable<RecordCollection["metrics"]>[number];
-type Ratio = NonNullable<RecordCollection["ratios"]>[number];
+type Metric = NonNullable<RecordsCollection["metrics"]>[number];
+type Ratio = NonNullable<RecordsCollection["ratios"]>[number];
 
 /** One metric over some rows: their sum, or for a percentage their mean, since a sum of shares says nothing. */
-function totalOf(metric: Metric, rows: readonly RecordMetricRow[]): number | undefined {
+function totalOf(metric: Metric, rows: readonly RecordsMetricRow[]): number | undefined {
   const values = rows.flatMap((row) => {
     const value = row.values[metric.key];
     return value === undefined ? [] : [value];
@@ -623,7 +623,7 @@ function totalOf(metric: Metric, rows: readonly RecordMetricRow[]): number | und
 }
 
 /** A ratio over some rows: the sum of one metric for each of the other's, or nothing where there is none of the other. */
-function ratioOf(ratio: Ratio, rows: readonly RecordMetricRow[]): number | undefined {
+function ratioOf(ratio: Ratio, rows: readonly RecordsMetricRow[]): number | undefined {
   const sum = (key: string) => rows.reduce((total, row) => total + (row.values[key] ?? 0), 0);
   const per = sum(ratio.per);
   return per === 0 ? undefined : sum(ratio.of) / per;
@@ -647,8 +647,8 @@ export interface RatioFigure {
 
 /** The figures of some rows: each of the collection's metrics and each of its ratios. */
 export function figuresOfRows(
-  collection: Pick<RecordCollection, "metrics" | "ratios"> | undefined,
-  rows: readonly RecordMetricRow[],
+  collection: Pick<RecordsCollection, "metrics" | "ratios"> | undefined,
+  rows: readonly RecordsMetricRow[],
 ): { readonly metrics: readonly MetricFigure[]; readonly ratios: readonly RatioFigure[] } {
   return {
     metrics: (collection?.metrics ?? []).map((metric) => ({
@@ -680,8 +680,8 @@ export interface CollectionResults {
 
 /** A collection's results from its rows: the whole, and `weeks` weeks back from the week of `today`. */
 export function resultsOf(input: {
-  readonly collection: Pick<RecordCollection, "metrics" | "ratios"> | undefined;
-  readonly rows: readonly RecordMetricRow[];
+  readonly collection: Pick<RecordsCollection, "metrics" | "ratios"> | undefined;
+  readonly rows: readonly RecordsMetricRow[];
   readonly today: string;
   /** The weekday a week begins on: 1 for Monday, 7 for Sunday. */
   readonly firstDay?: number | undefined;
@@ -709,22 +709,22 @@ export function resultsOf(input: {
 
 /** The items that did best by one metric: the most first, `limit` at most, those with no row of it left out. */
 export function bestItems(input: {
-  readonly collection: Pick<RecordCollection, "metrics"> | undefined;
-  readonly items: readonly RecordItem[];
-  readonly rows: readonly RecordMetricRow[];
+  readonly collection: Pick<RecordsCollection, "metrics"> | undefined;
+  readonly items: readonly RecordsItem[];
+  readonly rows: readonly RecordsMetricRow[];
   /** The metric's key; the collection's first where it names none of its own. */
   readonly by: string | undefined;
   readonly limit?: number | undefined;
 }): {
   readonly metric: Metric | undefined;
-  readonly items: readonly { readonly item: RecordItem; readonly total: number }[];
+  readonly items: readonly { readonly item: RecordsItem; readonly total: number }[];
 } {
   const metrics = input.collection?.metrics ?? [];
   const metric = metrics.find((one) => one.key === input.by) ?? metrics[0];
   if (metric === undefined) {
     return { metric: undefined, items: [] };
   }
-  const byItem = new Map<string, RecordMetricRow[]>();
+  const byItem = new Map<string, RecordsMetricRow[]>();
   for (const row of input.rows) {
     const rows = byItem.get(row.item) ?? [];
     rows.push(row);
@@ -744,11 +744,11 @@ export function bestItems(input: {
 
 /** How one item did: its rows by day, the last first, and its figures over all of them. */
 export function itemResults(
-  collection: Pick<RecordCollection, "metrics" | "ratios"> | undefined,
-  rows: readonly RecordMetricRow[],
+  collection: Pick<RecordsCollection, "metrics" | "ratios"> | undefined,
+  rows: readonly RecordsMetricRow[],
   itemId: string,
 ): {
-  readonly days: readonly RecordMetricRow[];
+  readonly days: readonly RecordsMetricRow[];
   readonly metrics: readonly MetricFigure[];
   readonly ratios: readonly RatioFigure[];
 } {

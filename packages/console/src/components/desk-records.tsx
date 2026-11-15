@@ -13,13 +13,8 @@ import {
   type RecordProblem,
   statusCounts,
 } from "../desk-records.js";
-import type {
-  RecordCollection,
-  RecordItem,
-  RecordMetricRow,
-  RecordUse,
-} from "../desk-records-format.js";
 import { type Messages, useLanguage, useWords } from "../i18n/index.js";
+import type { RecordsCollection, RecordsItem, RecordsMetricRow, RecordsUse } from "../records.js";
 import { weekLabel } from "./desk.js";
 import { ShowMore, usePaged } from "./paged.js";
 import { Badge, Callout, Day, EmptyState } from "./ui.js";
@@ -172,7 +167,7 @@ export function DeskCollections(props: DeskCollectionsProps) {
 
 /** An item's status as a badge: its label where the collection names the status, the word itself where it does not. */
 function StatusBadge(props: {
-  readonly collection: Pick<RecordCollection, "statuses"> | undefined;
+  readonly collection: Pick<RecordsCollection, "statuses"> | undefined;
   readonly status: string | undefined;
 }) {
   if (props.status === undefined) {
@@ -221,9 +216,9 @@ function Preview(props: {
 export interface DeskCollectionViewProps {
   /** The collection's key, by which its files are read. */
   readonly collectionKey: string;
-  readonly collection: RecordCollection | undefined;
+  readonly collection: RecordsCollection | undefined;
   /** The collection's items, the last made first. */
-  readonly items: readonly RecordItem[];
+  readonly items: readonly RecordsItem[];
   /** The status the items are narrowed to, by its key. */
   readonly status?: string | undefined;
   readonly onStatus: (status: string | undefined) => void;
@@ -395,13 +390,13 @@ function FileRow(props: { readonly file: DeskFile }) {
 
 export interface DeskItemViewProps {
   readonly collectionKey: string;
-  readonly collection: RecordCollection | undefined;
-  readonly item: RecordItem;
+  readonly collection: RecordsCollection | undefined;
+  readonly item: RecordsItem;
   /** Where the item was used, the last first. */
-  readonly uses: readonly RecordUse[];
+  readonly uses: readonly RecordsUse[];
   /** How the item did: its rows by day, the last first, and its figures over all of them. */
   readonly results: {
-    readonly days: readonly RecordMetricRow[];
+    readonly days: readonly RecordsMetricRow[];
     readonly metrics: readonly MetricFigure[];
     readonly ratios: readonly RatioFigure[];
   };
@@ -584,12 +579,12 @@ function Figures(props: {
 }
 
 export interface DeskCollectionResultsProps {
-  readonly collection: RecordCollection | undefined;
+  readonly collection: RecordsCollection | undefined;
   readonly results: CollectionResults;
   /** The items that did best by the metric picked, the most first. */
   readonly best: {
-    readonly metric: NonNullable<RecordCollection["metrics"]>[number] | undefined;
-    readonly items: readonly { readonly item: RecordItem; readonly total: number }[];
+    readonly metric: NonNullable<RecordsCollection["metrics"]>[number] | undefined;
+    readonly items: readonly { readonly item: RecordsItem; readonly total: number }[];
   };
   readonly onBy: (metric: string) => void;
   readonly itemHref: (id: string) => string;
