@@ -983,7 +983,7 @@ export const en = {
       loading: "Reading your records",
       none: {
         title: "No records here yet",
-        body: "A record is what you made and what became of it: a collection of items, each with its files, where it was used and how it did. Records are files under records/ in your desk, which an agent working there writes as the README beside them says; the first one shows up here.",
+        body: "A record is what you made and what became of it: a collection of items, each with its files, where it was used and how it did. Records are files under records/ in your desk, which an agent working there writes; the first one shows up here.",
       },
       noCollections: "The records name no collection yet.",
       collections: "Collections",
@@ -1032,7 +1032,7 @@ export const en = {
       noRows: "No figures are recorded yet.",
       noFigures: {
         title: "No figures here yet",
-        body: "A figure is a row of this collection's metrics.json: an item, a day and what it came to that day. An agent working in your desk writes them as the README beside the records says; the first one shows up here.",
+        body: "A figure is a row of this collection's metrics.json: an item, a day and what it came to that day. An agent working in your desk writes them; the first one shows up here.",
       },
       noValue: "none",
       seconds: (amount: string) => `${amount} s`,

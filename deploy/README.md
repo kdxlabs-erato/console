@@ -312,7 +312,7 @@ A deployment may run that image, or one of its own: built from the commit of a r
 
 A command and a console go together within one line of versions: a console from 0.5.0 takes commands from 0.5.0, and a command from 0.5.0 works with no console before it. Where one machine's command serves several consoles, they move in one sitting and the command after them; a console still on the line before is reached meanwhile with that line's command (`npm exec --package=@skillcdn/console@<its version> -- console ...`).
 
-Going back to the image before is safe while the new one has written nothing the old one cannot read. From 0.5.0 that ends with the first agent account: an account nobody has signed in with has no id at its provider yet, which 0.4.7 does not read, and a listing that names it as a worker fails there. Roll forward from then on.
+Going back to the image before is safe while the new one has written nothing the old one cannot read. From 0.5.0 that ends with the first agent account: an account nobody has signed in with has no id at its provider yet, which 0.4.7 does not read, and a listing that names it as a worker fails there. From 0.5.1 it also ends with the first addition to the workspace's rules, which 0.5.0 reads as the organization's whole rules. Roll forward from then on.
 
 The definitions of a particular deployment (accounts, networks, hostnames, sizes) are not in this repository and must not be added to it.
 

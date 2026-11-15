@@ -534,15 +534,15 @@ describe("a plugin's settings page", () => {
     expect(html).not.toContain("실행할 수 없는 이유");
     expect(html).toContain(problem);
     // A row of the overview, a line per job, the failing one marked.
-    expect(html).toContain("<dt>작업</dt>");
+    expect(html).toContain("<dt>예약 실행</dt>");
     expect(html).toMatch(/<code>match<\/code><span class="sc-badge[^"]*">실패 중<\/span>/);
     expect(html).toMatch(/> [^<]* 실패 · [^<]*부터 계속 실패 · 다음 실행 [^<]*<\/span>/);
     expect(html).toMatch(/<code>rotate<\/code><\/span><span[^>]*> [^<]* 실행됨 · 다음 실행 [^<]*</);
     expect(html).toMatch(/<code>sweep<\/code><\/span><span[^>]*> 아직 실행되지 않음</);
     expect(count(html, "실패 중")).toBe(1);
     // A console of before 0.5.1 names no jobs, and a plugin may declare none: no row then.
-    expect(render(DETAIL)).not.toContain("<dt>작업</dt>");
-    expect(render({ ...DETAIL, jobs: [] })).not.toContain("<dt>작업</dt>");
+    expect(render(DETAIL)).not.toContain("<dt>예약 실행</dt>");
+    expect(render({ ...DETAIL, jobs: [] })).not.toContain("<dt>예약 실행</dt>");
   });
 
   it("marks in the list a plugin that runs with a problem, and leaves a failed one to its state", () => {

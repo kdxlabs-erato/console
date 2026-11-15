@@ -2,7 +2,7 @@
 "@skillcdn/console": patch
 ---
 
-Charts, as parts of the console's look, for a page of a desk and a plugin's page alike ([ADR-0123](https://github.com/skillcdn/console/blob/main/docs/adr/0123-charts-are-parts-placed-by-measures-and-drawn-by-the-stylesheet.md)).
+Breaking (the colours of a series, below): charts, as parts of the console's look, for a page of a desk and a plugin's page alike ([ADR-0123](https://github.com/skillcdn/console/blob/main/docs/adr/0123-charts-are-parts-placed-by-measures-and-drawn-by-the-stylesheet.md)).
 
 - **Eight parts** in `console.css`, each with its row in the catalogue (`src/styles/README.md`): `stat`, `bars`, `chart`, `spark`, `share`, `legend`, `figures` and `series`, the colour a series is drawn in.
 - **Their components**, exported from `@skillcdn/console`: `Stat` and `Stats` (a figure with its name, its change and its run), `BarList` (a ranking or a comparison), `Chart` (columns or lines over time, one to a few series against one scale), `Sparkline`, `ShareBar` (one whole in its parts), `Legend` and `FigureTable`. Each takes its figures as props, says what it shows to a reader who cannot see it, and is as wide as where it is put; the README's "Charts" has their props and which is for what.
