@@ -25,6 +25,7 @@ process.exitCode = await runPluginCli(process.argv.slice(2), {
   },
   cwd: process.cwd(),
   templateDir: join(packageDir, "template", "plugin"),
+  stylesDir: join(packageDir, "src", "styles"),
   version: manifest.success ? manifest.data.version : undefined,
   loadServer: (file) => loadServerModule(file),
 });

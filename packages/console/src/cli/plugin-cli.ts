@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 import type { ServerLoad } from "../plugin/load.js";
 import { isPluginKey, RESERVED_PLUGIN_KEYS } from "../plugin/manifest.js";
 import { lineRangeFrom, versionOfDependency } from "../plugin/semver.js";
-import { checkPlugin } from "./plugin-check.js";
+import { checkPlugin, readConsoleClasses } from "./plugin-check.js";
 import { LANGUAGE_TAG, nameFromKey, PACKAGE_NAME, writePluginFromTemplate } from "./plugin-init.js";
 
 export interface PluginCliIo {
@@ -18,6 +18,11 @@ export interface PluginCliIo {
   readonly version: string | undefined;
   /** Loads a server module in a hardened thread and describes it. */
   loadServer(file: string): Promise<ServerLoad>;
+  /**
+   * The sources of the console's stylesheet the package ships, `src/styles` beside `dist/`: the
+   * catalogue of the parts a plugin's web bundle is held to (ADR-0106). Left out, not held.
+   */
+  readonly stylesDir?: string | undefined;
 }
 
 /** The exit codes: done; refused or failed; not understood. */
@@ -227,15 +232,29 @@ async function check(args: readonly string[], io: PluginCliIo): Promise<number> 
     return PLUGIN_EXIT.usage;
   }
   const root = resolve(io.cwd, dir ?? ".");
+  // The catalogue of the parts, read from the package this command is of. A package without
+  // it is not this one as it is published: said, and the classes are then not held.
+  const classes =
+    io.stylesDir === undefined
+      ? undefined
+      : await readConsoleClasses(io.stylesDir).catch(() => null);
   const report = await checkPlugin(root, (file) => io.loadServer(file), {
     consoleVersion: io.version,
+    consoleClasses: classes ?? undefined,
   });
   io.stdout(`console-plugin check ${root}\n`);
+  const warnings =
+    classes === null
+      ? [
+          ...report.warnings,
+          `the catalogue of the console's parts was not found in ${io.stylesDir}: the web bundle's classes were not held to it`,
+        ]
+      : report.warnings;
   io.stdout(wordsOf(report.errors, "error"));
-  io.stdout(wordsOf(report.warnings, "warning"));
+  io.stdout(wordsOf(warnings, "warning"));
   if (report.ok) {
     io.stdout(
-      `ok: ${report.summary ?? "a plugin"}${report.warnings.length > 0 ? `; ${report.warnings.length} warning${report.warnings.length === 1 ? "" : "s"}` : ""}\n`,
+      `ok: ${report.summary ?? "a plugin"}${warnings.length > 0 ? `; ${warnings.length} warning${warnings.length === 1 ? "" : "s"}` : ""}\n`,
     );
     return PLUGIN_EXIT.ok;
   }

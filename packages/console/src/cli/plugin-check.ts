@@ -1,9 +1,10 @@
 // `console-plugin check` (docs/specs/plugins.md, "Authoring"): reads a plugin's package as the
 // console would and names everything a console, or a store, would refuse it for: the manifest,
 // the package's own manifest, the server module under the host's hardening and against the
-// manifest, the web bundle's self-containment and its classes, the skills, the migrations.
+// manifest, the web bundle's self-containment and its classes, held to the console's parts, the
+// skills, the migrations.
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join, posix } from "node:path";
+import { join, posix, relative, sep } from "node:path";
 import { descriptionProblems, type PluginDescription } from "../plugin/define.js";
 import type { ServerLoad } from "../plugin/load.js";
 import {
@@ -95,6 +96,103 @@ export function classesIn(css: string): string[] {
   }
   return [...found];
 }
+
+/**
+ * The classes of the console's stylesheet, as the package ships its sources (ADR-0106): the
+ * parts, which a plugin's pages are built from as the console's own are, and the classes of the
+ * console's own pages, which lay one page out and are that page's alone. The list is the
+ * catalogue itself, `src/styles/README.md` of the package, and the pages' files beside it:
+ * nothing is copied, so that a part added to the catalogue is one a plugin may use at once.
+ */
+export interface ConsoleClasses {
+  /** Whether a row of the catalogue names the class: `sc-button*` is `sc-button` and every `sc-button-...`. */
+  isPart(name: string): boolean;
+  /** Whether a part's class begins so, for a name a bundle finishes itself: `sc-badge-` and a tone. */
+  beginsPart(stem: string): boolean;
+  /** Whether the class is one of the console's own pages', which no part is. */
+  isPagesOwn(name: string): boolean;
+}
+
+/** Reads the catalogue's rows and the pages' stylesheets into the classes a plugin is held to. */
+export function consoleClassesOf(catalogue: string, pageSheets: readonly string[]): ConsoleClasses {
+  const exact = new Set<string>();
+  const stems: string[] = [];
+  const lines = catalogue.split(/\r?\n/);
+  const from = lines.findIndex((line) => line.trim() === "## The catalogue");
+  const after = lines.findIndex((line, index) => index > from && line.startsWith("## "));
+  for (const line of from < 0 ? [] : lines.slice(from + 1, after < 0 ? undefined : after)) {
+    // A row of the table: the part, its classes, what renders it, what it is for.
+    const cells = line.startsWith("|") ? line.split("|") : [];
+    for (const match of (cells[2] ?? "").matchAll(/`(sc-[a-z0-9-]+)(\*?)`/g)) {
+      if (match[2] === "*") {
+        stems.push(match[1] ?? "");
+      } else {
+        exact.add(match[1] ?? "");
+      }
+    }
+  }
+  const isPart = (name: string): boolean =>
+    exact.has(name) || stems.some((stem) => name === stem || name.startsWith(`${stem}-`));
+  const ofPages = new Set(pageSheets.flatMap((css) => classesIn(css)));
+  return {
+    isPart,
+    beginsPart: (stem) =>
+      [...exact].some((name) => name.startsWith(stem)) ||
+      stems.some((part) => `${part}-`.startsWith(stem) || stem.startsWith(`${part}-`)),
+    isPagesOwn: (name) => ofPages.has(name) && !isPart(name),
+  };
+}
+
+/** The catalogue and the pages' files of the package whose styles are in `stylesDir`. */
+export async function readConsoleClasses(stylesDir: string): Promise<ConsoleClasses> {
+  const catalogue = await readFile(join(stylesDir, "README.md"), "utf8");
+  const pages = (await readdir(join(stylesDir, "pages"))).filter((name) => name.endsWith(".css"));
+  return consoleClassesOf(
+    catalogue,
+    await Promise.all(pages.map((name) => readFile(join(stylesDir, "pages", name), "utf8"))),
+  );
+}
+
+/**
+ * A name in the console's own prefix, as a script holds one: `sc-` not inside a longer word nor
+ * a custom property (`--sc-color-text` is a token), then the name, with the hyphen it ends on
+ * where the script finishes it itself (`sc-badge-` and a tone).
+ */
+const CONSOLE_NAME = /(?<![\w-])sc-[a-z][a-z0-9]*(?:-[a-z0-9]+)*-?/g;
+
+/** The names in the console's prefix a script holds, each once. */
+export function consoleNamesIn(script: string): string[] {
+  return [...new Set(script.match(CONSOLE_NAME) ?? [])];
+}
+
+/**
+ * What a file of a web bundle uses of the console's classes that is not a part (ADR-0106): a
+ * class of one of the console's own pages, which is that page's layout and changes with it, is
+ * an error; a name nothing of the console styles is said, since it draws nothing. A stylesheet
+ * is read by its selectors, a script by the names it holds.
+ */
+export function strayConsoleClasses(
+  file: string,
+  text: string,
+  classes: ConsoleClasses,
+): { readonly pagesOwn: string[]; readonly unknown: string[] } {
+  const names = file.endsWith(".css")
+    ? classesIn(text).filter((name) => name.startsWith("sc-"))
+    : consoleNamesIn(text);
+  const pagesOwn: string[] = [];
+  const unknown: string[] = [];
+  for (const name of names) {
+    if (name.endsWith("-") ? classes.beginsPart(name) : classes.isPart(name)) {
+      continue;
+    }
+    (classes.isPagesOwn(name) ? pagesOwn : unknown).push(name);
+  }
+  return { pagesOwn: pagesOwn.sort(), unknown: unknown.sort() };
+}
+
+/** A few of a list, in a line, with a word where there are more. */
+const some = (names: readonly string[], most = 8): string =>
+  `${names.slice(0, most).join(", ")}${names.length > most ? `, and ${names.length - most} more` : ""}`;
 
 const WEB_IMPORT = /(?:\bfrom\s*|\bimport\s*\(?\s*|\bexport\s+\*\s+from\s*)["'`]([^"'`]+)["'`]/g;
 const WEB_FORBIDDEN =
@@ -251,12 +349,22 @@ async function checkMigrations(
   }
 }
 
+/** The scripts and stylesheets of a bundle, by their paths under it: its entry, its chunks, its styles. */
+async function bundleFiles(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true, recursive: true });
+  return entries
+    .filter((entry) => entry.isFile() && /\.(?:js|mjs|css)$/.test(entry.name))
+    .map((entry) => posix.join(relative(dir, entry.parentPath).split(sep).join("/"), entry.name))
+    .sort();
+}
+
 async function checkWeb(
   root: string,
   manifest: PluginManifest,
   webDir: string,
   errors: string[],
   warnings: string[],
+  classes: ConsoleClasses | undefined,
 ): Promise<void> {
   const dir = join(root, webDir);
   if ((await exists(dir)) !== "directory") {
@@ -286,6 +394,30 @@ async function checkWeb(
     if (strangers.length > 0) {
       warnings.push(
         `${webDir}/index.css styles ${strangers.slice(0, 5).join(", ")}${strangers.length > 5 ? ", ..." : ""}: a plugin's classes begin with ${prefix}`,
+      );
+    }
+  }
+  if (classes === undefined) {
+    return;
+  }
+  // A plugin's pages are built from the console's parts, as the console's own are (ADR-0106):
+  // every file of the bundle is read for the classes of the console it uses.
+  for (const file of await bundleFiles(dir)) {
+    const text = await readFile(join(dir, file), "utf8").catch(() => null);
+    if (text === null) {
+      continue;
+    }
+    const stray = strayConsoleClasses(file, text, classes);
+    if (stray.pagesOwn.length > 0) {
+      const one = stray.pagesOwn.length === 1;
+      errors.push(
+        `${webDir}/${file} uses ${some(stray.pagesOwn)}: ${one ? "a class" : "classes"} of the console's own pages, not ${one ? "a part" : "parts"}; a plugin's page is built from the parts, which src/styles/README.md of @skillcdn/console lists`,
+      );
+    }
+    if (stray.unknown.length > 0) {
+      const one = stray.unknown.length === 1;
+      warnings.push(
+        `${webDir}/${file} names ${some(stray.unknown)}: no part of the console has ${one ? "that class" : "those classes"}, and nothing styles ${one ? "it" : "them"}; a plugin's own classes begin with pl-${manifest.key}-`,
       );
     }
   }
@@ -335,6 +467,8 @@ export function sameAsEnglish(value: unknown, at = ""): string[] {
 export interface CheckOptions {
   /** The version of the console this command belongs to, held against the manifest's `console`; left out, not compared. */
   readonly consoleVersion?: string | undefined;
+  /** The classes of the console this command belongs to, which the web bundle's are held to; left out, not held. */
+  readonly consoleClasses?: ConsoleClasses | undefined;
 }
 
 /** Reads the plugin at `root` as a console would, and says what it would refuse. */
@@ -511,7 +645,7 @@ export async function checkPlugin(
   }
 
   if (manifest.web !== undefined) {
-    await checkWeb(root, manifest, manifest.web, errors, warnings);
+    await checkWeb(root, manifest, manifest.web, errors, warnings, options.consoleClasses);
   }
   let skills = 0;
   if (manifest.skills !== undefined) {

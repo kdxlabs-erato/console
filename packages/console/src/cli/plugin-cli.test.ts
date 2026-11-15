@@ -7,15 +7,23 @@ import type { PluginDescription } from "../plugin/define.js";
 import type { ServerLoad } from "../plugin/load.js";
 import {
   classesIn,
+  consoleNamesIn,
   coveredByFiles,
   isPermissiveLicense,
+  readConsoleClasses,
   sameAsEnglish,
+  strayConsoleClasses,
   webBundleProblems,
 } from "./plugin-check.js";
 import { type PluginCliIo, runPluginCli } from "./plugin-cli.js";
 import { nameFromKey } from "./plugin-init.js";
 
 const TEMPLATE = fileURLToPath(new URL("../../template/plugin/", import.meta.url));
+/** A backtick, and the opening of a placeholder, as the script of a bundle holds a template. */
+const TICK = "`";
+const OPEN = `$${"{"}`;
+/** The sources of the console's stylesheet, with the catalogue of its parts, as the package ships them. */
+const STYLES = fileURLToPath(new URL("../styles/", import.meta.url));
 const EXAMPLE = fileURLToPath(new URL("../../../../examples/plugin-hello/", import.meta.url));
 const SKIPPED = new Set(["node_modules", "dist", ".turbo"]);
 
@@ -94,6 +102,7 @@ function ioOf(
     ok: true,
     description: HELLO_DESCRIPTION,
   }),
+  stylesDir: string | undefined = STYLES,
 ) {
   const out: string[] = [];
   const err: string[] = [];
@@ -104,6 +113,7 @@ function ioOf(
     templateDir: TEMPLATE,
     version: "0.4.1",
     loadServer,
+    stylesDir,
   };
   return { io, out: () => out.join(""), err: () => err.join("") };
 }
@@ -399,6 +409,72 @@ describe("console-plugin check", () => {
     );
   });
 
+  it("holds the web bundle's classes to the console's parts, in every file of it (ADR-0106)", async () => {
+    const root = await pluginDir();
+    // Built from the parts, its own classes beside them, a class finished by the script, and
+    // the tokens read as custom properties: nothing to say.
+    await built(root, ".pl-hello-page { color: var(--sc-color-text); } .sc-button { margin: 0; }");
+    await writeFile(
+      join(root, "dist", "web", "index.js"),
+      [
+        'const a = "sc-button sc-button-primary sc-panel pl-hello-page";',
+        // A class the script finishes itself, as a bundle holds a template: the name ends on its hyphen.
+        `const b = ${TICK}sc-badge sc-badge-${OPEN}tone} sc-series-${OPEN}slot}${TICK};`,
+        'el.style.color = "var(--sc-color-accent)"; const word = "misc-thing";',
+        'import("./chunks/page-1.js");',
+      ].join("\n"),
+    );
+    await mkdir(join(root, "dist", "web", "chunks"), { recursive: true });
+    await writeFile(join(root, "dist", "web", "chunks", "page-1.js"), 'const c = "sc-stat";\n');
+    const clean = ioOf(root);
+    expect(await runPluginCli(["check", root], clean.io)).toBe(0);
+    expect(clean.out()).not.toMatch(/sc-/);
+
+    // A class of one of the console's own pages, in a chunk and in the stylesheet: refused, by
+    // file. A name nothing of the console styles: said, and the check goes through on it alone.
+    await writeFile(
+      join(root, "dist", "web", "chunks", "page-1.js"),
+      'const c = "sc-stat sc-plugin-held sc-settings-list sc-card-meta sc-buton";\n',
+    );
+    await writeFile(
+      join(root, "dist", "web", "index.css"),
+      ".pl-hello-page {} .sc-plugin-tick-name { margin: 0; } .sc-mine {}",
+    );
+    const stray = ioOf(root);
+    expect(await runPluginCli(["check", root], stray.io)).toBe(1);
+    expect(stray.out()).toContain(
+      "error: dist/web/chunks/page-1.js uses sc-card-meta, sc-plugin-held: classes of the console's own pages, not parts; a plugin's page is built from the parts, which src/styles/README.md of @skillcdn/console lists",
+    );
+    expect(stray.out()).toContain(
+      "error: dist/web/index.css uses sc-plugin-tick-name: a class of the console's own pages, not a part;",
+    );
+    expect(stray.out()).toContain(
+      "warning: dist/web/chunks/page-1.js names sc-buton: no part of the console has that class, and nothing styles it; a plugin's own classes begin with pl-hello-",
+    );
+    expect(stray.out()).toContain(
+      "warning: dist/web/index.css names sc-mine: no part of the console",
+    );
+    expect(stray.out()).toMatch(/^2 problems in hello 0.1.0/m);
+
+    await writeFile(join(root, "dist", "web", "chunks", "page-1.js"), 'const c = "sc-buton";\n');
+    await writeFile(join(root, "dist", "web", "index.css"), ".pl-hello-page {}");
+    const typo = ioOf(root);
+    expect(await runPluginCli(["check", root], typo.io)).toBe(0);
+    expect(typo.out()).toMatch(/^ok: hello 0.1.0: .*; 1 warning$/m);
+
+    // A command that is not of the package as it is published has no catalogue: said, not held.
+    await writeFile(
+      join(root, "dist", "web", "chunks", "page-1.js"),
+      'const c = "sc-plugin-held";\n',
+    );
+    const without = ioOf(root, undefined, join(root, "nowhere"));
+    expect(await runPluginCli(["check", root], without.io)).toBe(0);
+    expect(without.out()).toMatch(
+      /warning: the catalogue of the console's parts was not found in .*nowhere: the web bundle's classes were not held to it/,
+    );
+    expect(without.out()).toMatch(/^ok: hello 0.1.0: .*; 1 warning$/m);
+  });
+
   it("holds package.json to what a store asks", async () => {
     const root = await pluginDir();
     await built(root);
@@ -518,6 +594,49 @@ describe("the checks", () => {
     expect(
       classesIn('.pl-a-x { } .b:hover, div.c { width: 0.5em } /* .d */ a[href=".e"] .f { }').sort(),
     ).toEqual(["b", "c", "f", "pl-a-x"]);
+  });
+
+  it("read the names of the console's a script holds, and none inside a longer word or a custom property", () => {
+    expect(
+      consoleNamesIn(
+        `x("sc-button sc-button-sm", ${TICK}sc-badge-${OPEN}t}${TICK}, "--sc-color-text", "misc-a", "data-sc-b", "sc-", "Sc-C", "a.sc-chip")`,
+      ).sort(),
+    ).toEqual(["sc-badge-", "sc-button", "sc-button-sm", "sc-chip"]);
+  });
+
+  it("read the catalogue the package ships: every class of a part's file is a part, and a page's own is not", async () => {
+    const classes = await readConsoleClasses(STYLES);
+    // The list is the catalogue's own rows, read where the package keeps them: held here against
+    // the parts' files, so that a row written another way is found before a plugin is refused
+    // a part.
+    const parts = (await readdir(join(STYLES, "parts"))).filter((name) => name.endsWith(".css"));
+    expect(parts.length).toBeGreaterThan(30);
+    const notNamed: string[] = [];
+    for (const name of parts) {
+      for (const one of classesIn(await readFile(join(STYLES, "parts", name), "utf8"))) {
+        if (one.startsWith("sc-") && !classes.isPart(one)) {
+          notNamed.push(`${name}: ${one}`);
+        }
+      }
+    }
+    expect(notNamed).toEqual([]);
+    expect(classes.isPart("sc-button")).toBe(true);
+    expect(classes.isPart("sc-button-primary")).toBe(true);
+    expect(classes.isPart("sc-buttonish")).toBe(false);
+    expect(classes.isPart("sc-category-blue")).toBe(true);
+    expect(classes.isPart("sc-category-mauve")).toBe(false);
+    // A name the script finishes itself: fine where a part's class begins so.
+    expect(classes.beginsPart("sc-badge-")).toBe(true);
+    expect(classes.beginsPart("sc-category-")).toBe(true);
+    expect(classes.beginsPart("sc-nothing-")).toBe(false);
+    // A page's own class is no part, and a class nothing styles is neither.
+    expect(classes.isPagesOwn("sc-plugin-held")).toBe(true);
+    expect(classes.isPart("sc-plugin-held")).toBe(false);
+    expect(classes.isPagesOwn("sc-button")).toBe(false);
+    expect(classes.isPagesOwn("sc-buton")).toBe(false);
+    expect(
+      strayConsoleClasses("index.js", '"sc-panel sc-plugin-held sc-buton sc-nothing-"', classes),
+    ).toEqual({ pagesOwn: ["sc-plugin-held"], unknown: ["sc-buton", "sc-nothing-"] });
   });
 
   it("find what a web bundle must not do", () => {
