@@ -5,9 +5,10 @@ import type {
   SignalKind,
   SignalSource,
 } from "@skillcdn/console/api";
-import { and, asc, desc, eq, gt, inArray, isNotNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { DomainError } from "../../errors.js";
 import { type Database, drizzleOf, type Transaction } from "../client.js";
-import { agentRunners, agentSignalFiles, agentSignals, people } from "../schema.js";
+import { agentRunners, agentSignalFiles, agentSignals, events, people } from "../schema.js";
 import { type Actor, recordEvent } from "./events.js";
 import { type PersonRecord, personColumns, toPerson } from "./people.js";
 
@@ -18,6 +19,29 @@ import { type PersonRecord, personColumns, toPerson } from "./people.js";
 
 /** The PostgreSQL channel a process listens on to learn that an agent account has something new: its payload is the account's id. */
 export const AGENTS_CHANNEL = "console_agents";
+
+/** The hour what a runner writes is counted over (ADR-0132). */
+const HOUR_MS = 60 * 60_000;
+/**
+ * How far back the record is looked through for an hour's count: the last signals of an
+ * account, and the last events of a workspace. More than an hour holds of either, and a bound
+ * on what one count reads whatever the record holds.
+ */
+const SIGNALS_LOOKED_THROUGH = 20_000;
+const EVENTS_LOOKED_THROUGH = 5000;
+/** How long after a change of state the feed is looked at for whether it was told. */
+const TOLD_WITHIN_MS = 2 * HOUR_MS;
+
+/** What a runner asked for that the console refuses. `code` is what the API answers with. */
+export class RunnerError extends DomainError {
+  /** In how many seconds the hour has room again. */
+  readonly retryAfter: number;
+
+  constructor(code: "signal.too_many", retryAfter: number) {
+    super(code, "the account's runner raised as many wakes within the hour as it may");
+    this.retryAfter = retryAfter;
+  }
+}
 
 /** What the console has of a runner, as its row says. */
 export interface RunnerRecord {
@@ -205,16 +229,53 @@ export async function runnersOf(
 }
 
 /**
+ * What the workspace's feed was told of an account's state: how many times within the hour,
+ * and the state it was told last. Read from the workspace's last events, a bounded number of
+ * them: a feed that took more than that since tells nothing of the account here, and nothing
+ * more is told on its account.
+ */
+async function toldOf(
+  tx: Transaction,
+  account: PersonRecord,
+  now: Date,
+): Promise<{ readonly count: number; readonly last: string | undefined }> {
+  const recent = tx
+    .select({ id: events.id, kind: events.kind, data: events.data, createdAt: events.createdAt })
+    .from(events)
+    .where(eq(events.workspaceId, account.workspaceId))
+    .orderBy(desc(events.id))
+    .limit(EVENTS_LOOKED_THROUGH)
+    .as("recent");
+  const rows = await tx
+    .select({ state: sql<string | null>`${recent.data}->>'state'`, createdAt: recent.createdAt })
+    .from(recent)
+    .where(
+      and(eq(recent.kind, "agent.state_changed"), sql`${recent.data}->>'login' = ${account.login}`),
+    )
+    .orderBy(desc(recent.id));
+  const since = now.getTime() - HOUR_MS;
+  return {
+    count: rows.filter((row) => row.createdAt.getTime() > since).length,
+    last: rows[0]?.state ?? undefined,
+  };
+}
+
+/**
  * Notes a heartbeat: when the runner was heard from, what it said of itself, and how its agent
  * stands. While a supervisor's `stop` stands the agent is `stopped` whatever the runner says,
  * since the runner may not have received it yet. A change of state is told to the workspace,
- * by the account, whose runner reported it.
+ * by the account, whose runner reported it; so many times an hour and no more (ADR-0132),
+ * where `changesPerHour` says how many: a change beyond that is kept with the account, which
+ * its page reads, and told by a later heartbeat once the hour has room, as how the account
+ * stands then, so that the feed's last word of an account is how it stands.
  */
 export async function recordHeartbeat(
   database: Database,
   input: {
     readonly account: PersonRecord;
     readonly heartbeat: RestRunnerHeartbeatInput;
+    /** How many changes of the account's state its runner has the feed told within an hour; unbounded where left out. */
+    readonly changesPerHour?: number | undefined;
     readonly now: Date;
   },
 ): Promise<RunnerRecord> {
@@ -255,15 +316,36 @@ export async function recordHeartbeat(
     if (row === undefined) {
       throw new Error("agent runner update returned no row");
     }
-    if (changed) {
-      await tellState(tx, {
-        account,
-        actor: { id: account.id },
-        state,
-        was: before.state,
-        reason,
-        now,
-      });
+    if (input.changesPerHour === undefined) {
+      if (changed) {
+        await tellState(tx, {
+          account,
+          actor: { id: account.id },
+          state,
+          was: before.state,
+          reason,
+          now,
+        });
+      }
+      return toRunner(row);
+    }
+    // The feed is looked at where the state changed now, or changed a while ago and may not
+    // have been told: a runner that says the same for hours costs the feed no look.
+    const since = changed ? now : before.stateAt;
+    if (since !== null && now.getTime() - since.getTime() <= TOLD_WITHIN_MS) {
+      const told = await toldOf(tx, account, now);
+      const untold = changed || (told.last !== undefined && told.last !== state);
+      if (untold && told.count < input.changesPerHour) {
+        await tellState(tx, {
+          account,
+          actor: { id: account.id },
+          state,
+          // What the feed said last, where a change before this one went untold.
+          was: changed ? before.state : ((told.last as AgentState | undefined) ?? before.state),
+          reason,
+          now,
+        });
+      }
     }
     return toRunner(row);
   });
@@ -337,6 +419,12 @@ export async function sendSignal(
       | undefined;
     /** The pictures sent with it, their bytes kept already. */
     readonly files?: readonly Omit<SignalFileRecord, "id">[] | undefined;
+    /**
+     * For a wake the account's runner raises itself: how many of them the record takes within
+     * an hour (ADR-0132). One more is refused, `signal.too_many`. Unbounded where left out,
+     * as what a supervisor, the board and the schedule send is.
+     */
+    readonly perHour?: number | undefined;
     readonly now: Date;
   },
 ): Promise<SignalRecord> {
@@ -344,6 +432,34 @@ export async function sendSignal(
   const number = await drizzleOf(database).transaction(async (tx) => {
     const before = await lockedRunner(tx, account.id, now);
     const next = before.nextSignal;
+    if (input.perHour !== undefined) {
+      // The wake that would be one too many: the one that many before it is not an hour old.
+      // Looked for among the account's last signals alone, under the row's lock, so that two
+      // raised at once are counted one after the other.
+      const [oldest] = await tx
+        .select({ createdAt: agentSignals.createdAt })
+        .from(agentSignals)
+        .where(
+          and(
+            eq(agentSignals.personId, account.id),
+            gt(agentSignals.number, next - 1 - SIGNALS_LOOKED_THROUGH),
+            eq(agentSignals.source, input.source),
+            isNull(agentSignals.byId),
+            gt(agentSignals.createdAt, new Date(now.getTime() - HOUR_MS)),
+          ),
+        )
+        .orderBy(desc(agentSignals.number))
+        .limit(1)
+        .offset(Math.max(0, input.perHour - 1));
+      if (oldest !== undefined || input.perHour < 1) {
+        throw new RunnerError(
+          "signal.too_many",
+          oldest === undefined
+            ? HOUR_MS / 1000
+            : Math.max(1, Math.ceil((oldest.createdAt.getTime() + HOUR_MS - now.getTime()) / 1000)),
+        );
+      }
+    }
     const chosen =
       kind === "set" && input.set !== undefined
         ? {

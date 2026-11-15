@@ -90,6 +90,8 @@ const STATUS = {
   "transcript.out_of_order": 400,
   "transcript.unknown_file": 400,
   "transcript.too_fast": 429,
+  "transcript.too_many": 429,
+  "transcript.too_many_sessions": 429,
 } as const;
 
 const WORDS: Record<keyof typeof STATUS, string> = {
@@ -101,6 +103,10 @@ const WORDS: Record<keyof typeof STATUS, string> = {
   "transcript.out_of_order": "The events of a batch are numbered in order, none twice.",
   "transcript.unknown_file": "An event names a picture that was not handed in to its session.",
   "transcript.too_fast": "The session hands in pictures faster than it may.",
+  "transcript.too_many":
+    "The session took as many events within the hour as one may. What is sent again later is taken.",
+  "transcript.too_many_sessions":
+    "The account began as many sessions within the hour as it may. Begin one later.",
 };
 
 export const restAgentSession = (
@@ -181,6 +187,10 @@ export function registerAgentTranscriptRest(
     if (error instanceof TranscriptError) {
       const code = error.code as keyof typeof STATUS;
       const next = error.expected === undefined ? "" : ` The next is ${error.expected}.`;
+      // An hour's bound says when the hour has room again.
+      if (error.retryAfter !== undefined) {
+        c.header("retry-after", String(error.retryAfter));
+      }
       return c.json(errorBody(code, `${WORDS[code]}${next}`), STATUS[code]);
     }
     if (error instanceof BlobStoreError) {
@@ -244,11 +254,17 @@ export function registerAgentTranscriptRest(
     if (!parsed.success) {
       return invalid(c, problemOf(parsed.error.issues));
     }
-    const begun = await beginSession(database, {
-      account: caller.person,
-      session: parsed.data,
-      now: clock.now(),
-    });
+    let begun: Awaited<ReturnType<typeof beginSession>>;
+    try {
+      begun = await beginSession(database, {
+        account: caller.person,
+        session: parsed.data,
+        perHour: quotas.agentSessionsPerHour,
+        now: clock.now(),
+      });
+    } catch (error) {
+      return failure(c, error);
+    }
     for (const previous of begun.tookOver) {
       wakes.nudge(previous);
     }
@@ -283,6 +299,7 @@ export function registerAgentTranscriptRest(
         account: caller.person,
         sessionId: id,
         events: parsed.data.events,
+        perHour: quotas.transcriptEventsPerHour,
         now: clock.now(),
       });
       // In this process at once; in the others through the database's own channel.

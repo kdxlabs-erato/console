@@ -86,6 +86,17 @@ export const MAX_TRANSCRIPT_FACT_LENGTH = 1000;
 /** How many pictures one event carries, and how many a session hands in within a minute. */
 export const MAX_TRANSCRIPT_ATTACHMENTS = 8;
 export const MAX_TRANSCRIPT_FILES_PER_MINUTE = 60;
+/**
+ * What an agent account's runner writes in an hour, counted over the hour before each write
+ * (ADR-0132): the events one session's transcript takes, the sessions an account begins, the
+ * wakes its runner raises itself, and the changes of its state the workspace's feed is told
+ * by its runner. Each far above what work is, and what a product that fails again and again,
+ * or a wake source that repeats itself, meets.
+ */
+export const MAX_TRANSCRIPT_EVENTS_PER_HOUR = 60_000;
+export const MAX_AGENT_SESSIONS_PER_HOUR = 60;
+export const MAX_RUNNER_WAKES_PER_HOUR = 600;
+export const MAX_AGENT_STATE_CHANGES_PER_HOUR = 20;
 /** How many events one page of a session carries when none is asked for, and the most it may. */
 export const TRANSCRIPT_PAGE_LIMIT = 100;
 export const MAX_TRANSCRIPT_PAGE_LIMIT = 500;

@@ -26,6 +26,7 @@ import {
   findSignalFile,
   listSignals,
   listSignalsAfter,
+  RunnerError,
   recordHeartbeat,
   type SignalRecord,
   sendSignal,
@@ -172,6 +173,7 @@ export function registerAgentRunnerRest(
     const runner = await recordHeartbeat(database, {
       account: caller.person,
       heartbeat: parsed.data,
+      changesPerHour: quotas.agentStateChangesPerHour,
       now: clock.now(),
     });
     const body: RestRunnerHeartbeat = {
@@ -275,16 +277,33 @@ export function registerAgentRunnerRest(
     if (!parsed.success) {
       return invalid(c, problemOf(parsed.error.issues));
     }
-    const sent = await sendSignal(database, {
-      account: caller.person,
-      kind: "wake",
-      by: undefined,
-      source: "messenger",
-      key: parsed.data.key,
-      text: parsed.data.text ?? "",
-      set: undefined,
-      now: clock.now(),
-    });
+    let sent: SignalRecord;
+    try {
+      sent = await sendSignal(database, {
+        account: caller.person,
+        kind: "wake",
+        by: undefined,
+        source: "messenger",
+        key: parsed.data.key,
+        text: parsed.data.text ?? "",
+        set: undefined,
+        perHour: quotas.runnerWakesPerHour,
+        now: clock.now(),
+      });
+    } catch (error) {
+      if (error instanceof RunnerError) {
+        // The hour's bound on what a runner raises itself (ADR-0132): said with when it has room.
+        c.header("retry-after", String(error.retryAfter));
+        return c.json(
+          errorBody(
+            "signal.too_many",
+            "The account's runner raised as many wakes within the hour as it may. What is raised later is taken.",
+          ),
+          429,
+        );
+      }
+      throw error;
+    }
     return c.json(restSignal(sent), 201);
   });
 

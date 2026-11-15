@@ -1,12 +1,16 @@
 import {
+  MAX_AGENT_SESSIONS_PER_HOUR,
+  MAX_AGENT_STATE_CHANGES_PER_HOUR,
   MAX_DECISIONS_PER_PROJECT,
   MAX_DOCUMENTS_PER_PROJECT,
   MAX_GOALS_PER_PROJECT,
   MAX_PROJECTS_PER_WORKSPACE,
+  MAX_RUNNER_WAKES_PER_HOUR,
   MAX_RUNS_PER_TASK,
   MAX_STREAMS,
   MAX_STREAMS_PER_PERSON,
   MAX_TASKS_PER_PROJECT,
+  MAX_TRANSCRIPT_EVENTS_PER_HOUR,
 } from "@skillcdn/console/api";
 import type { Context } from "hono";
 import type { LiveFeed } from "./live-feed.js";
@@ -29,6 +33,15 @@ export interface Quotas {
   /** How many streams this process holds for everyone: each costs a query on every change. */
   readonly streams: number;
   /**
+   * What an agent account's runner writes in an hour (ADR-0132): the events one session's
+   * transcript takes, the sessions the account begins, the wakes its runner raises itself, and
+   * the changes of its state its runner has the workspace's feed told.
+   */
+  readonly transcriptEventsPerHour: number;
+  readonly agentSessionsPerHour: number;
+  readonly runnerWakesPerHour: number;
+  readonly agentStateChangesPerHour: number;
+  /**
    * How many bytes the files of one project hold together: those runs hand in, those put in
    * comments and on decisions, and those attached to pages, each counted by its size. `Infinity` where the
    * deployment set no bound, which is the default.
@@ -45,6 +58,10 @@ export const DEFAULT_QUOTAS: Quotas = {
   runsPerTask: MAX_RUNS_PER_TASK,
   streamsPerPerson: MAX_STREAMS_PER_PERSON,
   streams: MAX_STREAMS,
+  transcriptEventsPerHour: MAX_TRANSCRIPT_EVENTS_PER_HOUR,
+  agentSessionsPerHour: MAX_AGENT_SESSIONS_PER_HOUR,
+  runnerWakesPerHour: MAX_RUNNER_WAKES_PER_HOUR,
+  agentStateChangesPerHour: MAX_AGENT_STATE_CHANGES_PER_HOUR,
   fileBytesPerProject: Number.POSITIVE_INFINITY,
 };
 

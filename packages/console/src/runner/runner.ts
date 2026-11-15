@@ -57,6 +57,13 @@ export const MAX_COOL_DOWN_MS = 4 * 60 * 60_000;
 export const RECONNECT_MS = 5000;
 /** What an autosave's commit says: the runner's, and never the agent's own words. */
 export const AUTOSAVE_MESSAGE = "Autosave at the end of a session";
+/**
+ * How long the runner holds back what the console refused as more than an hour takes
+ * (ADR-0132), the events of a session and the wakes of its wake sources: a minute at first,
+ * twice as long after each refusal that follows, a quarter of an hour at most.
+ */
+export const HOLD_MS = 60_000;
+export const MAX_HOLD_MS = 15 * 60_000;
 /** The longest the runner waits before it starts a wake source again that keeps ending at once. */
 export const MAX_SOURCE_PAUSE_MS = 5 * 60_000;
 /** How long a wake source holds before the runner takes it to have worked. */
@@ -187,6 +194,8 @@ export interface RunnerOptions {
     coolDownMs: number;
     maxCoolDownMs: number;
     reconnectMs: number;
+    holdMs: number;
+    maxHoldMs: number;
   }>;
   /** The bounds, for a test to lower. */
   readonly bounds?: Partial<{ outboxBytes: number }>;
@@ -267,6 +276,8 @@ interface OpenSession {
   waiting: number;
   /** Whether the console takes nothing more of it: over there, or its month away. */
   refused: boolean;
+  /** The console took as many of its events as an hour takes: until when nothing is sent, and how long that was. */
+  hold?: { readonly until: number; readonly pause: number } | undefined;
   running: { model: string | null; effort: string | null };
   /** The files written for it, to remove at its end. */
   readonly written: string[];
@@ -352,8 +363,13 @@ export function createRunner(options: RunnerOptions): Runner {
     coolDownMs: COOL_DOWN_MS,
     maxCoolDownMs: MAX_COOL_DOWN_MS,
     reconnectMs: RECONNECT_MS,
+    holdMs: HOLD_MS,
+    maxHoldMs: MAX_HOLD_MS,
     ...options.timing,
   };
+  /** How long what an hour's bound refused is held back: the first time, and twice as long each time after. */
+  const heldFor = (before: { readonly pause: number } | undefined): number =>
+    before === undefined ? timing.holdMs : Math.min(before.pause * 2, timing.maxHoldMs);
   const bounds = { outboxBytes: MAX_OUTBOX_BYTES, ...options.bounds };
 
   // What keeps failing is said once, and again when what is said of it changes, so that an hour
@@ -441,6 +457,8 @@ export function createRunner(options: RunnerOptions): Runner {
   let secretValues = new Map<string, string>();
   let redact: Redactor = redactorOf([]);
   let tooOldSaid = false;
+  /** The console took as many wakes of this runner's as an hour takes: until when none is raised, and how long that was. */
+  let wakesHeld: { readonly until: number; readonly pause: number } | undefined;
   /**
    * The package the runner runs from, where it is another version than the runner's: the one
    * last seen, and the one seen twice running, which the runner ends for.
@@ -581,9 +599,16 @@ export function createRunner(options: RunnerOptions): Runner {
   const codeOf = (error: unknown): string =>
     error instanceof ApiError ? error.code : error instanceof Error ? error.name : "error";
 
-  /** Sends what the product did, a batch at a time, the pictures first. What the console has already is left there. */
-  const flush = async (target: OpenSession): Promise<void> => {
+  /**
+   * Sends what the product did, a batch at a time, the pictures first. What the console has
+   * already is left there. Nothing is sent while the console holds the session to its hour
+   * (ADR-0132), but at the session's end, which is `last`.
+   */
+  const flush = async (target: OpenSession, last = false): Promise<void> => {
     if (flushing) {
+      return;
+    }
+    if (!last && target.hold !== undefined && options.now() < target.hold.until) {
       return;
     }
     flushing = true;
@@ -635,6 +660,7 @@ export function createRunner(options: RunnerOptions): Runner {
           for (const event of target.outbox.splice(0, batch.length)) {
             target.waiting -= event.held;
           }
+          target.hold = undefined;
           sayOver(about, `the transcript of session ${target.id} is sent again`);
           sayOver(`outbox ${target.id}`);
         } catch (error) {
@@ -681,6 +707,18 @@ export function createRunner(options: RunnerOptions): Runner {
             only.held = heldBytes(only);
             target.waiting += only.held - before;
             continue;
+          }
+          if (code === "transcript.too_many") {
+            // As many events as the console takes of a session within an hour: what waits is
+            // kept, within what the runner keeps, and sent again after a while, longer each
+            // time, so that the console is not asked every second for what it will refuse.
+            const pause = heldFor(target.hold);
+            target.hold = { until: options.now() + pause, pause };
+            sayOnce(
+              about,
+              `the console takes no more events of session ${target.id} within the hour (${code}); they are kept and sent again later`,
+            );
+            return;
           }
           if (
             code === "transcript.session_over" ||
@@ -771,7 +809,12 @@ export function createRunner(options: RunnerOptions): Runner {
         machine: options.machine,
       });
     } catch (error) {
-      log(`a session could not be begun at the console (${codeOf(error)})`);
+      const code = codeOf(error);
+      log(
+        code === "transcript.too_many_sessions"
+          ? `the console begins no more sessions of this account within the hour (${code}); tried again after the cool-down`
+          : `a session could not be begun at the console (${code})`,
+      );
       for (const path of handed.written) {
         await options.files.remove(path).catch(() => undefined);
       }
@@ -831,7 +874,7 @@ export function createRunner(options: RunnerOptions): Runner {
     // What the product was handed and never took is on the record as that.
     await settle(target, true);
     record(target, "status", `The session ended: ${how}.`, { ended: how });
-    await flush(target);
+    await flush(target, true);
     try {
       await client.endAgentSession(target.id, { how });
     } catch (error) {
@@ -1508,7 +1551,30 @@ export function createRunner(options: RunnerOptions): Runner {
     const host: WakeHost = {
       secret: async (name) => secretValues.get(name),
       raise: async (raised) => {
-        await client.raiseWake({ source: "messenger", key: raised.key, text: raised.text });
+        // The console takes so many wakes a runner raises itself within an hour (ADR-0132):
+        // past that, what the sources raise is let go for a while, longer each time, and said
+        // once, so that a source that repeats itself costs the console nothing more.
+        if (wakesHeld !== undefined && options.now() < wakesHeld.until) {
+          return;
+        }
+        try {
+          await client.raiseWake({ source: "messenger", key: raised.key, text: raised.text });
+        } catch (error) {
+          if (codeOf(error) !== "signal.too_many") {
+            throw error;
+          }
+          const pause = heldFor(wakesHeld);
+          wakesHeld = { until: options.now() + pause, pause };
+          sayOnce(
+            "wakes",
+            "the console takes no more wakes of this runner's within the hour (signal.too_many); what its wake sources raise is let go for a while",
+          );
+          return;
+        }
+        if (wakesHeld !== undefined) {
+          wakesHeld = undefined;
+          sayOver("wakes", "the console takes the wakes of this runner's wake sources again");
+        }
       },
       log,
       fetch: wakes.fetch,

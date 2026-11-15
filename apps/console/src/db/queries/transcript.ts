@@ -32,6 +32,13 @@ const MONTHLY_TABLES = ["events", "files", "blobs"] as const;
 /** PostgreSQL's code for a row no partition takes: its month is not with the database. */
 const NO_PARTITION = "23514";
 
+/** The hour what a runner writes is counted over (ADR-0132). */
+const HOUR_MS = 60 * 60_000;
+
+/** How many seconds until what was written at `at` is an hour old: when what was refused may be tried again. */
+const secondsUntilOld = (at: Date, now: Date): number =>
+  Math.max(1, Math.ceil((at.getTime() + HOUR_MS - now.getTime()) / 1000));
+
 const WORDS = {
   "transcript.session_not_found": "the session was not found",
   "transcript.session_over": "the session is over",
@@ -39,6 +46,8 @@ const WORDS = {
   "transcript.gap": "the events are numbered one after another",
   "transcript.unknown_file": "an event names a picture that was not handed in to its session",
   "transcript.too_fast": "the session hands in pictures faster than it may",
+  "transcript.too_many": "the session took as many events within the hour as one may",
+  "transcript.too_many_sessions": "the account began as many sessions within the hour as it may",
   "transcript.away": "the month the session is kept under is not with the database",
   "transcript.event_not_found": "the event was not found",
 } as const;
@@ -47,10 +56,13 @@ const WORDS = {
 export class TranscriptError extends DomainError {
   /** For `transcript.gap`: the number the session takes next. */
   readonly expected: number | undefined;
+  /** For what an hour's bound refused: in how many seconds the hour has room again. */
+  readonly retryAfter: number | undefined;
 
-  constructor(code: keyof typeof WORDS, expected?: number) {
+  constructor(code: keyof typeof WORDS, expected?: number, retryAfter?: number) {
     super(code, WORDS[code]);
     this.expected = expected;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -226,6 +238,8 @@ export async function beginSession(
   input: {
     readonly account: PersonRecord;
     readonly session: RestAgentSessionInput;
+    /** How many sessions the account begins within an hour; unbounded where left out. */
+    readonly perHour?: number | undefined;
     readonly now: Date;
   },
 ): Promise<{ readonly session: SessionRecord; readonly tookOver: readonly string[] }> {
@@ -235,6 +249,30 @@ export async function beginSession(
   return drizzleOf(database).transaction(async (tx) => {
     // Two beginnings at once are one after the other: each sees the other's session.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`transcript:${account.id}`}))`);
+    if (input.perHour !== undefined) {
+      // The hour's bound (ADR-0132): the session that would be one too many is refused before
+      // the open one is ended for it. A product that fails as it starts, again and again, is
+      // what meets it.
+      const [oldest] = await tx
+        .select({ startedAt: transcriptSessions.startedAt })
+        .from(transcriptSessions)
+        .where(
+          and(
+            eq(transcriptSessions.personId, account.id),
+            gt(transcriptSessions.startedAt, new Date(now.getTime() - HOUR_MS)),
+          ),
+        )
+        .orderBy(desc(transcriptSessions.startedAt))
+        .limit(1)
+        .offset(Math.max(0, input.perHour - 1));
+      if (oldest !== undefined || input.perHour < 1) {
+        throw new TranscriptError(
+          "transcript.too_many_sessions",
+          undefined,
+          oldest === undefined ? HOUR_MS / 1000 : secondsUntilOld(oldest.startedAt, now),
+        );
+      }
+    }
     const open = await tx
       .select({ id: transcriptSessions.id })
       .from(transcriptSessions)
@@ -488,6 +526,8 @@ export async function appendEvents(
     readonly account: PersonRecord;
     readonly sessionId: string;
     readonly events: readonly RestTranscriptEventInput[];
+    /** How many events the session takes within an hour; unbounded where left out. */
+    readonly perHour?: number | undefined;
     readonly now: Date;
   },
 ): Promise<{ readonly last: number }> {
@@ -518,6 +558,37 @@ export async function appendEvents(
     }
   }
   try {
+    // The hour's bound (ADR-0132), before anything of the batch is kept. The events of a
+    // session are received in the order of their numbers, so those of the last hour are its
+    // last ones: the batch fits where the event that many before its end is an hour old, which
+    // one row says. A batch that is more than an hour takes by itself is refused as it is.
+    const fresh = events.filter((event) => event.n > known).length;
+    if (input.perHour !== undefined && fresh > 0) {
+      const mark = known + fresh - input.perHour;
+      if (mark > known) {
+        throw new TranscriptError("transcript.too_many", undefined, HOUR_MS / 1000);
+      }
+      if (mark >= 1) {
+        const [row] = await drizzleOf(database)
+          .select({ receivedAt: transcriptEvents.receivedAt })
+          .from(transcriptEvents)
+          .where(
+            and(
+              eq(transcriptEvents.month, session.month),
+              eq(transcriptEvents.sessionId, sessionId),
+              eq(transcriptEvents.n, mark),
+            ),
+          )
+          .limit(1);
+        if (row !== undefined && row.receivedAt.getTime() > now.getTime() - HOUR_MS) {
+          throw new TranscriptError(
+            "transcript.too_many",
+            undefined,
+            secondsUntilOld(row.receivedAt, now),
+          );
+        }
+      }
+    }
     // The long texts are kept before the rows that name them, outside the transaction: what
     // is kept for a batch that is refused after all costs nothing else. Inside the handling of
     // a month that is away, which the store the database keeps says as the events' table does.

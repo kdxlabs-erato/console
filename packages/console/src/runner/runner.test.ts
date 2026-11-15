@@ -161,6 +161,10 @@ function fakeConsole() {
     away: false,
     /** How many sendings of a transcript the console refused as too large. */
     tooLarge: 0,
+    /** What the console refuses as more than an hour takes (ADR-0132), while it says so. */
+    full: { events: false, sessions: false, wakes: false },
+    /** How many times each was asked of the console, refused or not. */
+    asked: { events: 0, sessions: 0, wakes: 0 },
   };
   const sessionOf = (id: string, input?: RestAgentSessionInput): RestAgentSession => ({
     id,
@@ -206,6 +210,10 @@ function fakeConsole() {
     },
     // As the console does: a wake the runner raises is recorded, by nobody, and sent back in order.
     raiseWake: async (input) => {
+      says.asked.wakes += 1;
+      if (says.full.wakes) {
+        throw new ApiError(429, "signal.too_many", "As many wakes as an hour takes.");
+      }
       raised.push(input);
       const signal: RestSignal = {
         number: signals.length + 1,
@@ -249,6 +257,10 @@ function fakeConsole() {
       })();
     },
     beginAgentSession: async (input) => {
+      says.asked.sessions += 1;
+      if (says.full.sessions) {
+        throw new ApiError(429, "transcript.too_many_sessions", "As many sessions as an hour.");
+      }
       begun.push(input);
       says.sessions += 1;
       const id = `0199c4d8-0000-7000-8000-00000000000${says.sessions}`;
@@ -256,6 +268,10 @@ function fakeConsole() {
       return sessionOf(id, input);
     },
     sendTranscript: async (id, input) => {
+      says.asked.events += 1;
+      if (says.full.events) {
+        throw new ApiError(429, "transcript.too_many", "As many events as an hour takes.");
+      }
       if (says.away) {
         throw new ApiError(0, "network", "The server could not be reached.");
       }
@@ -453,6 +469,8 @@ function setup(
       coolDownMs: 200,
       maxCoolDownMs: 500,
       reconnectMs: 10,
+      holdMs: 150,
+      maxHoldMs: 300,
     },
   });
   const done = runner.run();
@@ -1771,6 +1789,110 @@ describe("the runner", () => {
     expect(third.sent[0]?.text).not.toContain("Look at this picture.");
     third.emit(...STARTED, { type: "turn_completed" });
     await until("the state", () => console.beats.at(-1)?.state === "running");
+  });
+
+  it("holds back the events of a session the console takes no more of within the hour, and sends them once it does (ADR-0132)", async () => {
+    const { console, product, log } = setup();
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the first event", () => console.events().length === 1);
+    // The console took as many events of the session as an hour takes.
+    console.says.full.events = true;
+    const before = console.says.asked.events;
+    session.emit(...STARTED, { type: "event", kind: "assistant", text: "One." });
+    await until("the refusal", () => console.says.asked.events === before + 1);
+    // A batch is put together every ten milliseconds: held back, the console is asked no more.
+    session.emit({ type: "event", kind: "assistant", text: "Two." });
+    await sleep(80);
+    expect(console.says.asked.events).toBe(before + 1);
+    expect(console.events()).toHaveLength(1);
+    // Asked again once the hold is over, refused again, and held twice as long.
+    await until("the second try", () => console.says.asked.events === before + 2);
+    await sleep(200);
+    expect(console.says.asked.events).toBe(before + 2);
+    // Said once, for as long as it lasts.
+    const line =
+      "the console takes no more events of session 0199c4d8-0000-7000-8000-000000000001 within the hour (transcript.too_many); they are kept and sent again later";
+    expect(log.filter((one) => one === line)).toHaveLength(1);
+    // The hour has room: everything kept is sent, in order, and the runner says so.
+    console.says.full.events = false;
+    await until("the transcript", () => console.events().length === 4, 2000);
+    expect(console.events().map(([, , text]) => text)).toEqual([
+      "Begin.",
+      "The product started.",
+      "One.",
+      "Two.",
+    ]);
+    expect(log).toContain(
+      "the transcript of session 0199c4d8-0000-7000-8000-000000000001 is sent again",
+    );
+  });
+
+  it("tries a session the console would not begin within the hour again after the cool-down, and loses nothing it was to hand over", async () => {
+    const { console, product, log, saved } = setup({
+      before: (at) => {
+        at.says.full.sessions = true;
+      },
+    });
+    console.signal({ text: "Begin." });
+    await until("the refusal", () => console.says.asked.sessions === 1);
+    expect(log).toContain(
+      "the console begins no more sessions of this account within the hour (transcript.too_many_sessions); tried again after the cool-down",
+    );
+    // Not at once: after the cool-down, as for an agent that could not go on.
+    await sleep(100);
+    expect(console.says.asked.sessions).toBe(1);
+    expect(product.sessions).toHaveLength(0);
+    expect(saved.every((state) => state.delivered === 0)).toBe(true);
+    console.says.full.sessions = false;
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    expect(session.sent[0]?.text).toContain("#1 · tell · Jane · 14:02]\nBegin.");
+  });
+
+  it("lets go of what its wake sources raise once the console takes no more wakes within the hour, says so once, and raises again after a while", async () => {
+    const wakes: ((key: string) => Promise<void>)[] = [];
+    const { console, log } = setup({
+      sources: [
+        {
+          name: "slack",
+          run: async (host, signal) => {
+            wakes.push((key) => host.raise({ key, text: "Said." }));
+            await new Promise<void>((resolve) => {
+              signal.addEventListener("abort", () => resolve(), { once: true });
+            });
+          },
+        },
+      ],
+    });
+    await until("the source to listen", () => wakes.length === 1);
+    const raise = wakes[0] ?? (async () => undefined);
+    await raise("C1/1");
+    expect(console.raised).toHaveLength(1);
+    // As many as an hour takes: the next is refused, and the ones after it ask the console nothing.
+    console.says.full.wakes = true;
+    await raise("C1/2");
+    await raise("C1/3");
+    await raise("C1/4");
+    expect(console.says.asked.wakes).toBe(2);
+    expect(console.raised).toHaveLength(1);
+    const line =
+      "the console takes no more wakes of this runner's within the hour (signal.too_many); what its wake sources raise is let go for a while";
+    expect(log.filter((one) => one === line)).toHaveLength(1);
+    // After a while it asks again, and is taken again once the hour has room.
+    console.says.full.wakes = false;
+    await sleep(170);
+    await raise("C1/5");
+    expect(console.raised.map((one) => one.key)).toEqual(["C1/1", "C1/5"]);
+    expect(log).toContain("the console takes the wakes of this runner's wake sources again");
+    // Any other refusal is the source's to hear of, as before.
+    console.says.full.wakes = false;
+    const failing = console.client.raiseWake;
+    console.client.raiseWake = async () => {
+      throw new ApiError(0, "network", "The server could not be reached.");
+    };
+    await expect(raise("C1/6")).rejects.toThrow("could not be reached");
+    console.client.raiseWake = failing;
   });
 
   it("asks for its stream again when it ends, from the last signal it received", async () => {
