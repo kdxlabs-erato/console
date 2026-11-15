@@ -172,7 +172,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     synopsis:
       "What is on your plate across your projects: your open tasks, and the decisions waiting for you.",
     about:
-      "What is on your plate across the projects you may see: the open tasks you work on, the sooner due first, each with its project; and the decisions waiting for your answer (ADR-0042). Needs no project. --person <login> shows another person's plate, for an administrator or for an owner of a project they are in: the open tasks they work on within the projects you may see, without the decisions.",
+      "What is on your plate across the projects you may see: the open tasks you work on, the sooner due first, each with its project; and the decisions waiting for your answer (ADR-0042), each with who asked it and when, which is since when it waits. Needs no project. --person <login> shows another person's plate, for an administrator or for an owner of a project they are in: the open tasks they work on within the projects you may see, without the decisions.",
   },
   tasks: {
     usage:
@@ -629,7 +629,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     synopsis:
       "One decision in full; --wait waits for its answer, --outcome writes what followed, --to says whom it is for now.",
     about:
-      "One decision, with its context, its options, its answer (one of the options, or the person's own words as one more, marked own) and what followed. With --wait, holds on for the answer that long, and exits with 3 if it is still to come. With --outcome, writes down what followed the decision, so that it reads as a record; the record names who wrote it, you beside them, and when (ADR-0056). With --to, a decision that waits is addressed anew (ADR-0096): the people named, --to given once for each, take the place of those it was for, so to add someone, name those it is for again with them; each must be able to work in the project, each finds it among their decisions from then on, and the first answer ends it. Anyone who may work in the project may, as anyone may answer; a question that reached the wrong person is passed on this way and never raised twice. The run that waits for the answer waits on.",
+      "One decision, with who asked it and when, its context, its options, its answer (one of the options, or the person's own words as one more, marked own) and what followed, each with its moment. With --wait, holds on for the answer that long, and exits with 3 if it is still to come. With --outcome, writes down what followed the decision, so that it reads as a record; the record names who wrote it, you beside them, and when (ADR-0056). With --to, a decision that waits is addressed anew (ADR-0096): the people named, --to given once for each, take the place of those it was for, so to add someone, name those it is for again with them; each must be able to work in the project, each finds it among their decisions from then on, and the first answer ends it. Anyone who may work in the project may, as anyone may answer; a question that reached the wrong person is passed on this way and never raised twice. The run that waits for the answer waits on.",
     limits: [
       `outcome: ${MARKDOWN}`,
       `to: a login of the project, or me; up to ${MAX_DECIDERS} of them`,
@@ -644,7 +644,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
   decisions: {
     usage: "decisions [--open] [--mine|--raised] [--limit <n>] [--offset <n>]",
     synopsis: "The decisions on the board, the waiting first; or your own across the projects.",
-    about: `The decisions on the board, the waiting first; --open keeps only those. --mine lists the decisions addressed to you instead (ADR-0042), and --raised those you asked of someone else, through your agent or yourself, each across the projects you may see with its project's key; neither needs a project. A page at a time: ${DEFAULT_PAGE_LIMIT} unless --limit says otherwise, from --offset on.`,
+    about: `The decisions on the board, the waiting first, each with who asked it, whom it is for and when it was asked; --open keeps only those. --mine lists the decisions addressed to you instead (ADR-0042), and --raised those you asked of someone else, through your agent or yourself, each across the projects you may see with its project's key; neither needs a project. A page at a time: ${DEFAULT_PAGE_LIMIT} unless --limit says otherwise, from --offset on.`,
   },
   finish: {
     usage: 'finish [--summary "<markdown>"|--file <path>] [--run <id>]',

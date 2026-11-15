@@ -607,9 +607,13 @@ const addressed = (decision: RestDecision): string =>
     ? ""
     : `, for ${deciderLogins(decision)}`;
 
+/**
+ * One decision in a line, with when it was asked: a decision that waits holds a run, and whoever
+ * is told what is on their plate is told since when each one waits.
+ */
 export function formatDecisionLine(decision: RestDecision): string {
   const state = decision.answer === null ? "waiting" : `answered ${decision.answer.option}`;
-  return `${decision.id}  ${state}  ${decision.question}  (asked by ${asker(decision)}${addressed(decision)})`;
+  return `${decision.id}  ${state}  ${decision.question}  (asked by ${asker(decision)}${addressed(decision)}, at ${moment(decision.createdAt)})`;
 }
 
 /** The options, one a line; the person's own answer, when they wrote one, is the last and says so. */
@@ -630,7 +634,7 @@ export function formatAnswer(decision: RestDecision): string {
   }
   const chosen = decision.options.find((option) => option.id === answer.option);
   const lines = [
-    `Answered: ${answer.option}) ${chosen?.label ?? answer.option}${chosen?.own === true ? ", in their own words" : ""}, by ${calledOf(answer.by)}${through(answer.agent)} at ${answer.at}`,
+    `Answered: ${answer.option}) ${chosen?.label ?? answer.option}${chosen?.own === true ? ", in their own words" : ""}, by ${calledOf(answer.by)}${through(answer.agent)} at ${moment(answer.at)}`,
   ];
   if (answer.note !== null && answer.note.length > 0) {
     lines.push(`Note: ${answer.note}`);
@@ -653,7 +657,7 @@ export function formatDecision(
       : `console file ${fileId}`;
   const lines = [
     `decision ${decision.id}: ${decision.question}`,
-    `asked by ${asker(decision)}${addressed(decision)}${decision.taskNumber === null ? "" : `, about task #${decision.taskNumber}`}`,
+    `asked by ${asker(decision)}${addressed(decision)}${decision.taskNumber === null ? "" : `, about task #${decision.taskNumber}`}, at ${moment(decision.createdAt)}`,
   ];
   if (decision.body.trim().length > 0) {
     lines.push("", decision.body.trimEnd());
@@ -675,7 +679,7 @@ export function formatDecision(
     if (decision.outcomeBy != null && decision.outcomeAt != null) {
       lines.push(
         indent(
-          `written by ${calledOf(decision.outcomeBy)}${through(decision.outcomeAgent)} at ${decision.outcomeAt}`,
+          `written by ${calledOf(decision.outcomeBy)}${through(decision.outcomeAgent)} at ${moment(decision.outcomeAt)}`,
         ),
       );
     }

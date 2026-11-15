@@ -1661,7 +1661,8 @@ describe("the console command", () => {
     const h = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["decisions", "--mine"], h.io)).toBe(EXIT.ok);
     expect(h.out()).toContain(`web  ${DECISION.id}  waiting  ${DECISION.question}`);
-    expect(h.out()).toContain(`for ${BOB.login})`);
+    // Whom it is for, and when it was asked: since when it waits.
+    expect(h.out()).toContain(`for ${BOB.login}, at ${WHEN})`);
     const open = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["decisions", "--mine", "--open"], open.io)).toBe(EXIT.ok);
     expect(open.out()).toContain("No decisions of yours.");

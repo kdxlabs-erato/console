@@ -1,15 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { RestPluginOperation } from "../plugin/rest-schemas.js";
 import { restDecisionSchema, restGoalSchema, restTaskSchema } from "../schemas.js";
 import {
   calledOf,
   formatDecision,
+  formatDecisionLine,
   formatGoal,
   formatOperationUsage,
   formatPersonLine,
   formatPluginGrantLine,
   formatTask,
   formatTaskLine,
+  formatWork,
+  setMomentZone,
 } from "./format.js";
 
 describe("the usage of a plugin's command", () => {
@@ -200,6 +203,57 @@ describe("the agent beside the person", () => {
     );
     expect(formatGoal(goal({ agent: null }))).toContain("set by: alice\n");
     expect(formatGoal(goal())).not.toContain("through");
+  });
+});
+
+describe("the moments of a decision", () => {
+  afterEach(() => {
+    setMomentZone(undefined);
+  });
+
+  it("says when a decision was asked: on its line, on a person's plate and in the decision whole", () => {
+    // A briefing says of each waiting decision since when it waits: the moment is on the line.
+    const waiting = decision({ taskId: "0199c4d8-0000-7000-8000-000000000010", taskNumber: 7 });
+    expect(formatDecisionLine(waiting)).toBe(
+      `${waiting.id}  waiting  ${waiting.question}  (asked by ${AGENT} for alice, at 2026-11-06T08:00:00.000Z)`,
+    );
+    expect(formatDecision(waiting)).toContain(
+      `asked by ${AGENT} for alice, about task #7, at 2026-11-06T08:00:00.000Z\n`,
+    );
+    // In the workspace's zone, as every moment the command prints, once the zone is known.
+    setMomentZone("Asia/Seoul");
+    expect(formatDecisionLine(waiting)).toContain("at 2026-11-06T17:00:00+09:00)");
+    expect(formatDecision(waiting)).toContain("about task #7, at 2026-11-06T17:00:00+09:00\n");
+    const plate = formatWork({
+      tasks: [],
+      decisions: [
+        {
+          project: { key: "web", name: "The web app", color: null, symbol: null, icon: null },
+          decision: waiting,
+        },
+      ],
+    });
+    expect(plate).toContain(
+      `  web  ${waiting.id}  waiting  ${waiting.question}  (asked by ${AGENT} for alice, at 2026-11-06T17:00:00+09:00)`,
+    );
+  });
+
+  it("prints the moment of an answer, and of what followed, in the workspace's zone as the others are", () => {
+    const answered = decision({
+      answer: { option: "2", note: null, by: alice, at: "2026-11-06T09:00:00.000Z", agent: AGENT },
+      outcome: "Done.",
+      outcomeBy: alice,
+      outcomeAgent: null,
+      outcomeAt: "2026-11-06T10:00:00.000Z",
+    });
+    setMomentZone("Asia/Seoul");
+    const text = formatDecision(answered);
+    expect(text).toContain(
+      `Answered: 2) That, by alice through ${AGENT} at 2026-11-06T18:00:00+09:00`,
+    );
+    expect(text).toContain("written by alice at 2026-11-06T19:00:00+09:00");
+    expect(text).not.toContain("T09:00:00.000Z");
+    expect(text).not.toContain("T10:00:00.000Z");
   });
 });
 
