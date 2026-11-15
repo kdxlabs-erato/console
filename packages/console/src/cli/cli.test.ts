@@ -2048,6 +2048,61 @@ describe("the console command", () => {
     expect(await runCli(["decision", DECISION.id, "--to", "none"], none.io)).toBe(EXIT.usage);
   });
 
+  it("writes what followed, and whom a decision is for, in the decision's own project where the directory names none", async () => {
+    // A desk names no project, and the wake that brings an answer names the decision alone:
+    // the write finds the decision's project as the read does (ADR-0068).
+    const HR = "/api/v1/projects/hr";
+    const BOB = { ...PERSON, id: "0199c4d8-0000-7000-8000-000000000002", login: "bob" };
+    const grown = { ...ANSWERED, outcome: "Done as answered." };
+    const passed = { ...DECISION, decider: BOB, deciders: [BOB] };
+    const { fetch, calls } = fakeConsole({
+      "GET /api/v1/me": { body: ME },
+      "GET /api/v1/people?login=bob": { body: { items: [BOB], listed: [], organization: null } },
+      [`GET /api/v1/decisions/${DECISION.id}`]: {
+        body: {
+          project: { key: "hr", name: "HR", color: null, symbol: null, icon: null },
+          decision: ANSWERED,
+          mayAnswer: true,
+        },
+      },
+      [`PATCH ${HR}/decisions/${DECISION.id}`]: { body: grown },
+      [`PUT ${HR}/decisions/${DECISION.id}/deciders`]: { body: passed },
+      [`PATCH ${IN}/decisions/${DECISION.id}`]: { body: grown },
+    });
+    const pair = { CONSOLE_URL: ORIGIN, CONSOLE_TOKEN: "cns_t_secret" };
+    const written = harness({ fetch, env: pair });
+    expect(
+      await runCli(["decision", DECISION.id, "--outcome", "Done as answered."], written.io),
+    ).toBe(EXIT.ok);
+    expect(written.out()).toContain("what followed:\n    Done as answered.");
+    expect(calls.map((call) => call.key)).toEqual([
+      `GET /api/v1/decisions/${DECISION.id}`,
+      `PATCH ${HR}/decisions/${DECISION.id}`,
+    ]);
+    expect(calls.at(-1)?.body).toEqual({ outcome: "Done as answered." });
+    const addressed = harness({ fetch, env: pair });
+    expect(await runCli(["decision", DECISION.id, "--to", "bob"], addressed.io)).toBe(EXIT.ok);
+    expect(addressed.out()).toContain("for bob");
+    expect(calls.at(-1)?.key).toBe(`PUT ${HR}/decisions/${DECISION.id}/deciders`);
+    expect(calls.at(-1)?.body).toEqual({ deciderIds: [BOB.id] });
+    // With a project named, nothing changes: the write goes there, and nothing is looked up.
+    const before = calls.length;
+    const named = harness({ fetch, env: SIGNED_IN });
+    expect(
+      await runCli(["decision", DECISION.id, "--outcome", "Done as answered."], named.io),
+    ).toBe(EXIT.ok);
+    expect(calls.slice(before).map((call) => call.key)).toEqual([
+      `PATCH ${IN}/decisions/${DECISION.id}`,
+    ]);
+    // A decision out of reach is said as that, never as a project to name.
+    const nowhere = harness({ fetch: fakeConsole({}).fetch, env: pair });
+    expect(await runCli(["decision", DECISION.id, "--outcome", "Done."], nowhere.io)).toBe(
+      EXIT.failed,
+    );
+    expect(nowhere.err()).toContain("decision.not_found");
+    expect(nowhere.err()).not.toContain("Say which project");
+  });
+
   it("reads an answer in the person's own words as one more option, marked as theirs", async () => {
     const own = {
       ...DECISION,

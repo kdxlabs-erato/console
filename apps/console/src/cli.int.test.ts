@@ -301,6 +301,22 @@ describe("the command line", () => {
     expect(outcome.code, outcome.err).toBe(EXIT.ok);
     expect(outcome.out).toContain("Answered: 2) Change it, by bob");
     expect(outcome.out).toContain("Note: Change it, carefully.");
+    // From a directory that names no project, a desk, what followed is written in the decision's
+    // own project, found as the read finds the decision; one that is nowhere is said as that.
+    const fromDesk = await console_(
+      ["decision", decisionId, "--outcome", "Changed, as answered."],
+      aliceToken,
+      { project: undefined },
+    );
+    expect(fromDesk.code, fromDesk.err).toBe(EXIT.ok);
+    expect(fromDesk.out).toContain("what followed:\n    Changed, as answered.");
+    const outOfReach = await console_(
+      ["decision", "0199c4d8-0000-7000-8000-00000000dead", "--outcome", "Nothing."],
+      aliceToken,
+      { project: undefined },
+    );
+    expect(outOfReach.code).toBe(EXIT.failed);
+    expect(outOfReach.err).toContain("decision.not_found");
     const taskShown = await console_(["task", String(task.number)]);
     expect(taskShown.out).toContain("answered 2");
     expect(taskShown.out).toContain(`${runId}  running  Claude Code on the laptop for Alice`);

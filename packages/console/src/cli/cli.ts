@@ -3323,6 +3323,27 @@ async function reachDecision(
   }
 }
 
+/**
+ * The project a write on a decision goes to: the one the command works in; where none is named,
+ * the decision's own, as the console says it of the decision wherever it is (ADR-0068). A desk
+ * names no project, and the wake that brings an answer names the decision alone: what followed
+ * is written from there as the decision was read from there. With a project named nothing is
+ * looked up, and the console answers for that project as before.
+ */
+async function projectOfDecision(session: Session, id: string): Promise<ProjectClient> {
+  if ((await session.projectKey()) !== undefined) {
+    return session.project();
+  }
+  try {
+    return session.client.project((await session.client.decision(id)).project.key);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      throw new ApiError(404, "decision.not_found", "The decision was not found.");
+    }
+    throw error;
+  }
+}
+
 /** Writes an answer on a decision as the command reaches it (ADR-0068): in the project, else wherever it is. */
 async function answerReached(
   session: Session,
@@ -3378,7 +3399,7 @@ const decision: Command = async (args, io) => {
   if (tos.length > 0) {
     // Whom a decision that waits is for, said anew (ADR-0096): the people named take the place
     // of those it was for, each once in the order named.
-    const project = await session.project();
+    const project = await projectOfDecision(session, id);
     const deciderIds: string[] = [];
     for (const to of tos) {
       const named = await personIdOf(session, to);
@@ -3392,7 +3413,7 @@ const decision: Command = async (args, io) => {
   }
   if (outcome !== undefined) {
     // What followed the decision: the record grows, and is printed as it stands.
-    const project = await session.project();
+    const project = await projectOfDecision(session, id);
     const grown = await project.updateDecision(id, { outcome });
     answer(io, session, grown, () => formatDecision(grown));
     return EXIT.ok;
