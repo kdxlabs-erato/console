@@ -101,7 +101,25 @@ export interface StartOptions {
    * names it; the driver's own for a run nobody attends where nothing names one.
    */
   readonly permissions?: string | undefined;
+  /**
+   * What cuts a text to what the transcript shows of it. A driver cuts whatever it shows a
+   * part of through this, and never by itself first; left out, a text is cut as it is.
+   */
+  readonly cut?: Cut | undefined;
 }
+
+/**
+ * A text within `most` characters as the transcript shows it, ended by the mark of a cut where
+ * it was longer: the account's secrets are taken out first and the text is cut after, so that
+ * no part of one stands at the cut. `more` says that the text is itself the beginning of a
+ * longer one, which the driver kept to a bound: its last characters may begin a secret, and
+ * are not shown.
+ */
+export type Cut = (text: string, most: number, more?: boolean) => string;
+
+/** A text cut as it is, with the mark of a cut: what a driver cuts with where it was handed nothing to cut with. */
+export const plainCut: Cut = (text, most) =>
+  text.length > most ? `${text.slice(0, most)}…` : text;
 
 /** What the installed product is and offers, asked without starting a session. */
 export interface Probe {

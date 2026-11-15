@@ -518,6 +518,8 @@ describe("the runner", () => {
       model: null,
       effort: null,
       resume: undefined,
+      // What the driver cuts a text it shows a part of with: the runner's, which takes the secrets out first.
+      cut: expect.any(Function),
     });
     expect(console.begun).toEqual([
       {
@@ -929,6 +931,39 @@ describe("the runner", () => {
     await done;
     expect(files.removed).toEqual([".netrc"]);
     expect(console.ended).toEqual(["exited"]);
+  });
+
+  it("hands a driver what cuts a text once the store's values are out of it, so that a value at the cut is not shown in part", async () => {
+    const { console, product } = setup({
+      before: (at) => {
+        at.secrets.set("git.token", TOKEN);
+      },
+    });
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    const cut = session.options.cut;
+    expect(cut).toBeDefined();
+    const mark = String.fromCodePoint(0x2026);
+    // The cut falls two characters into the value: a driver that cut by itself would show them.
+    const input = `{"header":"Bearer ${TOKEN}","rest":"${"x".repeat(100)}"}`;
+    const at = input.indexOf(TOKEN) + 2;
+    expect(cut?.(input, at)).toBe(`{"header":"Bearer ${WITHHELD.slice(0, 2)}${mark}`);
+    // On the record so: a tool's input as the driver shows it, cut through what it was handed.
+    session.emit(
+      ...STARTED,
+      { type: "event", kind: "tool_call", text: cut?.(input, at) ?? "", data: { tool: "Write" } },
+      { type: "turn_completed" },
+    );
+    await until("the transcript", () => console.events().length === 4);
+    const reported = JSON.stringify([...console.kept.values()]);
+    expect(reported).not.toContain(TOKEN.slice(0, 2).concat(mark));
+    expect(reported).not.toContain(`Bearer ${TOKEN.slice(0, 1)}`);
+    // A store that changes is what the next cut looks for: read again at a heartbeat.
+    console.secrets.set("mail.password", "another-invented-value");
+    await until("the store to be read again", () => console.read.includes("mail.password"));
+    expect(cut?.(`say another-invented-value and ${"y".repeat(50)}`, 8)).toBe(
+      `say ${WITHHELD.slice(0, 4)}${mark}`,
+    );
   });
 
   it("hands in the pictures an event carries, and goes on from where the console stands after a gap or a refusal", async () => {

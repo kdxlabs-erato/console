@@ -448,6 +448,48 @@ describe("the claude driver", () => {
     expect((events[3] as { text: string }).text.length).toBeLessThan(4100);
   });
 
+  it("cuts what it shows of a tool's input with what it was handed to cut with, and never by itself first", async () => {
+    // What the runner hands a session takes the account's secrets out before it cuts: the
+    // driver hands it the input whole, a megabyte of it too, with the length it shows.
+    const asked: { length: number; most: number }[] = [];
+    const { session, says, exits } = started({
+      cut: (text, most) => {
+        asked.push({ length: text.length, most });
+        return `[cut to ${most} of ${text.length}]`;
+      },
+    });
+    says({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_01",
+            name: "Write",
+            input: { text: "x".repeat(1_000_000) },
+          },
+          // A command reads as a line, whole: the runner takes its secrets out and bounds it.
+          { type: "tool_use", id: "toolu_02", name: "Bash", input: { command: "git status" } },
+        ],
+      },
+    });
+    says({
+      type: "system",
+      subtype: "permission_denied",
+      tool_name: "Write",
+      tool_use_id: "toolu_03",
+      tool_input: { text: "y".repeat(9000), more: [1, 2, 3], and: "more", than: "three" },
+    });
+    exits(0);
+    const events = await collect(session.events);
+    expect(events[0]).toMatchObject({ kind: "tool_call", text: "[cut to 4000 of 1000011]" });
+    expect(events[1]).toMatchObject({ kind: "tool_call", text: "git status" });
+    expect((events[2] as { text: string }).text).toMatch(
+      /^Denied, with nobody at the terminal to ask: Write \[cut to 4000 of \d+\]$/,
+    );
+    expect(asked.map((one) => one.most)).toEqual([4000, 4000]);
+  });
+
   it("says that the model refused, and that the product is not signed in, as an agent that cannot go on", async () => {
     const refused = started();
     refused.says(INIT);

@@ -1,12 +1,14 @@
 import type { DriverHost } from "./registry.js";
-import type {
-  Child,
-  Driver,
-  DriverEvent,
-  DriverMessage,
-  DriverSession,
-  Fact,
-  StartOptions,
+import {
+  type Child,
+  type Cut,
+  type Driver,
+  type DriverEvent,
+  type DriverMessage,
+  type DriverSession,
+  type Fact,
+  plainCut,
+  type StartOptions,
 } from "./types.js";
 
 // The `codex` driver (docs/specs/runner.md): the Codex binary, unmodified, run with nobody at
@@ -151,16 +153,13 @@ function lineOf(line: string): Json | undefined {
   }
 }
 
-const bounded = (text: string): string =>
-  text.length > MAX_INPUT_LENGTH ? `${text.slice(0, MAX_INPUT_LENGTH)}…` : text;
-
 /** Anything as a line of text a person reads, bounded. */
-function shown(value: unknown): string {
+function shown(value: unknown, cut: Cut): string {
   if (typeof value === "string") {
-    return bounded(value);
+    return cut(value, MAX_INPUT_LENGTH);
   }
   try {
-    return bounded(JSON.stringify(value) ?? "");
+    return cut(JSON.stringify(value) ?? "", MAX_INPUT_LENGTH);
   } catch {
     return "";
   }
@@ -201,6 +200,8 @@ interface Read {
   turned: boolean;
   /** How many messages the turn under way was started with. */
   messages: number;
+  /** What cuts a text to what is shown of it. */
+  readonly cut: Cut;
 }
 
 /** What a turn runs with, as the session's first event and the heartbeat say it. */
@@ -211,19 +212,23 @@ interface Runs {
 }
 
 /** A tool call of the product, by the kind of item it writes for one: its name and its input as a line. */
-function callOf(item: Json): { readonly tool: string; readonly text: string } | undefined {
+function callOf(
+  item: Json,
+  cut: Cut,
+): { readonly tool: string; readonly text: string } | undefined {
   switch (item.type) {
     case "command_execution":
-      return { tool: "command_execution", text: shown(item.command ?? "") };
+      return { tool: "command_execution", text: shown(item.command ?? "", cut) };
     case "file_change": {
       const changes = Array.isArray(item.changes) ? item.changes : [];
       return {
         tool: "file_change",
-        text: bounded(
+        text: cut(
           changes
             .filter(isObject)
             .map((change) => `${textOf(change.kind) ?? "change"} ${textOf(change.path) ?? ""}`)
             .join("\n"),
+          MAX_INPUT_LENGTH,
         ),
       };
     }
@@ -231,17 +236,17 @@ function callOf(item: Json): { readonly tool: string; readonly text: string } | 
     case "mcp_tool_call":
       return {
         tool: `${textOf(item.server) ?? "mcp"}.${textOf(item.tool) ?? "tool"}`,
-        text: item.arguments === undefined ? "" : shown(item.arguments),
+        text: item.arguments === undefined ? "" : shown(item.arguments, cut),
       };
     case "web_search":
-      return { tool: "web_search", text: shown(item.query ?? "") };
+      return { tool: "web_search", text: shown(item.query ?? "", cut) };
     default:
       return undefined;
   }
 }
 
 /** What came back from a tool call, where the product says: a command's output, or what a tool answered. */
-function resultOf(item: Json): string {
+function resultOf(item: Json, cut: Cut): string {
   if (item.type === "command_execution") {
     return textOf(item.aggregated_output) ?? "";
   }
@@ -249,7 +254,7 @@ function resultOf(item: Json): string {
     if (isObject(item.error) && typeof item.error.message === "string") {
       return item.error.message;
     }
-    return item.result === undefined || item.result === null ? "" : shown(item.result);
+    return item.result === undefined || item.result === null ? "" : shown(item.result, cut);
   }
   return "";
 }
@@ -284,7 +289,7 @@ function eventsOf(line: Json, read: Read, runs: Runs): DriverEvent[] {
       return events;
     }
     case "item.started": {
-      const call = item === undefined ? undefined : callOf(item);
+      const call = item === undefined ? undefined : callOf(item, read.cut);
       const id = textOf(item?.id);
       if (call !== undefined) {
         events.push({
@@ -313,7 +318,7 @@ function eventsOf(line: Json, read: Read, runs: Runs): DriverEvent[] {
         // A word of warning inside a turn: the turn goes on.
         events.push({ type: "event", kind: "error", text: errorOf(item.message) });
       } else {
-        const call = callOf(item);
+        const call = callOf(item, read.cut);
         if (call === undefined) {
           return events;
         }
@@ -340,7 +345,7 @@ function eventsOf(line: Json, read: Read, runs: Runs): DriverEvent[] {
         events.push({
           type: "event",
           kind: "tool_result",
-          text: resultOf(item),
+          text: resultOf(item, read.cut),
           data,
           pictures: [],
         });
@@ -434,6 +439,7 @@ function sessionOf(
     failed: undefined,
     turned: false,
     messages: 0,
+    cut: options.cut ?? plainCut,
   };
   const mode = codexMode(options.permissions);
   let conversation = word(options.resume);

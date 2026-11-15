@@ -22,7 +22,7 @@ import {
   introOf,
   makeMark,
 } from "./message.js";
-import { redactorOf } from "./redact.js";
+import { cutShown, type Redactor, redactorOf } from "./redact.js";
 import type {
   Driver,
   DriverEvent,
@@ -427,7 +427,7 @@ export function createRunner(options: RunnerOptions): Runner {
   /** The values of the account's store, by what the store said of them last. */
   let secretsStamp: string | undefined;
   let secretValues = new Map<string, string>();
-  let redact: (text: string) => string = (text) => text;
+  let redact: Redactor = redactorOf([]);
   let tooOldSaid = false;
   /**
    * The package the runner runs from, where it is another version than the runner's: the one
@@ -775,6 +775,9 @@ export function createRunner(options: RunnerOptions): Runner {
         effort: settings.effort,
         resume,
         permissions: config.permissions,
+        // Whatever the driver shows a part of is cut once the secrets, as the store has them
+        // now, are out of it: no part of one stands where a text was cut.
+        cut: (text, most, more) => cutShown(redact, text, most, more),
       }),
       startedAt: options.now(),
       first: true,

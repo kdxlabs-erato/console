@@ -2,15 +2,17 @@ import { randomUUID } from "node:crypto";
 import { MAX_FILE_BYTES } from "../limits.js";
 import { TRANSCRIPT_PICTURE_TYPES } from "../vocabulary.js";
 import type { DriverHost } from "./registry.js";
-import type {
-  Child,
-  Driver,
-  DriverEvent,
-  DriverMessage,
-  DriverSession,
-  Fact,
-  Picture,
-  StartOptions,
+import {
+  type Child,
+  type Cut,
+  type Driver,
+  type DriverEvent,
+  type DriverMessage,
+  type DriverSession,
+  type Fact,
+  type Picture,
+  plainCut,
+  type StartOptions,
 } from "./types.js";
 
 // The `claude` driver (docs/specs/runner.md): the Claude Code binary, unmodified, over its
@@ -65,7 +67,7 @@ function lineOf(line: string): Json | undefined {
 }
 
 /** A tool's input as a person reads it: the command of a shell, the path of a file, or the input whole and bounded. */
-function inputOf(input: unknown): string {
+function inputOf(input: unknown, cut: Cut): string {
   if (isObject(input)) {
     const line = textOf(input.command) ?? textOf(input.file_path) ?? textOf(input.path);
     if (line !== undefined && Object.keys(input).length <= 3) {
@@ -78,7 +80,7 @@ function inputOf(input: unknown): string {
   } catch {
     whole = "";
   }
-  return whole.length > MAX_INPUT_LENGTH ? `${whole.slice(0, MAX_INPUT_LENGTH)}…` : whole;
+  return cut(whole, MAX_INPUT_LENGTH);
 }
 
 /** The pictures and the text of what a tool returned: a string, or blocks of text and pictures. */
@@ -124,7 +126,7 @@ function resultOf(
 }
 
 /** What a denial says of the tool it denied. */
-function denialOf(denial: unknown): DriverEvent | undefined {
+function denialOf(denial: unknown, cut: Cut): DriverEvent | undefined {
   if (!isObject(denial)) {
     return undefined;
   }
@@ -137,7 +139,7 @@ function denialOf(denial: unknown): DriverEvent | undefined {
   return {
     type: "event",
     kind: "permission",
-    text: `Denied, with nobody at the terminal to ask: ${tool} ${inputOf(denial.tool_input)}`.trim(),
+    text: `Denied, with nobody at the terminal to ask: ${tool} ${inputOf(denial.tool_input, cut)}`.trim(),
     data,
   };
 }
@@ -159,6 +161,8 @@ interface Read {
   acknowledges: boolean;
   /** The tool calls of the turn it said were denied, which the turn's result says again. */
   readonly denied: Set<string>;
+  /** What cuts a text to what is shown of it. */
+  readonly cut: Cut;
 }
 
 /** The product's permission modes, as its documentation and its own help name them. */
@@ -262,7 +266,7 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
         });
       } else if (line.subtype === "permission_denied") {
         // Said when it happens, and again in the turn's result, which is then not said twice.
-        const denied = denialOf(line);
+        const denied = denialOf(line, state.cut);
         if (denied !== undefined) {
           events.push(denied);
           const id = textOf(line.tool_use_id);
@@ -287,7 +291,7 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
           events.push({
             type: "event",
             kind: "tool_call",
-            text: inputOf(block.input),
+            text: inputOf(block.input, state.cut),
             data: { tool, id: textOf(block.id) ?? null },
           });
         }
@@ -324,7 +328,7 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
     }
     case "result": {
       for (const denial of Array.isArray(line.permission_denials) ? line.permission_denials : []) {
-        const denied = denialOf(denial);
+        const denied = denialOf(denial, state.cut);
         const id = isObject(denial) ? textOf(denial.tool_use_id) : undefined;
         if (denied !== undefined && (id === undefined || !state.denied.has(id))) {
           events.push(denied);
@@ -448,7 +452,7 @@ const wait = (ms: number): Promise<"timeout"> =>
     setTimeout(() => resolve("timeout"), ms).unref?.();
   });
 
-function sessionOf(child: Child, asked: string, uuid: () => string): DriverSession {
+function sessionOf(child: Child, asked: string, uuid: () => string, cut: Cut): DriverSession {
   let stopping = false;
   const state: Read = {
     began: false,
@@ -459,6 +463,7 @@ function sessionOf(child: Child, asked: string, uuid: () => string): DriverSessi
     waiting: new Set(),
     denied: new Set(),
     acknowledges: false,
+    cut,
   };
 
   async function* events(): AsyncGenerator<DriverEvent> {
@@ -599,6 +604,7 @@ export function createClaudeDriver(host: DriverHost): Driver {
         host.spawn(command, claudeArguments(options), { cwd: options.cwd, env: options.env }),
         claudeMode(options.permissions),
         uuid,
+        options.cut ?? plainCut,
       );
     },
   };

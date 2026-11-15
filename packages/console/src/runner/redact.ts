@@ -100,14 +100,21 @@ export function formsOf(value: string): readonly string[] {
   return [...new Set(escaped)].filter((form) => form.length >= MIN_LENGTH);
 }
 
+/** What takes the values out of a text, and how long the longest form it looks for is. */
+export interface Redactor {
+  (text: string): string;
+  /** The characters of the longest form looked for; 0 where there is nothing to look for. */
+  readonly longest: number;
+}
+
 /**
  * What takes the values out of a text: each form of each value replaced by `[withheld]`. A value
  * of several lines is looked for whole and a line at a time, since a tool prints a key a line at
- * a time. A text a driver cut may end inside a value: the beginning of one that it ends in, of
- * four characters or more, is taken out as well. With no value to look for, the text comes
- * through as it is.
+ * a time. A text cut by anything else than `cutShown` may end inside a value: the beginning of
+ * one that it ends in, of four characters or more, is taken out as well. With no value to look
+ * for, the text comes through as it is.
  */
-export function redactorOf(values: Iterable<string>): (text: string) => string {
+export function redactorOf(values: Iterable<string>): Redactor {
   const forms = new Set<string>();
   for (const value of values) {
     const whole = value.trim();
@@ -128,10 +135,10 @@ export function redactorOf(values: Iterable<string>): (text: string) => string {
   }
   const ordered = [...forms].sort((a, b) => b.length - a.length);
   if (ordered.length === 0) {
-    return (text) => text;
+    return Object.assign((text: string) => text, { longest: 0 });
   }
   const borders = ordered.map(bordersOf);
-  return (text) => {
+  const redact = (text: string): string => {
     let out = text;
     for (const form of ordered) {
       if (out.includes(form)) {
@@ -153,4 +160,47 @@ export function redactorOf(values: Iterable<string>): (text: string) => string {
     }
     return out;
   };
+  return Object.assign(redact, { longest: ordered[0]?.length ?? 0 });
+}
+
+/**
+ * The most of a text that is looked through for one cut: a text that is values from end to end
+ * is cut short of what it could show, and no megabyte is read for a line of four thousand.
+ */
+export const MAX_CUT_WINDOW = 512 * 1024;
+
+/**
+ * A text within `most` characters as a transcript shows it, ended by the mark of a cut where it
+ * was longer: the values are taken out first and the text is cut after, so that no part of a
+ * value stands at the cut, however short the part and whatever the value's shape. What is
+ * looked through is the beginning of the text, as far as the cut and one form beyond it, and
+ * further only where taking values out left less than `most` to show: never the whole of a
+ * long text. The last characters looked through may be the beginning of a value whose end was
+ * not read, so nothing of them is shown; so it is with the end of a text that is itself the
+ * beginning of a longer one, kept to a bound by whoever hands it over, which `more` says. A
+ * text within `most` that is whole comes through as it is: taking its values out is the caller's.
+ */
+export function cutShown(redact: Redactor, text: string, most: number, more = false): string {
+  if (text.length <= most && !more) {
+    return text;
+  }
+  const beyond = Math.max(0, redact.longest - 1);
+  let window = Math.min(text.length, most + beyond);
+  for (;;) {
+    const out = redact(text.slice(0, window));
+    // Read to its end and whole: nothing follows what was looked through.
+    const whole = window >= text.length && !more;
+    const safe = whole ? out.length : out.length - beyond;
+    if (safe >= most) {
+      return whole && out.length <= most ? out : `${out.slice(0, most)}${CUT_MARK}`;
+    }
+    if (whole) {
+      // Within the length once its values are out: shown whole.
+      return out;
+    }
+    if (window >= text.length || window >= MAX_CUT_WINDOW) {
+      return `${out.slice(0, Math.max(0, safe))}${CUT_MARK}`;
+    }
+    window = Math.min(text.length, MAX_CUT_WINDOW, window * 2);
+  }
 }

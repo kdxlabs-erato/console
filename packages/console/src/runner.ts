@@ -38,7 +38,14 @@ export {
 } from "./runner/message.js";
 export { ownRunnerModules } from "./runner/modules.js";
 export { createSpawn } from "./runner/process.js";
-export { formsOf, redactorOf, WITHHELD } from "./runner/redact.js";
+export {
+  cutShown,
+  formsOf,
+  MAX_CUT_WINDOW,
+  type Redactor,
+  redactorOf,
+  WITHHELD,
+} from "./runner/redact.js";
 export {
   createRegistry,
   createRunnerModules,
@@ -70,6 +77,7 @@ export {
 export type {
   Boundary,
   Child,
+  Cut,
   Driver,
   DriverEvent,
   DriverMessage,
@@ -87,4 +95,4 @@ export type {
   WakeSocket,
   WakeSource,
 } from "./runner/types.js";
-export { KEEPER_VARIABLE } from "./runner/types.js";
+export { KEEPER_VARIABLE, plainCut } from "./runner/types.js";

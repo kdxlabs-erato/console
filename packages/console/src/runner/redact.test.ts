@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseRunnerConfig } from "./config.js";
-import { formsOf, redactorOf, WITHHELD } from "./redact.js";
+import { cutShown, formsOf, MAX_CUT_WINDOW, redactorOf, WITHHELD } from "./redact.js";
 import { createRegistry } from "./registry.js";
 
 // Invented values, shaped like nothing real: a token, a password with characters that encode.
@@ -83,6 +83,81 @@ describe("taking the secrets out of an event", () => {
     // A text that was not cut ends as it ends.
     expect(redact("it ends in not-a-real-tok")).toBe("it ends in not-a-real-tok");
     expect(redact(`nothing of it here${cut}`)).toBe(`nothing of it here${cut}`);
+  });
+
+  it("cuts a text after its values are out, so that no part of one stands at the cut, however short or however shaped", () => {
+    const mark = String.fromCodePoint(0x2026);
+    const value = "not-a-real-token-4f9a2c71";
+    const hex = "9f2c41d07ab35e68c1d2e3f405162738";
+    // Built from parts, so that nothing here is shaped like a key in the repository's history.
+    const lines = ["aGVsbG8gd29ybGQgdGhpcyBpcyBub3Q", "YSByZWFsIGtleSBhdCBhbGwganVzdCBh"];
+    const key = [`-----BEGIN ${"TEST"} KEY-----`, ...lines, `-----END ${"TEST"} KEY-----`].join(
+      "\n",
+    );
+    const redact = redactorOf([value, hex, key]);
+    // The cut falls inside the value at every place: one, two or three characters in, which
+    // the look at a cut text's end leaves, and deeper. Nothing of the value is shown.
+    for (const [name, secret] of [
+      ["a token", value],
+      ["a hexadecimal value", hex],
+      ["a line of a key", lines[1] ?? ""],
+    ] as const) {
+      for (let into = 1; into < secret.length; into += 1) {
+        const before = "x".repeat(40 - into);
+        const out = cutShown(redact, `${before}${secret} and what follows it`, 40);
+        // What the text is with the value out, to the length; whole where that is within it.
+        const without = `${before}${WITHHELD} and what follows it`;
+        expect(out, `${name}, ${into} in`).toBe(
+          without.length > 40 ? `${without.slice(0, 40)}${mark}` : without,
+        );
+        for (let length = 1; length <= into; length += 1) {
+          expect(out.includes(`x${secret.slice(0, length)}`), `${name}, ${into} in`).toBe(false);
+        }
+      }
+    }
+    // Base64 printed a line at a time, cut in its second line: neither line is shown.
+    const printed = `key:\n${lines[0]}\n${lines[1]}\nend`;
+    const shown = cutShown(redact, printed, 5 + (lines[0] ?? "").length + 1 + 3);
+    // Within the length once the lines are out: shown whole, with no mark of a cut.
+    expect(shown).toBe(`key:\n${WITHHELD}\n${WITHHELD}\nend`);
+    expect(shown).not.toContain("YSB");
+    // What is shown is what the whole text would show to that length: the cut is after the taking out.
+    const text = `a ${value} b ${hex} c ${"z".repeat(100)}`;
+    expect(cutShown(redact, text, 30)).toBe(`${redact(text).slice(0, 30)}${mark}`);
+    // A text within the length comes through as it is, and one with nothing to look for is cut as it is.
+    expect(cutShown(redact, "short", 40)).toBe("short");
+    expect(cutShown(redactorOf([]), "0123456789", 4)).toBe(`0123${mark}`);
+  });
+
+  it("looks through the beginning of a long text alone, and shows nothing of an end it did not read", () => {
+    const mark = String.fromCodePoint(0x2026);
+    const value = "not-a-real-token-4f9a2c71";
+    const inner = redactorOf([value]);
+    let read = 0;
+    const counting = Object.assign(
+      (text: string) => {
+        read += text.length;
+        return inner(text);
+      },
+      { longest: inner.longest },
+    );
+    // A megabyte of a tool's input for a line of four thousand: the cut and one form beyond it are read.
+    const long = `${"y".repeat(3990)}${value}${"z".repeat(1024 * 1024)}`;
+    expect(cutShown(counting, long, 4000)).toBe(`${"y".repeat(3990)}${WITHHELD}${mark}`);
+    expect(read).toBeLessThan(16 * 1024);
+    // Values from end to end leave little to show: more is read, to a bound, and what is shown is short.
+    read = 0;
+    const all = value.repeat(100_000);
+    const out = cutShown(counting, all, 4000);
+    expect(out.endsWith(mark)).toBe(true);
+    expect(out.replaceAll(WITHHELD, "").replace(mark, "")).toBe("");
+    expect(read).toBeLessThanOrEqual(2 * MAX_CUT_WINDOW);
+    // A text handed over cut already may end inside a value: its last characters are not shown.
+    const handed = `${"y".repeat(60)}${value.slice(0, 12)}`;
+    expect(cutShown(inner, handed, 64)).toBe(`${handed.slice(0, 64)}${mark}`);
+    expect(cutShown(inner, handed, 64, true)).not.toContain(value.slice(0, 4));
+    expect(cutShown(inner, handed, 200, true)).not.toContain(value.slice(0, 4));
+    expect(cutShown(inner, handed, 200)).toBe(handed);
   });
 
   it("takes the longest form first, so that one value inside another leaves nothing of either", () => {

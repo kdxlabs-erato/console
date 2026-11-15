@@ -1,16 +1,18 @@
 import { MAX_FILE_BYTES } from "../limits.js";
 import { TRANSCRIPT_PICTURE_TYPES } from "../vocabulary.js";
 import type { DriverHost } from "./registry.js";
-import type {
-  Child,
-  Driver,
-  DriverEvent,
-  DriverMessage,
-  DriverSession,
-  Fact,
-  Picture,
-  Probe,
-  StartOptions,
+import {
+  type Child,
+  type Cut,
+  type Driver,
+  type DriverEvent,
+  type DriverMessage,
+  type DriverSession,
+  type Fact,
+  type Picture,
+  type Probe,
+  plainCut,
+  type StartOptions,
 } from "./types.js";
 
 // The driver for any product that speaks the Agent Client Protocol (ADR-0085): the product's
@@ -39,8 +41,14 @@ const PROBE_TIMEOUT_MS = 30_000;
 const SET_TIMEOUT_MS = 5000;
 /** The most of a tool's input that is shown. */
 const MAX_INPUT_LENGTH = 4000;
-/** The most that is kept of what a command printed while it ran, where an agent sends it in pieces. */
+/** The most that is shown of what a command printed while it ran, where an agent sends it in pieces. */
 const MAX_PRINTED_LENGTH = 200_000;
+/**
+ * How much more of it is kept than is shown: what is printed is cut once the account's secrets
+ * are out of it, and a secret that stands at the cut is whole only where what follows the cut
+ * was kept. More than the longest form a secret is looked for in.
+ */
+const PRINTED_BEYOND = 64 * 1024;
 /** The most that is shown of what an error carries beside its message. */
 const MAX_DETAIL_LENGTH = 1000;
 /** The protocol's code for a request the agent takes only once the product is signed in. */
@@ -122,21 +130,19 @@ const wait = (ms: number): Promise<"timeout"> =>
  * What an error carries beside its message, as words: an agent may say "Internal error" and put
  * why under `data`, as text or as an object with a message of its own.
  */
-function detailOf(data: unknown): string | undefined {
+function detailOf(data: unknown, cut: Cut): string | undefined {
   const words = isObject(data)
     ? (textOf(data.message) ?? textOf(data.details) ?? textOf(data.error))
     : textOf(data);
   const detail = words?.trim();
-  return detail === undefined || detail.length === 0
-    ? undefined
-    : detail.slice(0, MAX_DETAIL_LENGTH);
+  return detail === undefined || detail.length === 0 ? undefined : cut(detail, MAX_DETAIL_LENGTH);
 }
 
 /** What a request was refused with, as the protocol says it: the message, with what it carries beside it. */
 class RpcError extends Error {
   readonly code: number;
-  constructor(code: number, message: string, data?: unknown) {
-    const detail = detailOf(data);
+  constructor(code: number, message: string, data?: unknown, cut: Cut = plainCut) {
+    const detail = detailOf(data, cut);
     super(detail === undefined || message.includes(detail) ? message : `${message}: ${detail}`);
     this.code = code;
   }
@@ -156,7 +162,7 @@ interface Connection {
   }): Promise<void>;
 }
 
-function connectionOf(child: Child): Connection {
+function connectionOf(child: Child, cut: Cut = plainCut): Connection {
   let next = 0;
   const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
   const write = (message: Json): Promise<void> =>
@@ -214,6 +220,7 @@ function connectionOf(child: Child): Connection {
                 typeof line.error.code === "number" ? line.error.code : 0,
                 textOf(line.error.message) ?? "the request was refused",
                 line.error.data,
+                cut,
               ),
             );
           } else {
@@ -298,7 +305,7 @@ function standingOf(opened: unknown): Standing | undefined {
 }
 
 /** A tool's input as a person reads it: the command of a shell, the path of a file, or the input whole and bounded. */
-function inputOf(input: unknown): string {
+function inputOf(input: unknown, cut: Cut): string {
   if (input === undefined || input === null) {
     return "";
   }
@@ -322,7 +329,7 @@ function inputOf(input: unknown): string {
   } catch {
     whole = "";
   }
-  return whole.length > MAX_INPUT_LENGTH ? `${whole.slice(0, MAX_INPUT_LENGTH)}…` : whole;
+  return cut(whole, MAX_INPUT_LENGTH);
 }
 
 /** The text and the pictures of what a tool call holds: blocks of content, a change to a file, a terminal. */
@@ -434,7 +441,9 @@ function sessionOf(
   /** How long a choice set in the running session is waited for. */
   setMs: number = SET_TIMEOUT_MS,
 ): DriverSession {
-  const connection = connectionOf(child);
+  /** What cuts a text to what is shown of it: the runner's, which takes the account's secrets out first. */
+  const cut = options.cut ?? plainCut;
+  const connection = connectionOf(child, cut);
   /** How what the agent asks leave for is answered: settled once the session says its modes. */
   let mode = acpMode(options.permissions);
 
@@ -588,7 +597,7 @@ function sessionOf(
     if (!call.said && !(known && first)) {
       // What a call is called, and was called with, as it was said last before the call is.
       call.title = textOf(update.title) ?? call.title;
-      const input = inputOf(update.rawInput);
+      const input = inputOf(update.rawInput, cut);
       if (input.length > 0) {
         call.input = input;
       }
@@ -618,9 +627,9 @@ function sessionOf(
       ? textOf(beside.terminal_output_delta.data)
       : undefined;
     if (whole !== undefined) {
-      call.printed = whole.slice(0, MAX_PRINTED_LENGTH);
-    } else if (more !== undefined && call.printed.length < MAX_PRINTED_LENGTH) {
-      call.printed = `${call.printed}${more}`.slice(0, MAX_PRINTED_LENGTH);
+      call.printed = whole.slice(0, MAX_PRINTED_LENGTH + PRINTED_BEYOND);
+    } else if (more !== undefined && call.printed.length < MAX_PRINTED_LENGTH + PRINTED_BEYOND) {
+      call.printed = `${call.printed}${more}`.slice(0, MAX_PRINTED_LENGTH + PRINTED_BEYOND);
     }
     const status = textOf(update.status);
     if (status === "completed" || status === "failed") {
@@ -632,8 +641,13 @@ function sessionOf(
         result.text.length > 0
           ? result.text
           : call.printed.trim().length > 0
-            ? call.printed
-            : inputOf(call.raw);
+            ? cut(
+                call.printed,
+                MAX_PRINTED_LENGTH,
+                // Kept to its bound: what was printed went on, and its end here may begin a secret.
+                call.printed.length >= MAX_PRINTED_LENGTH + PRINTED_BEYOND,
+              )
+            : inputOf(call.raw, cut);
       // Nothing more is read of a call that ended.
       call.content = undefined;
       call.raw = undefined;
@@ -688,7 +702,7 @@ function sessionOf(
           emit({
             type: "event",
             kind: update.severity === "error" ? "error" : "status",
-            text: words.slice(0, MAX_INPUT_LENGTH),
+            text: cut(words, MAX_INPUT_LENGTH),
           });
         }
         return;
