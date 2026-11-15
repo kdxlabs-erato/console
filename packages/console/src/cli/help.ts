@@ -668,7 +668,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     usage: 'finish [--summary "<markdown>"|--file <path>] [--run <id>]',
     overview: 'finish [--summary "<markdown>"|--file <path>]',
     synopsis: "Ends the run: done and handed in; the task goes up for review.",
-    about: `Ends the run: the work is done and handed in, and the task goes up for review. The summary says what was done and what is left; the result itself goes in a last report before, which may be much longer. ${ON_THE_RUN}`,
+    about: `Ends the run: the work is done and handed in, and the task goes up for review, unless another run is open on it; the command says the state it is in. The summary says what was done and what is left; the result itself goes in a last report before, which may be much longer. ${ON_THE_RUN}`,
     limits: [`summary: ${`Markdown, up to ${MAX_SUMMARY_LENGTH} characters`}`],
     refusals: RUN_REFUSALS,
   },

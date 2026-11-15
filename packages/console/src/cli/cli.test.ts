@@ -3086,22 +3086,24 @@ describe("the console command", () => {
     });
     const h = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["finish", "--summary", "Done."], h.io)).toBe(EXIT.ok);
-    expect(h.out()).toContain("up for review");
+    // The task as read once the run is over, not what the command supposed of it.
+    expect(h.out()).toBe(`Run ${RUN.id} finished; task #${TASK.number} is in_review now.\n`);
     expect(calls[1]?.body).toEqual({ status: "finished", summary: "Done." });
     expect(await runCli(["fail"], harness({ fetch, env: SIGNED_IN }).io)).toBe(EXIT.ok);
-    expect(calls[3]?.body).toEqual({ status: "failed" });
+    expect(calls[4]?.body).toEqual({ status: "failed" });
     expect(await runCli(["abandon", RUN.id], harness({ fetch, env: SIGNED_IN }).io)).toBe(EXIT.ok);
-    // The run named is not looked for; the task is read once the run is over, after fail too.
+    // The run named is not looked for; the task is read once the run is over, however it ended.
     expect(calls.map((call) => call.key)).toEqual([
       OPEN_RUNS,
       END,
+      READ,
       OPEN_RUNS,
       END,
       READ,
       END,
       READ,
     ]);
-    expect(calls[5]?.body).toEqual({ status: "abandoned" });
+    expect(calls[6]?.body).toEqual({ status: "abandoned" });
   });
 
   it("says where the end of a run left its task as the console answers it, once the run is over (ADR-0114)", async () => {

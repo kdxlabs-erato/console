@@ -344,7 +344,7 @@ describe("the command line", () => {
       "Done: the parser refuses empty input.",
     ]);
     expect(finished.code, finished.err).toBe(EXIT.ok);
-    expect(finished.out).toContain("up for review");
+    expect(finished.out).toBe(`Run ${runId} finished; task #${task.number} is in_review now.\n`);
     expect(await readTask(bob, task.id)).toMatchObject({ state: "in_review", openRuns: 0 });
     const late = await console_(["report", "late"]);
     expect(late.code).toBe(EXIT.failed);

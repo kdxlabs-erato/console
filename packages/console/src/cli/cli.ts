@@ -4344,10 +4344,10 @@ const decisions: Command = async (args, io) => {
 };
 
 /**
- * Says how a run ended that was not finished, and where that left its task (ADR-0114). The
- * console places the task, and where is not the command's to know: a console of before 0.5.1
- * leaves it at work, and one of now does where a person moved it meanwhile or another run is
- * open on it. So the task is read once the run is over, and its state said as it stands. On
+ * Says how a run ended, and where that left its task (ADR-0114). The console places the task,
+ * and where is not the command's to know: a finished run leaves it at work where another run is
+ * open on it, and a run that failed or was given up does that too, and on a console of before
+ * 0.5.1 always, or where a person moved it meanwhile. So the task is read once the run is over, and its state said as it stands. On
  * `--json` the answer is the run as the console gave it, and nothing more is asked.
  */
 async function sayEnded(
@@ -4355,7 +4355,7 @@ async function sayEnded(
   session: Session,
   project: ProjectClient,
   run: RestRun,
-  status: "failed" | "abandoned",
+  status: "finished" | "failed" | "abandoned",
 ): Promise<void> {
   let words = "";
   if (!session.json) {
@@ -4390,11 +4390,7 @@ const ending =
       status,
       ...(summary === undefined ? {} : { summary }),
     });
-    if (status === "failed") {
-      await sayEnded(io, session, project, run, status);
-    } else {
-      answer(io, session, run, () => `Run ${run.id} finished; the task is up for review.`);
-    }
+    await sayEnded(io, session, project, run, status);
     return EXIT.ok;
   };
 
