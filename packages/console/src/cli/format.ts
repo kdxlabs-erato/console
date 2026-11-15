@@ -160,7 +160,16 @@ export function formatAgentLine(agent: RestAgent): string {
   const standing = [
     `signs in as ${person.login}`,
     ...(manager === null ? [] : [`reports to ${calledOf(manager)}`]),
-    ...(person.invited === true ? ["not signed in yet"] : []),
+    ...(person.invited === true
+      ? [
+          // At a git host, whether the host said which account the login is (ADR-0126).
+          agent.firstSignIn === undefined
+            ? "not signed in yet"
+            : agent.firstSignIn === "account"
+              ? "not signed in yet, its account confirmed at the host"
+              : "not signed in yet, its account not confirmed",
+        ]
+      : []),
     ...(person.status === "active" ? [] : ["deactivated"]),
   ].join(", ");
   return `@${person.handle ?? person.login}  ${called.join(", ")}  (${standing})`;

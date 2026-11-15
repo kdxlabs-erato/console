@@ -6,6 +6,7 @@
 import { randomBytes } from "node:crypto";
 import {
   DEFAULT_PROPOSALS,
+  type FirstSignIn,
   isHandle,
   MAX_AGENT_ELSEWHERE,
   MAX_LANGUAGE_TAG_LENGTH,
@@ -59,6 +60,8 @@ import type { TokenRecord } from "../db/queries/tokens.js";
 import { readWorkspaceSettings } from "../db/queries/workspaces.js";
 import type { Logger } from "../logger.js";
 import type { Clock } from "../ports/clock.js";
+import { ProviderError } from "../ports/identity-provider.js";
+import type { OrganizationDirectory } from "../ports/organization.js";
 import { errorBody } from "./app.js";
 import {
   type Access,
@@ -79,6 +82,11 @@ export interface AgentsRestDependencies {
   readonly logger: Logger;
   /** The providers people sign in through: what an account may name. None where nobody signs in. */
   readonly signIn: readonly ProviderKey[];
+  /**
+   * The organization at the git host (ADR-0022), when one is named: asked which account a login
+   * is when an agent account is added that signs in there (ADR-0126). Left out, nothing can say.
+   */
+  readonly organization?: OrganizationDirectory | undefined;
 }
 
 const MAX_BODY_BYTES = 256 * 1024;
@@ -123,7 +131,53 @@ const actorOf = (caller: Caller): Actor =>
     : { id: caller.person.id, agent: caller.token.name };
 
 export function registerAgentsRest(app: Hono<AppEnv>, dependencies: AgentsRestDependencies): void {
-  const { database, access, sessions, clock, logger, signIn } = dependencies;
+  const { database, access, sessions, clock, logger, signIn, organization } = dependencies;
+
+  /**
+   * What an account's first sign-in is held to (ADR-0126), while it waits for one at a git
+   * host, where a login is whoever's registers it: the account the host said its login is;
+   * else the organization's word at that sign-in, where one is read here; else the login alone.
+   * Nothing once it has signed in, and at a provider that makes its own addresses.
+   */
+  const firstSignInOf = (account: PersonRecord): FirstSignIn | undefined =>
+    account.signedIn || account.host !== "gh"
+      ? undefined
+      : account.hostAccountId !== undefined
+        ? "account"
+        : organization?.host === account.host
+          ? "member"
+          : "login";
+  /**
+   * The id of the account the host says `login` is, among the organization's members; nothing
+   * where no organization is read at that host, where it has no member called so, and where it
+   * could not be asked, which is logged: the account is added all the same, not confirmed.
+   */
+  const accountAtHost = async (
+    c: Context<AppEnv>,
+    host: ProviderKey,
+    login: string,
+  ): Promise<string | undefined> => {
+    if (organization === undefined || organization.host !== host) {
+      return undefined;
+    }
+    try {
+      return (await organization.findMember(login))?.accountId;
+    } catch (error) {
+      if (!(error instanceof ProviderError)) {
+        throw error;
+      }
+      logger.warn(
+        {
+          err: error,
+          kind: error.kind,
+          organization: organization.name,
+          requestId: c.get("requestId"),
+        },
+        "the organization could not be asked which account an agent account's login is; it is added not confirmed",
+      );
+      return undefined;
+    }
+  };
 
   /** Who is asking and with what, or the refusal to answer with. */
   const asking = async (c: Context<AppEnv>): Promise<Caller | Response> =>
@@ -295,6 +349,7 @@ export function registerAgentsRest(app: Hono<AppEnv>, dependencies: AgentsRestDe
           agent,
           runners.get(agent.person.id),
           agent.supervised || agent.person.id === person.id,
+          { firstSignIn: firstSignInOf(agent.person) },
         ),
       ),
     };
@@ -358,11 +413,15 @@ export function registerAgentsRest(app: Hono<AppEnv>, dependencies: AgentsRestDe
       );
     }
     try {
+      // At a git host a login is whoever's registers it: the organization is asked which
+      // account this one is, and the account is bound to it from the start (ADR-0126).
+      const hostAccountId = await accountAtHost(c, input.host, input.login);
       const agent = await createAgentAccount(database, {
         workspaceId: person.workspaceId,
         actor: actorOf(caller),
         host: input.host,
         login: input.login,
+        hostAccountId,
         handle: input.handle,
         name: input.name,
         title: input.title ?? undefined,
@@ -389,7 +448,13 @@ export function registerAgentsRest(app: Hono<AppEnv>, dependencies: AgentsRestDe
           return null;
         },
       );
-      return c.json(restAgent(agent, undefined, false, { onboarding }), 201);
+      return c.json(
+        restAgent(agent, undefined, false, {
+          onboarding,
+          firstSignIn: firstSignInOf(agent.person),
+        }),
+        201,
+      );
     } catch (error) {
       return failure(c, error);
     }
@@ -508,7 +573,12 @@ export function registerAgentsRest(app: Hono<AppEnv>, dependencies: AgentsRestDe
               dayEnd,
               now: clock.now(),
             });
-      return c.json(restAgent(agent, runner, true, { accounts: held }));
+      return c.json(
+        restAgent(agent, runner, true, {
+          accounts: held,
+          firstSignIn: firstSignInOf(agent.person),
+        }),
+      );
     } catch (error) {
       return failure(c, error);
     }
@@ -534,7 +604,10 @@ export function registerAgentsRest(app: Hono<AppEnv>, dependencies: AgentsRestDe
         agent,
         await findRunner(database, agent.person.id),
         agent.supervised || agent.person.id === person.id,
-        { accounts: await accountsOfAgent(database, agent.person.id) },
+        {
+          accounts: await accountsOfAgent(database, agent.person.id),
+          firstSignIn: firstSignInOf(agent.person),
+        },
       ),
     );
   });

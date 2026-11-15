@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import {
+  type FirstSignIn,
   hostOfLogin,
   type RestAgentInvitation,
   type RestAgentInvitationMade,
@@ -146,6 +147,11 @@ export interface AgentStartStepsProps {
   readonly provider: string;
   /** Whether anyone has signed in with the account. */
   readonly signedIn: boolean;
+  /**
+   * What its first sign-in is held to at a git host (ADR-0126), as the console answers it of
+   * the account: left out, as a console older than the answer leaves it, the login alone.
+   */
+  readonly firstSignIn?: FirstSignIn | undefined;
   /** Whether an invitation stands. */
   readonly invited: boolean;
   /** Whether the account's command is signed in on a machine. */
@@ -161,8 +167,9 @@ export interface AgentStartStepsProps {
  * done: the account it signs in with, an invitation, the one line on its machine, its runner.
  * Each is said done as the console sees it, so that whoever looks reads what is next. Who makes
  * the account at the provider is not said: the account is named, and when it has to be there
- * (ADR-0094), which at a git host is already, since until its first sign-in the console lets in
- * whoever holds the login.
+ * (ADR-0094), which at a git host is already, since a login there is whoever's registers it:
+ * the step says whether the host said which account the login is, and marks the account not
+ * confirmed where it did not (ADR-0126).
  */
 export function AgentStartSteps(props: AgentStartStepsProps) {
   const words = useWords().agents.page.start;
@@ -170,11 +177,15 @@ export function AgentStartSteps(props: AgentStartStepsProps) {
   const heard = props.heard;
   const onMachine = props.onMachine || heard;
   const signedIn = props.signedIn || onMachine;
+  const atGitHost = hostOfLogin(props.login) === "gh";
+  const heldTo = props.firstSignIn ?? "login";
   const steps: readonly {
     readonly key: string;
     readonly title: string;
     readonly body: string;
     readonly done: boolean;
+    /** What is to be seen of a step that is not done, beside its title. */
+    readonly mark?: string | undefined;
     readonly more?: ReactNode;
   }[] = [
     {
@@ -182,8 +193,11 @@ export function AgentStartSteps(props: AgentStartStepsProps) {
       title: words.account.title,
       body: signedIn
         ? words.account.done(props.login)
-        : words.account.at[hostOfLogin(props.login)](props.login, props.provider),
+        : atGitHost
+          ? words.account.at.gh[heldTo](props.login, props.provider)
+          : words.account.at.google(props.login, props.provider),
       done: signedIn,
+      mark: !signedIn && atGitHost && heldTo !== "account" ? words.account.notConfirmed : undefined,
     },
     {
       key: "invitation",
@@ -226,6 +240,7 @@ export function AgentStartSteps(props: AgentStartStepsProps) {
             <span className="sc-step-title">
               {step.title}
               {step.done && <Badge tone="success">{words.done}</Badge>}
+              {!step.done && step.mark !== undefined && <Badge tone="warning">{step.mark}</Badge>}
             </span>
             <p className="sc-step-body">{step.body}</p>
             {step.more}

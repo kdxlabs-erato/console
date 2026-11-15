@@ -132,6 +132,9 @@ describe("an agent account (ADR-0084)", () => {
       invited: true,
     });
     expect(agent.manager?.id).toBe(aliceId);
+    // This console reads no organization at the git host: nothing can say which account the
+    // login is, and its first sign-in is held to the login alone, which is said (ADR-0126).
+    expect(agent.firstSignIn).toBe("login");
     miraId = agent.person.id;
 
     // Listed among the agent accounts, read by its handle, and among the people, where a login
@@ -217,7 +220,10 @@ describe("an agent account (ADR-0084)", () => {
       }),
     );
     expect(dave.status).toBe(201);
-    dexId = restAgentSchema.parse(await dave.json()).person.id;
+    const dexMade = restAgentSchema.parse(await dave.json());
+    // A Workspace makes its own addresses: nothing is held of its first sign-in (ADR-0126).
+    expect(dexMade.firstSignIn).toBeUndefined();
+    dexId = dexMade.person.id;
     dex = await h.signIn("dave");
     expect(await meOf(dex)).toMatchObject({
       id: dexId,

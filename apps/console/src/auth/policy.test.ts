@@ -31,6 +31,7 @@ const person = (role: "admin" | "member", id = `id-${role}`): PersonRecord => ({
   kind: "person",
   host: "gh",
   hostAccountId: id,
+  signedIn: true,
   login: role,
   name: undefined,
   avatarUrl: undefined,

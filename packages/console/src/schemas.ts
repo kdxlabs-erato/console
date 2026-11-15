@@ -80,6 +80,7 @@ import {
   COLOR_NAMES,
   CONSOLE_LANGUAGES,
   EVENT_KINDS,
+  FIRST_SIGN_INS,
   GOAL_STATES,
   LINK_SOURCES,
   MEMBERSHIP_SOURCES,
@@ -1372,6 +1373,14 @@ export const restAgentSchema = z.object({
   onboarding: z.optional(
     z.nullable(z.object({ project: z.string(), number: z.number().check(z.int()) })),
   ),
+  /**
+   * What its first sign-in is held to (ADR-0126), while nobody has signed in with it under a
+   * sign-in at a git host: `account` where the host said which account its login is, so that
+   * only that account is let in; `member` and `login` where the host did not, which the pages
+   * and the command say as not confirmed. Left out once it has signed in, and under a provider
+   * that makes its own addresses. Answered from 0.5.1 and read as optional.
+   */
+  firstSignIn: z.optional(z.enum(FIRST_SIGN_INS)),
 });
 export type RestAgent = z.infer<typeof restAgentSchema>;
 

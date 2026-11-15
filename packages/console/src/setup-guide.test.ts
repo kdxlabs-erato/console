@@ -162,7 +162,7 @@ describe("the guide of an agent account's setup (ADR-0088)", () => {
     // A login at a git host goes to whoever registers it: the account it signs in with is the
     // organization's before the agent account is added, and the guide never says to make it later.
     expect(body).toContain(
-      "It has to be the organization's own there already, from before the agent account was added here: until its first sign-in, the console lets in whoever holds that login.",
+      "It has to be the organization's own there already, from before the agent account was added here: that is when the console asks the host which account the login is, and a login nobody holds is whoever registers it first.",
     );
     expect(body).not.toContain("made if it is not there yet");
     expect(body).toContain("What it signs in with, its password and its second step, at hand");
@@ -213,7 +213,7 @@ describe("the guide of an agent account's setup (ADR-0088)", () => {
     expect(guide.sections.map((section) => section.key)).toEqual(["before", "machine", "browser"]);
     expect(guide.sections[0]?.steps[0]).toEqual({
       title: "GitHub, where the account signs in",
-      body: "The account `carol` at GitHub. It has to be the organization's own there already, from before the agent account was added here: until its first sign-in, the console lets in whoever holds that login. Where nobody holds it yet, register it before anything else. What it signs in with is at hand when the machine is set up: the setup signs in with it once, in the machine's browser.",
+      body: "The account `carol` at GitHub. It has to be the organization's own there already, from before the agent account was added here: that is when the console asks the host which account the login is, and a login nobody holds is whoever registers it first. Where nobody holds it yet, register it before anything else. What it signs in with is at hand when the machine is set up: the setup signs in with it once, in the machine's browser.",
     });
     // A Workspace makes its own addresses: the account may be made on the way.
     const workspace = setupGuideOf(
@@ -225,7 +225,7 @@ describe("the guide of an agent account's setup (ADR-0088)", () => {
       CODE,
     );
     expect(workspace.sections[0]?.steps[0]?.body).toContain("made if it is not there yet");
-    expect(workspace.sections[0]?.steps[0]?.body).not.toContain("whoever holds that login");
+    expect(workspace.sections[0]?.steps[0]?.body).not.toContain("whoever registers it first");
     // A kind the package does not know is still named.
     const other = setupGuideOf(
       { ...SETUP, workspace: { ...SETUP.workspace, services: { git: { kind: "forge" } } } },

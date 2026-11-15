@@ -96,12 +96,12 @@ const SIGN_IN_AT_HAND =
 
 /**
  * What a git host the account signs in to the console through says of its login: a login there
- * goes to whoever registers it, and until the account's first sign-in the console lets in
- * whoever holds the one it was added with. A Workspace makes its own addresses, and says no such
- * thing.
+ * goes to whoever registers it, and the console asks the host which account the login is when
+ * the agent account is added (ADR-0126), so the account is the organization's by then. A
+ * Workspace makes its own addresses, and says no such thing.
  */
 export const HELD_BEFORE_ADDED =
-  "It has to be the organization's own there already, from before the agent account was added here: until its first sign-in, the console lets in whoever holds that login. Where nobody holds it yet, register it before anything else.";
+  "It has to be the organization's own there already, from before the agent account was added here: that is when the console asks the host which account the login is, and a login nobody holds is whoever registers it first. Where nobody holds it yet, register it before anything else.";
 
 const github: ServiceProvider = {
   kind: "github",

@@ -674,6 +674,8 @@ export {
   type ConsoleLanguage,
   EVENT_KINDS,
   type EventKind,
+  FIRST_SIGN_INS,
+  type FirstSignIn,
   GOAL_STATES,
   type GoalState,
   isProviderKey,

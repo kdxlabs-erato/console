@@ -232,12 +232,26 @@ export class Login {
       role: membership.administers(account.login) ? "admin" : undefined,
       source: admission.source,
       listing: admission.listing,
+      // An agent account whose account the host never said (ADR-0126) is bound by its login
+      // where the organization read here vouched for that login at this very sign-in, and
+      // where no organization is read at this provider, since then nothing can vouch.
+      bindsByLogin:
+        !membership.readsOrganizationAt(provider.key) || admission.source === "organization",
       now: clock.now(),
     });
     if (saved === "deactivated") {
       logger.info(
         { login: account.login, provider: provider.key },
         "a sign-in was refused: deactivated",
+      );
+      return "refused";
+    }
+    if (saved === "another_account" || saved === "unconfirmed") {
+      logger.info(
+        { login: account.login, provider: provider.key },
+        saved === "another_account"
+          ? "a sign-in was refused: the login is an agent account's, bound to another account of the host"
+          : "a sign-in was refused: the login is an agent account's the host did not confirm, and the organization does not have it as a member",
       );
       return "refused";
     }

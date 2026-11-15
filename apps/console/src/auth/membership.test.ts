@@ -9,6 +9,7 @@ const person = (fields: Partial<PersonRecord>): PersonRecord => ({
   kind: "person",
   host: "gh",
   hostAccountId: "1001",
+  signedIn: true,
   login: "alice",
   name: undefined,
   avatarUrl: undefined,

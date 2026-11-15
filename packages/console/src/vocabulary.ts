@@ -95,6 +95,18 @@ export const PERSON_KINDS = ["person", "agent"] as const;
 export type PersonKind = (typeof PERSON_KINDS)[number];
 
 /**
+ * What the first sign-in of an agent account is held to, under a sign-in at a git host, where
+ * a login is whoever's registers it (ADR-0126): `account`, the host said which account the
+ * login is when the account was added, and that account alone is let in as it, whatever it is
+ * called by then; `member`, the host did not say, and the account is let in where the
+ * organization at the host has the login as a member at that sign-in; `login`, the host did not
+ * say and the console reads no organization there, so whoever holds the login is let in.
+ */
+export const FIRST_SIGN_INS = ["account", "member", "login"] as const;
+
+export type FirstSignIn = (typeof FIRST_SIGN_INS)[number];
+
+/**
  * What holds a session (ADR-0084): a browser a member is signed in on, or the command signed in
  * as the account itself, which presents its session as a token is presented and is held to what
  * a token may ask.

@@ -45,9 +45,11 @@ const tokenSchema = z.object({
   token: z.string().min(1),
   expires_at: z.string().refine((value) => !Number.isNaN(Date.parse(value)), "must be a time"),
 });
-const membersSchema = z.array(
-  z.object({ id: z.number().int().positive(), login: z.string().min(1).max(100) }),
-);
+const accountSchema = z.object({
+  id: z.number().int().positive(),
+  login: z.string().min(1).max(100),
+});
+const membersSchema = z.array(accountSchema);
 
 const base64url = (value: string): string => Buffer.from(value).toString("base64url");
 
@@ -146,25 +148,55 @@ export function createGitHubOrganization(
     throw new ProviderError("invalid", `${WHO} rejected the request (${response.status})`);
   };
 
+  /** Whether the host says the account called `login` is a member of the organization now. */
+  const isMember = async (login: string): Promise<boolean> => {
+    const token = await tokenNow();
+    const response = await upstream.request(
+      `${apiUrl}/orgs/${organization}/members/${encodeURIComponent(login)}`,
+      { method: "GET", headers: headers(`Bearer ${token}`) },
+    );
+    if (response.status === 204) {
+      await response.body?.cancel();
+      return true;
+    }
+    if (response.status === 404) {
+      await response.body?.cancel();
+      return false;
+    }
+    return refused(response);
+  };
+
   return {
     host: "gh",
     name: options.organization,
+    isMember,
 
-    async isMember(login) {
-      const token = await tokenNow();
-      const response = await upstream.request(
-        `${apiUrl}/orgs/${organization}/members/${encodeURIComponent(login)}`,
-        { method: "GET", headers: headers(`Bearer ${token}`) },
-      );
-      if (response.status === 204) {
-        await response.body?.cancel();
-        return true;
+    // Two questions, since the one that says who is a member says nothing of the account: is
+    // the login a member, and which account carries the login. An account renamed between the
+    // two is no longer called so, and is not found.
+    async findMember(login) {
+      if (!(await isMember(login))) {
+        return undefined;
       }
+      const token = await tokenNow();
+      const response = await upstream.request(`${apiUrl}/users/${encodeURIComponent(login)}`, {
+        method: "GET",
+        headers: headers(`Bearer ${token}`),
+      });
       if (response.status === 404) {
         await response.body?.cancel();
-        return false;
+        return undefined;
       }
-      return refused(response);
+      if (!response.ok) {
+        return refused(response);
+      }
+      const account = await upstream.reply(response, accountSchema);
+      // The host compares logins without regard to case, and answers with its own spelling: an
+      // answer about another name is not an answer to this question.
+      if (account.login.toLowerCase() !== login.toLowerCase()) {
+        throw new ProviderError("invalid", `${WHO} answered for another account`);
+      }
+      return { accountId: String(account.id), login: account.login };
     },
 
     async listMembers() {

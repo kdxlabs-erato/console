@@ -1,4 +1,5 @@
 import type {
+  FirstSignIn,
   RestAgent,
   RestCategory,
   RestComment,
@@ -89,9 +90,12 @@ export function restAgent(
   more: {
     readonly accounts?: Readonly<Record<string, string>> | undefined;
     readonly onboarding?: { readonly project: string; readonly number: number } | null | undefined;
+    /** What its first sign-in is held to (ADR-0126), while it waits for one at a git host. */
+    readonly firstSignIn?: FirstSignIn | undefined;
   } = {},
 ): RestAgent {
   return {
+    ...(more.firstSignIn === undefined ? {} : { firstSignIn: more.firstSignIn }),
     // The hours it keeps, for whoever reads what else is chosen for it.
     ...(detailed
       ? {

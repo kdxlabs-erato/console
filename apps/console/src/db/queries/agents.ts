@@ -94,6 +94,11 @@ export interface AgentAccountInput {
   /** The account it signs in with: the provider, and the login there, as the administrator spelled it. */
   readonly host: ProviderKey;
   readonly login: string;
+  /**
+   * The host's immutable id of the account the login is, where the host said (ADR-0126): the
+   * account is bound to it from the start. None where the host was not asked or did not say.
+   */
+  readonly hostAccountId?: string | undefined;
   readonly handle: string;
   readonly name: string;
   readonly title: string | undefined;
@@ -111,8 +116,12 @@ export interface AgentAccountInput {
 /**
  * Makes an agent account, and tells the board (ADR-0084). The member's row is written at once,
  * so that work can be assigned to it before anyone signed in with it, and the login is let in as
- * a listing lets one in; the first sign-in with that login binds the provider's account to the
- * row (`savePerson`). A login a member already carries is made an agent account only where that
+ * a listing lets one in. Where the host said which account the login is, the row is bound to
+ * that account from the start, so that its first sign-in is that account's and nobody else's
+ * who comes to carry the name (ADR-0126); where it did not, the first sign-in with that login
+ * binds the provider's account to the row, where something vouches for it then (`savePerson`).
+ * A login a member already carries, or an account a member already is under another name, is
+ * made an agent account only where that
  * is asked for (`convert`, ADR-0104), once: the member's row becomes the account, with
  * everything it did, unless they administer the workspace; unasked, it is refused, since a
  * persona's proposed login may spell a colleague's and `kind` never goes back. The account is
@@ -125,6 +134,7 @@ export async function createAgentAccount(
 ): Promise<AgentRecord> {
   const { workspaceId, actor, host, login, handle, name, title, avatarSeed, avatarParts, now } =
     input;
+  const { hostAccountId } = input;
   return drizzleOf(database).transaction(async (tx) => {
     // The workspace's row first, as every change to the directory takes it.
     await tx
@@ -167,13 +177,28 @@ export async function createAgentAccount(
     if (project === undefined) {
       throw new AgentError("agent.invalid_project");
     }
-    // Whoever carries the login already: a member in before one out, an account signed in with
-    // before a row that waits for its first sign-in.
+    // Whoever is the account already, whatever they are called here, then whoever carries the
+    // login: a member in before one out, one signed in with before a row that waits for its
+    // first sign-in.
     const [member] = await tx
       .select(personColumns(people))
       .from(people)
-      .where(and(eq(people.workspaceId, workspaceId), eq(people.host, host), sameLogin(login)))
-      .orderBy(asc(people.status), asc(sql`${people.hostAccountId} is null`))
+      .where(
+        and(
+          eq(people.workspaceId, workspaceId),
+          eq(people.host, host),
+          hostAccountId === undefined
+            ? sameLogin(login)
+            : or(sameLogin(login), eq(people.hostAccountId, hostAccountId)),
+        ),
+      )
+      .orderBy(
+        ...(hostAccountId === undefined
+          ? []
+          : [asc(sql`${people.hostAccountId} is distinct from ${hostAccountId}`)]),
+        asc(people.status),
+        asc(sql`${people.lastLoginAt} is null`),
+      )
       .limit(1);
     const persona = {
       kind: "agent" as const,
@@ -219,7 +244,9 @@ export async function createAgentAccount(
           ...persona,
           workspaceId,
           host,
-          hostAccountId: null,
+          // The account the host said the login is, which alone is let in as this one from now
+          // on (ADR-0126); none where it did not say, and the first sign-in binds one.
+          hostAccountId: hostAccountId ?? null,
           login,
           title: title ?? null,
           role: "member",

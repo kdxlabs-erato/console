@@ -3229,6 +3229,65 @@ describe("configuring, as the person", () => {
     expect(unsaid.err()).toContain("--login <login>");
   });
 
+  it("says what the first sign-in of an account at a git host is held to (ADR-0126)", async () => {
+    const waiting = (firstSignIn: string) => ({
+      person: {
+        ...BOB,
+        id: "0199c4d8-0000-7000-8000-000000000009",
+        login: "acme-mira",
+        name: "Mira",
+        kind: "agent",
+        handle: "mira",
+        invited: true,
+      },
+      manager: null,
+      supervised: true,
+      firstSignIn,
+    });
+    const { fetch } = fakeConsole({
+      "POST /api/v1/agents": [
+        { status: 201, body: waiting("account") },
+        { status: 201, body: waiting("member") },
+        { status: 201, body: waiting("login") },
+      ],
+      "GET /api/v1/agents/mira": { body: waiting("member") },
+    });
+    const said = async () => {
+      const run = harness({ fetch, env: SIGNED_IN });
+      expect(await runCli(["agent", "new", "mira", "--login", "acme-mira"], run.io)).toBe(EXIT.ok);
+      return run.out();
+    };
+    // The host said which account the login is: that account alone is let in as it.
+    const confirmed = await said();
+    expect(confirmed).toContain(
+      "(signs in as acme-mira, not signed in yet, its account confirmed at the host)",
+    );
+    expect(confirmed).toContain(
+      "It signs in as acme-mira: confirmed at the git host, so that account alone is let in as it, whatever it is called by then.",
+    );
+    expect(confirmed).not.toContain("whoever holds that login");
+    // The organization had no member called so, or could not be asked: not confirmed, and the
+    // organization's word at its sign-in is what lets it in.
+    const member = await said();
+    expect(member).toContain("not signed in yet, its account not confirmed)");
+    expect(member).toContain(
+      "It signs in as acme-mira: not confirmed, since the organization at the git host has no member called so, or could not be asked. It is let in once it is a member there, and nobody else is under that login.",
+    );
+    // A console that reads no organization there: not confirmed, and why the account has to be
+    // the organization's already.
+    const login = await said();
+    expect(login).toContain("not signed in yet, its account not confirmed)");
+    expect(login).toContain(
+      "It signs in as acme-mira: not confirmed, since this console reads no organization at the git host. That account has to be the organization's own at the git host already, since until its first sign-in binds it here the console lets in whoever holds that login.",
+    );
+    // An account read later says it on its line.
+    const read = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["agent", "mira"], read.io)).toBe(EXIT.ok);
+    expect(read.out()).toContain(
+      "(signs in as acme-mira, not signed in yet, its account not confirmed)",
+    );
+  });
+
   it("makes a member an agent account only where that is said (ADR-0104)", async () => {
     const converted = {
       person: { ...BOB, kind: "agent", handle: "bolt", name: "Bolt" },

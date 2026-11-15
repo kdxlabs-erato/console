@@ -58,6 +58,14 @@ export class Membership {
     this.#logger = options.logger;
   }
 
+  /**
+   * Whether an organization at `host` is read here: what can say whose account a login is
+   * (ADR-0126). A provider that makes its own addresses has none, and needs none.
+   */
+  readsOrganizationAt(host: ProviderKey): boolean {
+    return this.#organization?.host === host;
+  }
+
   /** True when the configuration alone lets nobody in: no organization, no domain, and no administrator named. */
   get empty(): boolean {
     return this.#admins.size === 0 && this.#domains.size === 0 && this.#organization === undefined;

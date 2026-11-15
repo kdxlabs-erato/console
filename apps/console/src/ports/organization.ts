@@ -19,6 +19,13 @@ export interface OrganizationDirectory {
   readonly name: string;
   /** Whether the account called `login` is a member now. */
   isMember(login: string): Promise<boolean>;
+  /**
+   * The member of the organization called `login` now, by the host's immutable id of the
+   * account (ADR-0126): what an agent account is bound to when it is added, so that its first
+   * sign-in is that account's and nobody else's who comes to carry the name. Nothing where the
+   * organization has no member called so.
+   */
+  findMember(login: string): Promise<OrganizationMember | undefined>;
   /** Everyone of the organization. */
   listMembers(): Promise<readonly OrganizationMember[]>;
 }

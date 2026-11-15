@@ -1927,13 +1927,33 @@ describe("the agent accounts (ADR-0084)", () => {
     expect(fresh).toContain(">invite</button>");
     expect(fresh).not.toContain(">Done<");
     expect(fresh).not.toMatch(/a person makes|terms/i);
-    // A login at a git host goes to whoever registers it, and the console lets that one in until
-    // the account's first sign-in: there the account has to be the organization's already.
+    // A login at a git host goes to whoever registers it: the step says what the account's first
+    // sign-in is held to (ADR-0126), and marks the account not confirmed where the host did not
+    // say which account the login is. A console older than the answer says nothing: the login.
     const atGitHost = steps({ login: "acme-mira", provider: "GitHub" });
     expect(atGitHost).toContain(
-      "acme-mira, at GitHub. It has to be there already, an account the organization holds: until it has signed in here, whoever holds that login is let in as this account.",
+      "acme-mira, at GitHub. Not confirmed: the host was not asked which account that is. It has to be there already, an account the organization holds: until it has signed in here, whoever holds that login is let in as this account.",
     );
+    expect(atGitHost).toContain('<span class="sc-badge sc-badge-warning">Not confirmed</span>');
     expect(atGitHost).not.toContain("It is made there where it is not yet");
+    expect(steps({ login: "acme-mira", provider: "GitHub", firstSignIn: "login" })).toBe(atGitHost);
+    const confirmed = steps({ login: "acme-mira", provider: "GitHub", firstSignIn: "account" });
+    expect(confirmed).toContain(
+      "acme-mira, at GitHub. Confirmed there: that account alone is let in as this one, whatever it is called by then.",
+    );
+    expect(confirmed).not.toContain("Not confirmed");
+    expect(confirmed).not.toContain("whoever holds that login");
+    const byMember = steps({ login: "acme-mira", provider: "GitHub", firstSignIn: "member" });
+    expect(byMember).toContain(
+      "acme-mira, at GitHub. Not confirmed: the organization there has no member called so, or could not be asked. It is let in once it is a member there, and nobody else is under that login.",
+    );
+    expect(byMember).toContain(">Not confirmed</span>");
+    // A Workspace makes its own addresses: nothing is held, whatever is answered, and once the
+    // account has signed in nothing is marked.
+    expect(fresh).not.toContain("Not confirmed");
+    expect(
+      steps({ login: "acme-mira", provider: "GitHub", firstSignIn: "login", signedIn: true }),
+    ).not.toContain("Not confirmed");
     // An invitation stands: the machine is next.
     const invited = steps({ invited: true });
     expect(invited.match(/>Done</g)).toHaveLength(1);

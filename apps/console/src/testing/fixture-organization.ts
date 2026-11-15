@@ -11,14 +11,14 @@ export interface FixtureOrganization extends OrganizationDirectory {
   /** Makes every call fail as a host that cannot be reached does, until called with `false`. */
   unreachable(down: boolean): void;
   /** Calls per port method, to assert how often the host was asked. */
-  readonly calls: Record<"isMember" | "listMembers", number>;
+  readonly calls: Record<"isMember" | "listMembers" | "findMember", number>;
 }
 
 export function createFixtureOrganization(
   members: Readonly<Record<string, string>> = { Alice: "1001", bob: "1002" },
 ): FixtureOrganization {
   const current = new Map(Object.entries(members));
-  const calls = { isMember: 0, listMembers: 0 };
+  const calls = { isMember: 0, listMembers: 0, findMember: 0 };
   let down = false;
   const reach = (): void => {
     if (down) {
@@ -37,6 +37,16 @@ export function createFixtureOrganization(
       calls.isMember += 1;
       reach();
       return [...current.keys()].some((member) => member.toLowerCase() === login.toLowerCase());
+    },
+    async findMember(login) {
+      calls.findMember += 1;
+      reach();
+      for (const [member, accountId] of current) {
+        if (member.toLowerCase() === login.toLowerCase()) {
+          return { accountId, login: member };
+        }
+      }
+      return undefined;
     },
     async listMembers() {
       calls.listMembers += 1;

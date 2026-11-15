@@ -1809,13 +1809,24 @@ export const en = {
         done: "Done",
         account: {
           title: "The account it signs in with",
-          /** Until it has signed in, by where it signs in: a Workspace makes its own addresses, a git host gives a login to whoever asks first. */
+          /**
+           * Until it has signed in, by where it signs in: a Workspace makes its own addresses; a
+           * git host gives a login to whoever asks first, and there the words go by what the
+           * first sign-in is held to (ADR-0126).
+           */
           at: {
             google: (login: string, provider: string) =>
               `${login}, at ${provider}. It is made there where it is not yet, and what it signs in with is asked for once, on its machine.`,
-            gh: (login: string, provider: string) =>
-              `${login}, at ${provider}. It has to be there already, an account the organization holds: until it has signed in here, whoever holds that login is let in as this account. What it signs in with is asked for once, on its machine.`,
+            gh: {
+              account: (login: string, provider: string) =>
+                `${login}, at ${provider}. Confirmed there: that account alone is let in as this one, whatever it is called by then. What it signs in with is asked for once, on its machine.`,
+              member: (login: string, provider: string) =>
+                `${login}, at ${provider}. Not confirmed: the organization there has no member called so, or could not be asked. It is let in once it is a member there, and nobody else is under that login. What it signs in with is asked for once, on its machine.`,
+              login: (login: string, provider: string) =>
+                `${login}, at ${provider}. Not confirmed: the host was not asked which account that is. It has to be there already, an account the organization holds: until it has signed in here, whoever holds that login is let in as this account. What it signs in with is asked for once, on its machine.`,
+            },
           },
+          notConfirmed: "Not confirmed",
           done: (login: string) => `It has signed in as ${login}.`,
         },
         invitation: {

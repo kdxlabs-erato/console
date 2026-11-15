@@ -205,6 +205,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     clock,
     logger,
     signIn: auth?.providers.map((provider) => provider.key) ?? [],
+    organization: auth?.organization,
   });
 
   registerPluginsRest(app, {

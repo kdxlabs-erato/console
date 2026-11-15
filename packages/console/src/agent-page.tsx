@@ -350,6 +350,7 @@ function AgentStart(props: {
           login={agent.person.login}
           provider={props.provider}
           signedIn={agent.person.invited !== true}
+          firstSignIn={agent.firstSignIn}
           invited={made !== undefined || (standing !== null && standing !== undefined)}
           onMachine={(signIns.value?.items ?? []).some((one) => one.kind === "command")}
           heard={heard}

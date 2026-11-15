@@ -149,8 +149,11 @@ export const people = pgTable(
     kind: text({ enum: PERSON_KINDS }).notNull().default("person"),
     /**
      * The identity provider (`gh`, `google`), and its immutable id of the account: what a member is
-     * known by. The id is null for an agent account nobody has signed in with yet: its first
-     * sign-in, with the login it was made with, binds the provider's account to the row.
+     * known by. An agent account added at a git host carries the id from the start where the
+     * organization said which account its login is (ADR-0126), so that its first sign-in is that
+     * account's alone. The id is null where the host did not say, and at a provider that makes
+     * its own addresses, until the first sign-in with the login it was made with binds the
+     * provider's account to the row; `lastLoginAt` says whether anyone has signed in.
      */
     host: text().notNull(),
     hostAccountId: text(),
@@ -194,7 +197,7 @@ export const people = pgTable(
   },
   (table) => [
     uniqueIndex("people_host_account_key").on(table.workspaceId, table.host, table.hostAccountId),
-    // A row nobody has signed in with is found by its login at its sign-in: one per login.
+    // A row bound to no account is found by its login at its first sign-in: one per login.
     uniqueIndex("people_unbound_login_key")
       .on(table.workspaceId, table.host, sql`lower(${table.login})`)
       .where(sql`${table.hostAccountId} is null`),

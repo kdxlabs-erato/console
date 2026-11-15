@@ -87,10 +87,10 @@ let bob: PersonRecord;
 const T0 = new Date("2026-01-01T00:00:00Z");
 const minutes = (count: number) => new Date(T0.getTime() + count * 60_000);
 
-/** A sign-in that was let in: nobody here is deactivated. */
-function signedIn<T>(result: T | "deactivated"): T {
-  if (result === "deactivated") {
-    throw new Error("the person is deactivated");
+/** A sign-in that was let in: nobody here is deactivated, and no login is an agent account's. */
+function signedIn<T extends object>(result: T | string): T {
+  if (typeof result === "string") {
+    throw new Error(`the sign-in was refused: ${result}`);
   }
   return result;
 }

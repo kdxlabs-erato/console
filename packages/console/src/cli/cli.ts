@@ -4500,8 +4500,13 @@ const agentNew = async (args: readonly string[], io: CliIo): Promise<number> => 
       formatAgentLine(made),
       made.person.invited === true
         ? host === "gh"
-          ? // A login at a git host goes to whoever registers it, and the console lets that one in.
-            `It is a member now, and work can be assigned to it. It signs in as ${made.person.login}: that account has to be the organization's own at the git host already, since until its first sign-in binds it here the console lets in whoever holds that login.`
+          ? // A login at a git host goes to whoever registers it: what the first sign-in is held
+            // to is said (ADR-0126), and by a console older than the answer, the login alone.
+            made.firstSignIn === "account"
+            ? `It is a member now, and work can be assigned to it. It signs in as ${made.person.login}: confirmed at the git host, so that account alone is let in as it, whatever it is called by then.`
+            : made.firstSignIn === "member"
+              ? `It is a member now, and work can be assigned to it. It signs in as ${made.person.login}: not confirmed, since the organization at the git host has no member called so, or could not be asked. It is let in once it is a member there, and nobody else is under that login.`
+              : `It is a member now, and work can be assigned to it. It signs in as ${made.person.login}: ${made.firstSignIn === "login" ? "not confirmed, since this console reads no organization at the git host. That" : "that"} account has to be the organization's own at the git host already, since until its first sign-in binds it here the console lets in whoever holds that login.`
           : `It is a member now, and work can be assigned to it. It signs in as ${made.person.login}: that account is made at the provider before its machine is set up, and its first sign-in with it binds it here.`
         : `${made.person.login} is an agent account from now on, with everything it did.`,
       ...(made.onboarding === null || made.onboarding === undefined

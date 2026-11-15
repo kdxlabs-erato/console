@@ -167,4 +167,66 @@ describe("the GitHub organization", () => {
           : json([{ id: "one", login: 1 }]);
     await expect(directory(odd).listMembers()).rejects.toMatchObject({ kind: "invalid" });
   });
+
+  it("says which account a member's login is, by the host's id, and nothing for anyone else (ADR-0126)", async () => {
+    const members = [{ id: 1101, login: "acme-mira" }];
+    /** The host with its accounts: a member's, and one outside the organization. */
+    const accounts = (
+      users: Readonly<Record<string, unknown>>,
+    ): { answer: FetchLike; calls: string[] } => {
+      const { answer: organization } = host(members);
+      const calls: string[] = [];
+      return {
+        calls,
+        answer: async (url, init) => {
+          const path = new URL(url).pathname;
+          calls.push(path);
+          if (path.startsWith("/users/")) {
+            const user = users[decodeURIComponent(path.slice("/users/".length))];
+            return user === undefined ? json({ message: "Not Found" }, 404) : json(user);
+          }
+          return organization(url, init);
+        },
+      };
+    };
+    const known = accounts({
+      "acme-mira": { id: 1101, login: "acme-mira", type: "User" },
+      outsider: { id: 7, login: "outsider" },
+    });
+    const acme = directory(known.answer);
+    // A member: asked whether it is one, then which account the login is.
+    expect(await acme.findMember("acme-mira")).toEqual({ accountId: "1101", login: "acme-mira" });
+    expect(known.calls.slice(-2)).toEqual(["/orgs/acme/members/acme-mira", "/users/acme-mira"]);
+    // An account of the host that is no member is nobody here, and its account is not asked for.
+    expect(await acme.findMember("outsider")).toBeUndefined();
+    expect(known.calls.at(-1)).toBe("/orgs/acme/members/outsider");
+    expect(await acme.findMember("nobody")).toBeUndefined();
+    // A member renamed between the two questions is no longer called so.
+    expect(await directory(accounts({}).answer).findMember("acme-mira")).toBeUndefined();
+
+    // What the host makes up is refused as such, never read as an account: an id that is no
+    // whole number, one written as text, a login that goes on, another account's answer, and a
+    // reply longer than an account is.
+    for (const made of [
+      { id: "1101", login: "acme-mira" },
+      { id: 11.5, login: "acme-mira" },
+      { id: -3, login: "acme-mira" },
+      { id: 1e40, login: "acme-mira" },
+      { id: 1101, login: "a".repeat(101) },
+      { id: 1101 },
+      { id: 9001, login: "someone-else" },
+      { id: 1101, login: "acme-mira", bio: "x".repeat(70_000) },
+      [],
+    ]) {
+      await expect(
+        directory(accounts({ "acme-mira": made }).answer).findMember("acme-mira"),
+      ).rejects.toMatchObject({ kind: "invalid" });
+    }
+    // A host that cannot be asked says so, by kind.
+    const down: FetchLike = async (url, init) =>
+      new URL(url).pathname.startsWith("/users/") ? empty(503) : host(members).answer(url, init);
+    await expect(directory(down).findMember("acme-mira")).rejects.toMatchObject({
+      kind: "transient",
+    });
+  });
 });
