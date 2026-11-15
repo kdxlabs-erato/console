@@ -50,6 +50,11 @@ const accountSchema = z.object({
   login: z.string().min(1).max(100),
 });
 const membersSchema = z.array(accountSchema);
+/** A login's membership of the organization: whether it stands or waits for the invited, and the account it is of. */
+const membershipSchema = z.object({
+  state: z.enum(["active", "pending"]),
+  user: accountSchema,
+});
 
 const base64url = (value: string): string => Buffer.from(value).toString("base64url");
 
@@ -171,18 +176,17 @@ export function createGitHubOrganization(
     name: options.organization,
     isMember,
 
-    // Two questions, since the one that says who is a member says nothing of the account: is
-    // the login a member, and which account carries the login. An account renamed between the
-    // two is no longer called so, and is not found.
+    // One question: the login's membership of the organization, whose answer says whether it
+    // stands and which account it is of. Asked in two, is the login a member and then which
+    // account carries the login, a member renamed between them, with the name registered by
+    // someone else, was answered as that other account, and an agent account bound to it
+    // (ADR-0126). The account is the one the membership is of, never one found by a name.
     async findMember(login) {
-      if (!(await isMember(login))) {
-        return undefined;
-      }
       const token = await tokenNow();
-      const response = await upstream.request(`${apiUrl}/users/${encodeURIComponent(login)}`, {
-        method: "GET",
-        headers: headers(`Bearer ${token}`),
-      });
+      const response = await upstream.request(
+        `${apiUrl}/orgs/${organization}/memberships/${encodeURIComponent(login)}`,
+        { method: "GET", headers: headers(`Bearer ${token}`) },
+      );
       if (response.status === 404) {
         await response.body?.cancel();
         return undefined;
@@ -190,7 +194,12 @@ export function createGitHubOrganization(
       if (!response.ok) {
         return refused(response);
       }
-      const account = await upstream.reply(response, accountSchema);
+      const membership = await upstream.reply(response, membershipSchema);
+      // Invited, and not come in yet: no member, as the question of who is one answers it.
+      if (membership.state !== "active") {
+        return undefined;
+      }
+      const account = membership.user;
       // The host compares logins without regard to case, and answers with its own spelling: an
       // answer about another name is not an answer to this question.
       if (account.login.toLowerCase() !== login.toLowerCase()) {
