@@ -110,7 +110,7 @@ Where a page shows what someone else wrote, the hard rules of [building-a-consol
 - Collections: `console desk check`, which says each problem with its file and signs in nowhere.
 - Pages: `npm run build` ends in 0 and `web/dist/index.html` is there, written by it.
 - Nothing secret is staged: `git status`, read in a step of its own before the commit. `web/node_modules` and `web/dist` are ignored, by a line added to the desk's `.gitignore` where it has none for them; the lockfile of `web/` is committed.
-- Commit and push, without asking: the desk is the member's own, and its `AGENTS.md` says so. Where the host refuses a git command (it may keep an agent from writing under `.git`), the checks above are run all the same, and the member is told what is not committed and the commands left to run, in order.
+- Commit and push, without asking: the desk is the member's own, and its `AGENTS.md` says so. Where the host refuses a git command (it may keep an agent from writing under `.git`), the checks above are run all the same, and the member is told in the chat what is not committed, with the commands left to run written out in order.
 
 Then tell the member, in one message: what is kept and where, with one entry; the page's address, and how it is started and stopped; what was left out.
 
