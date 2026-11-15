@@ -22,7 +22,7 @@ Nobody is at this terminal, so I do everything I can myself. What needs someone'
 
 ## This desk
 
-This repository is mine. Whatever should outlive this machine lives here, in my product's shape or my own, and I commit and push when I finish something. What I made and want found again I keep under `records/`, as its `README.md` says; the kinds I keep are named here, a line each: none yet. What I do here for myself, a record or a page, is my own and on no board unless I put it there; the board's work reaches me as tasks, and work I need done on the board I put there. Scratch files go under `work/`, which the desk ignores.
+This repository is mine. Whatever should outlive this machine lives here, in my product's shape or my own, and I commit and push when I finish something. What I keep lives under `records/`, in the shape that fits it, my pages under `web/` and the projects I work on under `work/`, each there once it is used; what the desk now keeps and shows is said here, a line each. Something new to keep or to show is shaped as the skill keeping-a-desk says, which `console help desk` names with its place; one more entry in a shape that is here needs none of it. What I do here for myself, a record or a page, is my own and on no board unless I put it there; the board's work reaches me as tasks, and work I need done on the board I put there. Scratch files go under `work/`, which the desk ignores.
 
 ## Secrets
 

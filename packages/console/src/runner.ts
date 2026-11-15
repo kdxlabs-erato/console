@@ -38,7 +38,6 @@ export {
 } from "./runner/message.js";
 export { ownRunnerModules } from "./runner/modules.js";
 export { createSpawn } from "./runner/process.js";
-export { RECORDS_README } from "./runner/records-readme.js";
 export { formsOf, redactorOf, WITHHELD } from "./runner/redact.js";
 export {
   createRegistry,

@@ -2,15 +2,15 @@ import type { RestWorkspace } from "../schemas.js";
 import { describeService, serviceNamesOf } from "../services.js";
 import { SERVICE_ROLES } from "../vocabulary.js";
 import { DEFAULT_RUNNER_CONFIG, type RunnerConfig } from "./config.js";
-import { RECORDS_README } from "./records-readme.js";
 
 // The desk (ADR-0088): an agent account's own repository, where who it is, how it works and
 // whatever should outlive its machine live, in a shape every agent product reads. The package
 // carries the template and `console agent setup` writes it when the desk does not exist yet;
 // `examples/agent-desk` in the console's repository is what it writes for an invented account,
-// and a test holds the two equal. The template is the necessary minimum: five files and the
-// format of the desk's records (ADR-0117), and nothing that prescribes what a product already
-// does for itself.
+// and a test holds the two equal. The template is the least (ADR-0122): five files, the
+// instructions and a structure among them, and nothing that prescribes what a product already
+// does for itself or what a desk is to keep. What a desk keeps and shows is its member's to
+// ask for, and the skill keeping-a-desk shapes the desk to it.
 
 export interface DeskInput {
   /** The account: what it is called, its handle, and what it does where a title says. */
@@ -84,8 +84,11 @@ This repository is my desk: who I am, how I work, and whatever should outlive th
 - \`AGENTS.md\`: my instructions, read as they are by whichever agent product I run in.
 - \`CLAUDE.md\`: one line that points a product to them.
 - \`runner.json\`: how the console's runner keeps my session going. No secret is in it.
-- \`records/\`: what I made and what became of it; its \`README.md\` is the format.
+- \`records/\`: what I keep, in the shape that fits it.
+- \`web/\`: my pages, my own extension of the console's pages.
 - \`work/\`: the projects I work on, checked out here, and under \`work/inbox/\` the files a supervisor sent me; ignored by this repository.
+
+Of the last three, each is there once it is used.
 
 What I do is on the console's board, under my own name.
 `;
@@ -121,7 +124,7 @@ Nobody is at this terminal, so I do everything I can myself. What needs someone'
 
 ## This desk
 
-This repository is mine. Whatever should outlive this machine lives here, in my product's shape or my own, and I commit and push when I finish something. What I made and want found again I keep under \`records/\`, as its \`README.md\` says; the kinds I keep are named here, a line each: none yet. What I do here for myself, a record or a page, is my own and on no board unless I put it there; the board's work reaches me as tasks, and work I need done on the board I put there. Scratch files go under \`work/\`, which the desk ignores.
+This repository is mine. Whatever should outlive this machine lives here, in my product's shape or my own, and I commit and push when I finish something. What I keep lives under \`records/\`, in the shape that fits it, my pages under \`web/\` and the projects I work on under \`work/\`, each there once it is used; what the desk now keeps and shows is said here, a line each. Something new to keep or to show is shaped as the skill keeping-a-desk says, which \`console help desk\` names with its place; one more entry in a shape that is here needs none of it. What I do here for myself, a record or a page, is my own and on no board unless I put it there; the board's work reaches me as tasks, and work I need done on the board I put there. Scratch files go under \`work/\`, which the desk ignores.
 
 ## Secrets
 
@@ -169,9 +172,10 @@ Thumbs.db
 
 /**
  * The files of a new desk, by their path in it: `README.md` for people, `AGENTS.md` for every
- * product, `CLAUDE.md` pointing one product to it, `runner.json`, `.gitignore`, and
- * `records/README.md`, the format of what the desk keeps (ADR-0117). Text, with a line ending
- * each; what the persona says is written as text and makes no markup.
+ * product, `CLAUDE.md` pointing one product to it, `runner.json` and `.gitignore`: the least
+ * (ADR-0122), with nothing under `records/`, `web/` or `work/`, each of which is there once
+ * it is used. Text, with a line ending each; what the persona says is written as text and
+ * makes no markup.
  */
 export function deskFiles(input: DeskInput): ReadonlyMap<string, string> {
   return new Map([
@@ -180,7 +184,6 @@ export function deskFiles(input: DeskInput): ReadonlyMap<string, string> {
     ["CLAUDE.md", "@AGENTS.md\n"],
     ["runner.json", `${JSON.stringify(input.runner ?? DEFAULT_RUNNER_CONFIG, null, 2)}\n`],
     [".gitignore", GITIGNORE],
-    ["records/README.md", RECORDS_README],
   ]);
 }
 
@@ -256,11 +259,13 @@ I am ${name} (\`${inCode(input.person.login)}\`), a member of ${plain(input.cons
 
 This repository is my desk: how an agent works for me, the projects I work on, and whatever should outlive a session or a machine.
 
-- \`AGENTS.md\`: the instructions of an agent that works here, read as they are by whichever agent product I use.
+- \`AGENTS.md\`: the instructions of an agent that works here, read as they are by whichever agent product I use; they say what this desk keeps and shows.
 - \`CLAUDE.md\`: one line that points a product to them.
+- \`records/\`: what I keep, in the shape that fits it.
+- \`web/\`: this desk's pages, my own extension of the console's pages, served from this machine by \`console serve\`.
 - \`work/\`: the projects I work on, checked out here, each a repository of its own; ignored by this repository.
-- \`records/\`: what I made and what became of it; its \`README.md\` is the format.
-- \`web/\`: this desk's pages, where I have them: my own extension of the console's pages, served from this machine by \`console serve\`.
+
+Of the last three, each is there once it is used.
 
 No secret is kept here.
 `;
@@ -304,9 +309,10 @@ I am ${name} (\`${inCode(input.person.login)}\`), a member of ${plain(input.cons
 
 ## This desk
 
-- What I made and want found again is kept under \`records/\`, as its \`README.md\` says. The kinds I keep are named here, a line each: none yet.
-- What I ask for that holds from now on, and what was learned and will be needed again, is written here.
 - What changes in this desk is committed and pushed when it is done, without asking: the repository is my own.
+- What I keep lives under \`records/\`, in the shape that fits it, my pages under \`web/\` and the projects I work on under \`work/\`, each there once it is used.
+- What the desk now keeps and shows is said here, a line each, and so is what I ask for that holds from now on and what was learned and will be needed again.
+- Something new to keep or to see is shaped as the skill keeping-a-desk says, which \`console help desk\` names with its place; one more entry in a shape that is here needs none of it.
 
 ## Secrets
 
@@ -347,9 +353,9 @@ Thumbs.db
 
 /**
  * The files of a person's new desk, by their path in it: `README.md` for people, `AGENTS.md`
- * for every product, `CLAUDE.md` pointing one product to it, `.gitignore`, and
- * `records/README.md`, the format of what the desk keeps (ADR-0117). Text, with a line ending
- * each; a name is written as text and makes no markup.
+ * for every product, `CLAUDE.md` pointing one product to it and `.gitignore`: the least
+ * (ADR-0122), with no form of a thing to keep. Text, with a line ending each; a name is
+ * written as text and makes no markup.
  */
 export function personDeskFiles(input: PersonDeskInput): ReadonlyMap<string, string> {
   return new Map([
@@ -357,7 +363,6 @@ export function personDeskFiles(input: PersonDeskInput): ReadonlyMap<string, str
     ["AGENTS.md", personAgents(input)],
     ["CLAUDE.md", "@AGENTS.md\n"],
     [".gitignore", PERSON_GITIGNORE],
-    ["records/README.md", RECORDS_README],
   ]);
 }
 

@@ -5286,9 +5286,17 @@ const agentSetup = async (args: readonly string[], io: CliIo): Promise<number> =
 
 const DESK_USAGE = "Say at most one directory: console desk [<directory>] [--web]";
 
-/** The sentence a person says to their agent in a new desk: the last line `desk` prints (ADR-0115). */
-function deskSentence(web: boolean): string {
-  return `Set this desk up as a repository of mine${web ? " and bring its pages up" : ""}, with the skill for it in the organization's pack where it has one: console skills --search "desk setup" --limit 5`;
+/**
+ * What is next in a new desk, in order, as a person says it to their agent there (ADR-0115,
+ * ADR-0122): first the desk is set up as a repository, by the skill for that in the
+ * organization's pack; then the person is asked what they want to keep and to see, and the
+ * desk is shaped to it, by the skill the command ships, named with its place.
+ */
+function deskNext(web: boolean, skillsDir: string | undefined): [string, string] {
+  return [
+    `Set this desk up as a repository of mine${web ? " and bring its pages up" : ""}, with the skill for it in the organization's pack where it has one: console skills --search "desk setup" --limit 5`,
+    `Ask me what I want to keep and to see here, and shape the desk to it, as the skill keeping-a-desk says, shipped with the console command${skillsDir === undefined ? " (console skills says where it is)" : `: ${ownSkillPath(skillsDir, "keeping-a-desk")}`}`,
+  ];
 }
 
 /** The files of the shell of a desk's pages as they are written: the two words the template leaves filled in. */
@@ -5358,13 +5366,13 @@ const deskCheck = async (args: readonly string[], io: CliIo): Promise<number> =>
   return EXIT.ok;
 };
 
-// A person's desk (ADR-0115): its fixed files, the format of its records among them
-// (ADR-0117), each only where no file of that name is
-// there, in `desk` here, as an agent account's is called, or the directory named; with --web,
-// the shell of the desk's pages in `web/`, where that holds nothing yet. The command writes and
-// stops: making the desk a repository and bringing its pages up is a skill's, of the
-// organization's pack, and the
-// last line is the sentence that asks an agent for it. An agent account's desk is setup's.
+// A person's desk (ADR-0115): its files, the least (ADR-0122), each only where no file of that
+// name is there, in `desk` here, as an agent account's is called, or the directory named; with
+// --web, the shell of the desk's pages in `web/`, where that holds nothing yet. The command
+// writes and stops, and its last lines say what is next, in order, for an agent to go on with:
+// making the desk a repository is a skill's, of the organization's pack, and shaping it to what
+// the person asks to keep and to see is the skill keeping-a-desk's, which the command ships.
+// An agent account's desk is setup's.
 const desk: Command = async (args, io) => {
   if (args[0] === "check") {
     return deskCheck(args.slice(1), io);
@@ -5447,7 +5455,7 @@ const desk: Command = async (args, io) => {
   }
   if (shell !== undefined) {
     lines.push(
-      `The shell of its pages is written in ${webDir} (${shellNames.join(", ")}): your own extension of the console's pages, on @skillcdn/console ${io.version}, served from this machine by console serve once it is built${shellNames.includes("README.md") ? "; its README.md says how" : ""}.`,
+      `The shell of its pages is written in ${webDir} (${shellNames.join(", ")}), on @skillcdn/console ${io.version}: one empty page of your own until you say what you want to see, served from this machine by console serve once it is built${shellNames.includes("README.md") ? "; its README.md says how" : ""}.`,
     );
   } else if (webKept) {
     lines.push(`${webDir} holds something already, and is left as it is.`);
@@ -5455,9 +5463,14 @@ const desk: Command = async (args, io) => {
   const web = on(values, "web")
     ? { directory: webDir, written: shellNames, version: shell === undefined ? null : io.version }
     : null;
-  const say = deskSentence(web !== null);
-  answer(io, session, { directory: dir, written, kept, web, say }, () =>
-    [...lines, "Next, open your agent in that folder and say:", "", say].join("\n"),
+  const next = deskNext(web !== null, io.skillsDir);
+  answer(io, session, { directory: dir, written, kept, web, next }, () =>
+    [
+      ...lines,
+      "Next, in that folder, say these to your agent in order; an agent that ran this command goes on with them there:",
+      "",
+      ...next.map((line, index) => `${index + 1}. ${line}`),
+    ].join("\n"),
   );
   return EXIT.ok;
 };
@@ -6326,7 +6339,7 @@ function help(io: CliIo, name: string | undefined): number {
     io.stdout(usage(io.version, io.skillsDir));
     return EXIT.ok;
   }
-  const found = helpFor(name);
+  const found = helpFor(name, io.skillsDir);
   if (found === undefined) {
     throw misuse(`Not a command: ${name}. The commands: ${Object.keys(COMMAND_HELP).join(", ")}`);
   }

@@ -72,6 +72,11 @@ export interface CommandHelp {
   readonly limits?: readonly string[];
   /** What the console may refuse, by code, and what to do then. */
   readonly refusals?: readonly string[];
+  /**
+   * A skill of the console's own that says how the command's work goes, and what it says: the
+   * command's own help names it with its place on this machine, as `whoami` names the board's.
+   */
+  readonly skill?: { readonly name: string; readonly says: string };
 }
 
 /** The refusals any command may meet, said once in the overview. */
@@ -779,13 +784,17 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     usage: "desk [<directory>] [--web]  |  desk check [<directory>]",
     synopsis: "For a person: writes a desk of your own, the folder your agent begins in.",
     about:
-      "For a person: writes your desk (ADR-0115, ADR-0117), a folder of your own that your agent begins in and that you make a repository of at your own git account. Its files: README.md; AGENTS.md, the instructions of an agent that works for you there; CLAUDE.md, which points a product to them; .gitignore; and records/README.md, the format of the records the desk keeps of what you made. Your projects are checked out under work/ in it. Written into desk in this directory, as an agent account's desk is called, or into the directory named (. for this one); a file that is there is left as it is, and the command says which it wrote and which it left. A desk is bound to no project: a board command run in it names one with --project <key>, and a checkout under work/ carries its own binding. --web also writes the shell of the desk's pages into web/, where that holds nothing yet: your own extension of the console's pages, on this command's version of the package, served by console serve once it is built. The last line is the sentence to say to your agent in that folder: it has the desk set up as a repository, with the skill for that in your organization's pack where it has one (console skills --search \"desk setup\" --limit 5). Needs no project. An agent account's desk is settled by console agent setup. desk check reads the records of the desk in this directory, or of the one named, a person's or an agent account's, and says each problem with its file and what is wrong: a file that is no JSON or not in the format, an item a use names that is not there, a preview or a file that is not there, a JSON file over its bound; a file git LFS has not fetched here is a note, and so are a use or a figure dated before its item was made and an item with no status where its collection names some. It ends in 1 with any problem, signs in nowhere and asks nothing of the console: run it after writing a record.",
+      "For a person: writes your desk (ADR-0115, ADR-0122), a folder of your own that your agent begins in and that you make a repository of at your own git account. It writes the least: README.md; AGENTS.md, the instructions of an agent that works for you there; CLAUDE.md, which points a product to them; and .gitignore. What the desk keeps comes under records/, its pages under web/ and your projects' checkouts under work/, each once it is used, as you ask for it. Written into desk in this directory, as an agent account's desk is called, or into the directory named (. for this one); a file that is there is left as it is, and the command says which it wrote and which it left. A desk is bound to no project: a board command run in it names one with --project <key>, and a checkout under work/ carries its own binding. --web also writes the shell of the desk's pages into web/, where that holds nothing yet: one empty page of your own until you say what you want to see, on this command's version of the package, served by console serve once it is built. The last lines are what is next, in order, to say to your agent in that folder, or for the agent that ran the command to go on with there: first the desk is set up as a repository, with the skill for that in your organization's pack where it has one (console skills --search \"desk setup\" --limit 5); then you are asked what you want to keep and to see, and the desk is shaped to it. Needs no project. An agent account's desk is settled by console agent setup. desk check reads the collections of the desk in this directory, or of the one named, a person's or an agent account's (what else a desk keeps under records/ is its own shape, and is not read), and says each problem with its file and what is wrong: a file that is no JSON or not in the format, an item a use names that is not there, a preview or a file that is not there, a JSON file over its bound; a file git LFS has not fetched here is a note, and so are a use or a figure dated before its item was made and an item with no status where its collection names some. It ends in 1 with any problem, signs in nowhere and asks nothing of the console: run it after writing a record.",
     refusals: [
       "an agent account's desk is settled by console agent setup: nothing is written",
       "this directory works in a project: a desk is bound to none, and is made elsewhere, console desk <directory>",
       "no shell of a desk's pages in this command's package, with --web: nothing is written",
       "desk check: problems in the records, each said with its file; mend the files and run it again",
     ],
+    skill: {
+      name: "keeping-a-desk",
+      says: "How a desk is shaped to what its member asks to keep and to see",
+    },
   },
   serve: {
     usage: "serve [<dir>] [--port <n>] [--records <dir>]",
@@ -811,14 +820,15 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
 };
 
 /**
- * Where the skill working-the-board is, among the console's own skills in `skillsDir`, with the
- * separators the directory came with, so that the path reads as the machine writes paths.
+ * Where a skill of the console's own is, the skill working-the-board unless another is named,
+ * among the console's own skills in `skillsDir`, with the separators the directory came with,
+ * so that the path reads as the machine writes paths.
  */
-export function ownSkillPath(skillsDir: string): string {
+export function ownSkillPath(skillsDir: string, skill = "working-the-board"): string {
   const separator = skillsDir.includes("\\") ? "\\" : "/";
   const base =
     skillsDir.endsWith("/") || skillsDir.endsWith("\\") ? skillsDir : `${skillsDir}${separator}`;
-  return `${base}working-the-board${separator}SKILL.md`;
+  return `${base}${skill}${separator}SKILL.md`;
 }
 
 /** The first lines of the usage, with the version of the command and where its skill is, when known. */
@@ -943,7 +953,7 @@ export function usage(version?: string, skillsDir?: string): string {
 }
 
 /** What `console help <command>` prints, the command in full; or nothing for a command that is not one. */
-export function helpFor(name: string): string | undefined {
+export function helpFor(name: string, skillsDir?: string): string | undefined {
   const help = COMMAND_HELP[name];
   if (help === undefined) {
     return undefined;
@@ -954,6 +964,12 @@ export function helpFor(name: string): string | undefined {
   }
   if (help.refusals !== undefined) {
     parts.push("", "Refusals:", ...help.refusals.map((refusal) => `  ${refusal}`));
+  }
+  if (help.skill !== undefined) {
+    parts.push(
+      "",
+      `${help.skill.says} is the skill ${help.skill.name}, shipped with this command${skillsDir === undefined ? " (console skills says where it is)." : `: ${ownSkillPath(skillsDir, help.skill.name)}`}`,
+    );
   }
   return `${parts.join("\n")}\n`;
 }

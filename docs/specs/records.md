@@ -1,15 +1,16 @@
 # Spec: a desk's records
 
-- Status: **Built** ([ADR-0117](../adr/0117-a-desk-keeps-records-of-what-its-member-made-as-files-the-desks-pages-read.md)).
-- Where things live: the format's schemas, its bounds and the check in `packages/console/src/records.ts`, exported from `@skillcdn/console/api`; the file that says the format to an agent, `records/README.md`, in the desk's templates (`packages/console/src/runner/desk.ts`); `console desk check` and `console serve --records` in `packages/console/src/cli/` ([cli.md](cli.md#a-desk-of-ones-own)).
+- Status: **Built** ([ADR-0117](../adr/0117-a-desk-keeps-records-of-what-its-member-made-as-files-the-desks-pages-read.md), as [ADR-0122](../adr/0122-a-desk-is-given-its-least-and-grown-by-what-its-member-asks.md) amends it).
+- Where things live: the format's schemas, its bounds and the check in `packages/console/src/records.ts`, exported from `@skillcdn/console/api`; the page that says the format to an agent, `skills/keeping-a-desk/collections.md`, whose examples a test reads by the schemas; `console desk check` and `console serve --records` in `packages/console/src/cli/` ([cli.md](cli.md#a-desk-of-ones-own)).
 
-A desk is a member's own repository, a person's or an agent account's ([runner.md](runner.md#the-desk)). Its records are what the member made and what became of it: plain JSON files and the files themselves, under `records/`, written by whichever agent works in the desk with its file tools. Nothing is generated and nothing needs a build. The desk's pages, the member's own extension of the console's pages, read them through `console serve --records`; `console desk check` says whether they read right, with no page and no console.
+A desk is a member's own repository, a person's or an agent account's ([runner.md](runner.md#the-desk)). What it keeps lives under `records/`, in the shape that fits it: plain files, JSON an agent writes with its file tools and the files themselves, as the member asks and as the desk's `AGENTS.md` then says. Nothing is generated and nothing needs a build, and `console serve --records` serves whatever is there to the desk's pages ([below](#serving)).
+
+This spec is one shape the package has ready, **collections**: a set of things the member made, with where each was used and how it did by day. A desk takes it where its member asks for exactly that, and nothing of it is written into a desk, checked or shown otherwise: `console desk` writes no file under `records/`, and the skill `keeping-a-desk` says the form to an agent on a page of its own (`collections.md`). `console desk check` says whether a desk's collections read right, with no page and no console, and the ready page `deskPage()` shows them.
 
 ## The files
 
 ```
 records/
-  README.md              the format, for whichever agent works in the desk; written with the desk
   index.json             the collections
   <key>/
     collection.json      what the collection is, and how its items are read
@@ -17,6 +18,7 @@ records/
     uses.json            where an item was used: a list (optional)
     metrics.json         how an item did, by day: a list (optional)
     files/               the files themselves: what was made, of any kind and size
+  <anything else>        the desk's own, in a shape of its own: not read by the check
 ```
 
 A key is lowercase letters, digits and hyphens, beginning with a letter or a digit, and it is the folder's name. A day is written `2026-11-15`. An address begins with `https://`. Everything else a person reads there is text, and is shown as text: a line (a title, a label, where an item was used) has no line break in it, and no text holds a control character or one that makes a string look like another. A key of a file the format does not name is read past by the schemas, so that a page built on an older format still reads a newer file, and said by the check, since a field spelled wrong is otherwise taken as left out.
@@ -85,7 +87,7 @@ The names of the bounds are the package's (`MAX_RECORD_ITEMS` and the rest), and
 
 ## The check
 
-`console desk check [<directory>]` reads the records of the desk in the directory, the current one unless another is named, and asks nothing of a console: it needs no sign-in. It says each problem on a line, with the file and what is wrong:
+`console desk check [<directory>]` reads the collections of the desk in the directory, the current one unless another is named, and asks nothing of a console: it needs no sign-in. It says each problem on a line, with the file and what is wrong:
 
 - a file that is no JSON, or not in the format: a field missing or of another kind, a key or an id spelled otherwise, a day that is none, an address that does not begin with `https://`, a path that leaves `files/`, a text over its bound;
 - a collection the index names twice, or whose `collection.json` is not there; a folder of `records/` that holds a `collection.json` and that the index leaves out, or that is there with no index at all; a status, a field, a metric or a ratio named twice; a ratio worked out from what is no metric;
@@ -97,7 +99,7 @@ A file an item names that is a git LFS pointer is said as a note, `note: …`, a
 
 ## Serving
 
-`console serve [<dir>] [--port <n>] [--records <dir>]` serves the records in the directory named at `/records/`, beside the build and the API ([cli.md](cli.md#a-console-of-ones-own)): `records/index.json` of the desk is `GET /records/index.json`. On the loopback alone, as everything the command serves, and to no request that the browser says comes from another site's page.
+`console serve [<dir>] [--port <n>] [--records <dir>]` serves what the directory named holds at `/records/`, beside the build and the API ([cli.md](cli.md#a-console-of-ones-own)), collections and whatever else the desk keeps alike: `records/index.json` of the desk is `GET /records/index.json`. On the loopback alone, as everything the command serves, and to no request that the browser says comes from another site's page.
 
 - **Read when asked.** Every request reads the file as it is then, and is answered with `Cache-Control: no-store`: a record an agent just wrote is what the page shows.
 - **`GET` alone.** Any other method is `405`, `records.read_only`.

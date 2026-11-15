@@ -16,9 +16,10 @@ I am Alice Kim (`alice@acme.example`), a member of Acme (https://console.acme.ex
 
 ## This desk
 
-- What I made and want found again is kept under `records/`, as its `README.md` says. The kinds I keep are named here, a line each: none yet.
-- What I ask for that holds from now on, and what was learned and will be needed again, is written here.
 - What changes in this desk is committed and pushed when it is done, without asking: the repository is my own.
+- What I keep lives under `records/`, in the shape that fits it, my pages under `web/` and the projects I work on under `work/`, each there once it is used.
+- What the desk now keeps and shows is said here, a line each, and so is what I ask for that holds from now on and what was learned and will be needed again.
+- Something new to keep or to see is shaped as the skill keeping-a-desk says, which `console help desk` names with its place; one more entry in a shape that is here needs none of it.
 
 ## Secrets
 

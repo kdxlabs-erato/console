@@ -4603,17 +4603,15 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
     expect(out).not.toContain("is bound to it: console use");
     // The desk, from the template, in the OS account's home.
     expect(at.written.filter((file) => file.path.startsWith("/Users/mira/desk/"))).toEqual(
-      ["README.md", "AGENTS.md", "CLAUDE.md", "runner.json", ".gitignore", "records/README.md"].map(
-        (name) => ({
-          path: `/Users/mira/desk/${name}`,
-          mode: 0o644,
-        }),
-      ),
+      ["README.md", "AGENTS.md", "CLAUDE.md", "runner.json", ".gitignore"].map((name) => ({
+        path: `/Users/mira/desk/${name}`,
+        mode: 0o644,
+      })),
     );
     expect(at.files.get("/Users/mira/desk/AGENTS.md")).toContain("@mira");
     expect(at.files.get("/Users/mira/desk/AGENTS.md")).toContain("acme-mira");
     expect(out).toContain(
-      "A new desk is written at /Users/mira/desk (README.md, AGENTS.md, CLAUDE.md, runner.json, .gitignore, records/README.md).",
+      "A new desk is written at /Users/mira/desk (README.md, AGENTS.md, CLAUDE.md, runner.json, .gitignore).",
     );
     // The service: the runner as this command was started, in the desk, at this console and as
     // this account; loaded with no administrator's rights, and nothing else is run.
@@ -4715,7 +4713,7 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
     expect(await runCli([...LINE, "--desk", "/srv/desks/mira"], filled.io)).toBe(EXIT.ok);
     expect(half.files.get("/srv/desks/mira/README.md")).toBe("# My own words\n");
     expect(filled.out()).toContain(
-      "A new desk is written at /srv/desks/mira (AGENTS.md, CLAUDE.md, runner.json, .gitignore, records/README.md).",
+      "A new desk is written at /srv/desks/mira (AGENTS.md, CLAUDE.md, runner.json, .gitignore).",
     );
     expect(half.files.get(UNIT)).toContain("<string>/srv/desks/mira</string>");
   });
@@ -5167,9 +5165,24 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
 
 describe("a person's desk on the command line (ADR-0115)", () => {
   const ALICE = { ...ME, person: { ...PERSON, login: "alice@acme.example", name: "Alice Kim" } };
-  const FILES = ["README.md", "AGENTS.md", "CLAUDE.md", ".gitignore", "records/README.md"];
+  // The least (ADR-0122): no form of a thing to keep, and nothing under records/, web/ or work/.
+  const FILES = ["README.md", "AGENTS.md", "CLAUDE.md", ".gitignore"];
   const SENTENCE =
     'Set this desk up as a repository of mine, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup" --limit 5';
+  const WITH_PAGES =
+    'Set this desk up as a repository of mine and bring its pages up, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup" --limit 5';
+  /** Where the command's own skills are, as an installed package has them. */
+  const SKILLS = "/usr/lib/node_modules/@skillcdn/console/skills/";
+  const SHAPE =
+    "Ask me what I want to keep and to see here, and shape the desk to it, as the skill keeping-a-desk says, shipped with the console command";
+  /** What is next, as the command says it last: the two things in order, the second with the skill's place. */
+  const NEXT = (first: string, place = `: ${SKILLS}keeping-a-desk/SKILL.md`) => [
+    "Next, in that folder, say these to your agent in order; an agent that ran this command goes on with them there:",
+    "",
+    `1. ${first}`,
+    `2. ${SHAPE}${place}`,
+    "",
+  ];
   /** The shell of a desk's pages as a package would carry it: the two words the command fills in, and a folder. */
   const SHELL = new Map([
     ["README.md", "# __TITLE__\n\nBuilt on @skillcdn/console __VERSION__.\n"],
@@ -5218,7 +5231,7 @@ describe("a person's desk on the command line (ADR-0115)", () => {
   it("writes the desk's files into desk here, as an agent account's is called, asks the console who it is and nothing else, and ends with the sentence for the agent", async () => {
     const { fetch, calls } = consoleFor(ALICE);
     const at = fakeFiles("/work");
-    const run = harness({ fetch, store: signedIn(), machine: at.machine });
+    const run = harness({ fetch, store: signedIn(), machine: at.machine, skillsDir: SKILLS });
     expect(await runCli(["desk"], run.io)).toBe(EXIT.ok);
     expect(calls.map((call) => call.key)).toEqual(["GET /api/v1/me"]);
     expect(at.written).toEqual(FILES.map((name) => ({ path: `/work/desk/${name}`, mode: 0o644 })));
@@ -5232,14 +5245,15 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     expect([...at.files.keys()].some((path) => path.endsWith("runner.json"))).toBe(false);
     expect(run.out()).toBe(
       [
-        "A new desk is written at /work/desk (README.md, AGENTS.md, CLAUDE.md, .gitignore, records/README.md), for alice@acme.example. It is yours from now on: to edit, and to make a repository of.",
-        "Next, open your agent in that folder and say:",
-        "",
-        SENTENCE,
-        "",
+        "A new desk is written at /work/desk (README.md, AGENTS.md, CLAUDE.md, .gitignore), for alice@acme.example. It is yours from now on: to edit, and to make a repository of.",
+        ...NEXT(SENTENCE),
       ].join("\n"),
     );
     expect(run.err()).toBe("");
+    // Nothing is written under the three places: each is there once it is used.
+    expect(
+      [...at.files.keys()].filter((path) => /^\/work\/desk\/(records|web|work)\//.test(path)),
+    ).toEqual([]);
     // A person the provider gave no name is called by their login, and the folder by what
     // stands before an @.
     const plain = fakeFiles("/work");
@@ -5317,12 +5331,10 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     expect(await runCli(["desk"], run.io)).toBe(EXIT.ok);
     expect(half.files.get("/work/desk/AGENTS.md")).toBe("# My own words\n");
     expect(half.written.map((file) => file.path)).toEqual(
-      ["README.md", "CLAUDE.md", ".gitignore", "records/README.md"].map(
-        (name) => `/work/desk/${name}`,
-      ),
+      ["README.md", "CLAUDE.md", ".gitignore"].map((name) => `/work/desk/${name}`),
     );
     expect(run.out()).toContain(
-      "The desk at /work/desk gains README.md, CLAUDE.md, .gitignore, records/README.md; AGENTS.md was there and is left as it is.",
+      "The desk at /work/desk gains README.md, CLAUDE.md, .gitignore; AGENTS.md was there and is left as it is.",
     );
     // A second run finds everything there, changes nothing, and still says what comes next.
     const again = harness({
@@ -5336,10 +5348,8 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     expect(again.out()).toBe(
       [
         "The desk at /work/desk is there already, and is left as it is.",
-        "Next, open your agent in that folder and say:",
-        "",
-        SENTENCE,
-        "",
+        // A command with no skills beside it says where their place is asked.
+        ...NEXT(SENTENCE, " (console skills says where it is)"),
       ].join("\n"),
     );
   });
@@ -5393,6 +5403,7 @@ describe("a person's desk on the command line (ADR-0115)", () => {
       machine: at.machine,
       version: "0.5.1",
       deskWebTemplate: async () => SHELL,
+      skillsDir: SKILLS,
     });
     expect(await runCli(["desk", "--web"], run.io)).toBe(EXIT.ok);
     const title = `Alice Kim${String.fromCodePoint(0x2019)}s desk`;
@@ -5405,12 +5416,10 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     expect(at.written.every((file) => file.mode === 0o644)).toBe(true);
     expect(run.out()).toBe(
       [
-        "A new desk is written at /work/desk (README.md, AGENTS.md, CLAUDE.md, .gitignore, records/README.md), for alice@acme.example. It is yours from now on: to edit, and to make a repository of.",
-        "The shell of its pages is written in /work/desk/web (README.md, package.json, index.html, src/main.tsx): your own extension of the console's pages, on @skillcdn/console 0.5.1, served from this machine by console serve once it is built; its README.md says how.",
-        "Next, open your agent in that folder and say:",
-        "",
-        'Set this desk up as a repository of mine and bring its pages up, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup" --limit 5',
-        "",
+        "A new desk is written at /work/desk (README.md, AGENTS.md, CLAUDE.md, .gitignore), for alice@acme.example. It is yours from now on: to edit, and to make a repository of.",
+        // The pages are one empty page of the person's own (ADR-0122), and the command says so.
+        "The shell of its pages is written in /work/desk/web (README.md, package.json, index.html, src/main.tsx), on @skillcdn/console 0.5.1: one empty page of your own until you say what you want to see, served from this machine by console serve once it is built; its README.md says how.",
+        ...NEXT(WITH_PAGES),
       ].join("\n"),
     );
 
@@ -5436,6 +5445,7 @@ describe("a person's desk on the command line (ADR-0115)", () => {
       machine: fakeFiles("/work").machine,
       version: "0.5.1",
       deskWebTemplate: async () => SHELL,
+      skillsDir: SKILLS,
     });
     expect(await runCli(["desk", "--web", "--json"], json.io)).toBe(EXIT.ok);
     expect(JSON.parse(json.out())).toEqual({
@@ -5447,7 +5457,7 @@ describe("a person's desk on the command line (ADR-0115)", () => {
         written: ["README.md", "package.json", "index.html", "src/main.tsx"],
         version: "0.5.1",
       },
-      say: 'Set this desk up as a repository of mine and bring its pages up, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup" --limit 5',
+      next: [WITH_PAGES, `${SHAPE}: ${SKILLS}keeping-a-desk/SKILL.md`],
     });
   });
 
@@ -5508,6 +5518,27 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     expect(own.out()).toContain("console desk [<directory>] [--web]");
     expect(own.out()).toContain("A desk is bound to no project");
     expect(own.out()).toContain("An agent account's desk is settled by console agent setup.");
+    // What it writes is the least, and what a desk keeps is its member's to say (ADR-0122).
+    expect(own.out()).toContain(
+      "It writes the least: README.md; AGENTS.md, the instructions of an agent that works for you there; CLAUDE.md, which points a product to them; and .gitignore.",
+    );
+    expect(own.out()).not.toContain("records/README.md");
+    // The skill that shapes a desk is named with its place, as whoami names the board's.
+    expect(own.out()).toContain(
+      "How a desk is shaped to what its member asks to keep and to see is the skill keeping-a-desk, shipped with this command (console skills says where it is).\n",
+    );
+    const placed = harness({
+      fetch,
+      skillsDir: "C:\\npm\\node_modules\\@skillcdn\\console\\skills\\",
+    });
+    expect(await runCli(["help", "desk"], placed.io)).toBe(EXIT.ok);
+    expect(placed.out()).toContain(
+      "is the skill keeping-a-desk, shipped with this command: C:\\npm\\node_modules\\@skillcdn\\console\\skills\\keeping-a-desk\\SKILL.md\n",
+    );
+    // No other command's help names a skill of its own.
+    const other = harness({ fetch, skillsDir: SKILLS });
+    expect(await runCli(["help", "serve"], other.io)).toBe(EXIT.ok);
+    expect(other.out()).not.toContain("shipped with this command");
     const map = harness({ fetch });
     expect(await runCli([], map.io)).toBe(EXIT.ok);
     expect(map.out()).not.toContain("console desk");

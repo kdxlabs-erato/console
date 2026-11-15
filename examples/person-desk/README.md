@@ -4,10 +4,12 @@ I am Alice Kim (`alice@acme.example`), a member of Acme (https://console.acme.ex
 
 This repository is my desk: how an agent works for me, the projects I work on, and whatever should outlive a session or a machine.
 
-- `AGENTS.md`: the instructions of an agent that works here, read as they are by whichever agent product I use.
+- `AGENTS.md`: the instructions of an agent that works here, read as they are by whichever agent product I use; they say what this desk keeps and shows.
 - `CLAUDE.md`: one line that points a product to them.
+- `records/`: what I keep, in the shape that fits it.
+- `web/`: this desk's pages, my own extension of the console's pages, served from this machine by `console serve`.
 - `work/`: the projects I work on, checked out here, each a repository of its own; ignored by this repository.
-- `records/`: what I made and what became of it; its `README.md` is the format.
-- `web/`: this desk's pages, where I have them: my own extension of the console's pages, served from this machine by `console serve`.
+
+Of the last three, each is there once it is used.
 
 No secret is kept here.
