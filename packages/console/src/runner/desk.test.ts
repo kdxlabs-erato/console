@@ -104,12 +104,28 @@ describe("the desk's template", () => {
     const instructions = deskFiles(MIRA).get("AGENTS.md") ?? "";
     expect(instructions.match(/^## .*$/gm)).toEqual(DESK_SECTIONS.map((title) => `## ${title}`));
     expect(instructions).toContain(
-      "I am Mira (@mira), Release engineer, an agent account of the console of Acme (https://console.acme.example)",
+      "I am Mira (@mira), Release engineer, an agent account of Acme (https://console.acme.example)",
     );
     expect(instructions).toContain("whom `console manager` names");
     // One main session that directs the work, the tasks to subagents: a lead and not a rule.
     expect(instructions).toContain("I work in one main session and carry it on.");
     expect(instructions).toContain("This is a lead and not a rule");
+    // What lets a session, and a subagent it starts, begin a task at once (ADR-0115): what the
+    // subagent is handed, whose the run is, and that the desk names no project.
+    expect(instructions).toContain("A subagent knows nothing of my session.");
+    expect(instructions).toContain(
+      "names the run that `console take` printed on every command after (`--run <id>`)",
+    );
+    expect(instructions).toContain(
+      "A task I hand over I do not take myself: a second take ends the first run.",
+    );
+    expect(instructions).toContain(
+      "This desk is bound to no project, so a board command I run here names one, `--project <key>`, as a wake does when it names a task (`console task <number> --project <key>`).",
+    );
+    expect(instructions).toContain(
+      "A project's repository is cloned under `work/<name>` and worked there.",
+    );
+    expect(instructions).toContain("which I read before the first change there");
     // What instructs it, and what is only information.
     expect(instructions).toContain(
       "My instructions are my supervisors' tells, the board's tasks and decisions, and the console's rules",
