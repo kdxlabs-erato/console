@@ -49,6 +49,18 @@ describe("the console's own rules", () => {
     ]) {
       expect(REFERENCE_RULES).toContain(named);
     }
+    // What keeps a board's work from going astray, each said once: a task written from chat can
+    // be taken as written, a task of a project several repositories share is worked in its own
+    // repository, work found on the way is a task of its own, and with no project named the
+    // pack read is the organization's.
+    for (const said of [
+      'console task new "<title>" --body <markdown> --state ready',
+      "in a project several repositories share it names the repository, and is worked in a checkout of that one",
+      "Work found on the way that the task does not cover is a task of its own",
+      "or of the organization's where no project is named",
+    ]) {
+      expect(REFERENCE_RULES).toContain(said);
+    }
     // The template is headings alone: nothing an agent could mistake for a rule.
     expect(PROJECT_RULES_TEMPLATE.split("\n").filter((line) => /^[^#\s]/.test(line))).toEqual([
       "Adds to the workspace's rules, for the agents at work here.",
