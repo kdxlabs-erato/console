@@ -502,10 +502,13 @@ describe("the command line", () => {
     expect(stale.out).toContain(
       "The rules are not the ones marked " +
         bare +
-        ": they changed since, or that mark is of another project's. They follow whole, under the mark they have now.\nRules " +
-        mark +
-        ": ",
+        ": they changed since, or that mark is of another project's. They follow whole after the task, under the mark they have now.\n\n#",
     );
+    // Before the task, and the rules whole after it.
+    expect(stale.out.indexOf("The rules are not the ones marked")).toBeLessThan(
+      stale.out.indexOf("Then work."),
+    );
+    expect(stale.out).toContain(`\nRules ${mark}: `);
     expect(stale.out).toContain("Ask before pushing.");
     expect((await console_(["abandon"])).code).toBe(EXIT.ok);
     const held = await console_(["take", String(task.number), "--rules", mark]);
@@ -513,7 +516,7 @@ describe("the command line", () => {
     expect(held.out).toContain(
       "\nRules " +
         mark +
-        ": left out, since they stand as this session read them. console rules prints them.\n",
+        ": left out, since they stand as this session read them. console rules prints them.\n\n#",
     );
     expect(held.out).not.toContain("Ask before pushing.");
     expect(held.out).not.toContain("# Rules for agents on this board");

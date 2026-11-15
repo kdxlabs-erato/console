@@ -630,13 +630,16 @@ export function formatRules(
   ].join("\n");
 }
 
-/** What stands in the rules' place where a take was told the mark they have (ADR-0119). */
+/** What a take says, before the task, where it was told the mark the rules have (ADR-0119): they are left out. */
 export const formatRulesLeftOut = (mark: string): string =>
   `Rules ${mark}: left out, since they stand as this session read them. console rules prints them.`;
 
-/** What stands before the rules where a take was told a mark they do not have (ADR-0119). */
+/**
+ * What a take says, before the task, where it was told a mark the rules do not have (ADR-0119):
+ * the rules then follow the task whole, as they do without a mark.
+ */
 export const formatRulesChanged = (given: string): string =>
-  `The rules are not the ones marked ${given}: they changed since, or that mark is of another project's. They follow whole, under the mark they have now.`;
+  `The rules are not the ones marked ${given}: they changed since, or that mark is of another project's. They follow whole after the task, under the mark they have now.`;
 
 /** How far a goal is, from its tasks: the done, the at work, and the rest, in one phrase. */
 function progressOf(goal: RestGoal): string {

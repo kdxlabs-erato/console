@@ -5,7 +5,7 @@ license: MIT
 compatibility: Needs a shell with the console command on the PATH (npm install -g @skillcdn/console, Node.js 24 or newer), signed in by a person. Nothing else; the command needs no key of its own and the agent never sees a token.
 metadata:
   author: skillcdn
-  version: "1.34"
+  version: "1.35"
 skillcdn:
   translations:
     ko:
@@ -65,7 +65,7 @@ A task past its due day is still the task: the first report says so.
 
 ### Phase 2: Take
 
-`console take <number>`. A run begins: the task is in progress and the person's, and the command prints the run's id and the task's on a line of their own (`run id:`, `task id:`), then the task in full and the rules of the board, under a first line that carries their mark and says how a later take of the session leaves them out (`--rules <mark>`). The output of a take is never cut to skip the rules: what the project adds and the plugins' lines stand first in it. A task read before the take is not read again there. Every report, hand-in, question and ending from here acts on this run. With another run of the person's open in the project, which `console take` says, each of those commands names the run: `--run <id>`.
+`console take <number>`. A run begins: the task is in progress and the person's, and the command prints the run's id and the task's on a line of their own (`run id:`, `task id:`), then the task in full and the rules of the board, under a first line that carries their mark and says how a later take of the session leaves them out (`--rules <mark>`). The output of a take is never cut to skip the rules, with the mark too: a changed rule is said in its first lines, and what the project adds and the plugins' lines stand first in the rules. A task read before the take is not read again there. Every report, hand-in, question and ending from here acts on this run. With another run of the person's open in the project, which `console take` says, each of those commands names the run: `--run <id>`.
 
 A task taken by mistake, or one that shows on being read that it is not this checkout's to work, is left with `console abandon`: the run ends, and the task goes back to the state the take found it in.
 

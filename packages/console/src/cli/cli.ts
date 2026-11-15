@@ -3173,16 +3173,16 @@ const take: Command = async (args, io) => {
   // A take gives the rules, whole, unless the session says the mark they have (ADR-0119): a
   // mark is known only from having been shown them, so a session that never was, a fresh one
   // or a subagent, gets them whatever it does. A mark that is not theirs, since they changed
-  // or it is of another project's, gets them whole again, and is told so first.
+  // or it is of another project's, gets them whole again, and is told so first. The line that
+  // answers a mark stands directly after the run's ids, before the task: a take is cut at its
+  // head by a session that holds the rules, and a rule that changed is what such a cut must
+  // not lose. Without a mark nothing is said there, and the rules follow the task as before.
   const language = readingLanguage(me);
   const mark = rulesMark(rules, language);
   const held = text(values, "rules")?.trim().toLowerCase();
-  const ruled =
-    held === undefined
-      ? formatRules(rules, language)
-      : held === mark
-        ? formatRulesLeftOut(mark)
-        : `${formatRulesChanged(held)}\n${formatRules(rules, language)}`;
+  const answered =
+    held === undefined ? [] : [held === mark ? formatRulesLeftOut(mark) : formatRulesChanged(held)];
+  const ruled = held === mark ? [] : [formatRules(rules, language), ""];
   answer(
     io,
     session,
@@ -3193,11 +3193,11 @@ const take: Command = async (args, io) => {
         // The ids on a line of their own, each named: a run's and a task's begin alike, and a
         // task has a number for people as well.
         `run id: ${run.id}  task id: ${found.id}  (task #${found.number})`,
+        ...answered,
         "",
         formatTask(taken, undefined, undefined, comments.items),
         "",
-        ruled,
-        "",
+        ...ruled,
         'Say how it goes: console report "<what you found or did>". Hand in what you make: console hand-in <https url | file path>.',
         'Ask when a person must decide: console ask "<question>" --option "..." --option "...". A word for the task\'s people that is not a report: console comment <number> "<markdown>". End with: console finish --summary "<what was done, what is left>".',
       ].join("\n"),

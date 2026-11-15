@@ -1090,9 +1090,12 @@ describe("the console command", () => {
     expect(await runCli(["take", "7", "--rules", mark], again.io)).toBe(EXIT.ok);
     expect(again.out()).toContain(`Run ${RUN.id} began on #7 Fix the parser`);
     expect(again.out()).toContain("It fails on empty input.");
+    // The line that answers the mark stands directly after the run's ids, before the task: a
+    // take cut at its head still shows it.
     expect(again.out()).toContain(
-      `\nRules ${mark}: left out, since they stand as this session read them. console rules prints them.\n`,
+      `\nrun id: ${RUN.id}  task id: ${TASK.id}  (task #7)\nRules ${mark}: left out, since they stand as this session read them. console rules prints them.\n\n#7 Fix the parser\n`,
     );
+    expect(again.out().split("\n").slice(0, 3).join("\n")).toContain("left out");
     expect(again.out()).not.toContain("Ask before pushing.");
     expect(again.out()).not.toContain("Read these.");
     expect(again.out()).toContain("Say how it goes");
@@ -1100,9 +1103,19 @@ describe("the console command", () => {
     // the rules whole, under the mark they have now, and a line that says so first.
     const stale = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["take", "7", "--rules", "0a1b2c3d"], stale.io)).toBe(EXIT.ok);
+    // Said before the task, where a cut at the head leaves it; the rules themselves follow the
+    // task, whole, as they do without a mark.
     expect(stale.out()).toContain(
-      `\nThe rules are not the ones marked 0a1b2c3d: they changed since, or that mark is of another project's. They follow whole, under the mark they have now.\nRules ${mark}: `,
+      `\nrun id: ${RUN.id}  task id: ${TASK.id}  (task #7)\nThe rules are not the ones marked 0a1b2c3d: they changed since, or that mark is of another project's. They follow whole after the task, under the mark they have now.\n\n#7 Fix the parser\n`,
     );
+    expect(stale.out().indexOf("It fails on empty input.")).toBeLessThan(
+      stale.out().indexOf(`\nRules ${mark}: `),
+    );
+    // Without a mark nothing moves: the rules' own first line stands after the task.
+    expect(h.out().indexOf("It fails on empty input.")).toBeLessThan(
+      h.out().indexOf(`\nRules ${mark}: `),
+    );
+    expect(h.out().split("\n").slice(0, 3).join("\n")).not.toContain("Rules ");
     expect(stale.out()).toContain("Ask before pushing.");
     expect(stale.out()).toContain("Read these.");
     // --json carries the rules either way: a program reads what it is given.

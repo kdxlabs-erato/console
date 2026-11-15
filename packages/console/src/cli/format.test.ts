@@ -431,7 +431,7 @@ describe("the rules as they are printed (ADR-0119, ADR-0120)", () => {
       "Rules 3f9a1c2e: left out, since they stand as this session read them. console rules prints them.",
     );
     expect(formatRulesChanged("0a1b2c3d")).toBe(
-      "The rules are not the ones marked 0a1b2c3d: they changed since, or that mark is of another project's. They follow whole, under the mark they have now.",
+      "The rules are not the ones marked 0a1b2c3d: they changed since, or that mark is of another project's. They follow whole after the task, under the mark they have now.",
     );
   });
 });
