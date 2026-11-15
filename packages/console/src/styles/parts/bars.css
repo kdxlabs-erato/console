@@ -1,0 +1,80 @@
+/* A list of bars: a ranking or a comparison. The rows share the list's columns, so that every
+   bar starts at one edge and ends against one scale, and every figure stands over the next.
+   In a narrow box a row is its name and its figure on one line and its bar under them; where
+   there is room, the name, the bar and the figure stand in one line. */
+.sc-bars {
+  display: grid;
+  grid-template-columns: fit-content(16rem) minmax(0, 1fr) max-content;
+  gap: var(--sc-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--sc-text-sm);
+  container-type: inline-size;
+}
+
+.sc-bars-row {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: baseline;
+  row-gap: var(--sc-space-1);
+}
+
+.sc-bars-label {
+  grid-column: 1 / 3;
+  min-width: 0;
+  color: var(--sc-color-text);
+  font-weight: var(--sc-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.sc-bars-label a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sc-bars-label a:hover {
+  color: var(--sc-color-accent);
+}
+
+/* The figure, in the figures that line up: one stands over the next down the list. */
+.sc-bars-value {
+  grid-column: 3;
+  color: var(--sc-color-text-muted);
+  font-feature-settings: var(--sc-numeric);
+  text-align: end;
+  white-space: nowrap;
+}
+
+/* The bar: thin, square where it starts and round where it ends. */
+.sc-bars-bar {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 0.5rem;
+}
+
+.sc-bars-fill {
+  rx: var(--sc-radius-sm);
+  fill: currentcolor;
+}
+
+@container (min-width: 32rem) {
+  .sc-bars-row {
+    align-items: center;
+  }
+
+  .sc-bars-label {
+    grid-column: 1;
+  }
+
+  .sc-bars-bar {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .sc-bars-value {
+    grid-row: 1;
+    grid-column: 3;
+  }
+}

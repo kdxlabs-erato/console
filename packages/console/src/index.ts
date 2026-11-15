@@ -4,6 +4,7 @@
 // a script that wants none of the pages. The styles are `@skillcdn/console/console.css`.
 
 export * from "./api.js";
+export * from "./charts.js";
 export {
   AgentAccountForm,
   type AgentAccountFormProps,
@@ -38,6 +39,29 @@ export {
   workloadOf,
 } from "./components/calendar.js";
 export { CategoryList, type CategoryListProps } from "./components/categories.js";
+export {
+  BarList,
+  type BarListProps,
+  type BarRow,
+  Chart,
+  type ChartProps,
+  type ChartSeries,
+  type FigureRow,
+  FigureTable,
+  type FigureTableProps,
+  Legend,
+  type LegendItem,
+  type LegendProps,
+  ShareBar,
+  type ShareBarProps,
+  type SharePartItem,
+  Sparkline,
+  type SparklineProps,
+  Stat,
+  type StatChange,
+  type StatProps,
+  Stats,
+} from "./components/charts.js";
 export {
   CommentCard,
   type CommentCardProps,

@@ -35,6 +35,10 @@
       "types": "./dist/api.d.ts",
       "default": "./dist/api.js"
     },
+    "./charts": {
+      "types": "./dist/charts.d.ts",
+      "default": "./dist/charts.js"
+    },
     "./cli": {
       "types": "./dist/cli/cli.d.ts",
       "default": "./dist/cli/cli.js"

@@ -1,0 +1,23 @@
+/* A sparkline: the run of a figure in the room of a word, with no axis. The line is quiet and
+   the last amount is the dot, in the series' colour. As wide as the box it is put in, less the
+   room its dot needs at the ends. */
+.sc-spark {
+  width: calc(100% - 0.5rem);
+  max-width: 12rem;
+  height: 1.75rem;
+  margin-inline: 0.25rem;
+  overflow: visible;
+}
+
+.sc-spark-line {
+  stroke: var(--sc-color-border-strong);
+  stroke-width: 2px;
+  stroke-linecap: round;
+}
+
+.sc-spark-dot {
+  r: 3.5px;
+  fill: currentcolor;
+  stroke: var(--sc-color-bg-raised);
+  stroke-width: 2px;
+}

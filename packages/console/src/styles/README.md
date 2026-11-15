@@ -84,10 +84,20 @@ A part is a file under `parts/` and a row here, with the classes that are its ow
 | `links` | `sc-link*` | | Links as a list, or one with what it leads to. |
 | `filters` | `sc-filters*` | `BoardFilters` | What narrows a page: a row of choices with the count of what is left. |
 | `frame` | `sc-plugin-frame*` | `PluginFrame` | Where a plugin's page or widget is shown, or a document a page shows in a frame: the box, and the frame in it. |
+| `series` | `sc-series*` | every chart | The colour a series is drawn in: `sc-series-1` to `sc-series-6`, told apart pair by pair, also by a reader who does not tell red from green, and `sc-series-rest`, the neutral, for what is past the sixth or the rest folded into one. The class sets `color`, and a bar, a column, a line, a dot and a legend's key are drawn in it. Marks wear them, never words. |
+| `legend` | `sc-legend*` | `Legend` | The key of a chart: each series' colour beside its name, a box for what is filled and a stroke (`sc-legend-key-line`) for a line, with a figure after the name where the chart is a whole in parts. For two series or more; one series is named by the chart's title. |
+| `stat` | `sc-stat*`, `sc-stats` | `Stat`, `Stats` | A figure: a number under its name and, where there is one, how it changed (`sc-stat-change`, `-good` or `-bad` where the page knows which it is) and the run it came by, a sparkline. `sc-stats` is a row of them. For the few numbers a page leads with; names with words for values are `facts`. |
+| `spark` | `sc-spark*` | `Sparkline` | The run of a figure in the room of a word, with no axis: a quiet line, its last amount a dot in the series' colour. |
+| `bars` | `sc-bars*` | `BarList` | A ranking or a comparison: each row a name and its figure over its bar, the bars all from one edge. Bars of one kind are one colour. |
+| `share` | `sc-share*` | `ShareBar` | One whole in its parts, as one bar, with each part's name, amount and share under it. Six parts are told apart; the rest is folded into one. |
+| `chart` | `sc-chart*` | `Chart` | Amounts over time: columns, or lines, of one to a few series against one scale, with the scale's round amounts at the side and the points' names under it. `sc-chart-short` where it stands among other things. Its figures stand under it as a table, for a reader who cannot see it. |
+| `figures` | `sc-figures*` | `FigureTable` | A table of figures: rows by columns, the names at the start, every number at the end of its column in the figures that line up, what the rows come to at the foot. What a chart shows, to be read exactly. |
 
 Some classes are named after the first page that had them (`sc-task-row` is any row, `sc-column-count` any count). Their names stay until a change renames them everywhere at once.
 
 A plugin's pages are built from these same parts: what this table lists is what a plugin may name, and a page's class under `pages/` is not.
+
+The charts (`series` to `figures`, [ADR-0123](../../../../docs/adr/0123-charts-are-parts-placed-by-measures-and-drawn-by-the-stylesheet.md)) are parts like the others, with one thing of their own: a bar's length, a column's height and a line's points are measures, and a measure is an attribute of an SVG, a share of the box the part's class gives it (`width="62%"`), never a style. The components compute them with `src/charts.ts`, which is `@skillcdn/console/charts` to a plugin's bundle and depends on nothing; the colours, the widths of the strokes and the radii stay in the parts' files.
 
 ## Adding to a part, adding a part
 

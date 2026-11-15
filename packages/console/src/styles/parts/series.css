@@ -1,0 +1,32 @@
+/* The colour a series is drawn in (ADR-0123): the class sets the colour, and a bar, a column, a
+   line, a dot and a legend's key are drawn in it, so that one thing has one colour wherever it
+   is shown. Six, told apart pair by pair, also by a reader who does not tell red from green;
+   what is past the sixth, or the rest folded into one, wears the neutral. Words never wear
+   them: a name stands beside its key in the colour of text. */
+.sc-series-1 {
+  color: var(--sc-series-1);
+}
+
+.sc-series-2 {
+  color: var(--sc-series-2);
+}
+
+.sc-series-3 {
+  color: var(--sc-series-3);
+}
+
+.sc-series-4 {
+  color: var(--sc-series-4);
+}
+
+.sc-series-5 {
+  color: var(--sc-series-5);
+}
+
+.sc-series-6 {
+  color: var(--sc-series-6);
+}
+
+.sc-series-rest {
+  color: var(--sc-color-neutral);
+}

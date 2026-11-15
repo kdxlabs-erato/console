@@ -62,6 +62,14 @@
 @import "./parts/mark.css";
 @import "./parts/progress.css";
 @import "./parts/toggle.css";
+@import "./parts/series.css";
+@import "./parts/legend.css";
+@import "./parts/stat.css";
+@import "./parts/spark.css";
+@import "./parts/bars.css";
+@import "./parts/share.css";
+@import "./parts/chart.css";
+@import "./parts/figures.css";
 
 /* The pages. */
 @import "./pages/decisions.css";

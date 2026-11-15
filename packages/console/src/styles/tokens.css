@@ -37,17 +37,22 @@
   --sc-color-warning-line: #e9a23b;
   --sc-color-danger: #b0273a;
   --sc-color-danger-subtle: #fadadf;
-  /* For the plugins' pages (ADR-0054): a state that informs, one neither good nor bad, a palette for figures, tabular numerals. */
+  /* For the plugins' pages (ADR-0054): a state that informs, and one neither good nor bad. */
   --sc-color-info: #1d4ed8;
   --sc-color-info-subtle: #dbe6ff;
   --sc-color-neutral: #4b5563;
   --sc-color-neutral-subtle: #e7eaf0;
-  --sc-series-1: #2c5bc4;
-  --sc-series-2: #c2410c;
-  --sc-series-3: #146b44;
-  --sc-series-4: #8f6100;
-  --sc-series-5: #7c3aed;
-  --sc-series-6: #0e7490;
+  /* The series of a chart (ADR-0123): blue, teal, raspberry, ochre, violet, green, the console's
+     own hues, each stepped until any two of the six are told apart, also by a reader who does
+     not tell red from green, and until each stands out on a light ground and on a dark one.
+     No orange among them: the point is the only warm colour. They are marks, never words. */
+  --sc-series-1: #285fd4;
+  --sc-series-2: #0097ac;
+  --sc-series-3: #bb2b76;
+  --sc-series-4: #83640a;
+  --sc-series-5: #946ff2;
+  --sc-series-6: #1c9d47;
+  /* The figures that line up: for a column of numbers, a scale, a table. */
   --sc-numeric: "tnum" 1, "lnum" 1;
 
   /* The ground: a pale field, one gradient from the top. The default UI provides the field's

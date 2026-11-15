@@ -1,0 +1,48 @@
+/* The key of a chart: each series' colour beside its name, and its figure where the chart is a
+   whole in parts. There for two series or more; one series is named by the chart's title. */
+.sc-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sc-space-1) var(--sc-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--sc-color-text-muted);
+  font-size: var(--sc-text-xs);
+}
+
+.sc-legend-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sc-space-2);
+  min-width: 0;
+}
+
+/* The key takes the series' colour from the class beside it; a box for what is filled, a
+   stroke for a line. */
+.sc-legend-key {
+  flex: none;
+  align-self: center;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: var(--sc-radius-sm);
+  background: currentcolor;
+}
+
+.sc-legend-key-line {
+  width: 0.875rem;
+  height: 2px;
+  border-radius: var(--sc-radius-full);
+}
+
+.sc-legend-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sc-legend-value {
+  color: var(--sc-color-text);
+  font-weight: var(--sc-weight-medium);
+  font-feature-settings: var(--sc-numeric);
+  white-space: nowrap;
+}

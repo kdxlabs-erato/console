@@ -1,0 +1,173 @@
+/* A chart over time: columns, or lines, of one to a few series against one scale. It has the
+   marks and the axis a reader needs and nothing else: the scale's round amounts at the side,
+   a hair of a line across at each, the points' names under it, as many as there is room for.
+   Its box is the stylesheet's and every place in it is a share of that box, so it is as wide
+   as where it is put. */
+.sc-chart {
+  display: grid;
+  gap: var(--sc-space-3);
+  min-width: 0;
+  margin: 0;
+  container-type: inline-size;
+}
+
+/* The scale at the side, the plot, and the points' names under the plot. The room above is
+   for the half of the top amount that stands over the top line. */
+.sc-chart-frame {
+  display: grid;
+  grid-template-rows: 11rem auto;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--sc-space-2);
+  padding-top: var(--sc-space-2);
+}
+
+.sc-chart-short .sc-chart-frame {
+  grid-template-rows: 6.5rem auto;
+}
+
+/* The scale's amounts from the top down, each in the middle of its line. */
+.sc-chart-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.sc-chart-tick {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 0;
+  color: var(--sc-color-text-faint);
+  font-size: var(--sc-text-xs);
+  font-feature-settings: var(--sc-numeric);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* The plot: the lines across, the marks over them, and over the marks what answers the
+   pointer, each as large as the plot. */
+/* The plot is as tall as its row of the frame and no taller, whatever is drawn in it. */
+.sc-chart-plot {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.sc-chart-plot > * {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+}
+
+.sc-chart-grid,
+.sc-chart-lines {
+  overflow: visible;
+}
+
+.sc-chart-gridline {
+  stroke: var(--sc-color-border);
+  stroke-width: 1px;
+}
+
+/* Zero is where the columns stand: a step stronger than the lines above it. */
+.sc-chart-gridline-zero {
+  stroke: color-mix(in srgb, var(--sc-color-border-strong) 55%, transparent);
+}
+
+/* The columns: one share of the width a point, the columns of a point side by side with a gap
+   in the surface's colour between them. A column stays thin however much room its point has;
+   the rest is air. */
+.sc-chart-columns {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+}
+
+.sc-chart-slot {
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 0;
+  padding-inline: 12%;
+}
+
+.sc-chart-column {
+  flex: 0 1 1.25rem;
+  min-width: 0;
+  height: 100%;
+}
+
+/* A column is square where it stands on zero and round where it ends. */
+.sc-chart-bar {
+  rx: var(--sc-radius-sm);
+  fill: currentcolor;
+}
+
+.sc-chart-line {
+  stroke: currentcolor;
+  stroke-width: 2px;
+  stroke-linecap: round;
+}
+
+/* The last amount of a line, and an amount with none beside it: a dot, ringed in the surface's
+   colour so that it reads where lines cross. */
+.sc-chart-dot {
+  r: 4px;
+  fill: currentcolor;
+  stroke: var(--sc-color-bg-raised);
+  stroke-width: 2px;
+}
+
+/* A point's share of the plot answers the pointer over its whole height, so that nobody has to
+   aim at a line: it says the point's figures, and is washed while the pointer is on it. */
+.sc-chart-hit {
+  fill: transparent;
+}
+
+.sc-chart-hit:hover {
+  fill: color-mix(in srgb, var(--sc-color-text) 6%, transparent);
+}
+
+/* The points' names, each under its point. One the chart has room for only in a wide box
+   stays out of a narrow one. */
+.sc-chart-labels {
+  display: grid;
+  grid-column: 2;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  padding-top: var(--sc-space-2);
+  color: var(--sc-color-text-faint);
+  font-size: var(--sc-text-xs);
+  line-height: var(--sc-leading-tight);
+}
+
+.sc-chart-label {
+  justify-self: center;
+  white-space: nowrap;
+}
+
+.sc-chart-label-wide {
+  visibility: hidden;
+}
+
+@container (min-width: 40rem) {
+  .sc-chart-label-wide {
+    visibility: visible;
+  }
+}
+
+/* In a narrow box a name at an end of the chart, wider than its point's share, stands inside
+   the chart and not past its edge. */
+@container (max-width: 40rem) {
+  .sc-chart-label-start {
+    justify-self: start;
+  }
+
+  .sc-chart-label-end {
+    justify-self: end;
+  }
+}

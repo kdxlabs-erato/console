@@ -4,12 +4,14 @@ import wordmark from "@skillcdn/brand/wordmark-black.svg";
 import {
   Avatar,
   Badge,
+  BarList,
   type BoardFilter,
   BoardFilters,
   Button,
   Calendar,
   Callout,
   CategoryBadge,
+  Chart,
   Chip,
   CONSOLE_TOKENS,
   CopyButton,
@@ -19,6 +21,7 @@ import {
   DueBadge,
   EmptyState,
   ENGLISH,
+  FigureTable,
   filterTasks,
   formatBytes,
   GOAL_STATES,
@@ -26,6 +29,7 @@ import {
   KindMark,
   KOREAN,
   LanguageContext,
+  Legend,
   LinkButton,
   listSearch,
   Markdown,
@@ -42,9 +46,13 @@ import {
   RoleBadge,
   RUN_STATUSES,
   RunStatusBadge,
+  ShareBar,
   ShowMore,
+  Sparkline,
   Spinner,
+  Stat,
   StateBadge,
+  Stats,
   TASK_STATES,
   TaskList,
   Time,
@@ -74,10 +82,14 @@ import {
   categories,
   closeGoal,
   counts,
+  DAYS,
   dave,
+  ENTRIES,
   erin,
   FIGURE,
   goals,
+  HOURS,
+  INVOICES,
   juno,
   ledger,
   MONTH,
@@ -88,9 +100,11 @@ import {
   people,
   reconcile,
   SEAL,
+  SUPPLIERS,
   TODAY,
   tasks,
   teams,
+  WEEKS,
   WRITTEN_TEXT,
 } from "./parts-data.js";
 
@@ -2254,6 +2268,440 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
       </Specimen>
       <Specimen label="With nothing to show">
         <p className="sc-plugin-frame-unavailable">This can't be shown right now.</p>
+      </Specimen>
+    </Part>
+
+    <Part
+      name="series"
+      classes="sc-series-1 to sc-series-6, sc-series-rest"
+      use="The colour a series is drawn in: one of six, told apart pair by pair, and the neutral for what is past them. Marks wear them, never words."
+    >
+      <Specimen label="The six in their order, and what is past them">
+        <Legend
+          items={[
+            { name: "sc-series-1" },
+            { name: "sc-series-2" },
+            { name: "sc-series-3" },
+            { name: "sc-series-4" },
+            { name: "sc-series-5" },
+            { name: "sc-series-6" },
+            { name: "sc-series-rest", series: 6 },
+          ]}
+        />
+      </Specimen>
+      <Specimen label="Side by side, as the parts of a whole are: each beside the next">
+        <ShareBar
+          label="The six colours and the neutral, in equal parts"
+          language="en"
+          parts={[
+            { name: "One", value: 1 },
+            { name: "Two", value: 1 },
+            { name: "Three", value: 1 },
+            { name: "Four", value: 1 },
+            { name: "Five", value: 1 },
+            { name: "Six", value: 1 },
+            { name: "The rest", value: 1 },
+          ]}
+        />
+      </Specimen>
+      <Specimen label="Crossing, as lines do: any one beside any other">
+        <Chart
+          title="Six series as lines that cross"
+          kind="line"
+          language="en"
+          points={WEEKS}
+          series={[
+            { name: "One", values: [10, 22, 34, 46, 58, 70, 82, 94] },
+            { name: "Two", values: [94, 82, 70, 58, 46, 34, 22, 10] },
+            { name: "Three", values: [50, 62, 40, 70, 30, 78, 24, 86] },
+            { name: "Four", values: [30, 30, 54, 54, 76, 76, 54, 54] },
+            { name: "Five", values: [70, 44, 86, 26, 66, 46, 90, 36] },
+            { name: "Six", values: [20, 36, 22, 40, 24, 44, 40, 20] },
+          ]}
+        />
+      </Specimen>
+    </Part>
+
+    <Part
+      name="legend"
+      classes="sc-legend*"
+      use="The key of a chart: each series' colour beside its name. There for two series or more; one series is named by the chart's title."
+    >
+      <Specimen label="For what is filled: columns, bars, the parts of a whole">
+        <Legend items={[{ name: "Sent" }, { name: "Paid" }, { name: "Disputed" }]} />
+      </Specimen>
+      <Specimen label="For lines">
+        <Legend mark="line" items={[{ name: "Sent" }, { name: "Paid" }, { name: "Disputed" }]} />
+      </Specimen>
+      <Specimen label="With each one's figure, and a name too long for a line">
+        <div className="dev-narrow">
+          <Legend
+            items={[
+              { name: "Reconciling", words: "46 h · 43%" },
+              { name: "Payroll", words: "28 h · 26%" },
+              {
+                name: "Everything that was asked of the team and belongs to none of the others",
+                words: "33 h · 31%",
+              },
+            ]}
+          />
+        </div>
+      </Specimen>
+    </Part>
+
+    <Part
+      name="stat"
+      classes="sc-stat*, sc-stats"
+      use="A figure: a number under its name and, where there is one, how it changed and the run it came by."
+    >
+      <Specimen label="A row of figures: one alone; one that rose, which is good; one that rose, which is bad; one that did not move; one with its run">
+        <Stats label="The close in figures">
+          <Stat label="Invoices sent" value="473" />
+          <Stat
+            label="Paid on time"
+            value="86%"
+            change={{ words: "+4 points", against: "than last month", tone: "good" }}
+          />
+          <Stat
+            label="Disputed"
+            value="27"
+            change={{ words: "+9", against: "than last month", tone: "bad" }}
+          />
+          <Stat
+            label="Days to close"
+            value="6"
+            change={{ words: "0", against: "than last month" }}
+          />
+          <Stat
+            label="Sent this week"
+            value="83"
+            change={{ words: "+17", against: "than last week", tone: "good" }}
+            trend={INVOICES.sent}
+          />
+        </Stats>
+      </Specimen>
+      <Specimen label="A long name and a long figure, and one figure by itself">
+        <Stats>
+          <Stat
+            label="Outstanding across every entity of the group, converted at the day's rate"
+            value="1,284,930,455.20"
+            change={{ words: "-2.4%", against: "than the quarter before the last one closed" }}
+          />
+          <Stat label="Open" value="12" />
+        </Stats>
+      </Specimen>
+    </Part>
+
+    <Part
+      name="spark"
+      classes="sc-spark*"
+      use="A sparkline: the run of a figure with no axis, its last amount the dot."
+    >
+      <Specimen label="A run; a run that fell; one amount; amounts that are all one; nothing yet">
+        <div className="dev-fields">
+          <Sparkline values={INVOICES.sent} label="Invoices sent by week: 42, then up to 83" />
+          <Sparkline values={[...INVOICES.sent].reverse()} series={2} />
+          <Sparkline values={[12]} />
+          <Sparkline values={[7, 7, 7, 7]} />
+          <Sparkline values={[]} />
+        </div>
+      </Specimen>
+    </Part>
+
+    <Part
+      name="bars"
+      classes="sc-bars*"
+      use="A list of bars: a ranking or a comparison, each row a name, its figure and its bar."
+    >
+      <Specimen label="A ranking">
+        <BarList label="Paid to each supplier this quarter" ranked language="en" rows={SUPPLIERS} />
+      </Specimen>
+      <Specimen label="A name too long for a line, an amount beside one far larger, one of nothing, and one with none">
+        <BarList
+          label="Amounts of very different size"
+          language="en"
+          rows={[
+            {
+              label:
+                "Consolidated Paper and Packaging of the Lower Valley, Incorporated, formerly Valley Paper",
+              value: 1_204_500,
+            },
+            { label: "Quay Street Print", value: 3 },
+            { label: "Halden Office Supply", value: 0 },
+            { label: "A supplier with no figure yet", value: undefined },
+          ]}
+        />
+      </Specimen>
+      <Specimen label="Names that lead somewhere, what is said after one, figures in the page's own words, each against a whole">
+        <BarList
+          label="How far each close is"
+          language="en"
+          whole={100}
+          rows={[
+            {
+              label: "Close February",
+              href: "#bars",
+              note: <Badge tone="accent">In progress</Badge>,
+              value: 72,
+              words: "72%",
+            },
+            { label: "Payroll for March", href: "#bars", value: 35, words: "35%" },
+            {
+              label: "The audit's questions",
+              href: "#bars",
+              note: <Badge tone="success">Done</Badge>,
+              value: 100,
+              words: "100%",
+              series: 5,
+            },
+          ]}
+        />
+      </Specimen>
+      <Specimen label="In a narrow box, as on a phone">
+        <div className="dev-narrow">
+          <BarList label="Paid to each supplier, narrow" language="en" rows={SUPPLIERS} />
+        </div>
+      </Specimen>
+    </Part>
+
+    <Part
+      name="share"
+      classes="sc-share*"
+      use="A share: one whole in its parts, as one bar, with each part's name, amount and share under it."
+    >
+      <Specimen label="A whole in three parts">
+        <ShareBar
+          label="How the invoices of the quarter stand"
+          language="en"
+          parts={[
+            { name: "Paid", value: 409 },
+            { name: "Waiting", value: 37 },
+            { name: "Disputed", value: 27 },
+          ]}
+        />
+      </Specimen>
+      <Specimen label="Six parts and the rest folded into one, with figures in the page's own words">
+        <ShareBar
+          label="Where the hours of the close went"
+          language="en"
+          parts={HOURS.map((part) => ({ ...part, words: `${part.value} h` }))}
+        />
+      </Specimen>
+      <Specimen label="One part that is the whole; a part far smaller than the other; nothing yet">
+        <ShareBar label="All of one kind" language="en" parts={[{ name: "Paid", value: 12 }]} />
+        <ShareBar
+          label="A part far smaller than the other"
+          language="en"
+          parts={[
+            { name: "Paid", value: 99_940 },
+            { name: "Disputed", value: 60 },
+          ]}
+        />
+        <ShareBar
+          label="Nothing yet"
+          language="en"
+          parts={[
+            { name: "Paid", value: 0 },
+            { name: "Waiting", value: 0 },
+          ]}
+        />
+      </Specimen>
+      <Specimen label="In a narrow box, as on a phone">
+        <div className="dev-narrow">
+          <ShareBar
+            label="Where the hours went, narrow"
+            language="en"
+            parts={HOURS.map((part) => ({ ...part, words: `${part.value} h` }))}
+          />
+        </div>
+      </Specimen>
+    </Part>
+
+    <Part
+      name="chart"
+      classes="sc-chart*"
+      use="A chart over time: columns, or lines, of one to a few series against one scale, with the axis and the marks a reader needs."
+    >
+      <Specimen label="Columns of one series: no legend, the heading names it">
+        <Chart
+          title="Invoices sent by week"
+          language="en"
+          points={WEEKS}
+          series={[{ name: "Sent", values: INVOICES.sent }]}
+        />
+      </Specimen>
+      <Specimen label="Columns of two series, side by side">
+        <Chart
+          title="Invoices sent and paid by week"
+          language="en"
+          points={WEEKS}
+          series={[
+            { name: "Sent", values: INVOICES.sent },
+            { name: "Paid", values: INVOICES.paid },
+          ]}
+        />
+      </Specimen>
+      <Specimen label="Lines of three series">
+        <Chart
+          title="Invoices sent, paid and disputed by week"
+          kind="line"
+          language="en"
+          points={WEEKS}
+          series={[
+            { name: "Sent", values: INVOICES.sent },
+            { name: "Paid", values: INVOICES.paid },
+            { name: "Disputed", values: INVOICES.disputed },
+          ]}
+        />
+      </Specimen>
+      <Specimen label="Thirty points: the columns thin, and the names are as many as fit">
+        <Chart
+          title="Entries posted by day"
+          language="en"
+          points={DAYS}
+          series={[{ name: "Entries", values: ENTRIES }]}
+        />
+        <Chart
+          title="Entries posted by day, as a line"
+          kind="line"
+          language="en"
+          points={DAYS}
+          series={[{ name: "Entries", values: ENTRIES }]}
+        />
+      </Specimen>
+      <Specimen label="One point: a column, and a line that is a dot">
+        <div className="dev-fields">
+          <Chart
+            title="One week, as a column"
+            language="en"
+            points={["Mar 9"]}
+            series={[{ name: "Sent", values: [83] }]}
+          />
+          <Chart
+            title="One week, as a line"
+            kind="line"
+            language="en"
+            points={["Mar 9"]}
+            series={[{ name: "Sent", values: [83] }]}
+          />
+        </div>
+      </Specimen>
+      <Specimen label="Amounts of very different size; amounts below zero">
+        <div className="dev-fields">
+          <Chart
+            title="Amounts of very different size"
+            language="en"
+            points={WEEKS.slice(4)}
+            series={[{ name: "Posted", values: [3, 1_204_500, 18, 640_000] }]}
+          />
+          <Chart
+            title="What came in less what went out, by week"
+            language="en"
+            points={WEEKS.slice(2)}
+            series={[{ name: "Net", values: [1200, -800, 450, -1600, 2100, -150] }]}
+          />
+        </div>
+      </Specimen>
+      <Specimen label="Lines with points that have no amount: a gap is a gap, and an amount alone is a dot">
+        <Chart
+          title="Hours logged by week, where they were logged"
+          kind="line"
+          language="en"
+          points={WEEKS}
+          series={[
+            { name: "Close", values: [12, 18, undefined, undefined, 22, 26, 31, 29] },
+            { name: "Audit", values: [undefined, 6, undefined, 9, undefined, undefined, 14, 11] },
+          ]}
+        />
+      </Specimen>
+      <Specimen label="Short, where it stands among other things; and long names for the points">
+        <div className="dev-fields">
+          <Chart
+            title="Invoices sent by week, short"
+            size="short"
+            language="en"
+            points={WEEKS}
+            series={[{ name: "Sent", values: INVOICES.sent }]}
+          />
+          <Chart
+            title="Invoices sent by fortnight"
+            size="short"
+            language="en"
+            points={["Jan 19 to Feb 1", "Feb 2 to Feb 15", "Feb 16 to Mar 1", "Mar 2 to Mar 15"]}
+            series={[{ name: "Sent", values: [93, 102, 129, 149] }]}
+          />
+        </div>
+      </Specimen>
+      <Specimen label="Nothing yet: the words the page gives stand in its place">
+        <Chart
+          title="Invoices sent by week"
+          language="en"
+          points={WEEKS}
+          series={[{ name: "Sent", values: [] }]}
+          empty="No figures are recorded yet."
+        />
+      </Specimen>
+      <Specimen label="In a narrow box, as on a phone">
+        <div className="dev-narrow">
+          <Chart
+            title="Invoices sent and paid by week, narrow"
+            language="en"
+            points={WEEKS}
+            series={[
+              { name: "Sent", values: INVOICES.sent },
+              { name: "Paid", values: INVOICES.paid },
+            ]}
+          />
+        </div>
+      </Specimen>
+    </Part>
+
+    <Part
+      name="figures"
+      classes="sc-figures*"
+      use="A table of figures: rows by columns, the names at the start and the numbers lined up at the end. What a chart shows, to be read exactly."
+    >
+      <Specimen label="With its caption shown, and what the rows come to">
+        <FigureTable
+          caption="Invoices by week"
+          captionShown
+          language="en"
+          columns={["Week", "Sent", "Paid", "Disputed"]}
+          rows={WEEKS.map((week, index) => ({
+            label: week,
+            values: [INVOICES.sent[index], INVOICES.paid[index], INVOICES.disputed[index]],
+          }))}
+          foot={{ label: "In all", values: [473, 409, 27] }}
+        />
+      </Specimen>
+      <Specimen label="A long name, a figure in the page's own words, numbers of very different size, and one that is missing">
+        <FigureTable
+          caption="Paid to each supplier"
+          language="en"
+          columns={["Supplier", "Invoices", "Paid", "Share"]}
+          rows={[
+            {
+              label:
+                "Consolidated Paper and Packaging of the Lower Valley, Incorporated, formerly Valley Paper",
+              values: [1204, 1_204_500.5, "92%"],
+            },
+            { label: "Quay Street Print", values: [3, 12.75, "under 1%"] },
+            { label: "A supplier with no figure yet", values: [0, undefined, undefined] },
+          ]}
+        />
+      </Specimen>
+      <Specimen label="More columns than a narrow box has room for: it scrolls in its box">
+        <div className="dev-narrow">
+          <FigureTable
+            caption="Invoices sent by week, by entity"
+            language="en"
+            columns={["Entity", ...WEEKS]}
+            rows={[
+              { label: "Acme Holdings", values: INVOICES.sent },
+              { label: "Acme Logistics", values: INVOICES.paid },
+            ]}
+          />
+        </div>
       </Specimen>
     </Part>
   </>

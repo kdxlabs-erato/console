@@ -1,0 +1,65 @@
+/* A table of figures: rows by columns, the names at the start and every number at the end of
+   its column, in the figures that line up. What a chart shows, to be read exactly. It scrolls
+   sideways in its box where a phone has no room for its columns. */
+.sc-figures-box {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.sc-figures {
+  width: 100%;
+  font-size: var(--sc-text-sm);
+}
+
+.sc-figures caption {
+  padding-bottom: var(--sc-space-2);
+  color: var(--sc-color-text-muted);
+  font-size: var(--sc-text-xs);
+  text-align: start;
+}
+
+.sc-figures th,
+.sc-figures td {
+  padding: var(--sc-space-2) var(--sc-space-3);
+  border-top: var(--sc-hairline);
+  font-weight: var(--sc-weight-normal);
+  font-feature-settings: var(--sc-numeric);
+  text-align: end;
+  white-space: nowrap;
+}
+
+.sc-figures th:first-child,
+.sc-figures td:first-child {
+  min-width: 7rem;
+  padding-inline-start: 0;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.sc-figures th:last-child,
+.sc-figures td:last-child {
+  padding-inline-end: 0;
+}
+
+/* The head: the small capitals, as a fact's name is. */
+.sc-figures thead th {
+  border-top: 0;
+  color: var(--sc-color-text-faint);
+  font-size: var(--sc-text-xs);
+  font-weight: var(--sc-weight-medium);
+  letter-spacing: var(--sc-tracking-wide);
+  text-transform: uppercase;
+}
+
+.sc-figures tbody th {
+  color: var(--sc-color-text);
+  font-weight: var(--sc-weight-medium);
+}
+
+/* The foot: what the rows come to. */
+.sc-figures tfoot th,
+.sc-figures tfoot td {
+  border-top: var(--sc-border-strong);
+  font-weight: var(--sc-weight-bold);
+}

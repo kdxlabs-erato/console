@@ -333,3 +333,57 @@ console task move 12 in_review
 
 ![A scan that was not attached](scan.png)
 `;
+
+// --- the figures the charts are shown with ------------------------------------------------------
+
+/** Eight weeks, each named by its first day, the latest last. */
+export const WEEKS: readonly string[] = [
+  "Jan 19",
+  "Jan 26",
+  "Feb 2",
+  "Feb 9",
+  "Feb 16",
+  "Feb 23",
+  "Mar 2",
+  "Mar 9",
+];
+
+/** Invoices by week: sent, paid, and those someone disputed. */
+export const INVOICES = {
+  sent: [42, 51, 38, 64, 58, 71, 66, 83],
+  paid: [30, 44, 41, 52, 49, 60, 63, 70],
+  disputed: [4, 2, 6, 3, 5, 2, 4, 1],
+} as const;
+
+/** Thirty days up to the day the page counts from, each named as a calendar names it. */
+export const DAYS: readonly string[] = Array.from({ length: 30 }, (_, index) => {
+  const day = new Date(`${TODAY}T00:00:00.000Z`);
+  day.setUTCDate(day.getUTCDate() - (29 - index));
+  return day.toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" });
+});
+
+/** Entries posted on each of the thirty days: a week's rhythm, quiet at its end. */
+export const ENTRIES: readonly number[] = DAYS.map((_, index) => {
+  const weekday = (index + 3) % 7;
+  return weekday >= 5 ? 3 + (index % 4) : 40 + ((index * 17) % 31) + weekday * 6;
+});
+
+/** What was paid to each supplier this quarter: one far more than the rest, one next to nothing. */
+export const SUPPLIERS: readonly { readonly label: string; readonly value: number }[] = [
+  { label: "Northwind Freight", value: 48_200 },
+  { label: "Halden Office Supply", value: 21_750 },
+  { label: "Brightline Software", value: 18_400 },
+  { label: "Marlow & Finch, auditors", value: 9600 },
+  { label: "Quay Street Print", value: 1280 },
+];
+
+/** Where the hours of the close went. */
+export const HOURS: readonly { readonly name: string; readonly value: number }[] = [
+  { name: "Reconciling", value: 46 },
+  { name: "Payroll", value: 28 },
+  { name: "Audit", value: 14 },
+  { name: "Reports", value: 8 },
+  { name: "Tax", value: 6 },
+  { name: "Filing", value: 3 },
+  { name: "Everything else", value: 2 },
+];

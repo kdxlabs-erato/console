@@ -1,0 +1,69 @@
+/* A figure: a number that matters under its name and, where there is one, how it changed and
+   the run it came by. A row of them lays itself out, as many across as there is room for. */
+.sc-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: var(--sc-space-3);
+  margin: 0;
+}
+
+.sc-stat {
+  display: grid;
+  align-content: start;
+  gap: var(--sc-space-1);
+  min-width: 0;
+  padding: var(--sc-space-4);
+  border: var(--sc-border);
+  border-radius: var(--sc-radius-md);
+  background: var(--sc-color-sheet);
+}
+
+.sc-stat > * {
+  min-width: 0;
+  margin: 0;
+}
+
+/* The name of a figure is a fact's name: the small capitals. */
+.sc-stat-label {
+  color: var(--sc-color-text-faint);
+  font-size: var(--sc-text-xs);
+  font-weight: var(--sc-weight-medium);
+  letter-spacing: var(--sc-tracking-wide);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+/* The figure itself, in the face's own figures: the ones that line up are for columns. */
+.sc-stat-value {
+  color: var(--sc-color-text);
+  font-size: var(--sc-text-2xl);
+  font-weight: var(--sc-weight-bold);
+  line-height: var(--sc-leading-tight);
+  letter-spacing: var(--sc-tracking-tight);
+  overflow-wrap: anywhere;
+}
+
+/* How it changed: the amount with its sign, then against what. The sign says the direction;
+   the tone says whether that is good, where the page knows. */
+.sc-stat-change {
+  color: var(--sc-color-text-muted);
+  font-size: var(--sc-text-xs);
+}
+
+.sc-stat-delta {
+  color: var(--sc-color-text);
+  font-weight: var(--sc-weight-medium);
+  font-feature-settings: var(--sc-numeric);
+}
+
+.sc-stat-change-good .sc-stat-delta {
+  color: var(--sc-color-success);
+}
+
+.sc-stat-change-bad .sc-stat-delta {
+  color: var(--sc-color-danger);
+}
+
+.sc-stat-trend {
+  padding-top: var(--sc-space-1);
+}
