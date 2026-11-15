@@ -338,7 +338,11 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
         if (block.type === "text" && typeof block.text === "string") {
           events.push({ type: "event", kind: "assistant", text: block.text, ...said });
         } else if (block.type === "thinking" && typeof block.thinking === "string") {
-          events.push({ type: "event", kind: "thinking", text: block.thinking, ...said });
+          // A thought the product sends with no words, its signature alone, is no event: it
+          // would show nothing, and count against what an hour of a session takes.
+          if (block.thinking.trim().length > 0) {
+            events.push({ type: "event", kind: "thinking", text: block.thinking, ...said });
+          }
         } else if (block.type === "tool_use") {
           const tool = textOf(block.name) ?? "a tool";
           const id = textOf(block.id);

@@ -408,6 +408,46 @@ describe("the claude driver", () => {
     ]);
   });
 
+  it("writes no event of a thought with no words, a sub-agent's included", async () => {
+    // As a run under the runner had it: most thinking blocks carried a signature and no text,
+    // and each was an event counted against what an hour of a session takes.
+    const { session, says, exits } = started();
+    says({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "thinking", thinking: "", signature: "c2lnbmVkLWludmVudGVk" },
+          { type: "thinking", thinking: " \n\t ", signature: "c2lnbmVkLWludmVudGVk" },
+          { type: "thinking", thinking: "The tests first." },
+          {
+            type: "tool_use",
+            id: "toolu_a1",
+            name: "Agent",
+            input: { subagent_type: "Explore", description: "Read src/ of acme/web" },
+          },
+        ],
+      },
+      parent_tool_use_id: null,
+    });
+    says({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "thinking", thinking: "", signature: "c2lnbmVkLWludmVudGVk" },
+          { type: "text", text: "Looking." },
+        ],
+      },
+      parent_tool_use_id: "toolu_a1",
+    });
+    exits(0);
+    const events = (await collect(session.events)).filter((event) => event.type === "event");
+    expect(events.map((event) => [event.kind, event.text])).toEqual([
+      ["thinking", "The tests first."],
+      ["tool_call", expect.stringContaining("Read src/ of acme/web")],
+      ["assistant", "Looking."],
+    ]);
+  });
+
   it("reads what the product prints as data, whatever it is, and runs none of it", async () => {
     const { session, says, exits } = started();
     says("");
