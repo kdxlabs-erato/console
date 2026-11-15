@@ -1101,26 +1101,23 @@ const use: Command = async (args, io) => {
   );
   const session = await open(io, values);
   const project = await session.client.project(key).get();
-  // The directory names the console where that is not the default login here, or when asked,
-  // and the account where the console has several, or when asked; never a token.
-  const credentials = session.credentials ?? EMPTY_CREDENTIALS;
-  const pinUrl =
-    text(values, "url") !== undefined ||
-    (session.via === "login" && credentials.default !== session.url);
+  // The directory names the console every time (ADR-0112): what is the default login on this
+  // machine is another console's on the next, and a file that said only the project would
+  // follow it there. The account only when asked, or where the directory named it before, so
+  // that a file to be committed never carries somebody's account unasked; never a token.
+  const before = await io.directory.load();
   const pinAccount =
-    text(values, "account") !== undefined ||
-    (session.via === "login" && loginsAt(credentials, session.url).length > 1);
+    session.account !== undefined &&
+    (text(values, "account") !== undefined || before?.account === session.account);
   const kept = await io.directory.save({
     project: project.key,
-    ...(pinUrl ? { url: session.url } : {}),
-    ...(pinAccount && session.account !== undefined ? { account: session.account } : {}),
+    url: session.url,
+    ...(pinAccount ? { account: session.account } : {}),
   });
-  const bound = pinUrl
-    ? ` at ${session.url}${pinAccount && session.account !== undefined ? ` as ${session.account}` : ""}`
-    : "";
+  const bound = ` at ${session.url}${pinAccount ? ` as ${session.account}` : ""}`;
   answer(io, session, project, () =>
     [
-      `Working in ${project.name} (${project.key})${bound} from this directory on: kept in ${kept}, which is meant to be committed in a private repository and left out of a public one. What its people ask of agents: console rules.`,
+      `Working in ${project.name} (${project.key})${bound} from this directory on: kept in ${kept}, which names the project and the console, never a token, and is meant to be committed in a private repository and left out of a public one. What its people ask of agents: console rules.`,
       // Nothing sends an agent to the console until the checkout says so; the sentence is the
       // skill's (references/the-sentence.md), printed here as `skillcdn use` prints its own.
       "Then put this sentence into the checkout's agreement (AGENTS.md, or CLAUDE.md where that is the file agents read), as it is, so that every agent working here is sent to the console:",

@@ -6,11 +6,12 @@ import * as z from "zod/mini";
 // it or in a directory above it, as `.nvmrc` and its kind are found. Written by `console use`,
 // and meant to be committed in a private repository, so that everyone who works in the
 // checkout, and every agent they run in it, is in the same project without saying so; left out
-// of a public one, since it may name the organization's console. It names the project, and
-// where the checkout is bound to a console other than the default login, that console and the
-// account there (ADR-0027). Never a token, a code or anything secret: the token for the console
-// it names is looked up in the credentials the command keeps, and a key this file does not
-// know is dropped on reading.
+// of a public one, since it names the organization's console. It names the project and the
+// console, every time `console use` writes it (ADR-0112): a file with the project alone, as it
+// was written before, follows the default login of whichever machine reads it, which is
+// another console's on the next. The account there only where one was asked for (ADR-0027).
+// Never a token, a code or anything secret: the token for the console it names is looked up in
+// the credentials the command keeps, and a key this file does not know is dropped on reading.
 
 /** The file's name, in the working directory or one above it. */
 export const DIRECTORY_FILE = ".skillcdn-console.json";
@@ -30,7 +31,7 @@ const MAX_FILE_CHARS = 16 * 1024;
 export interface DirectorySettings {
   /** The key of the project the directory's work belongs to. */
   readonly project: string;
-  /** The origin of the console the directory is bound to; the default login when left out. */
+  /** The origin of the console the directory is bound to; the default login when left out, as a file from before ADR-0112 leaves it. */
   readonly url?: string | undefined;
   /** The account at that console, where several are signed in to it. */
   readonly account?: string | undefined;

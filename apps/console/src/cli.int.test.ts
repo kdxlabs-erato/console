@@ -83,12 +83,12 @@ const readRun = async (cookie: string, id: string) =>
   restRunSchema.parse(await (await h.request(`${IN}/runs/${id}`, { headers: { cookie } })).json());
 
 /** What the working directory says of the project, kept in memory. */
-function memoryDirectory(initial?: { project: string }) {
+function memoryDirectory(initial?: { project: string; url?: string | undefined }) {
   let kept = initial;
   return {
     store: {
       load: async () => kept,
-      save: async (settings: { project: string }) => {
+      save: async (settings: { project: string; url?: string | undefined }) => {
         kept = settings;
         return "/work/app/.skillcdn-console.json";
       },
@@ -336,7 +336,8 @@ describe("the command line", () => {
     const used = await console_(["use", "web"], aliceToken, { project: undefined, directory });
     expect(used.code, used.err).toBe(EXIT.ok);
     expect(used.out).toContain("Working in The web app (web)");
-    expect(directory.kept()).toEqual({ project: "web" });
+    // The file names the console too, whichever console is the default here (ADR-0112).
+    expect(directory.kept()).toEqual({ project: "web", url: SIGN_IN_URL });
     const fromDirectory = await console_(["tasks", "--state", "idea"], aliceToken, {
       project: undefined,
       directory,

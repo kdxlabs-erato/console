@@ -768,13 +768,18 @@ describe("the console command", () => {
       directory: directory.store,
     });
     expect(await runCli(["use", "web"], used.io)).toBe(EXIT.ok);
-    expect(used.out()).toContain("Working in The web app (web) from this directory on");
+    // The file names the console every time, the default one too: a clone on a machine whose
+    // default login is another console works at this one all the same (ADR-0112).
+    expect(used.out()).toContain(
+      `Working in The web app (web) at ${ORIGIN} from this directory on`,
+    );
+    expect(used.out()).toContain("names the project and the console, never a token");
     expect(used.out()).toContain("left out of a public one");
     expect(used.out()).toContain("/work/app/.skillcdn-console.json");
     expect(used.out()).toContain(
       "**Bound to a console?** When `.skillcdn-console.json` is in this checkout, or `console whoami` names a project",
     );
-    expect(directory.kept()).toEqual({ project: "web" });
+    expect(directory.kept()).toEqual({ project: "web", url: ORIGIN });
     const unknown = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["use", "nothing"], unknown.io)).toBe(EXIT.failed);
     expect(unknown.err()).toContain("not_found");
@@ -4903,12 +4908,16 @@ describe("the consoles the command is signed in to (ADR-0027)", () => {
     expect(other.out()).toContain(
       `Working in The web app (web) at ${OTHER} from this directory on`,
     );
-    // The default console is not named: a directory that says only the project follows the default.
+    // The default console is named too (ADR-0112): what is the default on this machine is
+    // another console's on the next, and a file that said only the project would follow it there.
     const plain = memoryDirectory();
     const first = harness({ fetch, store: memoryStore(both).store, directory: plain.store });
     expect(await runCli(["use", "web"], first.io)).toBe(EXIT.ok);
-    expect(plain.kept()).toEqual({ project: "web" });
-    // Two accounts at a console: the one used is named.
+    expect(plain.kept()).toEqual({ project: "web", url: ORIGIN });
+    expect(first.out()).toContain(
+      `Working in The web app (web) at ${ORIGIN} from this directory on`,
+    );
+    // Two accounts at a console: the one asked for is named, and only when it is asked for.
     const two: Credentials = {
       default: ORIGIN,
       logins: [
@@ -4919,7 +4928,17 @@ describe("the consoles the command is signed in to (ADR-0027)", () => {
     const named = memoryDirectory();
     const asBob = harness({ fetch, store: memoryStore(two).store, directory: named.store });
     expect(await runCli(["use", "web", "--account", "bob"], asBob.io)).toBe(EXIT.ok);
-    expect(named.kept()).toEqual({ project: "web", account: "bob" });
+    expect(named.kept()).toEqual({ project: "web", url: ORIGIN, account: "bob" });
+    expect(asBob.out()).toContain(`at ${ORIGIN} as bob from this directory on`);
+    // A directory that named its account before keeps it when it is bound anew; one that named
+    // none gains none, so that a file to be committed never carries somebody's account unasked.
+    const again = harness({ fetch, store: memoryStore(two).store, directory: named.store });
+    expect(await runCli(["use", "web"], again.io)).toBe(EXIT.ok);
+    expect(named.kept()).toEqual({ project: "web", url: ORIGIN, account: "bob" });
+    const one = memoryDirectory();
+    const alone = harness({ fetch, store: memoryStore(both).store, directory: one.store });
+    expect(await runCli(["use", "web"], alone.io)).toBe(EXIT.ok);
+    expect(one.kept()).toEqual({ project: "web", url: ORIGIN });
     expect(JSON.stringify([directory.kept(), plain.kept(), named.kept()])).not.toContain("cns_t_");
   });
 
