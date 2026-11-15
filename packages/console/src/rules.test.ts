@@ -14,9 +14,14 @@ import {
 /** Printable ASCII and the newline: English, with nothing invisible in it. */
 const PLAIN = /^[\x20-\x7e\n]*$/;
 
+/** How long the console's own rules may be: they are printed with a take, so they stay short. */
+const REFERENCE_RULES_BOUND = 3_600;
+
 describe("the console's own rules", () => {
-  it("fit what a rules page may hold, carry nothing invisible, and are known as themselves", () => {
-    expect(REFERENCE_RULES.length).toBeLessThan(MAX_RULES_LENGTH / 2);
+  it("stay short, carry nothing invisible, and are known as themselves", () => {
+    expect(REFERENCE_RULES.length).toBeLessThan(REFERENCE_RULES_BOUND);
+    // An organization's own rules have the rest of the page.
+    expect(REFERENCE_RULES_BOUND).toBeLessThan(MAX_RULES_LENGTH / 2);
     expect(REFERENCE_RULES).toMatch(PLAIN);
     expect(PROJECT_RULES_TEMPLATE).toMatch(PLAIN);
     expect(REFERENCE_RULES.startsWith("# Rules for agents on this board\n")).toBe(true);
@@ -26,48 +31,60 @@ describe("the console's own rules", () => {
     expect(isDocumentPath(RULES_PATH)).toBe(true);
   });
 
-  it("name what an agent runs and reads by name, so that a rename is caught here", () => {
+  it("say what an organization could decide otherwise, in the order an agent meets it", () => {
+    const lines = REFERENCE_RULES.split("\n");
+    expect(lines.filter((line) => line.startsWith("## "))).toEqual([
+      "## Before work",
+      "## While working",
+      "## Asking",
+      "## Reporting",
+      "## An agent account",
+      "## What never happens",
+    ]);
+    // What costs most when missed, each said once in a line of its own.
+    for (const said of [
+      "A project's work has a task before it is done.",
+      "What a member does in their own desk for themselves is on no board unless they put it there: write no task for it, and do not ask whether to.",
+      "In a project several repositories share it names the repository, and is worked in a checkout of that one.",
+      "Work found on the way that the task does not cover is a new task, named in the report.",
+      "It is for the person you work for unless the task or the rules name another, and is never asked twice.",
+      "An agent writes these rules only when a person asked for exactly that.",
+    ]) {
+      expect(lines.filter((line) => line.includes(said))).toHaveLength(1);
+    }
+  });
+
+  it("name a command only where the command is what the rule is about, so that a rename is caught here", () => {
     for (const named of [
-      "console rules",
       "console rules write --workspace",
-      "console skills",
-      "console task <number>",
-      "console docs",
+      "`console task new` with `--state ready`",
+      "console skills --search <words> --limit 5",
       "console ask",
-      // What a decision's record is kept with: the answer given elsewhere, and what followed.
-      "console answer",
-      "console decision <id> --outcome",
-      "console take <number>",
-      "console task new",
-      "console work",
-      "working-the-board",
-      "console skill <path>",
-      "SKILLCDN.md",
-      // For an agent account: whom it asks, and the skill that says how one is run.
-      "console manager",
-      "running-an-agent",
     ]) {
       expect(REFERENCE_RULES).toContain(named);
     }
-    // What keeps a board's work from going astray, each said once: a task written from chat can
-    // be taken as written, a task of a project several repositories share is worked in its own
-    // repository, work found on the way is a task of its own, and with no project named the
-    // pack read is the organization's.
-    for (const said of [
-      'console task new "<title>" --body <markdown> --state ready',
-      "in a project several repositories share it names the repository, and is worked in a checkout of that one",
-      "Work found on the way that the task does not cover is a task of its own",
-      "or of the organization's where no project is named",
-      // The rule on work given in chat is for a project's work. A desk is its member's own:
-      // what they do there for themselves is no task, and nobody is asked whether it should be.
-      "Work of a project given in chat",
-      "What a member does in their own desk for themselves is on no board unless they put it there: write no task for it, and do not ask whether to.",
-    ]) {
-      expect(REFERENCE_RULES).toContain(said);
+    // How the board is worked is the skill's, and a command's use is its help's: none of it here.
+    const commands = [...REFERENCE_RULES.matchAll(/`console ([a-z-]+)/g)].map((match) => match[1]);
+    expect([...new Set(commands)].sort()).toEqual(["ask", "rules", "skills", "task"]);
+    for (const elsewhere of ["working-the-board", "running-an-agent", "SKILLCDN.md"]) {
+      expect(REFERENCE_RULES).not.toContain(elsewhere);
     }
-    // The template is headings alone: nothing an agent could mistake for a rule.
-    expect(PROJECT_RULES_TEMPLATE.split("\n").filter((line) => /^[^#\s]/.test(line))).toEqual([
-      "Adds to the workspace's rules, for the agents at work here.",
+  });
+
+  it("give a project's rules five things to say, and nothing an agent could mistake for a rule", () => {
+    expect(REFERENCE_RULES).toContain(
+      "where its work lives, the skills to load first, its pages' folders, who decides what, and its language where it is another",
+    );
+    const lines = PROJECT_RULES_TEMPLATE.split("\n");
+    expect(lines.filter((line) => line.startsWith("## "))).toEqual([
+      "## Where the work lives",
+      "## Skills to load first",
+      "## The pages",
+      "## Who decides what",
+      "## Language",
+    ]);
+    expect(lines.filter((line) => /^[^#\s]/.test(line))).toEqual([
+      "Adds to the workspace's rules, for the agents at work here: what differs in this project, and nothing else.",
     ]);
   });
 
