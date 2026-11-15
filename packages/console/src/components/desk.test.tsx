@@ -409,29 +409,53 @@ describe("the archive", () => {
 });
 
 describe("a desk of one's own, on the Agents page", () => {
-  it("is what to tell an agent, from installing the command to making the desk, shown to be copied", () => {
+  const COMMANDS = [
+    "npm install -g @skillcdn/console",
+    "console login --url https://console.acme.example",
+    "console desk",
+  ];
+  /** The block as it is copied: what stands in the one place a copy is made from. */
+  const quoteOf = (html: string): string | undefined =>
+    /<div class="sc-copyable"><pre class="sc-code">([^<]*)<\/pre>/.exec(html)?.[1];
+
+  it("is a title, one line and the block to tell an agent, and nothing after it", () => {
     const html = renderToStaticMarkup(<DeskWords origin="https://console.acme.example" />);
-    expect(html).toContain('aria-label="A desk of your own"');
-    // The words are for an agent that has nothing yet: the command's install, the connection to
-    // this console, then the desk with its pages, in that order, in one block copied whole.
-    const quote = /<div class="sc-copyable"><pre class="sc-code">([^<]*)<\/pre>/.exec(html)?.[1];
-    expect(quote?.split("\n").slice(1)).toEqual([
-      "npm install -g @skillcdn/console",
-      "console login --url https://console.acme.example",
-      "console desk --web",
+    expect(html).toContain(
+      '<section class="sc-panel sc-desk-command" aria-label="A desk of your own"><h2 class="sc-section-title">A desk of your own</h2><p>A place of your own to work with your agent, kept at your git account. Tell your agent, in its own chat:</p><div class="sc-copyable">',
+    );
+    // The block is a sentence for the agent over three commands, in their order: the command's
+    // install, the connection to this console, and the desk. The command says what is next.
+    expect(quoteOf(html)?.split("\n")).toEqual([
+      "Run these, and go on as the last one says:",
+      ...COMMANDS,
     ]);
-    expect(quote?.split("\n")[0]).toContain("set my desk up");
-    // One block to copy, as connecting an agent has: nothing typed by hand beside it.
+    // The pages come when they are asked for, and the command's own last lines say the rest:
+    // no flag, nothing of what the agent will do, nothing of a login that is there already.
+    expect(html).not.toContain("--web");
+    expect(html).not.toContain("whoami");
+    // One line over the block, one block to copy, and nothing under it.
+    expect(html.match(/<p>/g)).toHaveLength(1);
     expect(html.match(/sc-copyable/g)).toHaveLength(1);
-    const korean = renderToStaticMarkup(
+    expect(html.slice(html.indexOf("</pre>"))).toMatch(
+      /^<\/pre><button[^>]*>[^<]*<\/button><\/div><\/section>$/,
+    );
+  });
+
+  it("says the same in Korean, from the pack", () => {
+    const html = renderToStaticMarkup(
       <LanguageContext.Provider value={KOREAN}>
         <DeskWords origin="https://console.acme.example" />
       </LanguageContext.Provider>,
     );
-    expect(korean).toContain(
-      "console login --url https://console.acme.example\nconsole desk --web",
+    expect(html).toContain('aria-label="내 데스크"');
+    expect(html).toContain(
+      "<p>내 깃 계정에 두는, 에이전트와 일하는 나만의 공간입니다. 에이전트의 대화창에서 이렇게 말하세요:</p>",
     );
-    expect(korean).toContain("내 데스크");
-    expect(korean).toContain("대화창에서 이렇게 말하세요");
+    expect(quoteOf(html)?.split("\n")).toEqual([
+      "이 명령들을 실행하고, 마지막 명령이 말하는 대로 이어서 해 줘:",
+      ...COMMANDS,
+    ]);
+    expect(html.match(/<p>/g)).toHaveLength(1);
+    expect(html).not.toContain("--web");
   });
 });

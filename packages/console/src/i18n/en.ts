@@ -1075,17 +1075,12 @@ export const en = {
       title: "This page is yours",
       body: "Tell your agent what you want to keep and to see here, and it builds this page from that.",
     },
-    /** On the Agents page: a desk of a person's own, and what to tell an agent for one (ADR-0121). */
+    /** On the Agents page: a desk of a person's own, and what to tell an agent for one (ADR-0121, ADR-0122). */
     command: {
       title: "A desk of your own",
-      gives:
-        "A desk is a repository of your own, at your own git account, that your agent starts in: its instructions, a place for your projects, records of what you made, and pages of your own beside the console's.",
-      tellYourAgent:
-        "Start your agent where the folder desk is to be made, and tell it, in its own chat:",
+      line: "A place of your own to work with your agent, kept at your git account. Tell your agent, in its own chat:",
       quote: (origin: string) =>
-        `Run these three commands here. Tell me the address and the code the second shows (leave it out if console whoami already names me), then set my desk up as the third says:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}\nconsole desk --web`,
-      doesTheRest:
-        "An agent that can run commands does the rest: it installs the command, connects, makes the folder desk with your pages, and sets it up as a repository at your git account, asking which account that is.",
+        `Run these, and go on as the last one says:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}\nconsole desk`,
     },
   },
 

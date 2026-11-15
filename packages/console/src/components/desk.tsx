@@ -436,9 +436,9 @@ export interface DeskWordsProps {
 }
 
 /**
- * A desk of a person's own, on the Agents page (ADR-0121): what it is in a line, and what to
- * tell an agent for one, from installing the command to making the desk, copied whole as the
- * words for connecting an agent are above it.
+ * A desk of a person's own, on the Agents page (ADR-0121, ADR-0122): a title, one line, and
+ * what to tell an agent, copied whole as the words for connecting an agent are above it.
+ * Nothing stands after the block: what follows the install is the command's to say.
  */
 export function DeskWords(props: DeskWordsProps) {
   const words = useWords().desk.command;
@@ -446,13 +446,11 @@ export function DeskWords(props: DeskWordsProps) {
   return (
     <section className="sc-panel sc-desk-command" aria-label={words.title}>
       <h2 className="sc-section-title">{words.title}</h2>
-      <p>{words.gives}</p>
-      <p>{words.tellYourAgent}</p>
+      <p>{words.line}</p>
       <div className="sc-copyable">
         <pre className="sc-code">{quote}</pre>
         <CopyButton text={quote} size="sm" />
       </div>
-      <p>{words.doesTheRest}</p>
     </section>
   );
 }

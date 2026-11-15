@@ -999,13 +999,9 @@ export const ko: Messages = {
     },
     command: {
       title: "내 데스크",
-      gives:
-        "데스크는 내 깃 계정에 두는 나만의 저장소이고, 에이전트가 여기서 시작합니다. 에이전트의 지침, 프로젝트를 둘 곳, 내가 만든 것의 기록, 콘솔 옆의 내 페이지가 들어 있습니다.",
-      tellYourAgent: "desk 폴더를 둘 곳에서 에이전트를 열고, 대화창에서 이렇게 말하세요:",
+      line: "내 깃 계정에 두는, 에이전트와 일하는 나만의 공간입니다. 에이전트의 대화창에서 이렇게 말하세요:",
       quote: (origin) =>
-        `여기서 이 세 명령을 실행해 줘. 두 번째 명령이 보여 주는 주소와 코드를 알려 주고(console whoami가 이미 나를 알려 주면 두 번째는 건너뛰고), 세 번째 명령이 말하는 대로 내 데스크를 세팅해 줘:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}\nconsole desk --web`,
-      doesTheRest:
-        "명령을 실행할 수 있는 에이전트는 나머지를 알아서 합니다. 명령을 설치하고, 연결하고, 내 페이지가 든 desk 폴더를 만든 뒤, 어느 깃 계정인지 물어 그 계정의 저장소로 세팅합니다.",
+        `이 명령들을 실행하고, 마지막 명령이 말하는 대로 이어서 해 줘:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}\nconsole desk`,
     },
   },
 
