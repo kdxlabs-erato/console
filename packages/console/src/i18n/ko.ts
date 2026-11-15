@@ -992,6 +992,11 @@ export const ko: Messages = {
       nothingFound: "이 단어로 찾은 것이 없습니다.",
       older: "더 오래된 것 읽기",
     },
+    mine: {
+      tab: "내 페이지",
+      title: "이 페이지는 내 것입니다",
+      body: "여기에 무엇을 남기고 무엇을 보고 싶은지 에이전트에게 말하면, 에이전트가 그에 맞춰 이 페이지를 만듭니다.",
+    },
     command: {
       title: "내 데스크",
       gives:

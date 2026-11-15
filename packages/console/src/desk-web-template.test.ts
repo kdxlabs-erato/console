@@ -8,8 +8,9 @@ import * as exported from "./index.js";
 // `console desk --web` writes into a desk's `web/`, with the package's version for
 // `__VERSION__` and the desk's title for `__TITLE__`. A template is built nowhere in this
 // repository, so this holds what a build of it leans on: the files there are, the two words
-// where the command fills them, that what the script imports is what the package exports, and
-// that the pages are served with the desk's records beside them.
+// where the command fills them, that what the scripts import is what the package exports, and
+// that the pages are served with the desk's records beside them. The shell is one page of the
+// member's own with nothing on it yet (ADR-0122): it mounts no ready page.
 
 const TEMPLATE = fileURLToPath(new URL("../template/desk-web/", import.meta.url));
 
@@ -29,12 +30,13 @@ async function filesOf(dir: string): Promise<string[]> {
 const read = (name: string): Promise<string> => readFile(join(TEMPLATE, name), "utf8");
 
 describe("the shell of a desk's pages", () => {
-  it("is the four files of a console of one's own, its manifest and five lines on how it is run", async () => {
+  it("is the files of a console of one's own with one page of the member's own, its manifest and five lines on how it is run", async () => {
     expect(await filesOf(TEMPLATE)).toEqual([
       "README.md",
       "index.html",
       "package.json",
       "src/main.tsx",
+      "src/page.tsx",
       "tsconfig.json",
       "vite.config.ts",
     ]);
@@ -83,11 +85,17 @@ describe("the shell of a desk's pages", () => {
     // The title stands in the page and in the README's heading alone, as text: never in a
     // script or in JSON, where a name with a quote in it would break what it is written into.
     expect(await read("src/main.tsx")).toContain(
-      "createConsole({ title: document.title, pages: [deskPage()] })",
+      "createConsole({ title: document.title, pages: [page] })",
     );
     expect(await read("README.md")).toMatch(/^# __TITLE__: the pages\n/);
     expect(await read("README.md")).toContain("`console serve dist --records ../records`");
-    for (const name of ["package.json", "src/main.tsx", "tsconfig.json", "vite.config.ts"]) {
+    for (const name of [
+      "package.json",
+      "src/main.tsx",
+      "src/page.tsx",
+      "tsconfig.json",
+      "vite.config.ts",
+    ]) {
       expect(await read(name)).not.toContain("__TITLE__");
     }
     for (const name of await filesOf(TEMPLATE)) {
@@ -105,25 +113,68 @@ describe("the shell of a desk's pages", () => {
   });
 
   it("imports from the package what the package exports", async () => {
+    /** The names a script takes from the package, the types among them left out. */
+    const namesOf = (script: string): string[] =>
+      (/import \{([^}]+)\} from "@skillcdn\/console";/.exec(script)?.[1] ?? "")
+        .split(",")
+        .map((name) => name.trim())
+        .filter((name) => name.length > 0 && !name.startsWith("type "));
     const script = await read("src/main.tsx");
-    const imported = /import \{([^}]+)\} from "@skillcdn\/console";/.exec(script)?.[1] ?? "";
-    const names = imported
-      .split(",")
-      .map((name) => name.trim())
-      .filter((name) => name.length > 0);
-    expect(names).toEqual(["createConsole", "customPageHref", "DESK_PAGE_KEY", "deskPage"]);
-    for (const name of names) {
+    const page = await read("src/page.tsx");
+    expect(namesOf(script)).toEqual(["createConsole", "customPageHref"]);
+    expect(namesOf(page)).toEqual(["DEFAULT_LANGUAGES", "EmptyState"]);
+    for (const name of [...namesOf(script), ...namesOf(page)]) {
       expect(exported).toHaveProperty(name);
     }
-    // The page the shell opens on is the one the package's desk page stands at.
-    expect(exported.customPageHref(exported.DESK_PAGE_KEY)).toBe("/pages/desk");
-    expect(exported.deskPage().key).toBe(exported.DESK_PAGE_KEY);
     expect(script).toContain('import "@skillcdn/console/console.css";');
+    expect(script).toContain('import { page } from "./page.js";');
     // The development server sends the API where `console serve` listens by default.
     const build = await read("vite.config.ts");
     expect(build).toContain(
       'const served = { target: "http://127.0.0.1:11197", changeOrigin: true };',
     );
     expect(build).toContain('proxy: { "/api": served, "/records": served }');
+  });
+
+  it("is one page of the member's own with nothing on it yet, and mounts no ready page", async () => {
+    const script = await read("src/main.tsx");
+    const page = await read("src/page.tsx");
+    // The console opens on the member's page, which stands at an address of its own, apart
+    // from the ready page's, so that the ready page may be added beside it.
+    expect(script).toContain('window.history.replaceState(null, "", customPageHref(page.key));');
+    expect(page).toContain(
+      'export const page: CustomPage = {\n  // What the address says: /pages/mine.\n  key: "mine",',
+    );
+    expect(exported.customPageHref("mine")).toBe("/pages/mine");
+    expect(exported.DESK_PAGE_KEY).not.toBe("mine");
+    // Nothing ready is mounted: the ready page is named where the page says what there is, and
+    // imported nowhere.
+    expect(script).not.toContain("deskPage");
+    expect(page).not.toMatch(/import [^;]*deskPage/);
+    expect(page).toContain("`deskPage()`, one more entry of `pages` in main.tsx");
+    // What it shows until then are the package's words for it, in every language the console
+    // speaks: a tab's word, and that the page is the member's.
+    expect(page).toContain("pack.messages.desk.mine.tab");
+    expect(page).toContain("<EmptyState title={words.title} body={words.body} />");
+    for (const pack of exported.DEFAULT_LANGUAGES) {
+      const words = pack.messages.desk.mine;
+      for (const one of [words.tab, words.title, words.body]) {
+        expect(one.length).toBeGreaterThan(0);
+      }
+    }
+    // The page teaches what a page is given and may read, and where what it is built from is.
+    for (const taught of [
+      "`data`",
+      "`client`",
+      "`search` and `navigation`",
+      "`words` and `language`",
+      "/records/",
+      '"The catalogue"',
+      '"Charts"',
+      '"Pages of your own"',
+      '"A desk\'s pages"',
+    ]) {
+      expect(page).toContain(taught);
+    }
   });
 });

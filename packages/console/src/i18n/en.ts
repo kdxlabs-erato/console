@@ -1069,6 +1069,12 @@ export const en = {
       nothingFound: "Nothing found by these words.",
       older: "Read older ones",
     },
+    /** The first of a desk's own pages, as its shell has it until its member says what it shows (ADR-0122). */
+    mine: {
+      tab: "My page",
+      title: "This page is yours",
+      body: "Tell your agent what you want to keep and to see here, and it builds this page from that.",
+    },
     /** On the Agents page: a desk of a person's own, and what to tell an agent for one (ADR-0121). */
     command: {
       title: "A desk of your own",
