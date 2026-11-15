@@ -12,9 +12,14 @@ import { APP_NAME } from "../version.js";
  * replica runs with the new secret, never with a rollout's own `migrate`: a replica still on the
  * old configuration opens nothing the step has sealed again.
  *
- * Its one line is what a deployment reads: `left` is how many values the secret before still
- * opens alone, and at `0` that secret can be taken out of the configuration. A value neither
- * secret opens is counted (`unopened`) and left as it is. Never a value, never a secret.
+ * Its line is what a deployment reads: `left` is how many values the secret before still opens
+ * alone, and at `0` that secret can be taken out of the configuration, where it opened what it
+ * was to open. `openedByPrevious` says how many values it opened in this run, and a value
+ * neither secret opens is counted (`unopened`) and left as it is. A secret before that is not
+ * the one the deployment had opens nothing, and answers `left: 0` as a finished rotation does:
+ * where it opened none while some values open with neither, a second line says so in words, so
+ * that the answer is not read as leave to take the real one out, with every value it seals.
+ * Never a value, never a secret.
  */
 export async function runReseal(
   config: Config,
@@ -39,10 +44,14 @@ export async function runReseal(
     const counts = await resealAll(database, createRotation(secret, previous));
     const sum = (of: (count: (typeof counts)[number]) => number): number =>
       counts.reduce((total, count) => total + of(count), 0);
+    const resealed = sum((count) => count.resealed);
+    const left = sum((count) => count.left);
     const said = {
-      resealed: sum((count) => count.resealed),
+      resealed,
+      // What the secret before opened in this run: the values sealed again, and those left to it.
+      openedByPrevious: resealed + left,
       unopened: sum((count) => count.unopened),
-      left: sum((count) => count.left),
+      left,
       kinds: Object.fromEntries(counts.map(({ kind, ...count }) => [kind, count] as const)),
     };
     if (said.left > 0) {
@@ -51,6 +60,14 @@ export async function runReseal(
       logger.warn(said, "sealed again");
     } else {
       logger.info(said, "sealed again");
+    }
+    if (said.openedByPrevious === 0 && said.unopened > 0) {
+      // The step cannot tell a secret before that is wrong from a rotation an earlier run
+      // finished with values lost long ago: both open nothing. It says which reading holds.
+      logger.warn(
+        { unopened: said.unopened },
+        "the previous secret opened no value: unless an earlier run sealed the values again, check that AUTH_SECRET_PREVIOUS is the secret the deployment had, given in the same form, before it is taken out",
+      );
     }
     return { left: said.left };
   } finally {

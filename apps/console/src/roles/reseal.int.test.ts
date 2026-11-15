@@ -32,6 +32,8 @@ import { runReseal } from "./reseal.js";
 const OLD = "the secret the deployment had before, long enough";
 const NEW = "the secret the deployment has now, long enough too";
 const OTHER = "a secret this deployment never had, as long as one is";
+/** What someone gives as the secret before when it is not: a value mistyped, or another's. */
+const WRONG = "the secret the deployment had before, long enough.";
 const NOW = new Date("2026-11-15T09:00:00Z");
 /** More rows than the step reads at a time, of the two kinds whose key has several columns. */
 const MANY = 450;
@@ -310,6 +312,32 @@ describe("a rotation of the deployment's secret", () => {
     expect(await sealedValues()).toEqual(sealedBefore);
   });
 
+  it("says that the secret before opened nothing, where it is not the one the deployment had, and seals nothing", async () => {
+    const sealedBefore = await sealedValues();
+    const { left, lines } = await reseal({ AUTH_SECRET: NEW, AUTH_SECRET_PREVIOUS: WRONG });
+    // Nothing is under a secret that opens nothing: the exit code is the one it was. What a
+    // reader needs is in the line, and a second one says it in words: read as "nothing left",
+    // the answer had the real secret before taken out, and every value lost with it.
+    expect(left).toBe(0);
+    const all = 5 + MANY + (MANY - 1) + 2;
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({
+      level: 40,
+      msg: "sealed again",
+      resealed: 0,
+      openedByPrevious: 0,
+      unopened: all,
+      left: 0,
+    });
+    expect(lines[1]).toMatchObject({
+      level: 40,
+      msg: "the previous secret opened no value: unless an earlier run sealed the values again, check that AUTH_SECRET_PREVIOUS is the secret the deployment had, given in the same form, before it is taken out",
+      unopened: all,
+    });
+    expect(JSON.stringify(lines)).not.toContain(WRONG);
+    expect(await sealedValues()).toEqual(sealedBefore);
+  });
+
   it("seals again what only the secret before opens, counts what neither opens, and leaves it", async () => {
     const handle = db();
     const sealedBefore = await sealedValues();
@@ -320,12 +348,14 @@ describe("a rotation of the deployment's secret", () => {
 
     const { left, lines } = await reseal({ AUTH_SECRET: NEW, AUTH_SECRET_PREVIOUS: OLD });
     expect(left).toBe(0);
+    // One line: the secret before opened what it was to open, and there is nothing to check.
     expect(lines).toHaveLength(1);
     // Two values neither secret opens: said as a warning, and counted.
     expect(lines[0]).toMatchObject({
       level: 40,
       msg: "sealed again",
       resealed: 5 + MANY + (MANY - 1),
+      openedByPrevious: 5 + MANY + (MANY - 1),
       unopened: 2,
       left: 0,
       kinds: {
@@ -392,9 +422,60 @@ describe("a rotation of the deployment's secret", () => {
   it("finds nothing to do when it is run again", async () => {
     const sealedBefore = await sealedValues();
     const { left, lines } = await reseal({ AUTH_SECRET: NEW, AUTH_SECRET_PREVIOUS: OLD });
+    // It still ends well: everything the secret before opened was sealed again by the run
+    // before, which is the case the second line names as the one with nothing to check.
     expect(left).toBe(0);
-    expect(lines[0]).toMatchObject({ msg: "sealed again", resealed: 0, unopened: 2, left: 0 });
+    expect(lines[0]).toMatchObject({
+      msg: "sealed again",
+      resealed: 0,
+      openedByPrevious: 0,
+      unopened: 2,
+      left: 0,
+    });
+    expect(lines).toHaveLength(2);
+    expect(String(lines[1]?.msg)).toContain("unless an earlier run sealed the values again");
     expect(await sealedValues()).toEqual(sealedBefore);
+  });
+
+  it("says one line where every value opens with the current secret", async () => {
+    // Nothing for the secret before to open, and nothing lost: no word of a check.
+    const handle = db();
+    const lost = and(eq(pluginSecrets.pluginKey, "ledger"), eq(pluginSecrets.name, "lost"));
+    const torn = and(eq(pluginSecrets.pluginKey, "ledger"), eq(pluginSecrets.name, "torn"));
+    const [wasLost] = await handle
+      .select({ sealed: pluginSecrets.sealed })
+      .from(pluginSecrets)
+      .where(lost);
+    const [wasTorn] = await handle
+      .select({ sealed: pluginSecrets.sealed })
+      .from(pluginSecrets)
+      .where(torn);
+    const set = now.seal("plugin-secret", "set again by its holder");
+    await handle.update(pluginSecrets).set({ sealed: set }).where(lost);
+    await handle.update(pluginSecrets).set({ sealed: set }).where(torn);
+    try {
+      const { left, lines } = await reseal({ AUTH_SECRET: NEW, AUTH_SECRET_PREVIOUS: WRONG });
+      expect(left).toBe(0);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({
+        level: 30,
+        msg: "sealed again",
+        resealed: 0,
+        openedByPrevious: 0,
+        unopened: 0,
+        left: 0,
+      });
+    } finally {
+      // As the tests after this one find them.
+      await handle
+        .update(pluginSecrets)
+        .set({ sealed: wasLost?.sealed ?? "" })
+        .where(lost);
+      await handle
+        .update(pluginSecrets)
+        .set({ sealed: wasTorn?.sealed ?? "" })
+        .where(torn);
+    }
   });
 
   it("never writes over a value set while it reads, and reads the kind again", async () => {
