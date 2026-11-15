@@ -244,7 +244,13 @@ describe("a plugin's schema", () => {
   });
 
   it("draws a new password when provisioned again, and the old connections give way", async () => {
+    // A power the role was given meanwhile is taken again.
+    await drizzleOf(testDatabase.database).execute(sql`alter role plugin_tallytest createdb`);
     await service.provision("tallytest");
+    const powers = await drizzleOf(testDatabase.database).execute<{ createdb: boolean }>(
+      sql`select rolcreatedb as createdb from pg_roles where rolname = 'plugin_tallytest'`,
+    );
+    expect(powers.rows).toEqual([{ createdb: false }]);
     const counted = await service.query("tallytest", "select count(*)::int as n from things", []);
     expect(counted.rows).toEqual([{ n: 3 }]);
     expect(await service.applyMigrations("tallytest", migrations)).toBe(0);

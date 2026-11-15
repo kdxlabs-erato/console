@@ -25,6 +25,14 @@ const TRANSACTION_TTL_MS = 60_000;
 /** The console's own migration lock, which the plugins' migrations run under too. */
 const MIGRATION_LOCK_KEY = 5_434_002;
 const MIGRATION_NAME = /^\d{4}-[a-z0-9-]+\.sql$/;
+/** What a role may hold that a plugin's never does: the column that says so, and how it is taken. */
+const ROLE_POWERS = [
+  ["rolsuper", "nosuperuser"],
+  ["rolcreatedb", "nocreatedb"],
+  ["rolcreaterole", "nocreaterole"],
+  ["rolreplication", "noreplication"],
+  ["rolbypassrls", "nobypassrls"],
+] as const;
 
 export interface PluginSqlOptions {
   readonly database: Database;
@@ -91,13 +99,17 @@ export class PluginSqlService {
     const password = randomBytes(32).toString("base64url");
     const db = drizzleOf(this.options.database);
     await db.execute(sql.raw(`create schema if not exists ${quoted(name)}`));
-    const roles = await db.execute<{ exists: boolean }>(
-      sql`select exists (select 1 from pg_roles where rolname = ${name}) as exists`,
+    const roles = await db.execute<Record<(typeof ROLE_POWERS)[number][0], boolean>>(
+      sql`select ${sql.raw(ROLE_POWERS.map(([column]) => column).join(", "))} from pg_roles where rolname = ${name}`,
     );
-    if (roles.rows[0]?.exists === true) {
+    const role = roles.rows[0];
+    if (role !== undefined) {
+      // Only a power the role holds is named to be taken: a database user that is no superuser
+      // may not name SUPERUSER at all, nor CREATEDB without holding it, even to say "no".
+      const taken = ROLE_POWERS.filter(([column]) => role[column]).map(([, without]) => without);
       await db.execute(
         sql.raw(
-          `alter role ${quoted(name)} with login noinherit nocreatedb nocreaterole nosuperuser connection limit ${PLUGIN_SQL_CONNECTIONS} password ${literal(password)}`,
+          `alter role ${quoted(name)} with login noinherit ${taken.join(" ")} connection limit ${PLUGIN_SQL_CONNECTIONS} password ${literal(password)}`,
         ),
       );
     } else {
