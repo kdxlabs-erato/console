@@ -9195,7 +9195,15 @@ describe("the plugins on the command line (ADR-0049, ADR-0053)", () => {
     expect(await runCli(["plugin", "hello", "events", "--kind", "plugin.upgraded"], none.io)).toBe(
       EXIT.ok,
     );
-    expect(none.out()).toBe("hello has no plugin.upgraded events.\n");
+    // Nothing answered is nothing the caller may read: whether the plugin has events that are
+    // not theirs, the console does not say, and neither does the command.
+    expect(none.out()).toBe("No plugin.upgraded event of hello that you may read.\n");
+    const beyond = fakeConsole({
+      [`GET ${AT}/events?limit=50&offset=50`]: { body: { items: [], more: false } },
+    });
+    const far = harness({ fetch: beyond.fetch, env: SIGNED_IN });
+    expect(await runCli(["plugin", "hello", "events", "--offset", "50"], far.io)).toBe(EXIT.ok);
+    expect(far.out()).toBe("No event of hello that you may read, that far back.\n");
     // A console of before 0.5.1 has the route and takes no kind: it answers every kind, and the
     // command keeps the kind asked for of the page it read, and says that it did.
     const before = fakeConsole({

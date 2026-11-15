@@ -2576,10 +2576,13 @@ function whereValueOf(word: string): unknown {
 
 /** The records of a collection one may read, a page of them; or one record, or its versions. */
 /**
- * A plugin's events, newest first (ADR-0128): what it did and what went wrong in it, the
- * failures alone with `--kind plugin.failed`, whether or not it has a board project. A console
- * before 0.5.1 takes no kind and answers every one: the page is narrowed here, and that is said,
- * since a page narrowed after it was read may hold fewer than were asked for.
+ * A plugin's events, newest first (ADR-0128): what it did and what went wrong in it, as far as
+ * the caller may read it, which the console decides (every event for an administrator; for
+ * anyone else those of the projects they may see, their own commands and the console's word of
+ * the plugin); the failures alone with `--kind plugin.failed`, whether or not it has a board
+ * project. A console before 0.5.1 takes no kind and answers every one: the page is narrowed
+ * here, and that is said, since a page narrowed after it was read may hold fewer than were
+ * asked for.
  */
 async function pluginEvents(
   io: CliIo,

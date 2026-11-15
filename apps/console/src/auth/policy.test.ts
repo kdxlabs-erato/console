@@ -19,6 +19,7 @@ import {
   peopleNarrowedFor,
   personFindableBy,
   personVisibleTo,
+  pluginEventReadableBy,
   projectVisibleTo,
   readsListings,
   readsWorkspaceEvents,
@@ -85,6 +86,25 @@ describe("the policy", () => {
     expect(asMember.sql).toBe(render(memberOfProject(member.id)).sql);
   });
 
+  it("reads every event of a plugin as an administrator, and as a member a visible project's, their own, and the console's word of the plugin", () => {
+    expect(render(pluginEventReadableBy(admin)).sql).toBe("true");
+    const asMember = render(pluginEventReadableBy(member));
+    // An event of a project: by the one condition of seeing a project, the same text.
+    expect(asMember.sql).toContain(
+      `else exists (select 1 from "projects" where "projects"."id" = "events"."project_id" and ${render(
+        projectVisibleTo(member),
+      ).sql.replace("$1", "$4")})`,
+    );
+    // An event of no project: the asker's own doing, or one of the kinds that name nobody, and
+    // then only where nobody is named; a kind not listed is not read.
+    expect(asMember.sql).toContain(
+      `when "events"."project_id" is null then ("events"."actor_id" = $1::uuid or ("events"."actor_id" is null and "events"."kind" in ($2, $3)))`,
+    );
+    expect(asMember.params).toEqual([member.id, "plugin.failed", "plugin.upgraded", member.id]);
+    // Whom a plugin acts for is held to a member's standing here too (ADR-0072).
+    expect(render(pluginEventReadableBy(asActedFor(admin))).sql).toBe(asMember.sql);
+  });
+
   it("shows everyone unless narrowed, and then only the active people one shares a project with, oneself and the administrators", () => {
     expect(render(personVisibleTo(member, everyone)).sql).toBe("true");
     expect(render(personVisibleTo(admin, shared)).sql).toBe("true");
@@ -132,6 +152,7 @@ describe("the policy", () => {
     expect(asActedFor(agent)).toBe(agent);
     const same: [string, (who: PersonRecord) => ReturnType<typeof projectVisibleTo>][] = [
       ["projectVisibleTo", projectVisibleTo],
+      ["pluginEventReadableBy", pluginEventReadableBy],
       ["decisionReachableBy", decisionReachableBy],
       ["decisionAnswerableBy", decisionAnswerableBy],
       ["decisionWaitsFor", decisionWaitsFor],

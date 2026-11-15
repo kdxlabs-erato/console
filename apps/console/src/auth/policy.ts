@@ -1,8 +1,8 @@
-import type { PeopleVisibility } from "@skillcdn/console/api";
+import type { EventKind, PeopleVisibility } from "@skillcdn/console/api";
 import { type SQL, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { PersonRecord } from "../db/queries/people.js";
-import { decisions, people, pluginLinks, projectMembers, projects } from "../db/schema.js";
+import { decisions, events, people, pluginLinks, projectMembers, projects } from "../db/schema.js";
 
 // Who may see whom, and what (ADR-0035). Every decision about people and projects is made here
 // and nowhere else: a query takes its condition from this module and applies it in SQL, so that
@@ -152,6 +152,34 @@ export function readsListings(asker: PersonRecord, settings: AccessSettings): bo
  */
 export function readsWorkspaceEvents(asker: PersonRecord, settings: AccessSettings): boolean {
   return !peopleNarrowedFor(asker, settings);
+}
+
+/**
+ * The kinds of event that are the console's own word of a plugin and name nobody: that
+ * something of it failed, with the console's reason, and that its records were brought to a
+ * version. Every other kind a plugin leaves in no project says who did something, and what.
+ */
+const SAID_OF_A_PLUGIN: readonly EventKind[] = ["plugin.failed", "plugin.upgraded"];
+
+/**
+ * On an `events` row a plugin caused: whether `person` reads it among that plugin's events
+ * (`GET /api/v1/plugins/<key>/events`). An administrator reads every one. Anyone else reads the
+ * events of a project they may see, as that project's own feed shows them, by the one condition
+ * of seeing a project; and of the events that belong to no project, their own doing and what
+ * the console says of the plugin with nobody in it. The rest there is another person's doing,
+ * which no project has opened to the asker: a `plugin.command` names who ran it and with what
+ * arguments, a grant whom a role went to, an administrative act who did it. A kind this does
+ * not name is not read.
+ */
+export function pluginEventReadableBy(person: PersonRecord): SQL {
+  if (administers(person)) {
+    return sql`true`;
+  }
+  const saidOfThePlugin = sql`(${events.actorId} is null and ${events.kind} in (${sql.join(
+    SAID_OF_A_PLUGIN.map((kind) => sql`${kind}`),
+    sql`, `,
+  )}))`;
+  return sql`(case when ${events.projectId} is null then (${events.actorId} = ${person.id}::uuid or ${saidOfThePlugin}) else exists (select 1 from ${projects} where ${projects.id} = ${events.projectId} and ${projectVisibleTo(person)}) end)`;
 }
 
 /** On a `decisions` row: whether the decision is addressed to `person`, alone or among others (ADR-0057). */

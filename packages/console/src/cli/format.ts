@@ -1193,7 +1193,9 @@ export function formatPluginEventLine(event: RestEvent): string {
 
 /**
  * A page of a plugin's events, newest first (ADR-0128), of one kind where one was asked for:
- * what `console plugin <key> events` prints, with how to read on.
+ * what `console plugin <key> events` prints, with how to read on. The console answers what the
+ * caller may read and says nothing of the rest, so an empty page is said as that, and never as
+ * a plugin that has no events.
  */
 export function formatPluginEvents(
   key: string,
@@ -1201,10 +1203,9 @@ export function formatPluginEvents(
   asked: { readonly kind: string | undefined; readonly limit: number; readonly offset: number },
 ): string {
   if (page.items.length === 0) {
-    const none =
-      asked.kind === undefined
-        ? `${key} has no events${asked.offset > 0 ? " that far back" : ""}.`
-        : `${key} has no ${asked.kind} events${asked.offset > 0 ? " that far back" : ""}.`;
+    const none = `No ${asked.kind === undefined ? "" : `${asked.kind} `}event of ${key} that you may read${
+      asked.offset > 0 ? ", that far back" : ""
+    }.`;
     return `${none}${formatMore(page.more, asked.limit, asked.offset)}`;
   }
   return `${page.items.map(formatPluginEventLine).join("\n")}${formatMore(page.more, asked.limit, asked.offset)}`;

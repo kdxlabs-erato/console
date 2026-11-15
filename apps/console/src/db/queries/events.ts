@@ -1,5 +1,6 @@
 import type { EventKind, RestEventData } from "@skillcdn/console/api";
 import { and, asc, desc, eq, gt, isNull, lte, sql } from "drizzle-orm";
+import { pluginEventReadableBy } from "../../auth/policy.js";
 import { type Database, drizzleOf, type Transaction } from "../client.js";
 import { events } from "../schema.js";
 import { holdEventOrder, settledEnd } from "./event-order.js";
@@ -270,15 +271,18 @@ export async function latestEventId(database: Database, workspaceId: string): Pr
 }
 
 /**
- * The newest events one plugin caused in the workspace, whichever project they are in, newest
- * first, a page at a time: what a plugin's settings page and `GET /api/v1/plugins/<key>/events`
- * show; of one kind where one is named, so that its failures are read without the commands
- * between them.
+ * The newest events one plugin caused in the workspace that `reader` may read, whichever project
+ * they are in, newest first, a page at a time: what a plugin's settings page and
+ * `GET /api/v1/plugins/<key>/events` show; of one kind where one is named, so that its failures
+ * are read without the commands between them. Who reads which is the policy's
+ * (`pluginEventReadableBy`), asked in the query itself: an event the reader may not read takes
+ * no place in a page, and `more` counts none.
  */
 export async function listEventsOfPlugin(
   database: Database,
   workspaceId: string,
   plugin: string,
+  reader: PersonRecord,
   page: { readonly limit: number; readonly offset: number; readonly kind?: string | undefined },
 ): Promise<{ readonly items: EventRecord[]; readonly more: boolean }> {
   const rows = await selectEvents(database)
@@ -287,6 +291,7 @@ export async function listEventsOfPlugin(
         eq(events.workspaceId, workspaceId),
         eq(events.plugin, plugin),
         page.kind === undefined ? undefined : eq(events.kind, page.kind),
+        pluginEventReadableBy(reader),
       ),
     )
     .orderBy(desc(events.id))

@@ -1711,14 +1711,18 @@ export class Plugins {
     return this.restGrant(grant);
   }
 
-  /** The plugin's events, newest first; of one kind where one is named. */
+  /**
+   * The plugin's events as `reader` may read them (`pluginEventReadableBy`), newest first; of
+   * one kind where one is named.
+   */
   async events(
     key: string,
+    reader: PersonRecord,
     page: { readonly limit: number; readonly offset: number; readonly kind?: string | undefined },
   ): Promise<{ readonly items: EventRecord[]; readonly more: boolean }> {
     this.entryOf(key);
     const workspace = await this.options.workspace();
-    return listEventsOfPlugin(this.options.database, workspace.id, key, page);
+    return listEventsOfPlugin(this.options.database, workspace.id, key, reader, page);
   }
 
   /**

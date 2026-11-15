@@ -923,6 +923,10 @@ export function registerPluginsRest(
     }
   });
 
+  // The events a plugin caused, for whoever may know of it, as far as each is theirs to read: an
+  // administrator every one, anyone else those of a project they may see and, of the rest, their
+  // own and the console's word of the plugin (auth/policy.ts, `pluginEventReadableBy`). What is
+  // not theirs is left out of the pages and of `more`, with no word that it is there.
   app.get(`${PLUGIN}/events`, async (c) => {
     const caller = await asking(c);
     if (caller instanceof Response) {
@@ -937,7 +941,7 @@ export function registerPluginsRest(
       return invalid(c, query.error.issues[0]?.message ?? "The query is not readable.");
     }
     try {
-      const page = await plugins.events(key, query.data);
+      const page = await plugins.events(key, caller.person, query.data);
       const body: RestEvents = { items: page.items.map(restEvent), more: page.more };
       return c.json(body);
     } catch (error) {

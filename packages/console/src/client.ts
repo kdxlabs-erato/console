@@ -697,8 +697,11 @@ export interface PluginClient {
     signal?: AbortSignal,
   ): Promise<RestSkillCode>;
   /**
-   * The plugin's events, newest first, a page at a time; of one kind where one is named
-   * (ADR-0128), which a console before 0.5.1 does not narrow by and answers every kind.
+   * The plugin's events the asker may read, newest first, a page at a time: every one for an
+   * administrator; for anyone else those of the projects they may see, their own doing, and the
+   * console's word of the plugin, the rest left out with no word that it is there. Of one kind
+   * where one is named (ADR-0128), which a console before 0.5.1 does not narrow by and answers
+   * every kind.
    */
   events(
     page?: Page & { readonly kind?: string | undefined },
