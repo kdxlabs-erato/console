@@ -865,6 +865,30 @@ describe("the console command", () => {
       expect(untouched.kept()).toBeUndefined();
     });
 
+    it("at a terminal told not to wait, says that the next call waits while the code lasts, as it does there", async () => {
+      // Ninety seconds a call is what a call waits where no terminal shows its words; at a
+      // terminal the next call waits until the console says how the connection ended.
+      const { fetch, calls } = fakeConsole({
+        "POST /api/v1/connect": { status: 201, body: CONNECTION },
+        "POST /api/v1/connect/claim": [...Array.from({ length: 120 }, () => WAITS), CONNECTED],
+        "GET /api/v1/me": { body: ME },
+      });
+      const memory = memoryStore();
+      const time = clock();
+      const first = harness({ fetch, store: memory.store, terminal: true, ...time });
+      expect(await runCli(["login", "--url", ORIGIN, "--wait", "0"], first.io)).toBe(EXIT.ok);
+      expect(first.out()).toContain(
+        `\nThen run console login --url https://console.test again: it waits for the approval while the code lasts, until ${WHEN}.\n`,
+      );
+      expect(first.out()).not.toContain("90 seconds");
+      expect(claims(calls)).toBe(0);
+      const second = harness({ fetch, store: memory.store, terminal: true, ...time });
+      expect(await runCli(["login", "--url", ORIGIN], second.io)).toBe(EXIT.ok);
+      expect(claims(calls)).toBe(121);
+      expect(time.now() - START).toBe(120_000);
+      expect(memory.kept()?.pending).toBeUndefined();
+    });
+
     it("logins says a connection that waits by its code, never its secret, and logout forgets it", async () => {
       const { fetch } = fakeConsole({});
       const time = clock();

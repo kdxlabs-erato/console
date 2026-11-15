@@ -11,4 +11,6 @@ Tell the person that address and that code now, in a message of its own, before 
 Then run console login --url <origin> again: it waits for the approval up to 90 seconds a call, and the code lasts until <moment>.
 ```
 
+At a terminal told `--wait 0`, where the next call waits while the code lasts, the second line says that instead: `it waits for the approval while the code lasts, until <moment>`.
+
 Nothing else of the command changes: the first call still ends at once with `0`, and the next still waits ninety seconds unless `--wait <seconds>` says another wait.
