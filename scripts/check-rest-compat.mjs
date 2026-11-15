@@ -1,12 +1,14 @@
 // The REST contract between the command and the console, held to a snapshot (ADR-0038, point
-// 4; ADR-0043). Every `rest*Schema` of the package, as the console answers it (`output`) or
+// 4; ADR-0043; ADR-0130). Every `rest*Schema` of the package, as the console answers it (`output`) or
 // takes it (`input`), is written as JSON Schema into scripts/rest-schemas.snapshot.json with
 // the floors it was taken at. Part of `pnpm check`, after the build: the schemas as built are
 // compared with the snapshot, and a change that breaks what passes between the two sides fails
-// the check here, instead of failing an older command on an answer it cannot read. A change
-// that only adds passes: the other side ignores it. When the floors move, the snapshot is taken
-// again in the same change (`pnpm snapshot:rest`, this script with --write). Reads the built
-// package and the snapshot; no network.
+// the check here, instead of failing an older command on an answer it cannot read, or this
+// command on the answer of an older console. A change that only adds passes: the other side
+// ignores it; except a field an answer must now carry, which a console of before does not send.
+// When the floors move, the snapshot is taken again in the same change (`pnpm snapshot:rest`,
+// this script with --write). Reads the built package and the snapshot; no network. The
+// comparison is exported for its test, scripts/check-rest-compat.test.mjs, which needs no build.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import process from "node:process";
@@ -26,30 +28,6 @@ const UPPER = ["maxLength", "maximum", "exclusiveMaximum", "maxItems"];
 const built = (file) => import(pathToFileURL(resolve(PACKAGE, "dist", file)).href);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const ioOf = (name) => (INPUT.test(name) ? "input" : "output");
-
-const [{ z }, schemas, compat] = await Promise.all([
-  import(pathToFileURL(resolve(PACKAGE, "node_modules/zod/index.js")).href),
-  built("schemas.js"),
-  built("compat.js"),
-]);
-
-/** The floors as the package holds them: the console's on the command, and the command's on the console. */
-const floors = {
-  client: compat.CLIENT_POLICY.atLeast ?? "0.0.0",
-  console: compat.CONSOLE_AT_LEAST,
-};
-
-/** Every REST schema of the package as JSON Schema, by name, in a stable order. */
-function contractOf() {
-  const contract = {};
-  for (const name of Object.keys(schemas).sort()) {
-    const schema = schemas[name];
-    if (NAME.test(name) && typeof schema === "object" && schema !== null && "_zod" in schema) {
-      contract[name] = z.toJSONSchema(schema, { io: ioOf(name), unrepresentable: "any" });
-    }
-  }
-  return contract;
-}
 
 /** The schema without its `null` alternative, and whether it had one. */
 function unnull(schema) {
@@ -94,9 +72,12 @@ function kindOf(schema) {
  * member of a union, or admits what the older reader's bounds refuse. An input (`input`) is
  * sent by an older command as its schema allows: it breaks when a field goes or becomes
  * required, stops taking null, changes its kind, loses a value or a member, or narrows its
- * bounds. Additions pass: the other side ignores them.
+ * bounds. Additions pass: the other side ignores them. With `both`, an answer is held the other
+ * way too, as this command reads it of a console of before: it breaks where a field is required
+ * now, one with no default, that was not there at the snapshot or not always. A union's members
+ * are matched without it: a member with a field more is still the member it was.
  */
-function breaksOf(before, after, io, path, found) {
+export function breaksOf(before, after, io, path, found, both = true) {
   const b = unnull(before);
   const a = unnull(after);
   if (io === "output" && !b.nullable && a.nullable) {
@@ -115,11 +96,11 @@ function breaksOf(before, after, io, path, found) {
   }
   switch (kind) {
     case "object":
-      compareObjects(b.schema, a.schema, io, path, found);
+      compareObjects(b.schema, a.schema, io, path, found, both);
       break;
     case "array":
       if (b.schema.items !== undefined && a.schema.items !== undefined) {
-        breaksOf(b.schema.items, a.schema.items, io, `${path}[]`, found);
+        breaksOf(b.schema.items, a.schema.items, io, `${path}[]`, found, both);
       }
       compareBounds(b.schema, a.schema, io, path, found);
       break;
@@ -134,7 +115,7 @@ function breaksOf(before, after, io, path, found) {
       }
       break;
     case "union":
-      compareMembers(b.schema.anyOf, a.schema.anyOf, io, path, found);
+      compareMembers(b.schema.anyOf, a.schema.anyOf, io, path, found, both);
       break;
     case "string":
       compareBounds(b.schema, a.schema, io, path, found);
@@ -153,11 +134,13 @@ function breaksOf(before, after, io, path, found) {
   }
 }
 
-function compareObjects(before, after, io, path, found) {
+function compareObjects(before, after, io, path, found, both) {
   const bp = before.properties ?? {};
   const ap = after.properties ?? {};
   const br = new Set(before.required ?? []);
   const ar = new Set(after.required ?? []);
+  /** A field this command refuses an answer without: required, and no default to fill it. */
+  const needed = (key) => ar.has(key) && ap[key]?.default === undefined;
   for (const key of Object.keys(bp)) {
     const at = `${path}.${key}`;
     if (!(key in ap)) {
@@ -167,22 +150,29 @@ function compareObjects(before, after, io, path, found) {
     if (io === "output" && br.has(key) && !ar.has(key)) {
       found.push(`${at}: no longer always there, which a reader of before expects`);
     }
+    if (io === "output" && both && !br.has(key) && needed(key)) {
+      found.push(`${at}: required now, which a console of before may leave out`);
+    }
     if (io === "input" && !br.has(key) && ar.has(key)) {
       found.push(`${at}: required now, which a sender of before leaves out`);
     }
-    breaksOf(bp[key], ap[key], io, at, found);
+    breaksOf(bp[key], ap[key], io, at, found, both);
   }
-  if (io === "input") {
-    for (const key of Object.keys(ap)) {
-      if (!(key in bp) && ar.has(key)) {
-        found.push(`${path}.${key}: added as required, which a sender of before leaves out`);
-      }
+  for (const key of Object.keys(ap)) {
+    if (key in bp) {
+      continue;
+    }
+    if (io === "input" && ar.has(key)) {
+      found.push(`${path}.${key}: added as required, which a sender of before leaves out`);
+    }
+    if (io === "output" && both && needed(key)) {
+      found.push(`${path}.${key}: added as required, which a console of before does not send`);
     }
   }
   const bAdditional = before.additionalProperties;
   const aAdditional = after.additionalProperties;
   if (typeof bAdditional === "object" && typeof aAdditional === "object") {
-    breaksOf(bAdditional, aAdditional, io, `${path}[*]`, found);
+    breaksOf(bAdditional, aAdditional, io, `${path}[*]`, found, both);
   }
 }
 
@@ -209,18 +199,23 @@ function compareValues(before, after, io, path, found) {
  * Members of a union, each compared as a field is: an answer may not gain a member that no
  * member of before reads, and a sender may not lose one that no member of now takes. A member
  * that only gained what the other side ignores, an object with a field more, is still the
- * member it was; one with another value, another kind or a field gone is not.
+ * member it was; one with another value, another kind or a field gone is not. Held the other
+ * way, a member of now is held to the member of before it is: a field it requires now is one
+ * this command refuses that member without, as the console of before sends it.
  */
-function compareMembers(before, after, io, path, found) {
+function compareMembers(before, after, io, path, found, both) {
   const fits = (older, newer) => {
     const broken = [];
-    breaksOf(older, newer, io, path, broken);
+    breaksOf(older, newer, io, path, broken, false);
     return broken.length === 0;
   };
   if (io === "output") {
     for (const member of after) {
-      if (!before.some((older) => fits(older, member))) {
+      const older = before.find((candidate) => fits(candidate, member));
+      if (older === undefined) {
         found.push(`${path}: a member of the union was added, which a reader of before refuses`);
+      } else if (both) {
+        breaksOf(older, member, io, path, found, both);
       }
     }
   } else {
@@ -254,45 +249,75 @@ function compareBounds(before, after, io, path, found) {
   }
 }
 
-const current = { floors, schemas: contractOf() };
-const count = Object.keys(current.schemas).length;
+/** Every REST schema of the package as JSON Schema, by name, in a stable order. */
+function contractOf(z, schemas) {
+  const contract = {};
+  for (const name of Object.keys(schemas).sort()) {
+    const schema = schemas[name];
+    if (NAME.test(name) && typeof schema === "object" && schema !== null && "_zod" in schema) {
+      contract[name] = z.toJSONSchema(schema, { io: ioOf(name), unrepresentable: "any" });
+    }
+  }
+  return contract;
+}
+
 const floorsOf = (taken) =>
   `console takes commands from ${taken.client}, command takes consoles from ${taken.console}`;
 
-if (process.argv.includes("--write")) {
-  writeFileSync(SNAPSHOT, `${JSON.stringify(current, null, 2)}\n`);
+async function main() {
+  const [{ z }, schemas, compat] = await Promise.all([
+    import(pathToFileURL(resolve(PACKAGE, "node_modules/zod/index.js")).href),
+    built("schemas.js"),
+    built("compat.js"),
+  ]);
+  /** The floors as the package holds them: the console's on the command, and the command's on the console. */
+  const floors = {
+    client: compat.CLIENT_POLICY.atLeast ?? "0.0.0",
+    console: compat.CONSOLE_AT_LEAST,
+  };
+  const current = { floors, schemas: contractOf(z, schemas) };
+  const count = Object.keys(current.schemas).length;
+
+  if (process.argv.includes("--write")) {
+    writeFileSync(SNAPSHOT, `${JSON.stringify(current, null, 2)}\n`);
+    process.stdout.write(
+      `rest contract: ${count} schemas written to ${SNAPSHOT} at the floors (${floorsOf(floors)})\n`,
+    );
+    process.exit(0);
+  }
+
+  if (!existsSync(SNAPSHOT)) {
+    process.stderr.write(`rest contract: no snapshot at ${SNAPSHOT}; take it with ${RETAKE}\n`);
+    process.exit(1);
+  }
+  const snapshot = JSON.parse(readFileSync(SNAPSHOT, "utf8"));
+  if (!same(snapshot.floors, floors)) {
+    process.stderr.write(
+      `rest contract: the floors moved (${floorsOf(snapshot.floors)} -> ${floorsOf(floors)}) in ${COMPAT}: the snapshot is of the contract at the old floors. Take it again in the same change: ${RETAKE}\n`,
+    );
+    process.exit(1);
+  }
+  const found = [];
+  for (const [name, before] of Object.entries(snapshot.schemas)) {
+    const after = current.schemas[name];
+    if (after === undefined) {
+      found.push(`${name}: removed`);
+      continue;
+    }
+    breaksOf(before, after, ioOf(name), name, found);
+  }
+  if (found.length > 0) {
+    process.stderr.write(
+      `rest contract: ${found.length} change(s) break what passes between the command and the console, and the floors did not move:\n${found.map((line) => `  - ${line}`).join("\n")}\nA release that changes what passes between them raises the floor of the side it breaks for (ADR-0038): CLIENT_POLICY.atLeast in ${COMPAT} for a change an older command cannot read or send, CONSOLE_AT_LEAST for one the command needs of the console, an answer's field that a console of before does not send among them, to the version the pending changesets make, with a changeset that begins with Breaking:; then take the snapshot again: ${RETAKE}. Or undo the change: a field an answer gains is read as optional.\n`,
+    );
+    process.exit(1);
+  }
   process.stdout.write(
-    `rest contract: ${count} schemas written to ${SNAPSHOT} at the floors (${floorsOf(floors)})\n`,
+    `rest contract: ${count} schemas, within the snapshot at the floors (${floorsOf(floors)})\n`,
   );
-  process.exit(0);
 }
 
-if (!existsSync(SNAPSHOT)) {
-  process.stderr.write(`rest contract: no snapshot at ${SNAPSHOT}; take it with ${RETAKE}\n`);
-  process.exit(1);
+// Run as the check; imported, by its test, it only lends the comparison.
+if (import.meta.main) {
+  await main();
 }
-const snapshot = JSON.parse(readFileSync(SNAPSHOT, "utf8"));
-if (!same(snapshot.floors, floors)) {
-  process.stderr.write(
-    `rest contract: the floors moved (${floorsOf(snapshot.floors)} -> ${floorsOf(floors)}) in ${COMPAT}: the snapshot is of the contract at the old floors. Take it again in the same change: ${RETAKE}\n`,
-  );
-  process.exit(1);
-}
-const found = [];
-for (const [name, before] of Object.entries(snapshot.schemas)) {
-  const after = current.schemas[name];
-  if (after === undefined) {
-    found.push(`${name}: removed`);
-    continue;
-  }
-  breaksOf(before, after, ioOf(name), name, found);
-}
-if (found.length > 0) {
-  process.stderr.write(
-    `rest contract: ${found.length} change(s) break what passes between the command and the console, and the floors did not move:\n${found.map((line) => `  - ${line}`).join("\n")}\nA release that changes what passes between them raises the floor of the side it breaks for (ADR-0038): CLIENT_POLICY.atLeast in ${COMPAT} for a change an older command cannot read or send, CONSOLE_AT_LEAST for one the command needs of the console, to the version the pending changesets make, with a changeset that begins with Breaking:; then take the snapshot again: ${RETAKE}. Or undo the change.\n`,
-  );
-  process.exit(1);
-}
-process.stdout.write(
-  `rest contract: ${count} schemas, within the snapshot at the floors (${floorsOf(floors)})\n`,
-);
