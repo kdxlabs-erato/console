@@ -3963,8 +3963,10 @@ const docs: Command = async (args, io) => {
   const search = text(values, "search");
   const session = await open(io, values);
   const project = await session.project();
+  // A folder is taken as the listing prints it, `guides/`, and as it is named, `guides`.
+  const folder = positionals[0]?.replace(/\/+$/, "");
   const found = await project.documents({
-    ...(positionals[0] === undefined ? {} : { folder: positionals[0] }),
+    ...(folder === undefined || folder === "" ? {} : { folder }),
     ...(search === undefined ? {} : { q: search }),
     ...(on(values, "archived") ? { archived: true } : {}),
   });

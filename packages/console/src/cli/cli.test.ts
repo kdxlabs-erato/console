@@ -2907,6 +2907,9 @@ describe("the console command", () => {
     expect(h.out()).toBe("guides/\n");
     expect(await runCli(["docs", "guides"], h.io)).toBe(EXIT.ok);
     expect(h.out()).toContain("guides/onboarding  Onboarding  (v1, by Claude Code for alice;");
+    // A folder as the listing prints it, with its slash, is the same folder.
+    expect(await runCli(["docs", "guides/"], h.io)).toBe(EXIT.ok);
+    expect(h.out()).toContain("guides/onboarding  Onboarding  (v1, by Claude Code for alice;");
     expect(await runCli(["docs", "--search", "welcome", "--archived"], h.io)).toBe(EXIT.ok);
     expect(await runCli(["doc", "guides/onboarding"], h.io)).toBe(EXIT.ok);
     expect(h.out()).toContain(
