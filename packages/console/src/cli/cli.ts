@@ -3312,6 +3312,17 @@ const ask: Command = async (args, io) => {
       ? `${JSON.stringify(raised, null, 2)}\n`
       : `Decision ${raised.id} raised on run ${runId}${withFiles}; the run waits for ${deciderLogins(raised)}.\ndecision id: ${raised.id}\n${formatOptions(raised)}\n`,
   );
+  // An agent account is attended by nobody, and the answer wakes it (ADR-0085): it waits at no
+  // terminal unless it asked to, and is told to go on with other work, where an attended
+  // agent is told how to keep waiting.
+  if (raised.raisedBy.kind === "agent" && text(values, "wait") === undefined) {
+    if (!session.json) {
+      io.stdout(
+        `The answer wakes you: go on with other work meanwhile, and with this run when it comes (--run ${runId}). The run stays open while the decision waits.\n`,
+      );
+    }
+    return EXIT.waiting;
+  }
   return settle(io, session, project, raised, seconds, true);
 };
 

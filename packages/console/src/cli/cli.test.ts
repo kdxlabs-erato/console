@@ -1523,6 +1523,65 @@ describe("the console command", () => {
     expect(await runCli(["report"], nothing.io)).toBe(EXIT.usage);
   });
 
+  it("does not wait at the terminal as an agent account, which the answer wakes, unless it is asked to", async () => {
+    // The decision as the console answers it to an account that raised it: raised by the account.
+    const mira = { ...PERSON, login: "acme-mira", name: "Mira", kind: "agent", handle: "mira" };
+    const raised = { ...DECISION, raisedBy: mira };
+    const { fetch, calls } = fakeConsole({
+      [OPEN_RUNS]: { body: { more: false, items: [RUN] } },
+      [`POST ${IN}/decisions`]: { status: 201, body: raised },
+      [`GET ${IN}/decisions/${DECISION.id}?wait=50`]: { body: raised },
+    });
+    const h = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["ask", "Which?", "--option", "a", "--option", "b"], h.io)).toBe(
+      EXIT.waiting,
+    );
+    // Raised, and nothing asked of the console after: nobody waits sixty seconds where nobody sits.
+    expect(calls.map((call) => call.key)).toEqual([OPEN_RUNS, `POST ${IN}/decisions`]);
+    expect(h.out()).toContain(`Decision ${DECISION.id} raised on run ${RUN.id}`);
+    expect(h.out()).toContain(`decision id: ${DECISION.id}`);
+    expect(h.out()).toContain(
+      `The answer wakes you: go on with other work meanwhile, and with this run when it comes (--run ${RUN.id}). The run stays open while the decision waits.`,
+    );
+    expect(h.out()).not.toContain("Keep waiting with");
+    expect(h.out()).not.toContain("--wait 100");
+    // With --json the decision alone, as raised.
+    const asJson = harness({ fetch, env: SIGNED_IN });
+    expect(
+      await runCli(["ask", "Which?", "--option", "a", "--option", "b", "--json"], asJson.io),
+    ).toBe(EXIT.waiting);
+    expect(JSON.parse(asJson.out()).id).toBe(DECISION.id);
+    // Asked to wait, it waits as anyone does, and says how to wait on.
+    const waited = fakeConsole({
+      [OPEN_RUNS]: { body: { more: false, items: [RUN] } },
+      [`POST ${IN}/decisions`]: { status: 201, body: raised },
+      [`GET ${IN}/decisions/${DECISION.id}?wait=50`]: [
+        { body: raised },
+        { body: { ...ANSWERED, raisedBy: mira } },
+      ],
+    });
+    const patient = harness({ fetch: waited.fetch, env: SIGNED_IN });
+    expect(
+      await runCli(
+        ["ask", "Which?", "--option", "a", "--option", "b", "--wait", "100"],
+        patient.io,
+      ),
+    ).toBe(EXIT.ok);
+    expect(patient.out()).toContain("Answered: 2) Change it, by bob");
+    expect(waited.calls.some((call) => call.key.includes("?wait="))).toBe(true);
+    // A person's agent waits as before: somebody attends it.
+    const person = fakeConsole({
+      [OPEN_RUNS]: { body: { more: false, items: [RUN] } },
+      [`POST ${IN}/decisions`]: { status: 201, body: DECISION },
+      [`GET ${IN}/decisions/${DECISION.id}?wait=50`]: [{ body: DECISION }, { body: ANSWERED }],
+    });
+    const attended = harness({ fetch: person.fetch, env: SIGNED_IN });
+    expect(await runCli(["ask", "Which?", "--option", "a", "--option", "b"], attended.io)).toBe(
+      EXIT.ok,
+    );
+    expect(person.calls.some((call) => call.key.includes("?wait="))).toBe(true);
+  });
+
   it("asks, waits for the answer, and says when the decision still waits", async () => {
     const { fetch, calls } = fakeConsole({
       [OPEN_RUNS]: { body: { more: false, items: [RUN] } },
