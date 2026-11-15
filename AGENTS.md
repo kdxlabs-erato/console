@@ -78,6 +78,8 @@ Packages compile to `dist/` and consume each other's compiled output. Going thro
 
 **Bound to a console?** Before the first step, run `console whoami`: when it names a project, or `.skillcdn-console.json` is in this checkout, work the task through that SkillCDN console (its answer says how).
 
+**The binding file is never committed.** This repository is public and `.skillcdn-console.json` names an organization's console, so `.gitignore` lists it, and whoever works here through a console runs `console use <key>` once in their own checkout.
+
 **Before you start.** Read this file and the workspace's `README.md`, its Rules first. Check [docs/roadmap.md](docs/roadmap.md) for the current milestone, [docs/architecture.md](docs/architecture.md) for the design and its open questions, and [docs/adr/](docs/adr/) before questioning a past decision. If a product decision is missing, do not guess: add it to the open questions or ask.
 
 **While working.** Stay inside the task's scope: no drive-by reformatting, renames or dependency bumps. Prefer the boring solution; add an abstraction when the second use appears, not before. Build what the roadmap's current milestone asks for, in the order it asks, so that every push leaves something that runs.

@@ -51,5 +51,8 @@ Thumbs.db
 .claude/worktrees/
 CLAUDE.local.md
 
+# The console binding `console use` writes: it names an organization's console, and this repository is public
+.skillcdn-console.json
+
 # The packs an organization mounts into the smallest install (deploy/compose.yaml): its own, never committed
 deploy/packs/
