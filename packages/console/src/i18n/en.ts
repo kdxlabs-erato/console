@@ -1080,7 +1080,7 @@ export const en = {
       title: "A desk of your own",
       line: "A place of your own to work with your agent, kept at your git account. Tell your agent, in its own chat:",
       quote: (origin: string) =>
-        `Run these, and go on as the last one says:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}\nconsole desk`,
+        `Run these: tell me the address and the code the second shows, and go on as the last one says:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}\nconsole desk`,
     },
   },
 

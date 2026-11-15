@@ -545,6 +545,22 @@ describe("the console command", () => {
     // The end of the wait is printed as every moment is: as the API gave it while no login at
     // this console has kept the workspace's time zone.
     expect(h.out()).toContain(`\nWaiting for that, until ${WHEN}.\n`);
+    // Where the machine says its own time zone, a first sign-in's wait is printed in it: the
+    // agent relays that moment to a person, who was handed a raw instant in UTC.
+    const local = harness({
+      fetch: fakeConsole({
+        "POST /api/v1/connect": { status: 201, body: CONNECTION },
+        "POST /api/v1/connect/claim": {
+          body: { status: "connected", token: TOKEN, secret: "cns_t_handed" },
+        },
+        "GET /api/v1/me": { body: ME },
+      }).fetch,
+      store: memoryStore().store,
+      hostname: "laptop",
+      timeZone: "Asia/Seoul",
+    });
+    expect(await runCli(["login", "--url", ORIGIN], local.io)).toBe(EXIT.ok);
+    expect(local.out()).toContain("\nWaiting for that, until 2026-10-09T19:00:00+09:00.\n");
     // Last, what holds where, and no next step: a folder that is no checkout of a project's
     // repository, a desk say, was bound to a project because the line said to do so next.
     expect(
@@ -2669,7 +2685,24 @@ describe("the plan on the command line", () => {
       [`GET ${IN}/tasks?q=fix+parser&limit=50&offset=0`]: {
         body: { more: false, items: [TASK] },
       },
+      [`GET ${IN}/tasks?q=docs+README+typo&limit=50&offset=0`]: {
+        body: { more: false, items: [] },
+      },
+      [`GET ${IN}/tasks?q=README&limit=50&offset=0`]: {
+        body: { more: false, items: [] },
+      },
     });
+    // A search that finds nothing says what it looked for and how: every word must be in a
+    // title, so three words found nothing where one of them would have found the task, and an
+    // agent that read "No tasks." wrote the same work a second time.
+    const missed = harness({ fetch, env: SIGNED_IN, now: () => NOON });
+    expect(await runCli(["tasks", "--search", "docs README typo"], missed.io)).toBe(EXIT.ok);
+    expect(missed.out()).toBe(
+      `No tasks: no title holds every word of "docs README typo". Fewer words find more: one word of the thing's name, in the language the board is written in.\n`,
+    );
+    const one = harness({ fetch, env: SIGNED_IN, now: () => NOON });
+    expect(await runCli(["tasks", "--search", "README"], one.io)).toBe(EXIT.ok);
+    expect(one.out()).toBe('No tasks: no title holds "README".\n');
     const overdue = harness({ fetch, env: SIGNED_IN, now: () => NOON });
     expect(await runCli(["tasks", "--mine", "--due", "overdue"], overdue.io)).toBe(EXIT.ok);
     expect(overdue.out()).toBe("#7  ready  high  Fix the parser  (owner alice; due 2026-10-01)\n");
@@ -5407,6 +5440,20 @@ describe("a person's desk on the command line (ADR-0115)", () => {
         ...NEXT(SENTENCE, " (console skills says where it is)"),
       ].join("\n"),
     );
+    // The shell asked for in a desk that is there: its member is shaping the desk already, so
+    // nothing is next. A fresh run was sent back to the repository's setup in the middle of
+    // building its page by the two lines printed again.
+    const pages = harness({
+      fetch: consoleFor(ALICE).fetch,
+      store: signedIn(),
+      machine: half.machine,
+      version: "0.5.1",
+      deskWebTemplate: async () => SHELL,
+    });
+    expect(await runCli(["desk", "desk", "--web"], pages.io)).toBe(EXIT.ok);
+    expect(pages.out()).toContain("The shell of its pages is written in /work/desk/web");
+    expect(pages.out()).not.toContain("Next, in that folder");
+    expect(pages.out()).not.toContain("Set this desk up as a repository");
   });
 
   it("writes none of a desk's own files for an agent account, whose desk is setup's, and the shell of its pages into the desk it names (ADR-0122)", async () => {

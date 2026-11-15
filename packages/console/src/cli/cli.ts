@@ -256,6 +256,8 @@ export interface CliIo {
   readonly readSecret?: ((prompt: string) => Promise<string>) | undefined;
   /** The name of the machine, for the agent to say where it runs; nothing when unknown. */
   readonly hostname?: string | undefined;
+  /** The machine's own time zone, for a moment printed before the workspace's is known. */
+  readonly timeZone?: string | undefined;
   /** A file named with `--file`, as text. */
   readonly readFile: (path: string) => Promise<string>;
   /** A file handed in, as bytes. */
@@ -1070,8 +1072,9 @@ const login: Command = async (args, io) => {
   });
   // The end of the wait is a moment as any other the command prints (ADR-0035): in the
   // workspace's time zone where a login at this console kept it, which is one zone whoever
-  // signed in; as the API gave it on a first sign-in, when none is known yet.
-  setMomentZone(credentials?.logins.find((login) => login.url === url)?.timeZone);
+  // signed in; on a first sign-in, when none is known yet, in the machine's own, since an agent
+  // relays the moment to a person; as the API gave it where the machine says none.
+  setMomentZone(credentials?.logins.find((login) => login.url === url)?.timeZone ?? io.timeZone);
   const until = moment(begun.expiresAt);
   io.stdout(
     self
@@ -1452,9 +1455,18 @@ const tasks: Command = async (args, io) => {
     ...(on(values, "archived") ? { archived: true } : {}),
     ...page,
   });
+  // A search that finds nothing says how it looked: every word must be in a title, so three
+  // words find nothing where one of them finds the task, and an agent that read "No tasks."
+  // wrote the same work a second time.
+  const none =
+    search === undefined
+      ? "No tasks."
+      : /\s/.test(search.trim())
+        ? `No tasks: no title holds every word of "${search.trim()}". Fewer words find more: one word of the thing's name, in the language the board is written in.`
+        : `No tasks: no title holds "${search.trim()}".`;
   answer(io, session, found, () =>
     found.items.length === 0
-      ? "No tasks."
+      ? none
       : found.items.map(formatTaskLine).join("\n") +
         formatMore(found.more, page.limit, page.offset),
   );
@@ -5484,7 +5496,10 @@ const desk: Command = async (args, io) => {
     ? { directory: webDir, written: shellNames, version: shell === undefined ? null : io.version }
     : null;
   // An agent account that asked for the shell is shaping its desk already: nothing is next.
-  const next: string[] = ofAgent ? [] : deskNext(web !== null, io.skillsDir);
+  // So is a person who asked for the shell in a desk that was there: the two lines printed
+  // again sent a fresh agent back to the repository's setup in the middle of building a page.
+  const shaping = ofAgent || (web !== null && written.length === 0);
+  const next: string[] = shaping ? [] : deskNext(web !== null, io.skillsDir);
   answer(io, session, { directory: dir, written, kept, web, next }, () =>
     (next.length === 0
       ? lines

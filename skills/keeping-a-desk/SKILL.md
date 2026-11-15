@@ -5,7 +5,7 @@ license: MIT
 compatibility: A shell with git and the console command (npm install -g @skillcdn/console, Node.js 24 or newer), and an agent that reads and writes files. For pages, npm; a browser the agent can drive is optional. The agent never sees a token.
 metadata:
   author: skillcdn
-  version: "1.0"
+  version: "1.1"
 skillcdn:
   translations:
     ko:
@@ -32,11 +32,11 @@ A session begun in a desk works from `AGENTS.md` and what it points to. This ski
 ## How the person is involved
 
 - **Questions:** one message, for what the request leaves open: "What do you want to keep here, and what do you want to see of it?" Of a thing to keep: what they want to find again of each one, and what becomes of one afterwards, if anything. Of a thing to see: what a glance at the page should tell them. A member who does not know yet is told the structure in three lines, and nothing is made.
-- **Checkpoints:** the plan, before a file is written: what is kept, where, with one entry as it will be written; what the page shows, from its top down; the line `AGENTS.md` gains. One short message; "OK", in their language, continues. Then the page, in front of them, before more is built on it.
+- **Checkpoints:** the plan, before a file is written: what is kept, where, with one entry as it will be written; what the page shows, from its top down; the line `AGENTS.md` gains. One short message; "OK", in their language, continues. Then the page, at its address with the server left up, for them to look at: "is this what you wanted to see?". The agent's own look does not stand in for theirs.
 - **Go-ahead:** told to go ahead alone, the plan is reported instead of approved; the checks of phase 6 are never skipped.
 - **Changes mid-run:** a shape that changes after things are kept carries them over in the same change, and its line in `AGENTS.md` is written again; a page is changed where it stands, never begun again beside.
 - **An agent account** shapes its own desk: nobody is at its terminal, so it chooses the shape from what its work makes, says it in its `AGENTS.md`, and asks its manager, as a decision, only what is the manager's to choose.
-- **Language:** what the member reads, the questions, the plan, a page's words, a title or a label in a record, is in the language `AGENTS.md` names; a key, a file's name and what an agent reads stay in English.
+- **Language:** what the member reads, the questions, the plan, a page's words, a title or a label in a record, is in the language `AGENTS.md` names, and so may be the line `AGENTS.md` gains and a folder's `README.md`; a key and a file's name stay in English.
 
 ## Requirements
 
@@ -47,7 +47,7 @@ A session begun in a desk works from `AGENTS.md` and what it points to. This ski
 
 ## Workflow
 
-Each phase ends with one line to the member; only phase 2 and the look of phase 4 stop for them.
+Each phase ends with one line to the member; only phase 2 and the member's look at the page in phase 4 stop for them.
 
 ### Phase 1: Read the desk
 
@@ -73,7 +73,7 @@ Choose the shape from what the member wants to find again, not from a form:
 Only where the member asked to see something. Paths below are under the desk's `web/`, and `<package>/` is `node_modules/@skillcdn/console/` there, whose `README.md` is [the package's](/packages/console/README.md).
 
 1. **The shell.** `console desk . --web`, run in the desk, writes `web/` where it holds nothing: one empty page of the member's own, on the version of the package the command is. `src/main.tsx` mounts `page` from `src/page.tsx` beside it; the page's key is `mine`, its address `/pages/mine`, and `/` opens on it. Then `npm install` and `npm run build`, which says nothing of its own where it went well and leaves `dist/index.html`; `README.md` says how the pages are built, served and stopped.
-2. **A page** is one entry of the `pages` handed to `createConsole` in `src/main.tsx`: a key, which is its address (`/pages/<key>`), a label, which is its tab, and a function that renders it. What the member asks to see first goes on the empty page; another page is another entry. What the function is given: `<package>/README.md`, "Pages of your own".
+2. **A page** is one entry of the `pages` handed to `createConsole` in `src/main.tsx`: a key, which is its address (`/pages/<key>`), a label, which is its tab, and a function that renders it. What the member asks to see first goes on the empty page; another page is another entry. What the function is given: `<package>/README.md`, "Pages of your own"; what the readers of a collection answer and what the small parts take: the same file, "A desk's pages". Those two sections are read before the page is written, and the package's types are not dug through.
 3. **What a page reads.** The desk's own files, with `fetch` at `/records/<path>`, each read when it is asked for; and the board, as the member, through the client the page is given. Nothing of another origin, and no token. `console serve dist --records ../records` serves both: JSON, pictures, video, sound and PDF are shown in place, anything else is a download ([records.md](/docs/specs/records.md#serving)).
 4. **What a page is built from:** the console's parts, each named with the component that renders it in `<package>/src/styles/README.md`, "The catalogue" ([in the repository](/packages/console/src/styles/README.md)). A page places parts and writes no colour, border or type of its own, so that it looks as the console does. For figures there are the charts, each exported from `@skillcdn/console`, with their props in `<package>/README.md`, "Charts":
    - `Stat`, and `Stats` for a row of them: a figure with its label and, where given, its change and a sparkline.
@@ -94,7 +94,7 @@ Only where the member asked to see something. Paths below are under the desk's `
    - `DeskFiguresView`: what was done by week and how the runs ended, by project and by category.
    - `DeskArchive`: the closed tasks and the ended runs, found by words.
    - `readDeskRecords`: reads the collections for a page of one's own, every file bounded and parsed.
-6. **Build, serve, look.** `npm run build`, which went well where it ended in 0 and `dist/index.html` is there, not by what it printed; then `npm run serve` and `http://127.0.0.1:11197/`: the page shows what is kept, and `/api/v1/me` there names the member. The server is the agent's own to stop once it has looked, by ending the process it started, unless the member wants it left up: say which was done, and how it is started again.
+6. **Build, serve, show.** `npm run build`, which went well where it ended in 0 and `dist/index.html` is there, not by what it printed; then `npm run serve` and `http://127.0.0.1:11197/`: the page answers, and `/api/v1/me` there names the member. The page is checked with what the desk keeps, an empty state where it keeps nothing yet: no sample is made to fill it. Then the member is given the address, with the server left up, and asked whether it is what they wanted to see; the run stops there for them. The server is the agent's own to stop, by ending the process it started, once they have looked or said to: say that it was stopped, and how the pages are started again.
 
 Where a page shows what someone else wrote, the hard rules of [building-a-console](/skills/building-a-console/SKILL.md) hold for it.
 

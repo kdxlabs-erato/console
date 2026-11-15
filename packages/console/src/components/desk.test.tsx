@@ -426,7 +426,7 @@ describe("a desk of one's own, on the Agents page", () => {
     // The block is a sentence for the agent over three commands, in their order: the command's
     // install, the connection to this console, and the desk. The command says what is next.
     expect(quoteOf(html)?.split("\n")).toEqual([
-      "Run these, and go on as the last one says:",
+      "Run these: tell me the address and the code the second shows, and go on as the last one says:",
       ...COMMANDS,
     ]);
     // The pages come when they are asked for, and the command's own last lines say the rest:
@@ -452,7 +452,7 @@ describe("a desk of one's own, on the Agents page", () => {
       "<p>내 깃 계정에 두는, 에이전트와 일하는 나만의 공간입니다. 에이전트의 대화창에서 이렇게 말하세요:</p>",
     );
     expect(quoteOf(html)?.split("\n")).toEqual([
-      "이 명령들을 실행하고, 마지막 명령이 말하는 대로 이어서 해 줘:",
+      "이 명령들을 실행해 줘. 두 번째가 보여 주는 주소와 코드를 내게 알려 주고, 마지막 명령이 말하는 대로 이어서 해 줘:",
       ...COMMANDS,
     ]);
     expect(html.match(/<p>/g)).toHaveLength(1);

@@ -48,6 +48,7 @@ process.exitCode = await runCli(process.argv.slice(2), {
   readStdin,
   readSecret,
   hostname: hostname(),
+  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   readFile: readFileAt,
   readBytes: readBytesAt,
   writeBytes: writeBytesAt,

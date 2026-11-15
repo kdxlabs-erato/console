@@ -1001,7 +1001,7 @@ export const ko: Messages = {
       title: "내 데스크",
       line: "내 깃 계정에 두는, 에이전트와 일하는 나만의 공간입니다. 에이전트의 대화창에서 이렇게 말하세요:",
       quote: (origin) =>
-        `이 명령들을 실행하고, 마지막 명령이 말하는 대로 이어서 해 줘:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}\nconsole desk`,
+        `이 명령들을 실행해 줘. 두 번째가 보여 주는 주소와 코드를 내게 알려 주고, 마지막 명령이 말하는 대로 이어서 해 줘:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}\nconsole desk`,
     },
   },
 

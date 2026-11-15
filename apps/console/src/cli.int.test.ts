@@ -591,7 +591,7 @@ describe("the command line", () => {
     expect(closed.code).toBe(EXIT.usage);
     expect(closed.err).toContain("A task written as done is not taken");
     expect((await console_(["tasks", "--search", "Never written", "--state", "done"])).out).toBe(
-      "No tasks.\n",
+      `No tasks: no title holds every word of "Never written". Fewer words find more: one word of the thing's name, in the language the board is written in.\n`,
     );
   });
 
