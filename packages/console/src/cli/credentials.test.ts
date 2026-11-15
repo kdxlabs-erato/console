@@ -88,26 +88,29 @@ describe("the credentials the command keeps", () => {
   });
 
   it("keep a login per console and account, the first as the default, and let one go", () => {
-    const first = withLogin({ default: undefined, logins: [] }, login(A, "alice", "cns_t_a"));
+    const first = withLogin({ default: undefined, logins: [] }, login(A, "alice", "cns_t_a"), 0);
     expect(first).toEqual({ default: A, logins: [login(A, "alice", "cns_t_a")] });
-    const second = withLogin(first, login(B, "alice", "cns_t_b"));
+    const second = withLogin(first, login(B, "alice", "cns_t_b"), 0);
     expect(second.default).toBe(A);
     expect(second.logins).toHaveLength(2);
-    const asDefault = withLogin(second, login(B, "bob", "cns_t_bob"), { default: true });
+    const asDefault = withLogin(second, login(B, "bob", "cns_t_bob"), 0, { default: true });
     expect(asDefault.default).toBe(B);
     // The same console and account again: the token replaced, nothing added.
-    const again = withLogin(asDefault, login(A, "alice", "cns_t_a2"));
+    const again = withLogin(asDefault, login(A, "alice", "cns_t_a2"), 0);
     expect(again.logins.filter((entry) => entry.url === A)).toEqual([
       login(A, "alice", "cns_t_a2"),
     ]);
     expect(again.logins).toHaveLength(3);
     // Letting go: one account at a console, or every account there; the default moves when it must.
-    expect(withoutLogin(again, B, "bob").logins.map((entry) => entry.token)).toEqual([
+    expect(withoutLogin(again, B, 0, "bob").logins.map((entry) => entry.token)).toEqual([
       "cns_t_b",
       "cns_t_a2",
     ]);
-    expect(withoutLogin(again, B).default).toBe(A);
-    expect(withoutLogin(withoutLogin(again, B), A)).toEqual({ default: undefined, logins: [] });
+    expect(withoutLogin(again, B, 0).default).toBe(A);
+    expect(withoutLogin(withoutLogin(again, B, 0), A, 0)).toEqual({
+      default: undefined,
+      logins: [],
+    });
   });
 
   it("resolve the console first and the token for it alone, in the order the flag, the environment, the directory, the default", () => {
@@ -222,9 +225,24 @@ describe("the credentials the command keeps", () => {
       "AAAA-AAAA",
     ]);
     expect(withoutPending(two, "https://c.test", after).pending).toBeUndefined();
-    // A login kept or let go leaves the connections that wait as they are.
-    expect(withLogin(two, login(A, "carol", "cns_t_c")).pending).toEqual(two.pending);
-    expect(withoutLogin(two, A).pending).toEqual(two.pending);
+    // A login kept or let go leaves the connections that wait as they are while their codes
+    // last, and carries none whose code ran out: nothing is kept anew with a secret past its end.
+    expect(withLogin(two, login(A, "carol", "cns_t_c"), before).pending).toEqual(two.pending);
+    expect(withoutLogin(two, A, before).pending).toEqual(two.pending);
+    const mixed = withPending(
+      two,
+      waits("https://c.test", "DDDD-DDDD", "2026-10-09T11:00:00.000Z"),
+      before,
+    );
+    expect(mixed.pending).toHaveLength(3);
+    expect(
+      withLogin(mixed, login(A, "carol", "cns_t_c"), after).pending?.map((waiting) => waiting.code),
+    ).toEqual(["DDDD-DDDD"]);
+    expect(withoutLogin(mixed, A, after).pending?.map((waiting) => waiting.code)).toEqual([
+      "DDDD-DDDD",
+    ]);
+    expect(withLogin(two, login(A, "carol", "cns_t_c"), after)).not.toHaveProperty("pending");
+    expect(withoutLogin(two, A, after)).not.toHaveProperty("pending");
     expect(keepsNothing({ default: undefined, logins: [] })).toBe(true);
     expect(keepsNothing({ default: undefined, logins: [], pending: [] })).toBe(true);
     expect(keepsNothing({ default: undefined, logins: [], pending: [waits(A, "AAAA-AAAA")] })).toBe(

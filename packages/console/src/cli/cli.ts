@@ -1078,6 +1078,7 @@ async function keep(
       ...(self ? { self: true } : {}),
       timeZone: me.workspace.timeZone ?? undefined,
     },
+    io.now(),
     { default: asDefault },
   );
   // A login kept at a console ends the connection that waited there (ADR-0129): its secret
@@ -1331,8 +1332,19 @@ const logout: Command = async (args, io) => {
   const chosen = account === undefined ? at : at.filter((login) => login.account === account);
   const [login] = chosen;
   if (login === undefined) {
+    const whom = account === undefined ? "" : ` as ${account}`;
+    // Nobody to sign out there; a connection that waits for a person at that console is
+    // forgotten all the same (ADR-0129): signing out of a console leaves no secret of it here.
+    if (pendingAt(credentials, url) !== undefined) {
+      await io.store.save(withoutPending(credentials, url, io.now()));
+      io.stdout(
+        `Nobody is signed in here at ${url}${whom}; the connection that waited for a person there is forgotten.\n`,
+      );
+      envNote();
+      return EXIT.ok;
+    }
     throw failed(
-      `Nobody is signed in here at ${url}${account === undefined ? "" : ` as ${account}`}: nothing to forget. console logins lists the consoles signed in.`,
+      `Nobody is signed in here at ${url}${whom}: nothing to forget. console logins lists the consoles signed in.`,
     );
   }
   if (chosen.length > 1) {
@@ -1359,7 +1371,11 @@ const logout: Command = async (args, io) => {
   }
   // A connection that waited at this console goes with its login (ADR-0129), as does any
   // whose code ran out: signing out leaves no secret of the console here.
-  const next = withoutPending(withoutLogin(credentials, url, login.account), url, io.now());
+  const next = withoutPending(
+    withoutLogin(credentials, url, io.now(), login.account),
+    url,
+    io.now(),
+  );
   if (keepsNothing(next)) {
     await io.store.clear();
   } else {
@@ -1462,8 +1478,9 @@ async function rememberZone(io: CliIo, session: Session, zone: string | undefine
   if (kept === undefined || kept.timeZone === zone) {
     return;
   }
+  // Kept anew, and so without a connection whose code ran out (ADR-0129).
   await io.store.save(
-    fitting(withLogin(session.credentials, { ...kept, timeZone: zone }), session.url),
+    fitting(withLogin(session.credentials, { ...kept, timeZone: zone }, io.now()), session.url),
   );
 }
 

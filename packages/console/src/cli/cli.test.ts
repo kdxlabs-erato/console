@@ -908,6 +908,57 @@ describe("the console command", () => {
       expect(byHand.kept()?.pending).toBeUndefined();
     });
 
+    it("logout forgets the connection that waits at a console nobody is signed in to, and what is kept anew carries none whose code ran out", async () => {
+      const OTHER = "https://other.test";
+      const there = { ...PENDING, url: OTHER, page: `${OTHER}/connect/ABCD-EFGH` };
+      const { fetch, calls } = fakeConsole({
+        "GET /api/v1/me": {
+          body: { ...ME, workspace: { ...ME.workspace, timeZone: "Asia/Seoul" } },
+        },
+      });
+      const time = clock();
+      // Signed in at one console, with a connection that waits at another: signing out of the
+      // other leaves no secret of it here, though nobody is signed in there.
+      const memory = memoryStore({ ...one(ORIGIN, "cns_t_secret"), pending: [there] });
+      const h = harness({ fetch, store: memory.store, ...time });
+      expect(await runCli(["logout", "--url", OTHER], h.io)).toBe(EXIT.ok);
+      expect(h.out()).toBe(
+        "Nobody is signed in here at https://other.test; the connection that waited for a person there is forgotten.\n",
+      );
+      expect(memory.kept()).toEqual(one(ORIGIN, "cns_t_secret"));
+      // Nothing was asked of either console: no token was given up.
+      expect(calls).toHaveLength(0);
+      // With nothing waiting there, it is the refusal it was, and nothing is written.
+      const again = harness({ fetch, store: memory.store, ...time });
+      expect(await runCli(["logout", "--url", OTHER], again.io)).toBe(EXIT.failed);
+      expect(again.err()).toContain(
+        "Nobody is signed in here at https://other.test: nothing to forget.",
+      );
+      expect(memory.kept()).toEqual(one(ORIGIN, "cns_t_secret"));
+      // The same where an account is named that is not signed in there.
+      const named = memoryStore({
+        ...one(OTHER, "cns_t_other", "alice"),
+        pending: [there],
+      });
+      const n = harness({ fetch, store: named.store, ...time });
+      expect(await runCli(["logout", "--url", OTHER, "--account", "bob"], n.io)).toBe(EXIT.ok);
+      expect(n.out()).toBe(
+        "Nobody is signed in here at https://other.test as bob; the connection that waited for a person there is forgotten.\n",
+      );
+      expect(named.kept()).toEqual(one(OTHER, "cns_t_other", "alice"));
+
+      // Whatever the command keeps anew carries none whose code ran out: whoami keeps the
+      // workspace's time zone on its login, and a secret past its code's end goes with that.
+      const stale = memoryStore({
+        ...one(ORIGIN, "cns_t_secret"),
+        pending: [{ ...there, expiresAt: "2026-10-09T09:00:00.000Z" }, PENDING],
+      });
+      const w = harness({ fetch, store: stale.store, ...time });
+      expect(await runCli(["whoami"], w.io)).toBe(EXIT.ok);
+      expect(stale.kept()?.logins[0]?.timeZone).toBe("Asia/Seoul");
+      expect(stale.kept()?.pending).toEqual([PENDING]);
+    });
+
     it("keeps nothing a console answered that the credentials file would not read back, and says so", async () => {
       // What anything at the address may answer to nobody, and the file's own shape refuses:
       // kept, it would have every later command stop on a file it cannot read, at every console.

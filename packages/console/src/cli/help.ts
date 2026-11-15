@@ -149,7 +149,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     usage: "logout [--url <origin>] [--account <login>]",
     synopsis: "Gives this agent's token up at one console and forgets it here.",
     about:
-      "Signs this agent out of one console: gives the token up there, so that it is good for nothing from now on, and forgets it here. Which console: --url, else the one this directory is bound to, else the default, else the one console signed in to; --account says which account where the console has several. A console out of reach leaves the token to the Agents page. A connection that waited for a person's approval at that console is forgotten with it.",
+      "Signs this agent out of one console: gives the token up there, so that it is good for nothing from now on, and forgets it here. Which console: --url, else the one this directory is bound to, else the default, else the one console signed in to; --account says which account where the console has several. A console out of reach leaves the token to the Agents page. A connection that waited for a person's approval at that console is forgotten with it, and where nobody is signed in there it is forgotten all the same.",
   },
   whoami: {
     usage: "whoami",

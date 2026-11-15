@@ -243,11 +243,13 @@ export function consolesOf(credentials: Credentials): readonly string[] {
 
 /**
  * With a login kept: in place of the one at the same console for the same account, else added.
- * The first login kept is the default console, and one kept as the default is.
+ * The first login kept is the default console, and one kept as the default is. The connections
+ * that wait are carried while their codes last at `now`.
  */
 export function withLogin(
   credentials: Credentials,
   login: Login,
+  now: number,
   options: { readonly default?: boolean | undefined } = {},
 ): Credentials {
   const rest = credentials.logins.filter(
@@ -257,15 +259,23 @@ export function withLogin(
   return {
     default: options.default === true ? login.url : (credentials.default ?? first),
     logins: [...rest, login],
-    ...carried(credentials.pending),
+    ...carried(credentials.pending, now),
   };
 }
 
-/** The connections that wait, as a field of what is kept: left out when none does. */
-function carried(pending: readonly PendingConnection[] | undefined): {
+/**
+ * The connections that wait, as a field of what is kept anew: those whose codes still last, so
+ * that a secret rests here no longer than its code once anything is kept again (ADR-0129), and
+ * the field left out when none does.
+ */
+function carried(
+  pending: readonly PendingConnection[] | undefined,
+  now: number,
+): {
   readonly pending?: readonly PendingConnection[];
 } {
-  return pending === undefined || pending.length === 0 ? {} : { pending };
+  const lasting = (pending ?? []).filter((waiting) => lasts(waiting, now));
+  return lasting.length === 0 ? {} : { pending: lasting };
 }
 
 /** Whether a connection's code still lasts at a moment; one whose end does not read as a moment does not. */
@@ -304,10 +314,8 @@ export function withPending(
 
 /** Without the connection that waits at a console, and without any whose code ran out. */
 export function withoutPending(credentials: Credentials, url: string, now: number): Credentials {
-  const rest = (credentials.pending ?? []).filter(
-    (waiting) => waiting.url !== url && lasts(waiting, now),
-  );
-  return { default: credentials.default, logins: credentials.logins, ...carried(rest) };
+  const rest = (credentials.pending ?? []).filter((waiting) => waiting.url !== url);
+  return { default: credentials.default, logins: credentials.logins, ...carried(rest, now) };
 }
 
 /** Whether nothing is kept: no login, and no connection that waits. */
@@ -317,9 +325,15 @@ export function keepsNothing(credentials: Credentials): boolean {
 
 /**
  * Without the login at a console, for one account or for every account there. The default
- * stays while a login at it remains; else it moves to the one console left, or to none.
+ * stays while a login at it remains; else it moves to the one console left, or to none. The
+ * connections that wait are carried while their codes last at `now`.
  */
-export function withoutLogin(credentials: Credentials, url: string, account?: string): Credentials {
+export function withoutLogin(
+  credentials: Credentials,
+  url: string,
+  now: number,
+  account?: string,
+): Credentials {
   const logins = credentials.logins.filter(
     (kept) => !(kept.url === url && (account === undefined || kept.account === account)),
   );
@@ -332,7 +346,7 @@ export function withoutLogin(credentials: Credentials, url: string, account?: st
         ? credentials.default
         : fallback,
     logins,
-    ...carried(credentials.pending),
+    ...carried(credentials.pending, now),
   };
 }
 
