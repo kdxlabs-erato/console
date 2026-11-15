@@ -191,8 +191,8 @@ importers:
         specifier: ^3.0.3
         version: 3.0.3
       '@skillcdn/cli':
-        specifier: ^0.5.1
-        version: 0.5.1
+        specifier: ^0.5.2
+        version: 0.5.2
       node:
         specifier: runtime:^24.11.0
         version: runtime:24.22.3
@@ -209,23 +209,23 @@ importers:
         specifier: ^2.1.6
         version: 2.1.6(hono@4.13.17)
       '@skillcdn/brand':
-        specifier: ^0.5.1
-        version: 0.5.1
+        specifier: ^0.5.2
+        version: 0.5.2
       '@skillcdn/client':
-        specifier: ^0.5.1
-        version: 0.5.1
+        specifier: ^0.5.2
+        version: 0.5.2
       '@skillcdn/console':
         specifier: workspace:*
         version: link:../../packages/console
       '@skillcdn/core':
-        specifier: ^0.5.1
-        version: 0.5.1
+        specifier: ^0.5.2
+        version: 0.5.2
       '@skillcdn/indexer':
-        specifier: ^0.5.1
-        version: 0.5.1
+        specifier: ^0.5.2
+        version: 0.5.2
       '@skillcdn/reader':
-        specifier: ^0.5.1
-        version: 0.5.1
+        specifier: ^0.5.2
+        version: 0.5.2
       drizzle-orm:
         specifier: ^0.45.4
         version: 0.45.4(@types/pg@8.23.1)(pg@8.23.1)
@@ -309,8 +309,8 @@ importers:
   packages/console:
     dependencies:
       '@skillcdn/core':
-        specifier: ^0.5.1
-        version: 0.5.1
+        specifier: ^0.5.2
+        version: 0.5.2
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.3.0)(react@19.3.1)
@@ -1091,36 +1091,36 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
-  '@skillcdn/brand@0.5.1':
-    resolution: {integrity: sha512-oU6gSU0H5wzWMz3A+RPSeIxXQHC2b1VxX7R91h0KcYDB9ziA45Gz+KZUSZb2Q4RKqI8n0MdievkO5K6EJC10Kw==}
+  '@skillcdn/brand@0.5.2':
+    resolution: {integrity: sha512-8fZSOX+9sMRMCYFG4XL+vi/7EIvx+zqJR+qBd5K1ZB6DvJCNN80EEcbSI9E66cTgLHL7A0AWDH89/BQWErKcpA==}
 
-  '@skillcdn/cli@0.5.1':
-    resolution: {integrity: sha512-6TnUZcNJryFz6vJPSvVTs1o+o3Ixq89Oa94UwaYXkr5uj3fVgSS64SglslIzbWkyqxJFycsY6v6I9Y2X8/kDHA==}
+  '@skillcdn/cli@0.5.2':
+    resolution: {integrity: sha512-+YEdtse1LrC+ir0foc2/qjiMMcqrL7zKcttASRSury6AmmPmfm1ORkN52ZJ02diVmXeYC3JvCfjDJmtNyC9kfg==}
     engines: {node: '>=24'}
     hasBin: true
 
-  '@skillcdn/client@0.5.1':
-    resolution: {integrity: sha512-FBYdDxWX22mY8wtcAaM8wUj75HA7pHRke5/108JamRiga14azu2wzDgfNtTJemVJaoSckNhGO/2jEwKzXWf4fw==}
+  '@skillcdn/client@0.5.2':
+    resolution: {integrity: sha512-ImhLVjMfAn2cBKV2j25XlZMJUR5GHbOB4k4LXZpO22DD4PrbDbAWIRPmfIGGtAh/Lg0p8ZvysvltVmHhbhSqig==}
     engines: {node: '>=24'}
 
-  '@skillcdn/core@0.5.1':
-    resolution: {integrity: sha512-C00FK5cmmSWej1BVuZnm7BjArBUK57Z31iz2r51Yn9CYeOumdyuwy3T752kjPu3cJaIO4prxUcl4C4YeTVGPbQ==}
+  '@skillcdn/core@0.5.2':
+    resolution: {integrity: sha512-qk6h6P+OgbOZVhUwcSSJn3JU6D4vhFluJRGpgu1+K0CsEbAXGt4iqOPxdeWba2MsmSg88NZXS4yTaa+VMlioyg==}
     engines: {node: '>=24'}
 
-  '@skillcdn/indexer@0.5.1':
-    resolution: {integrity: sha512-quuZXOeCQ1pbrmJM2ea/5XrtpDOQo+prp5WmEJoW/vWVjwJvqxFOZIl9qnzrTwMBDQ1mKnHmWVGi/JaQbK6GjA==}
+  '@skillcdn/indexer@0.5.2':
+    resolution: {integrity: sha512-vwvV3H9ZMjQ10GO9yLiG0jOzKoujc2Rqe7vlwRxmcLEt3S1tIexsjHspfCWpmXcenSPnWkpF+lq6VIkGek8LXg==}
     engines: {node: '>=24'}
 
-  '@skillcdn/inference@0.5.1':
-    resolution: {integrity: sha512-62SQ9BlbTvWbV46Z+VavV4Jwykhj9uGmDLLF32r2WOIQoaB6vCHu1LS+rREwnBC9+upowlyqi21u1USm/OJrqA==}
+  '@skillcdn/inference@0.5.2':
+    resolution: {integrity: sha512-LJgwL50zk7Q+DTLW/I9UfzDeasL9zDXrc1IUvPqmZue23pOffZCNx8zwZeLDJFMOYxka+JcQKSfAkm6WheBWuQ==}
     engines: {node: '>=24'}
 
-  '@skillcdn/reader@0.5.1':
-    resolution: {integrity: sha512-tg9PZWphpkPabobHGD9X5FASvpV7/53ZanAWU8y4OXxDTrKLRHfrCl1wMqFOYj/bI+WBAfggBltgPmZDOgBXiQ==}
+  '@skillcdn/reader@0.5.2':
+    resolution: {integrity: sha512-gID5UbYJ0CfZf8eqTV/tNoFkdg2l8w1UAGIdi1837MkmQaFkhEJOmGDoLiefDDQ3TIBvO8wrej/O/eWIkiiZ+A==}
     engines: {node: '>=24'}
 
-  '@skillcdn/serve@0.5.1':
-    resolution: {integrity: sha512-NMptfvynLXc7V29abrP5v9lfEgfVTMF28d35U+oUtrvUrspXNUKQK1mgCelAmDcNiKnFb/+iXY2e9R6gRI8JGQ==}
+  '@skillcdn/serve@0.5.2':
+    resolution: {integrity: sha512-CCHjaHr+P4WmuepgCXZykkc+Z2Cy3cn5aa53GtdDtWGRb5g2L0+KcIGYDZ+C27wMowvTfQOvKzoan0daviaFBw==}
     engines: {node: '>=24'}
 
   '@turbo/darwin-64@2.11.10':
@@ -2840,45 +2840,45 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@skillcdn/brand@0.5.1': {}
+  '@skillcdn/brand@0.5.2': {}
 
-  '@skillcdn/cli@0.5.1':
+  '@skillcdn/cli@0.5.2':
     dependencies:
-      '@skillcdn/client': 0.5.1
-      '@skillcdn/core': 0.5.1
-      '@skillcdn/indexer': 0.5.1
-      '@skillcdn/inference': 0.5.1
-      '@skillcdn/reader': 0.5.1
-      '@skillcdn/serve': 0.5.1
+      '@skillcdn/client': 0.5.2
+      '@skillcdn/core': 0.5.2
+      '@skillcdn/indexer': 0.5.2
+      '@skillcdn/inference': 0.5.2
+      '@skillcdn/reader': 0.5.2
+      '@skillcdn/serve': 0.5.2
 
-  '@skillcdn/client@0.5.1':
+  '@skillcdn/client@0.5.2':
     dependencies:
-      '@skillcdn/core': 0.5.1
+      '@skillcdn/core': 0.5.2
 
-  '@skillcdn/core@0.5.1':
+  '@skillcdn/core@0.5.2':
     dependencies:
       yaml: 2.9.1
       zod: 4.6.7
 
-  '@skillcdn/indexer@0.5.1':
+  '@skillcdn/indexer@0.5.2':
     dependencies:
-      '@skillcdn/core': 0.5.1
+      '@skillcdn/core': 0.5.2
 
-  '@skillcdn/inference@0.5.1':
+  '@skillcdn/inference@0.5.2':
     dependencies:
-      '@skillcdn/core': 0.5.1
+      '@skillcdn/core': 0.5.2
       zod: 4.6.7
 
-  '@skillcdn/reader@0.5.1':
+  '@skillcdn/reader@0.5.2':
     dependencies:
-      '@skillcdn/core': 0.5.1
+      '@skillcdn/core': 0.5.2
 
-  '@skillcdn/serve@0.5.1':
+  '@skillcdn/serve@0.5.2':
     dependencies:
       '@hono/node-server': 2.1.6(hono@4.13.17)
       '@modelcontextprotocol/server': 2.4.0
-      '@skillcdn/core': 0.5.1
-      '@skillcdn/reader': 0.5.1
+      '@skillcdn/core': 0.5.2
+      '@skillcdn/reader': 0.5.2
       hono: 4.13.17
       zod: 4.6.7
 
