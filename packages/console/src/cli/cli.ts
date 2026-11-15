@@ -935,6 +935,8 @@ async function settle(
   decision: RestDecision,
   seconds: number,
   shown = false,
+  /** What is said where the decision still waits, in place of how an attended agent waits on. */
+  waiting?: string,
 ): Promise<number> {
   const outcome =
     decision.answer === null && seconds > 0
@@ -945,7 +947,9 @@ async function settle(
       io.stdout(`${JSON.stringify(outcome, null, 2)}\n`);
     }
   } else {
-    io.stdout(`${outcome.answer === null ? stillWaiting(outcome.id) : formatAnswer(outcome)}\n`);
+    io.stdout(
+      `${outcome.answer === null ? (waiting ?? stillWaiting(outcome.id)) : formatAnswer(outcome)}\n`,
+    );
   }
   return outcome.answer === null ? EXIT.waiting : EXIT.ok;
 }
@@ -3346,16 +3350,19 @@ const ask: Command = async (args, io) => {
   );
   // An agent account is attended by nobody, and the answer wakes it (ADR-0085): it waits at no
   // terminal unless it asked to, and is told to go on with other work, where an attended
-  // agent is told how to keep waiting.
-  if (raised.raisedBy.kind === "agent" && text(values, "wait") === undefined) {
+  // agent is told how to keep waiting. A wait it asked for that runs out ends in the same
+  // words: waiting on is not what it is told to do then either.
+  const wakes =
+    raised.raisedBy.kind === "agent"
+      ? `The answer wakes you: go on with other work meanwhile, and with this run when it comes (--run ${runId}). The run stays open while the decision waits.`
+      : undefined;
+  if (wakes !== undefined && text(values, "wait") === undefined) {
     if (!session.json) {
-      io.stdout(
-        `The answer wakes you: go on with other work meanwhile, and with this run when it comes (--run ${runId}). The run stays open while the decision waits.\n`,
-      );
+      io.stdout(`${wakes}\n`);
     }
     return EXIT.waiting;
   }
-  return settle(io, session, project, raised, seconds, true);
+  return settle(io, session, project, raised, seconds, true, wakes);
 };
 
 /**

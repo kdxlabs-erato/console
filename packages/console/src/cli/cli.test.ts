@@ -1625,6 +1625,59 @@ describe("the console command", () => {
     expect(person.calls.some((call) => call.key.includes("?wait="))).toBe(true);
   });
 
+  it("says the account's words, not an attended agent's, when an agent account's wait runs out", async () => {
+    const mira = { ...PERSON, login: "acme-mira", name: "Mira", kind: "agent", handle: "mira" };
+    const raised = { ...DECISION, raisedBy: mira };
+    const table = {
+      [OPEN_RUNS]: { body: { more: false, items: [RUN] } },
+      [`POST ${IN}/decisions`]: { status: 201, body: raised },
+      // However many seconds of the wait are left when the console is asked, it has no answer.
+      ...Object.fromEntries(
+        [1, 2, 3, 4, 5].map((seconds) => [
+          `GET ${IN}/decisions/${DECISION.id}?wait=${seconds}`,
+          { body: raised },
+        ]),
+      ),
+    };
+    const words = `The answer wakes you: go on with other work meanwhile, and with this run when it comes (--run ${RUN.id}). The run stays open while the decision waits.`;
+    // A wait of five seconds, on a clock that passes them: the console is asked once and has no answer.
+    let clock = 0;
+    const waited = fakeConsole(table);
+    const h = harness({
+      fetch: waited.fetch,
+      env: SIGNED_IN,
+      now: () => {
+        clock += 1000;
+        return clock;
+      },
+    });
+    expect(
+      await runCli(["ask", "Which?", "--option", "a", "--option", "b", "--wait", "5"], h.io),
+    ).toBe(EXIT.waiting);
+    expect(waited.calls.some((call) => call.key.includes("?wait="))).toBe(true);
+    expect(h.out()).toContain(words);
+    expect(h.out()).not.toContain("Keep waiting with");
+    expect(h.out()).not.toContain("--wait 100");
+    // Asked not to wait at all, it says the same.
+    const none = harness({ fetch: fakeConsole(table).fetch, env: SIGNED_IN });
+    expect(
+      await runCli(["ask", "Which?", "--option", "a", "--option", "b", "--wait", "0"], none.io),
+    ).toBe(EXIT.waiting);
+    expect(none.out()).toContain(words);
+    expect(none.out()).not.toContain("Keep waiting with");
+    // A person's agent whose wait runs out is told how to wait on, as before.
+    const person = harness({
+      fetch: fakeConsole({ ...table, [`POST ${IN}/decisions`]: { status: 201, body: DECISION } })
+        .fetch,
+      env: SIGNED_IN,
+    });
+    expect(
+      await runCli(["ask", "Which?", "--option", "a", "--option", "b", "--wait", "0"], person.io),
+    ).toBe(EXIT.waiting);
+    expect(person.out()).toContain(`console decision ${DECISION.id} --wait 100`);
+    expect(person.out()).not.toContain("The answer wakes you");
+  });
+
   it("asks, waits for the answer, and says when the decision still waits", async () => {
     const { fetch, calls } = fakeConsole({
       [OPEN_RUNS]: { body: { more: false, items: [RUN] } },
