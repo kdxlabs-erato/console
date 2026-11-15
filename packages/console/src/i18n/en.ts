@@ -949,6 +949,63 @@ export const en = {
     inProject: (project: string) => `in ${project}`,
   },
 
+  /** A desk's dashboard (ADR-0116): a person's own work in a console of their own. */
+  desk: {
+    tab: "Desk",
+    title: "My desk",
+    lead: "Your own work across your projects, read from the console as you look.",
+    loading: "Loading your desk",
+    couldNotLoad: "Your desk could not be read from the console.",
+    /** Where a person may see more projects than a visit reads. */
+    projectsRead: (read: number, of: number) =>
+      `Read from ${read} of your ${of} projects, by name.`,
+    views: {
+      aria: "Views of the desk",
+      now: "Now",
+      figures: "Figures",
+      archive: "Archive",
+    },
+    now: {
+      empty: {
+        title: "Nothing stands open",
+        body: "A task you work on, a decision that waits for your answer and a run of yours that is open show up here.",
+      },
+      decisions: "Decisions waiting for you",
+      runs: "Open runs",
+      noRuns: "No run of yours is open.",
+    },
+    figures: {
+      weeks: "Done by week",
+      runs: "How runs ended",
+      byProject: "By project",
+      byCategory: "By category",
+      noCategory: "No category",
+      none: "Nothing in these weeks.",
+      done: (count: number) => `${count} done`,
+      runsCount: (count: number) => (count === 1 ? "1 run" : `${count} runs`),
+      partial: (tasks: number, runs: number) =>
+        `Counted from the latest ${tasks} tasks and ${runs} runs of each project.`,
+    },
+    archive: {
+      search: "Find in the archive",
+      placeholder: "Words of a title, or a number",
+      find: "Find",
+      tasks: "Tasks",
+      runs: "Runs",
+      putAway: "Put away",
+      nothing:
+        "Nothing is closed yet: a task you worked on that is done, dropped or put away, and a run of yours that ended, show up here.",
+      nothingFound: "Nothing found by these words.",
+      older: "Read older ones",
+    },
+    /** On the Agents page: a desk of a person's own, and the command that makes one. */
+    command: {
+      title: "A desk of your own",
+      gives:
+        "Makes a folder named after you where your agent starts: its instructions, a place for your projects, and with --web a dashboard of your own work. It says what to tell your agent next.",
+    },
+  },
+
   categories: {
     title: "Categories",
     list: "Categories",

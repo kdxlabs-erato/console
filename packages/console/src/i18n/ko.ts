@@ -878,6 +878,58 @@ export const ko: Messages = {
     inProject: (project) => `${project}에서`,
   },
 
+  desk: {
+    tab: "데스크",
+    title: "내 데스크",
+    lead: "프로젝트 전체에 걸친 내 작업을, 볼 때마다 콘솔에서 읽어 보여 줍니다.",
+    loading: "내 데스크를 불러오는 중",
+    couldNotLoad: "콘솔에서 내 데스크를 읽을 수 없습니다.",
+    projectsRead: (read, of) => `내 프로젝트 ${of}개 중 이름순으로 ${read}개를 읽었습니다.`,
+    views: {
+      aria: "데스크의 보기",
+      now: "현황",
+      figures: "통계",
+      archive: "아카이브",
+    },
+    now: {
+      empty: {
+        title: "열려 있는 것이 없습니다",
+        body: "내가 맡은 작업, 내 답을 기다리는 결정, 열려 있는 내 런이 여기에 나타납니다.",
+      },
+      decisions: "내 답을 기다리는 결정",
+      runs: "열려 있는 런",
+      noRuns: "열려 있는 내 런이 없습니다.",
+    },
+    figures: {
+      weeks: "주별 완료",
+      runs: "런이 끝난 방식",
+      byProject: "프로젝트별",
+      byCategory: "카테고리별",
+      noCategory: "카테고리 없음",
+      none: "이 기간에는 없습니다.",
+      done: (count) => `완료 ${count}개`,
+      runsCount: (count) => `런 ${count}개`,
+      partial: (tasks, runs) => `프로젝트마다 최근 작업 ${tasks}개와 런 ${runs}개까지 세었습니다.`,
+    },
+    archive: {
+      search: "아카이브에서 찾기",
+      placeholder: "제목의 단어나 번호",
+      find: "찾기",
+      tasks: "작업",
+      runs: "런",
+      putAway: "보관됨",
+      nothing:
+        "아직 닫힌 것이 없습니다. 내가 맡았던 작업 중 완료·폐기·보관된 것과 끝난 내 런이 여기에 나타납니다.",
+      nothingFound: "이 단어로 찾은 것이 없습니다.",
+      older: "더 오래된 것 읽기",
+    },
+    command: {
+      title: "내 데스크",
+      gives:
+        "내 이름을 딴 폴더를 만듭니다. 에이전트가 시작하는 자리로, 에이전트의 지침과 프로젝트를 둘 곳이 들어 있고, --web을 붙이면 내 작업의 대시보드도 함께 만듭니다. 에이전트에게 다음에 할 말도 알려 줍니다.",
+    },
+  },
+
   categories: {
     title: "카테고리",
     list: "카테고리",

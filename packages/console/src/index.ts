@@ -68,6 +68,20 @@ export {
   type DecisionLogProps,
 } from "./components/decision-list.js";
 export {
+  DESK_COMMAND,
+  DESK_VIEWS,
+  DeskArchive,
+  type DeskArchiveProps,
+  DeskCommand,
+  type DeskCommandProps,
+  DeskFiguresView,
+  type DeskFiguresViewProps,
+  DeskStanding,
+  type DeskStandingProps,
+  type DeskView,
+  DeskViews,
+} from "./components/desk.js";
+export {
   DocumentCrumbs,
   DocumentFiles,
   type DocumentFilesProps,
@@ -319,6 +333,36 @@ export {
   weekdays,
   weekOf,
 } from "./dates.js";
+export {
+  DESK_ENDINGS,
+  DESK_PROJECTS,
+  DESK_RUNS,
+  DESK_STATES,
+  DESK_TASKS,
+  DESK_WEEKS,
+  type DeskCategory,
+  type DeskEnding,
+  type DeskFigures,
+  type DeskHistory,
+  type DeskProject,
+  type DeskReader,
+  type DeskRun,
+  type DeskTask,
+  type DeskWeek,
+  figuresOf,
+  readHistory,
+  readOpenRuns,
+  standingOf,
+  withHistory,
+} from "./desk.js";
+export {
+  DESK_PAGE_KEY,
+  DeskPage,
+  type DeskPageProps,
+  deskHref,
+  deskPage,
+  deskViewOf,
+} from "./desk-page.js";
 export { DocsPage, type DocsPageProps } from "./docs-page.js";
 export {
   createGlanceReader,

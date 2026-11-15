@@ -1,0 +1,59 @@
+/* Sources: components/desk.tsx, desk-page.tsx */
+
+/* The views of a desk stand as the people's and the agents' do. */
+.sc-desk-views {
+  margin-bottom: var(--sc-space-5);
+}
+
+/* The lists of a desk: two side by side where each still has a reading width, one under the
+   other below that, as the lists of a plate are, so that their rows line up. */
+.sc-desk-lists {
+  display: grid;
+  grid-template-columns: repeat(
+      auto-fill,
+      minmax(min(100%, max(24rem, calc((100% - var(--sc-space-7)) / 2))), 1fr)
+    );
+  align-items: start;
+  gap: var(--sc-space-6) var(--sc-space-7);
+}
+
+/* The figures, one group under the other. */
+.sc-desk-figures {
+  display: grid;
+  gap: var(--sc-space-6);
+}
+
+/* Two panes of figures side by side where the window has the room. */
+.sc-desk-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  align-items: start;
+  gap: var(--sc-space-5);
+}
+
+.sc-desk-pair .sc-panel {
+  margin-bottom: 0;
+}
+
+/* The archive: the words it is found by over its lists. */
+.sc-desk-archive {
+  display: grid;
+  gap: var(--sc-space-5);
+}
+
+.sc-desk-search {
+  display: flex;
+  gap: var(--sc-space-2);
+}
+
+.sc-desk-search .sc-input {
+  flex: 1;
+  max-width: 32rem;
+}
+
+/* A desk of one's own on the Agents page: its words over the command, under what is above. */
+.sc-desk-command {
+  display: grid;
+  gap: var(--sc-space-3);
+  margin-top: var(--sc-space-5);
+}

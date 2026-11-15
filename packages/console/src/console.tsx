@@ -260,6 +260,11 @@ export interface CustomPageContext {
   /** The client, for what the data does not carry. */
   readonly client: ConsoleClient;
   readonly navigation: Navigation;
+  /**
+   * The query of the address the page is at, as the browser has it (`?view=figures`), or `""`:
+   * how a page of one's own is shown is said by its address, as every page's is (ADR-0010).
+   */
+  readonly search: string;
   /** The words of the language the pages speak, and its tag. */
   readonly words: Messages;
   readonly language: string;
@@ -3752,7 +3757,15 @@ export function createConsole(config: ConsoleConfig = {}): ConsoleApp {
         return found === undefined ? (
           <NothingHere />
         ) : (
-          found.render({ data, project, client, navigation, words, language: pack.tag })
+          found.render({
+            data,
+            project,
+            client,
+            navigation,
+            search: location.search,
+            words,
+            language: pack.tag,
+          })
         );
       };
       let page: ReactNode;
