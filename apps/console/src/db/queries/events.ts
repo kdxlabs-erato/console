@@ -272,16 +272,23 @@ export async function latestEventId(database: Database, workspaceId: string): Pr
 /**
  * The newest events one plugin caused in the workspace, whichever project they are in, newest
  * first, a page at a time: what a plugin's settings page and `GET /api/v1/plugins/<key>/events`
- * show.
+ * show; of one kind where one is named, so that its failures are read without the commands
+ * between them.
  */
 export async function listEventsOfPlugin(
   database: Database,
   workspaceId: string,
   plugin: string,
-  page: { readonly limit: number; readonly offset: number },
+  page: { readonly limit: number; readonly offset: number; readonly kind?: string | undefined },
 ): Promise<{ readonly items: EventRecord[]; readonly more: boolean }> {
   const rows = await selectEvents(database)
-    .where(and(eq(events.workspaceId, workspaceId), eq(events.plugin, plugin)))
+    .where(
+      and(
+        eq(events.workspaceId, workspaceId),
+        eq(events.plugin, plugin),
+        page.kind === undefined ? undefined : eq(events.kind, page.kind),
+      ),
+    )
     .orderBy(desc(events.id))
     .limit(page.limit + 1)
     .offset(page.offset);

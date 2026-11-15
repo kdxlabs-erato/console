@@ -4,7 +4,7 @@ import type { ConsoleClient } from "../client.js";
 import { en } from "../i18n/en.js";
 import { KOREAN, LanguageContext } from "../i18n/index.js";
 import type { RestPerson, RestPlugin, RestPluginDetail, RestProject } from "../schemas.js";
-import { capabilityText, PluginSettingsView } from "./plugin-settings.js";
+import { capabilityText, PluginSettingsList, PluginSettingsView } from "./plugin-settings.js";
 
 // The plugins' settings page (docs/specs/plugins.md, "The settings pages") as an administrator
 // reads it, rendered in Korean: the capabilities by name with what each opens, the roles with
@@ -492,6 +492,76 @@ describe("a plugin's settings page", () => {
     expect(html).toContain("the server did not start");
     expect(html).toContain("역할이 없어 모든 멤버가 쓸 수 있습니다.");
     expect(html).not.toContain(">활성화</button>");
+  });
+
+  it("shows each job with how its last run went and when it runs next, and the one that keeps failing as a problem of a plugin that runs (ADR-0128)", () => {
+    const problem = "the job match has failed since 2026-11-10T02:18:00Z";
+    const html = render({
+      ...DETAIL,
+      problems: [problem],
+      jobs: [
+        {
+          name: "match",
+          every: "P1D",
+          at: "02:18",
+          lastRunAt: "2026-11-14T02:18:00.000Z",
+          lastOutcome: "failed",
+          nextAt: "2026-11-15T02:18:00.000Z",
+          failedSince: "2026-11-10T02:18:00.000Z",
+        },
+        {
+          name: "rotate",
+          every: "PT1H",
+          at: null,
+          lastRunAt: "2026-11-14T13:00:00.000Z",
+          lastOutcome: "ok",
+          nextAt: "2026-11-14T14:00:00.000Z",
+          failedSince: null,
+        },
+        {
+          name: "sweep",
+          every: "PT5M",
+          at: null,
+          lastRunAt: null,
+          lastOutcome: null,
+          nextAt: null,
+          failedSince: null,
+        },
+      ],
+    });
+    // The plugin runs: what is wrong with it is a problem, not why it cannot run.
+    expect(html).toContain(">문제<");
+    expect(html).not.toContain("실행할 수 없는 이유");
+    expect(html).toContain(problem);
+    // A row of the overview, a line per job, the failing one marked.
+    expect(html).toContain("<dt>작업</dt>");
+    expect(html).toMatch(/<code>match<\/code><span class="sc-badge[^"]*">실패 중<\/span>/);
+    expect(html).toMatch(/> [^<]* 실패 · [^<]*부터 계속 실패 · 다음 실행 [^<]*<\/span>/);
+    expect(html).toMatch(/<code>rotate<\/code><\/span><span[^>]*> [^<]* 실행됨 · 다음 실행 [^<]*</);
+    expect(html).toMatch(/<code>sweep<\/code><\/span><span[^>]*> 아직 실행되지 않음</);
+    expect(count(html, "실패 중")).toBe(1);
+    // A console of before 0.5.1 names no jobs, and a plugin may declare none: no row then.
+    expect(render(DETAIL)).not.toContain("<dt>작업</dt>");
+    expect(render({ ...DETAIL, jobs: [] })).not.toContain("<dt>작업</dt>");
+  });
+
+  it("marks in the list a plugin that runs with a problem, and leaves a failed one to its state", () => {
+    const row = (plugin: Partial<RestPlugin>) =>
+      renderToStaticMarkup(
+        <LanguageContext.Provider value={KOREAN}>
+          <PluginSettingsList
+            plugins={[{ ...DETAIL, ...plugin } as RestPlugin]}
+            language="ko"
+            href={(one) => `/settings/plugins/${one.key}`}
+          />
+        </LanguageContext.Provider>,
+      );
+    const badges = (html: string) => count(html, '<span class="sc-badge');
+    const failing = row({ problems: ["the job match has failed since 2026-11-10T02:18:00Z"] });
+    expect(badges(failing)).toBe(2);
+    expect(failing).toContain(">문제<");
+    expect(badges(row({ problems: [] }))).toBe(1);
+    expect(badges(row({ state: "failed", problems: ["the server did not start"] }))).toBe(1);
   });
 });
 

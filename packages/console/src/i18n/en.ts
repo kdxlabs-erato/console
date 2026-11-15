@@ -351,6 +351,8 @@ export const en = {
       none: "The console has no plugins directory: none can be installed.",
       about: "About",
       problems: "Why it cannot run",
+      problemsRunning: "Problems",
+      hasProblems: "Problem",
       nothing: "None",
       capabilities: "Capabilities",
       required: "Required",
@@ -428,6 +430,13 @@ export const en = {
       keeps: "Kept for",
       keepsFor: (collection: string, days: number) =>
         `${collection}: ${days} ${days === 1 ? "day" : "days"}, then removed`,
+      jobs: "Jobs",
+      jobNotRun: "Has not run yet",
+      jobRan: (when: string) => `Ran ${when}`,
+      jobFailed: (when: string) => `Failed ${when}`,
+      jobFailing: "Failing",
+      jobFailingSince: (when: string) => `failing since ${when}`,
+      jobNext: (when: string) => `next ${when}`,
       needsTimeZone:
         "The workspace has no time zone, so this plugin's times of day run on UTC until one is set.",
       setTimeZone: "Set the time zone",

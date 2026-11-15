@@ -182,6 +182,10 @@ describe("definePlugin", () => {
     expect(problemsOf({ commands: { help: request } })).toEqual([
       "help is a subcommand of console plugin <key>, and not a name for a command or a query",
     ]);
+    // `console plugin <key> events` reads the plugin's events (ADR-0128): no command or query of that name.
+    expect(problemsOf({ queries: { events: balance } })).toEqual([
+      "events is a subcommand of console plugin <key>, and not a name for a command or a query",
+    ]);
     expect(problemsOf({ commands: { request }, queries: { request: balance } })).toEqual([
       "a command and a query have one name",
     ]);

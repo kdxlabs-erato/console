@@ -1825,8 +1825,10 @@ export const pluginCursors = pgTable(
 
 /**
  * A job of a plugin as the scheduler keeps it (docs/specs/plugins.md, "Events, hooks and jobs"):
- * when it last ran and how it went, when it runs next, and when its failure was last written as
- * an event, so that one is written an hour at most.
+ * when it last ran and how it went, when it runs next, when its failure was last written as an
+ * event, so that one is written an hour at most, and since when it has failed, run after run:
+ * the first failure after it went well, cleared when it goes well again, so that a job that
+ * keeps failing is a problem of its plugin an administrator sees (ADR-0128).
  */
 export const pluginJobs = pgTable(
   "plugin_jobs",
@@ -1840,6 +1842,7 @@ export const pluginJobs = pgTable(
     lastOutcome: text(),
     nextAt: instant(),
     failedEventAt: instant(),
+    failedSince: instant(),
     updatedAt: updatedAt(),
   },
   (table) => [

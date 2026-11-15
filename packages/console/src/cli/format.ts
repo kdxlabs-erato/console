@@ -10,6 +10,8 @@ import type {
   RestDocument,
   RestDocumentSummary,
   RestDocuments,
+  RestEvent,
+  RestEvents,
   RestGoal,
   RestListing,
   RestMember,
@@ -20,6 +22,7 @@ import type {
   RestPluginDetail,
   RestPluginGrant,
   RestPluginInvocation,
+  RestPluginJob,
   RestPluginOperation,
   RestPluginRecord,
   RestPluginRecordPage,
@@ -1145,6 +1148,67 @@ export function formatTeamLine(team: RestTeam, loginOf: ReadonlyMap<string, stri
   return `${team.key}  ${team.name}  ${count}${logins.length === 0 ? "" : `: ${logins.join(", ")}`}`;
 }
 
+/**
+ * A job of a plugin in a line (ADR-0128): its name and how often it runs, how its last run went
+ * and since when it has failed where it keeps failing, and when it runs next.
+ */
+export function formatPluginJobLine(job: RestPluginJob): string {
+  const schedule = `every ${job.every}${job.at === null ? "" : ` at ${job.at}`}`;
+  const last =
+    job.lastRunAt === null || job.lastOutcome === null
+      ? "has not run yet"
+      : `last run ${moment(job.lastRunAt)}: ${job.lastOutcome}${
+          job.lastOutcome === "failed" && job.failedSince !== null
+            ? `, failing since ${moment(job.failedSince)}`
+            : ""
+        }`;
+  return `  ${job.name}  ${schedule}  ${last}  next: ${job.nextAt === null ? "not scheduled" : moment(job.nextAt)}`;
+}
+
+/** What an event of a plugin says, after its kind: what failed, which command and how it ended, else what it carries. */
+function pluginEventSays(event: RestEvent): string {
+  const data = event.data;
+  if (event.kind === "plugin.failed") {
+    return data.problem ?? "";
+  }
+  if (event.kind === "plugin.command") {
+    return `${data.command ?? "?"} ${data.outcome ?? "?"}${data.code === undefined ? "" : ` (${data.code})`}${
+      data.durationMs === undefined ? "" : `, ${data.durationMs} ms`
+    }`;
+  }
+  const carried = JSON.stringify(data);
+  return carried === "{}" ? "" : carried.length > 300 ? `${carried.slice(0, 300)}...` : carried;
+}
+
+/** One event of a plugin in a line: its number, when, its kind, who did it and through what, and what it says. */
+export function formatPluginEventLine(event: RestEvent): string {
+  const who =
+    event.actor === null
+      ? "the console"
+      : `${calledOf(event.actor)}${event.agent === null ? "" : ` as ${event.agent}`}`;
+  const says = pluginEventSays(event);
+  return `#${event.id}  ${moment(event.createdAt)}  ${event.kind}  ${who}${says === "" ? "" : `  ${says}`}`;
+}
+
+/**
+ * A page of a plugin's events, newest first (ADR-0128), of one kind where one was asked for:
+ * what `console plugin <key> events` prints, with how to read on.
+ */
+export function formatPluginEvents(
+  key: string,
+  page: RestEvents,
+  asked: { readonly kind: string | undefined; readonly limit: number; readonly offset: number },
+): string {
+  if (page.items.length === 0) {
+    const none =
+      asked.kind === undefined
+        ? `${key} has no events${asked.offset > 0 ? " that far back" : ""}.`
+        : `${key} has no ${asked.kind} events${asked.offset > 0 ? " that far back" : ""}.`;
+    return `${none}${formatMore(page.more, asked.limit, asked.offset)}`;
+  }
+  return `${page.items.map(formatPluginEventLine).join("\n")}${formatMore(page.more, asked.limit, asked.offset)}`;
+}
+
 /** One plugin in full: what it is, how it stands, what one may run, its skills and its settings. */
 export function formatPlugin(
   detail: RestPluginDetail,
@@ -1193,6 +1257,14 @@ export function formatPlugin(
     lines.push(
       "",
       `Skills: console plugin ${detail.key} skills lists them; console plugin ${detail.key} skill <path> reads one. Read the one that fits before the first command.`,
+    );
+  }
+  // A console before 0.5.1 names no jobs: nothing is printed of them then, not an empty block.
+  if (detail.jobs !== undefined && detail.jobs.length > 0) {
+    lines.push(
+      "",
+      `Jobs (what went wrong in one: console plugin ${detail.key} events --kind plugin.failed):`,
+      ...detail.jobs.map(formatPluginJobLine),
     );
   }
   if (detail.settings.length > 0) {

@@ -696,8 +696,14 @@ export interface PluginClient {
     },
     signal?: AbortSignal,
   ): Promise<RestSkillCode>;
-  /** The plugin's events, newest first, a page at a time. */
-  events(page?: Page, signal?: AbortSignal): Promise<RestEvents>;
+  /**
+   * The plugin's events, newest first, a page at a time; of one kind where one is named
+   * (ADR-0128), which a console before 0.5.1 does not narrow by and answers every kind.
+   */
+  events(
+    page?: Page & { readonly kind?: string | undefined },
+    signal?: AbortSignal,
+  ): Promise<RestEvents>;
   /** Enables the plugin, with consent to every capability it asks; for an administrator. */
   enable(input: RestPluginEnableInput): Promise<RestPluginDetail>;
   disable(): Promise<RestPluginDetail>;
@@ -1552,7 +1558,11 @@ export function createClient(options: ClientOptions = {}): ConsoleClient {
       events: (page = {}, signal) =>
         request(
           "GET",
-          withQuery(at("events"), { limit: number(page.limit), offset: number(page.offset) }),
+          withQuery(at("events"), {
+            limit: number(page.limit),
+            offset: number(page.offset),
+            kind: page.kind,
+          }),
           undefined,
           restEventsSchema,
           signal,

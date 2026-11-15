@@ -8690,6 +8690,188 @@ describe("the plugins on the command line (ADR-0049, ADR-0053)", () => {
     expect(nothing.err()).toContain("Say which plugin: console plugin <key>");
   });
 
+  it("prints a plugin's jobs and the one that keeps failing, and a console of before as it printed it (ADR-0128)", async () => {
+    const SINCE = "2026-10-08T02:18:00.000Z";
+    const PROBLEM =
+      "the job match has failed since 2026-10-08T02:18:00Z: plugin.failed among its events says why";
+    const JOBS = [
+      {
+        name: "match",
+        every: "P1D",
+        at: "02:18",
+        lastRunAt: WHEN,
+        lastOutcome: "failed",
+        nextAt: "2026-10-10T02:18:00.000Z",
+        failedSince: SINCE,
+      },
+      {
+        name: "rotate",
+        every: "PT1H",
+        at: null,
+        lastRunAt: WHEN,
+        lastOutcome: "ok",
+        nextAt: "2026-10-09T11:00:00.000Z",
+        failedSince: null,
+      },
+      {
+        name: "sweep",
+        every: "PT5M",
+        at: null,
+        lastRunAt: null,
+        lastOutcome: null,
+        nextAt: null,
+        failedSince: null,
+      },
+    ];
+    const now = fakeConsole({
+      "GET /api/v1/plugins": { body: { items: [{ ...PLUGIN, problems: [PROBLEM] }], sql: false } },
+      [`GET ${AT}`]: { body: { ...DETAIL, problems: [PROBLEM], jobs: JOBS } },
+      "GET /api/v1/me": { body: ME },
+    });
+    const listed = harness({ fetch: now.fetch, env: SIGNED_IN });
+    expect(await runCli(["plugins"], listed.io)).toBe(EXIT.ok);
+    expect(listed.out()).toContain(
+      `hello  Hello 0.1.0  enabled  roles: greeter  problems: ${PROBLEM}`,
+    );
+    const one = harness({ fetch: now.fetch, env: SIGNED_IN });
+    expect(await runCli(["plugin", "hello"], one.io)).toBe(EXIT.ok);
+    expect(one.out()).toContain(`problems: ${PROBLEM}`);
+    expect(one.out()).toContain(
+      [
+        "Jobs (what went wrong in one: console plugin hello events --kind plugin.failed):",
+        `  match  every P1D at 02:18  last run ${WHEN}: failed, failing since ${SINCE}  next: 2026-10-10T02:18:00.000Z`,
+        `  rotate  every PT1H  last run ${WHEN}: ok  next: 2026-10-09T11:00:00.000Z`,
+        "  sweep  every PT5M  has not run yet  next: not scheduled",
+        "",
+        "Settings:",
+      ].join("\n"),
+    );
+    // A console of before 0.5.1 names no jobs, and a plugin that declares none has none to print:
+    // the command prints what it printed, with no empty block.
+    for (const before of [DETAIL, { ...DETAIL, jobs: [] }]) {
+      const old = fakeConsole({ [`GET ${AT}`]: { body: before }, "GET /api/v1/me": { body: ME } });
+      const was = harness({ fetch: old.fetch, env: SIGNED_IN });
+      expect(await runCli(["plugin", "hello"], was.io)).toBe(EXIT.ok);
+      expect(was.out()).toContain("hello: Hello 0.1.0, enabled");
+      expect(was.out()).not.toContain("Jobs");
+      expect(was.out()).not.toContain("problems:");
+      expect(was.out()).toContain(
+        "console plugin hello skills lists them; console plugin hello skill <path> reads one. Read the one that fits before the first command.\n\nSettings:",
+      );
+    }
+  });
+
+  it("reads a plugin's events, the failures alone by kind, and narrows them itself on a console of before (ADR-0128)", async () => {
+    const event = (
+      id: number,
+      kind: string,
+      data: Record<string, unknown>,
+      actor: unknown = null,
+    ) => ({
+      id,
+      kind,
+      actor,
+      agent: actor === null ? null : "Claude Code",
+      projectId: null,
+      taskId: null,
+      decisionId: null,
+      runId: null,
+      documentId: null,
+      goalId: null,
+      plugin: "hello",
+      data,
+      createdAt: WHEN,
+    });
+    const FAILED = event(31, "plugin.failed", {
+      key: "hello",
+      problem: "the job match failed (plugin.failed)",
+    });
+    const COMMAND = event(
+      30,
+      "plugin.command",
+      { command: "greet", outcome: "refused", code: "plugin.forbidden", durationMs: 12, args: {} },
+      PERSON,
+    );
+    const ENABLED = event(29, "plugin.enabled", { key: "hello", capabilities: ["files"] }, PERSON);
+    const { fetch, calls } = fakeConsole({
+      [`GET ${AT}/events?limit=50&offset=0`]: {
+        body: { items: [FAILED, COMMAND, ENABLED], more: false },
+      },
+      [`GET ${AT}/events?limit=1&offset=2&kind=plugin.failed`]: {
+        body: { items: [FAILED], more: true },
+      },
+      [`GET ${AT}/events?limit=50&offset=0&kind=plugin.upgraded`]: {
+        body: { items: [], more: false },
+      },
+    });
+    const all = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["plugin", "hello", "events"], all.io)).toBe(EXIT.ok);
+    expect(all.out()).toBe(
+      [
+        `#31  ${WHEN}  plugin.failed  the console  the job match failed (plugin.failed)`,
+        `#30  ${WHEN}  plugin.command  alice as Claude Code  greet refused (plugin.forbidden), 12 ms`,
+        `#29  ${WHEN}  plugin.enabled  alice as Claude Code  {"key":"hello","capabilities":["files"]}`,
+        "",
+      ].join("\n"),
+    );
+    const failures = harness({ fetch, env: SIGNED_IN });
+    expect(
+      await runCli(
+        ["plugin", "hello", "events", "--kind", "plugin.failed", "--limit", "1", "--offset", "2"],
+        failures.io,
+      ),
+    ).toBe(EXIT.ok);
+    expect(failures.out()).toBe(
+      `#31  ${WHEN}  plugin.failed  the console  the job match failed (plugin.failed)\n... more: --offset 3\n`,
+    );
+    expect(calls.at(-1)?.key).toBe(`GET ${AT}/events?limit=1&offset=2&kind=plugin.failed`);
+    const none = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["plugin", "hello", "events", "--kind", "plugin.upgraded"], none.io)).toBe(
+      EXIT.ok,
+    );
+    expect(none.out()).toBe("hello has no plugin.upgraded events.\n");
+    // A console of before 0.5.1 has the route and takes no kind: it answers every kind, and the
+    // command keeps the kind asked for of the page it read, and says that it did.
+    const before = fakeConsole({
+      [`GET ${AT}/events?limit=50&offset=0&kind=plugin.failed`]: {
+        body: { items: [FAILED, COMMAND, ENABLED], more: true },
+      },
+    });
+    const old = harness({ fetch: before.fetch, env: SIGNED_IN });
+    expect(await runCli(["plugin", "hello", "events", "--kind", "plugin.failed"], old.io)).toBe(
+      EXIT.ok,
+    );
+    expect(old.out()).toBe(
+      [
+        `#31  ${WHEN}  plugin.failed  the console  the job match failed (plugin.failed)`,
+        "... more: --offset 50",
+        "This console is older than 0.5.1 and does not narrow events by kind: of the 3 newest read, the plugin.failed ones are shown. Read further back with --offset.",
+        "",
+      ].join("\n"),
+    );
+    const asJson = harness({ fetch: before.fetch, env: SIGNED_IN });
+    expect(
+      await runCli(["plugin", "hello", "events", "--kind", "plugin.failed", "--json"], asJson.io),
+    ).toBe(EXIT.ok);
+    expect(JSON.parse(asJson.out())).toEqual({ items: [FAILED], more: true });
+    // What is not asked right is said before the console is asked.
+    for (const words of [
+      ["--kind", "failed"],
+      ["--kind", "Plugin.Failed"],
+      ["--limit", "101"],
+      ["--offset", "-1"],
+      ["plugin.failed"],
+    ]) {
+      const bad = harness({ fetch, env: SIGNED_IN });
+      expect(await runCli(["plugin", "hello", "events", ...words], bad.io), words.join(" ")).toBe(
+        EXIT.usage,
+      );
+    }
+    // A plugin nobody may know of is the console's refusal, as for every read of it.
+    const unknown = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["plugin", "nothing", "events"], unknown.io)).toBe(EXIT.failed);
+  });
+
   it("runs a command by the words as typed, which the console parses, and says when a decision waits", async () => {
     const { fetch, calls } = fakeConsole({
       [`POST ${AT}/invoke`]: [

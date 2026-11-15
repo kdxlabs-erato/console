@@ -18,6 +18,7 @@ import {
   restPluginGrantSchema,
   restPluginInvocationSchema,
   restPluginRecordSchema,
+  restPluginsSchema,
   restReachedDecisionSchema,
   restTasksSchema,
   restWorkSchema,
@@ -1468,13 +1469,84 @@ describe("a plugin on the board", () => {
     const once = await failed();
     expect(once).toHaveLength(1);
     expect(once[0]?.data.problem).toContain("the job broken failed");
+    // One failure is no problem of the plugin yet (ADR-0128): the jobs say how each run went.
+    const firstFailureAt = schedulerNow.toISOString();
+    const detail = async (cookie = admin) =>
+      restPluginDetailSchema.parse(
+        await (await h.request(pluginPath("leave"), { headers: { cookie } })).json(),
+      );
+    const afterOne = await detail();
+    expect(afterOne.problems).toEqual([]);
+    expect(afterOne.jobs?.map((job) => [job.name, job.every, job.lastOutcome])).toEqual([
+      ["accrue", "PT5M", "ok"],
+      ["broken", "PT5M", "failed"],
+    ]);
+    const brokenOnce = afterOne.jobs?.find((job) => job.name === "broken");
+    expect(brokenOnce?.lastRunAt).toBe(firstFailureAt);
+    expect(brokenOnce?.failedSince).toBe(firstFailureAt);
+    expect(brokenOnce?.nextAt).toBe(new Date(schedulerNow.getTime() + 5 * 60_000).toISOString());
+    expect(afterOne.jobs?.find((job) => job.name === "accrue")?.failedSince).toBeNull();
     // Due again, and failing again: a line in the log, and no second event within the hour.
     schedulerNow = new Date(schedulerNow.getTime() + 6 * 60_000);
     await scheduler.tick();
     expect(await failed()).toHaveLength(1);
+    // Failed twice running: a problem of the plugin, since its first failure, for the
+    // administrator who lists the plugins and for a member who reads this one.
+    const since = firstFailureAt.replace(".000Z", "Z");
+    const problem = `the job broken has failed since ${since}: plugin.failed among its events says why`;
+    const afterTwo = await detail();
+    expect(afterTwo.state).toBe("enabled");
+    expect(afterTwo.problems).toEqual([problem]);
+    expect(afterTwo.jobs?.find((job) => job.name === "broken")).toMatchObject({
+      lastRunAt: schedulerNow.toISOString(),
+      lastOutcome: "failed",
+      failedSince: firstFailureAt,
+    });
+    expect((await detail(member)).problems).toEqual([problem]);
+    const listed = restPluginsSchema.parse(
+      await (await h.request(REST_ROUTES.plugins, { headers: { cookie: admin } })).json(),
+    );
+    expect(listed.items.find((plugin) => plugin.key === "leave")?.problems).toEqual([problem]);
+    expect(listed.items.find((plugin) => plugin.key === "audit")?.problems).toEqual([]);
     schedulerNow = new Date(schedulerNow.getTime() + 61 * 60_000);
     await scheduler.tick();
     expect(await failed()).toHaveLength(2);
+    // The failures alone, by kind, newest first; a word that is no kind of event is refused.
+    const narrowed = restEventsSchema.parse(
+      await (
+        await h.request(`${pluginPath("leave", "events")}?kind=plugin.failed&limit=1`, {
+          headers: { cookie: admin },
+        })
+      ).json(),
+    );
+    expect(narrowed.items.map((event) => event.kind)).toEqual(["plugin.failed"]);
+    expect(narrowed.more).toBe(true);
+    const unknown = await h.request(`${pluginPath("leave", "events")}?kind=plugin.exploded`, {
+      headers: { cookie: admin },
+    });
+    expect(unknown.status).toBe(400);
+    // Without the jobs capability its jobs are not run: the next time is no promise, and what
+    // they did last is no problem of a plugin whose jobs are off.
+    const installs = drizzleOf(testDatabase.database);
+    const [install] = await installs
+      .select({ consent: pluginInstalls.consent })
+      .from(pluginInstalls)
+      .where(eq(pluginInstalls.key, "leave"));
+    const held = install?.consent ?? [];
+    const consented = (consent: readonly string[]) =>
+      installs
+        .update(pluginInstalls)
+        .set({ consent: [...consent] })
+        .where(eq(pluginInstalls.key, "leave"));
+    await consented(held.filter((capability) => capability !== "jobs"));
+    try {
+      const unscheduled = await detail();
+      expect(unscheduled.problems).toEqual([]);
+      expect(unscheduled.jobs?.map((job) => job.nextAt)).toEqual([null, null]);
+      expect(unscheduled.jobs?.find((job) => job.name === "broken")?.lastOutcome).toBe("failed");
+    } finally {
+      await consented(held);
+    }
   });
   it("tells a plugin a person's language, and keeps the one text it writes in it (ADR-0065)", async () => {
     const set = async (language: string | null) => {

@@ -42,6 +42,7 @@ import { normalizeConnectCode } from "../connect.js";
 import { addDays, dayOf as dayOfDate, firstDayOfWeek, isDay, weekOf } from "../dates.js";
 import {
   DEFAULT_PAGE_LIMIT,
+  EVENTS_PAGE_LIMIT,
   LIST_LIMIT,
   MAX_DECIDERS,
   MAX_OPTIONS,
@@ -157,6 +158,7 @@ import {
   formatPersonWork,
   formatPlugin,
   formatPluginAsks,
+  formatPluginEvents,
   formatPluginGrantLine,
   formatPluginHelp,
   formatPluginRecord,
@@ -2298,7 +2300,7 @@ function splitWords(
 }
 
 const PLUGIN_USAGE =
-  "console plugin <key> [help [<command>] | <command> [args] | records <collection> | skills | skill <path> | enable | disable | settings | secret <name> [--key <key>] | grant <role> | revoke <id>]. console plugins lists the plugins.";
+  "console plugin <key> [help [<command>] | <command> [args] | records <collection> | events [--kind <kind>] | skills | skill <path> | enable | disable | settings | secret <name> [--key <key>] | grant <role> | revoke <id>]. console plugins lists the plugins.";
 
 const plugin: Command = async (args, io) => {
   const { values, words } = splitWords(args, PLUGIN_GLOBAL_FLAGS);
@@ -2334,6 +2336,8 @@ const plugin: Command = async (args, io) => {
     }
     case "records":
       return pluginRecords(io, session, client, rest, text(values, "project"));
+    case "events":
+      return pluginEvents(io, session, client, rest);
     case "skills": {
       const parsed = parse(rest, SKILLS_OPTIONS);
       return readSkills(io, session, client, parsed.values, parsed.positionals, {
@@ -2503,6 +2507,50 @@ function whereValueOf(word: string): unknown {
 }
 
 /** The records of a collection one may read, a page of them; or one record, or its versions. */
+/**
+ * A plugin's events, newest first (ADR-0128): what it did and what went wrong in it, the
+ * failures alone with `--kind plugin.failed`, whether or not it has a board project. A console
+ * before 0.5.1 takes no kind and answers every one: the page is narrowed here, and that is said,
+ * since a page narrowed after it was read may hold fewer than were asked for.
+ */
+async function pluginEvents(
+  io: CliIo,
+  session: Session,
+  client: PluginClient,
+  rest: readonly string[],
+): Promise<number> {
+  const usage = `console plugin ${client.key} events [--kind <kind>] [--limit <n>] [--offset <n>]`;
+  const { values, positionals } = parse(rest, { kind: { type: "string" }, ...PAGE_OPTIONS });
+  if (positionals.length > 0) {
+    throw misuse(`Events take no word but their flags: ${usage}`);
+  }
+  const kind = text(values, "kind");
+  if (kind !== undefined && !/^[a-z_]{1,40}\.[a-z_]{1,40}$/.test(kind)) {
+    throw misuse(
+      `Not a kind of event: ${kind}. A kind is two words with a dot between, as plugin.failed or plugin.command: ${usage}`,
+    );
+  }
+  const limit = countOf(text(values, "limit"), "limit", { least: 1, most: EVENTS_PAGE_LIMIT });
+  const offset = countOf(text(values, "offset"), "offset", { least: 0, most: 1_000_000 });
+  const asked = { kind, limit: limit ?? DEFAULT_PAGE_LIMIT, offset: offset ?? 0 };
+  const read = await client.events(asked);
+  const items = kind === undefined ? read.items : read.items.filter((one) => one.kind === kind);
+  const narrowedHere = items.length !== read.items.length;
+  const page = { items, more: read.more };
+  answer(
+    io,
+    session,
+    page,
+    () =>
+      `${formatPluginEvents(client.key, page, asked)}${
+        narrowedHere
+          ? `\nThis console is older than 0.5.1 and does not narrow events by kind: of the ${read.items.length} newest read, the ${kind} ones are shown. Read further back with --offset.`
+          : ""
+      }`,
+  );
+  return EXIT.ok;
+}
+
 async function pluginRecords(
   io: CliIo,
   session: Session,

@@ -12,7 +12,8 @@ import type { Plugins } from "./registry.js";
 // ISO 8601 duration and `at` a time of day in the workspace's time zone, each under an advisory
 // lock held for as long as the job runs, so that never two run at once, `plugin_jobs` keeping the
 // last run, its outcome and the next time; a failed job is a line in the log every time and a
-// `plugin.failed` event an hour at most.
+// `plugin.failed` event an hour at most, and one that failed twice running is a problem of its
+// plugin until it goes well again (`failingJobs`, ADR-0128).
 
 /** How long a job's failure is told once as an event before another is written. */
 const FAILURE_EVENT_EVERY_MS = 60 * 60_000;
@@ -130,6 +131,19 @@ export function nextTimeMoved(nextAt: Date, at: string | null, zone: string): bo
   return at !== null && TIME_OF_DAY.test(at) && timeOfDayIn(nextAt, zone) !== at;
 }
 
+/**
+ * Whether a job failed twice running or more: its last run failed, and the run of failures it is
+ * in began before that run (ADR-0128). That is when its plugin says so among its problems.
+ */
+export function failsRepeatedly(job: PluginJobRecord): boolean {
+  return (
+    job.lastOutcome === "failed" &&
+    job.failedSince !== undefined &&
+    job.lastRunAt !== undefined &&
+    job.failedSince.getTime() < job.lastRunAt.getTime()
+  );
+}
+
 export class PluginScheduler {
   private readonly options: PluginSchedulerOptions;
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -190,6 +204,7 @@ export class PluginScheduler {
             lastOutcome: row?.lastOutcome,
             nextAt: nextRunAfter(now, job.every, job.at, zone),
             failedEventAt: row?.failedEventAt,
+            failedSince: row?.failedSince,
           });
           continue;
         }
@@ -207,6 +222,7 @@ export class PluginScheduler {
               lastOutcome: row.lastOutcome,
               nextAt: moved,
               failedEventAt: row.failedEventAt,
+              failedSince: row.failedSince,
             });
             continue;
           }
@@ -252,6 +268,8 @@ export class PluginScheduler {
           lastOutcome: "ok",
           nextAt,
           failedEventAt: row.failedEventAt,
+          // It went well: whatever run of failures it was in is over.
+          failedSince: undefined,
         });
         return;
       }
@@ -275,6 +293,8 @@ export class PluginScheduler {
         lastOutcome: "failed",
         nextAt,
         failedEventAt: eventDue ? ranAt : row.failedEventAt,
+        // The first failure after it went well is where the run of failures began (ADR-0128).
+        failedSince: row.failedSince ?? ranAt,
       });
     });
   }

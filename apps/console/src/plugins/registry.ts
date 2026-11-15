@@ -13,6 +13,7 @@ import {
   type RestPluginDetail,
   type RestPluginEnableInput,
   type RestPluginGrant,
+  type RestPluginJob,
   type RestPluginOperation,
   type RestPluginSetting,
   type RestPlugins,
@@ -77,7 +78,10 @@ import {
   emitPluginEvent,
   listPluginEventsOf,
   newestPluginEventOf,
+  type PluginJobRecord,
   purgePluginStreams,
+  readAllJobs,
+  readJobs,
 } from "../db/queries/plugin-board.js";
 import {
   addGrant,
@@ -127,7 +131,7 @@ import { createRateLimiter, type RateLimiter } from "./rate.js";
 import type { RecordScope, RecordStore, Visibility, Writer } from "./records.js";
 import { type SweepTarget, sweepCollections } from "./retention.js";
 import { mayUse, rolesHeld } from "./roles.js";
-import type { JobTarget } from "./scheduler.js";
+import { failsRepeatedly, type JobTarget } from "./scheduler.js";
 import type { PluginSqlService } from "./sql.js";
 import { runPluginUpgrades, type UpgradeOutcome } from "./upgrades.js";
 
@@ -380,6 +384,37 @@ function recordsBehind(
   return [
     `its records are at data version ${install.dataVersion} and its code at ${manifest.dataVersion}: the upgrades did not run, or one failed; the migrate role runs them, and plugin.failed in the feed says why one failed`,
   ];
+}
+
+/** Whether the scheduler runs the plugin's jobs: it is enabled, loaded, and holds `jobs`. */
+const runsJobs = (entry: Entry, install: PluginInstallRecord | undefined): boolean =>
+  install?.state === "enabled" &&
+  entry.description !== undefined &&
+  install.consent.includes("jobs");
+
+/**
+ * What is said of a job that failed twice running or more (ADR-0128): since when, and where the
+ * reason is, in words a page shows a person as they are; the command names the way to read it
+ * beside the jobs it prints. One failure is not said here, since a host away for a moment or a deploy in the way
+ * fails a run and the next goes well; a job that keeps failing does its plugin's work no more,
+ * and until this was said nobody saw it. Gone with the job's next run that goes well; not said
+ * of a job the code no longer declares, nor of a plugin whose jobs are not run.
+ */
+function jobsFailing(
+  entry: Entry,
+  install: PluginInstallRecord | undefined,
+  rows: readonly PluginJobRecord[],
+): string[] {
+  if (!runsJobs(entry, install)) {
+    return [];
+  }
+  const declared = entry.description?.jobs ?? {};
+  return rows
+    .filter((row) => Object.hasOwn(declared, row.name) && failsRepeatedly(row))
+    .map(
+      (row) =>
+        `the job ${row.name} has failed since ${(row.failedSince ?? new Date(0)).toISOString().replace(/\.\d{3}Z$/, "Z")}: plugin.failed among its events says why`,
+    );
 }
 
 export class Plugins {
@@ -729,10 +764,36 @@ export class Plugins {
     return asks;
   }
 
+  /**
+   * The jobs the plugin's module declares, each as the scheduler keeps it (ADR-0128): the next
+   * time only where the scheduler runs them, since a time kept from before the plugin was
+   * disabled is no promise.
+   */
+  private jobsOf(
+    entry: Entry,
+    install: PluginInstallRecord | undefined,
+    rows: readonly PluginJobRecord[],
+  ): RestPluginJob[] {
+    const scheduled = runsJobs(entry, install);
+    return Object.entries(entry.description?.jobs ?? {}).map(([name, job]) => {
+      const row = rows.find((candidate) => candidate.name === name);
+      return {
+        name,
+        every: job.every,
+        at: job.at,
+        lastRunAt: row?.lastRunAt?.toISOString() ?? null,
+        lastOutcome: row?.lastOutcome ?? null,
+        nextAt: scheduled ? (row?.nextAt?.toISOString() ?? null) : null,
+        failedSince: row?.failedSince?.toISOString() ?? null,
+      };
+    });
+  }
+
   private async restOf(
     entry: Entry,
     install: PluginInstallRecord | undefined,
     person: PersonRecord,
+    jobs: readonly PluginJobRecord[],
   ): Promise<RestPlugin> {
     const workspace = await this.options.workspace();
     const admin = configuresPlugins(person);
@@ -751,7 +812,11 @@ export class Plugins {
       version: entry.version,
       console: manifest?.console ?? null,
       state: this.stateOf(entry, install),
-      problems: [...entry.problems, ...recordsBehind(manifest, install)],
+      problems: [
+        ...entry.problems,
+        ...recordsBehind(manifest, install),
+        ...jobsFailing(entry, install, jobs),
+      ],
       roles: held,
       declaredRoles: Object.entries(manifest?.roles ?? {}).map(([key, role]) => ({
         key,
@@ -822,13 +887,14 @@ export class Plugins {
       ]),
     );
     const admin = configuresPlugins(person);
+    const jobs = await readAllJobs(this.options.database, workspace.id);
     const items: RestPlugin[] = [];
     for (const entry of [...this.entries.values()].sort((a, b) => a.key.localeCompare(b.key))) {
       const install = installs.get(entry.key);
       if (!admin && install?.state !== "enabled") {
         continue;
       }
-      items.push(await this.restOf(entry, install, person));
+      items.push(await this.restOf(entry, install, person, jobs.get(entry.key) ?? []));
     }
     return { items, sql: this.sqlAvailable };
   }
@@ -940,7 +1006,8 @@ export class Plugins {
     if (!admin && install?.state !== "enabled") {
       return undefined;
     }
-    const listing = await this.restOf(entry, install, person);
+    const jobs = await readJobs(this.options.database, workspace.id, key);
+    const listing = await this.restOf(entry, install, person, jobs);
     return {
       ...listing,
       operations: this.operationsOf(entry.description).filter((operation) =>
@@ -982,6 +1049,7 @@ export class Plugins {
           ? []
           : [{ collection: collection.name, days: collection.retention.days }],
       ),
+      jobs: this.jobsOf(entry, install, jobs),
     };
   }
 
@@ -1643,10 +1711,10 @@ export class Plugins {
     return this.restGrant(grant);
   }
 
-  /** The plugin's events, newest first. */
+  /** The plugin's events, newest first; of one kind where one is named. */
   async events(
     key: string,
-    page: { readonly limit: number; readonly offset: number },
+    page: { readonly limit: number; readonly offset: number; readonly kind?: string | undefined },
   ): Promise<{ readonly items: EventRecord[]; readonly more: boolean }> {
     this.entryOf(key);
     const workspace = await this.options.workspace();

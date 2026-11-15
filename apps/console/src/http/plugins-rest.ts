@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { extname, resolve, sep } from "node:path";
 import {
+  EVENT_KINDS,
   EVENTS_PAGE_LIMIT,
   MAX_FILE_BYTES,
   pluginPath,
@@ -125,6 +126,8 @@ const PLUGIN = `${REST_ROUTES.plugins}/:key`;
 const eventsQuery = z.object({
   limit: z.coerce.number().int().min(1).max(EVENTS_PAGE_LIMIT).default(EVENTS_PAGE_LIMIT),
   offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
+  /** One kind of event alone: `plugin.failed` for what went wrong (ADR-0128). */
+  kind: z.enum(EVENT_KINDS, { error: "is not a kind of event" }).optional(),
 });
 /** What a read of a collection is narrowed by: conditions as JSON, an order, a page, words, a project. */
 const recordsQuery = z.object({

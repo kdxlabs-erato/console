@@ -226,6 +226,27 @@ export type RestPluginGrant = z.infer<typeof restPluginGrantSchema>;
 export const restPluginGrantsSchema = z.object({ items: z.array(restPluginGrantSchema) });
 export type RestPluginGrants = z.infer<typeof restPluginGrantsSchema>;
 
+/**
+ * A job of a plugin as its scheduler keeps it (ADR-0128): how often it runs, how its last run
+ * went, when it runs next, and since when it has failed where it failed run after run.
+ */
+export const restPluginJobSchema = z.object({
+  name: z.string(),
+  /** How often it runs, an ISO 8601 duration. */
+  every: z.string(),
+  /** The time of day it runs at, `HH:MM` in the workspace's time zone, or `null`. */
+  at: z.nullable(z.string()),
+  /** When it last ran, or `null` before its first run. */
+  lastRunAt: z.nullable(instant),
+  /** How its last run went, or `null` before its first run. */
+  lastOutcome: z.nullable(z.enum(["ok", "failed"])),
+  /** When it runs next; `null` where the plugin is not enabled with its `jobs` capability, or the scheduler has not seen the job yet. */
+  nextAt: z.nullable(instant),
+  /** Its first failure since it last went well, or `null` while it goes well: a job that failed twice running is among the plugin's `problems`. */
+  failedSince: z.nullable(instant),
+});
+export type RestPluginJob = z.infer<typeof restPluginJobSchema>;
+
 /** One plugin whole, for `GET /api/v1/plugins/<key>`: the listing's fields, and what agents and administrators need. */
 export const restPluginDetailSchema = z.extend(restPluginSchema, {
   operations: z.array(restPluginOperationSchema),
@@ -264,6 +285,8 @@ export const restPluginDetailSchema = z.extend(restPluginSchema, {
       }),
     ),
   ),
+  /** The jobs the plugin's module declares, each as its scheduler keeps it (ADR-0128); answered from 0.5.1 and read as optional. */
+  jobs: z.optional(z.array(restPluginJobSchema)),
 });
 export type RestPluginDetail = z.infer<typeof restPluginDetailSchema>;
 

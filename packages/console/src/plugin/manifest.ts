@@ -110,6 +110,7 @@ export const RESERVED_ARG_NAMES: readonly string[] = [
 export const RESERVED_COMMAND_NAMES: readonly string[] = [
   "help",
   "records",
+  "events",
   "skills",
   "skill",
   "enable",

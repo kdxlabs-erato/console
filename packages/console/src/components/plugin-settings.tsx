@@ -12,6 +12,7 @@ import type {
   RestPluginEnableInput,
   RestPluginGrant,
   RestPluginGrantInput,
+  RestPluginJob,
   RestPluginSetting,
   RestProject,
   RestTeam,
@@ -122,6 +123,10 @@ export function PluginSettingsList(props: PluginSettingsListProps) {
             </span>
           </a>
           <span className="sc-task-row-meta">
+            {/* A plugin that runs with something wrong in it, a job that keeps failing say (ADR-0128). */}
+            {plugin.problems.length > 0 && plugin.state !== "failed" && (
+              <Badge tone="danger">{settings.hasProblems}</Badge>
+            )}
             <Badge tone={STATE_TONES[plugin.state]}>
               {words.vocabulary.pluginState[plugin.state] ?? plugin.state}
             </Badge>
@@ -192,6 +197,32 @@ function TickRow(props: {
       </label>
     </li>
   );
+}
+
+/**
+ * How a job stands, in a line (ADR-0128): when it last ran and how that went, since when it has
+ * failed where it failed more than once running, and when it runs next.
+ */
+function jobStanding(
+  settings: Messages["plugins"]["settings"],
+  job: RestPluginJob,
+  language: string,
+): string {
+  const parts: string[] = [];
+  if (job.lastRunAt === null || job.lastOutcome === null) {
+    parts.push(settings.jobNotRun);
+  } else if (job.lastOutcome === "ok") {
+    parts.push(settings.jobRan(formatInstant(job.lastRunAt, language)));
+  } else {
+    parts.push(settings.jobFailed(formatInstant(job.lastRunAt, language)));
+    if (job.failedSince !== null && job.failedSince !== job.lastRunAt) {
+      parts.push(settings.jobFailingSince(formatInstant(job.failedSince, language)));
+    }
+  }
+  if (job.nextAt !== null) {
+    parts.push(settings.jobNext(formatInstant(job.nextAt, language)));
+  }
+  return parts.join(" \u00b7 ");
 }
 
 /** What the plugin is on and holds, a row each; nothing where there is nothing to say yet. */
@@ -309,6 +340,26 @@ function Overview(props: {
             )}
           </>
         ),
+    });
+  }
+  // The jobs as the scheduler keeps them (ADR-0128); a console before 0.5.1 names none.
+  if (detail.jobs !== undefined && detail.jobs.length > 0) {
+    rows.push({
+      key: "jobs",
+      name: settings.jobs,
+      value: (
+        <ul className="sc-plugin-held">
+          {detail.jobs.map((job) => (
+            <li key={job.name}>
+              <span className="sc-plugin-tick-name">
+                <code>{job.name}</code>
+                {job.lastOutcome === "failed" && <Badge tone="danger">{settings.jobFailing}</Badge>}
+              </span>
+              <span className="sc-plugin-tick-under"> {jobStanding(settings, job, language)}</span>
+            </li>
+          ))}
+        </ul>
+      ),
     });
   }
   if (detail.operations.length > 0) {
@@ -1602,7 +1653,10 @@ export function PluginSettingsView(props: PluginSettingsViewProps) {
       <p className="sc-lead">{pluginWord(detail.description, language)}</p>
       {error !== undefined && <Callout tone="danger">{error}</Callout>}
       {detail.problems.length > 0 && (
-        <Callout tone="danger" title={settings.problems}>
+        <Callout
+          tone="danger"
+          title={detail.state === "failed" ? settings.problems : settings.problemsRunning}
+        >
           <ul className="sc-plugin-problems">
             {detail.problems.map((problem) => (
               <li key={problem}>{problem}</li>

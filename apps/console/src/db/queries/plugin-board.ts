@@ -389,7 +389,20 @@ export interface PluginJobRecord {
   readonly nextAt: Date | undefined;
   /** When a failure was last written as an event, so that one is written an hour at most. */
   readonly failedEventAt: Date | undefined;
+  /** Since when it has failed, run after run: its first failure after it went well; nothing while it goes well. */
+  readonly failedSince: Date | undefined;
 }
+
+type JobRow = typeof pluginJobs.$inferSelect;
+
+const toJob = (row: JobRow): PluginJobRecord => ({
+  name: row.name,
+  lastRunAt: row.lastRunAt ?? undefined,
+  lastOutcome: (row.lastOutcome ?? undefined) as PluginJobRecord["lastOutcome"],
+  nextAt: row.nextAt ?? undefined,
+  failedEventAt: row.failedEventAt ?? undefined,
+  failedSince: row.failedSince ?? undefined,
+});
 
 export async function readJobs(
   database: Database,
@@ -401,13 +414,26 @@ export async function readJobs(
     .from(pluginJobs)
     .where(and(eq(pluginJobs.workspaceId, workspaceId), eq(pluginJobs.pluginKey, key)))
     .orderBy(asc(pluginJobs.name));
-  return rows.map((row) => ({
-    name: row.name,
-    lastRunAt: row.lastRunAt ?? undefined,
-    lastOutcome: (row.lastOutcome ?? undefined) as PluginJobRecord["lastOutcome"],
-    nextAt: row.nextAt ?? undefined,
-    failedEventAt: row.failedEventAt ?? undefined,
-  }));
+  return rows.map(toJob);
+}
+
+/** The jobs of every plugin of the workspace, by plugin: one read for a listing of the plugins. */
+export async function readAllJobs(
+  database: Database,
+  workspaceId: string,
+): Promise<Map<string, PluginJobRecord[]>> {
+  const rows = await drizzleOf(database)
+    .select()
+    .from(pluginJobs)
+    .where(eq(pluginJobs.workspaceId, workspaceId))
+    .orderBy(asc(pluginJobs.pluginKey), asc(pluginJobs.name));
+  const byPlugin = new Map<string, PluginJobRecord[]>();
+  for (const row of rows) {
+    const jobs = byPlugin.get(row.pluginKey) ?? [];
+    jobs.push(toJob(row));
+    byPlugin.set(row.pluginKey, jobs);
+  }
+  return byPlugin;
 }
 
 export async function writeJob(
@@ -423,6 +449,7 @@ export async function writeJob(
     lastOutcome: input.lastOutcome ?? null,
     nextAt: input.nextAt ?? null,
     failedEventAt: input.failedEventAt ?? null,
+    failedSince: input.failedSince ?? null,
     updatedAt: input.now,
   };
   await drizzleOf(database)
