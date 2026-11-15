@@ -2,12 +2,12 @@
   "name": "desk-web",
   "version": "0.1.0",
   "private": true,
-  "description": "The dashboard of my desk: my own work, in a console of my own served by console serve.",
+  "description": "The pages of my desk: a console of my own, served from this machine by console serve.",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
-    "serve": "console serve dist"
+    "serve": "console serve dist --records ../records"
   },
   "dependencies": {
     "@skillcdn/console": "__VERSION__",

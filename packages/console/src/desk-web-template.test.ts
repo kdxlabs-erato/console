@@ -4,11 +4,12 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import * as exported from "./index.js";
 
-// The shell of a desk's dashboard (ADR-0116), `template/desk-web` in the package: the files
+// The shell of a desk's pages (ADR-0116), `template/desk-web` in the package: the files
 // `console desk --web` writes into a desk's `web/`, with the package's version for
 // `__VERSION__` and the desk's title for `__TITLE__`. A template is built nowhere in this
 // repository, so this holds what a build of it leans on: the files there are, the two words
-// where the command fills them, and that what the script imports is what the package exports.
+// where the command fills them, that what the script imports is what the package exports, and
+// that the pages are served with the desk's records beside them.
 
 const TEMPLATE = fileURLToPath(new URL("../template/desk-web/", import.meta.url));
 
@@ -27,7 +28,7 @@ async function filesOf(dir: string): Promise<string[]> {
 
 const read = (name: string): Promise<string> => readFile(join(TEMPLATE, name), "utf8");
 
-describe("the shell of a desk's dashboard", () => {
+describe("the shell of a desk's pages", () => {
   it("is the four files of a console of one's own, its manifest and five lines on how it is run", async () => {
     expect(await filesOf(TEMPLATE)).toEqual([
       "README.md",
@@ -63,7 +64,8 @@ describe("the shell of a desk's dashboard", () => {
       "vite",
     ]);
     expect(manifest.scripts.build).toBe("tsc -p tsconfig.json --noEmit && vite build");
-    expect(manifest.scripts.serve).toBe("console serve dist");
+    // The pages are served with the desk's records beside them, and nothing else of the desk.
+    expect(manifest.scripts.serve).toBe("console serve dist --records ../records");
   });
 
   it("carries the desk's title where the command fills it, and names no token, address or project", async () => {
@@ -73,7 +75,8 @@ describe("the shell of a desk's dashboard", () => {
     expect(await read("src/main.tsx")).toContain(
       "createConsole({ title: document.title, pages: [deskPage()] })",
     );
-    expect(await read("README.md")).toMatch(/^# __TITLE__: the dashboard\n/);
+    expect(await read("README.md")).toMatch(/^# __TITLE__: the pages\n/);
+    expect(await read("README.md")).toContain("`console serve dist --records ../records`");
     for (const name of ["package.json", "src/main.tsx", "tsconfig.json", "vite.config.ts"]) {
       expect(await read(name)).not.toContain("__TITLE__");
     }
@@ -107,6 +110,10 @@ describe("the shell of a desk's dashboard", () => {
     expect(exported.deskPage().key).toBe(exported.DESK_PAGE_KEY);
     expect(script).toContain('import "@skillcdn/console/console.css";');
     // The development server sends the API where `console serve` listens by default.
-    expect(await read("vite.config.ts")).toContain('"/api": { target: "http://127.0.0.1:11197"');
+    const build = await read("vite.config.ts");
+    expect(build).toContain(
+      'const served = { target: "http://127.0.0.1:11197", changeOrigin: true };',
+    );
+    expect(build).toContain('proxy: { "/api": served, "/records": served }');
   });
 });
