@@ -629,6 +629,7 @@ export {
   serviceProblemOf,
 } from "./schemas.js";
 export {
+  agentAddressOf,
   agentLoginOf,
   describeService,
   deskRemoteOf,

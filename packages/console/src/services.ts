@@ -32,6 +32,12 @@ export interface ServiceContext {
   readonly names: ServiceNames;
   /** What the agent's account is called at the service, where a name is put together for it. */
   readonly account: string | undefined;
+  /**
+   * The agent's own address: the one it signs in to the console with, where it signs in with an
+   * address. Nothing where it signs in with a login that is none: an address is then asked for,
+   * and never made up from the names.
+   */
+  readonly address?: string | undefined;
 }
 
 /** What one kind of service says of itself. */
@@ -80,6 +86,10 @@ export function fillTemplate(template: string, names: ServiceNames): string | un
 const called = (account: string | undefined, otherwise: string): string =>
   account === undefined ? otherwise : `\`${account}\``;
 
+/** What a desk's item says last: the organization's pack may hold the skill for setting a desk up. */
+const DESK_BY_THE_PACK =
+  'Where the organization\'s pack has a skill for setting a desk up, go by it: console skills --search "desk setup".';
+
 /** What a service the account signs in to the console through says last: the sign-in is needed once, at the setup. */
 const SIGN_IN_AT_HAND =
   "What it signs in with, its password and its second step, at hand when its machine is set up: the setup signs in with it once, in the machine's browser.";
@@ -120,7 +130,7 @@ const github: ServiceProvider = {
           },
           {
             title: "Make your desk there and push it",
-            body: `Make the repository \`${account ?? "<your account>"}/desk\`, private, and push the desk to it.`,
+            body: `Make the repository \`${account ?? "<your account>"}/desk\`, private, and push the desk to it. ${DESK_BY_THE_PACK}`,
           },
         ],
   asks: ({ service, account }) => [
@@ -176,7 +186,7 @@ const gitlab: ServiceProvider = {
         },
         {
           title: "Make your desk there and push it",
-          body: `Your desk is ${service.group === undefined ? "a project of the group, which whoever made your account names" : `the project \`${service.group}/${names.agent}-desk\``}, private: push the desk to it. Where your role in the group does not let you make the project, ask whoever made your account to.`,
+          body: `Your desk is ${service.group === undefined ? "a project of the group, which whoever made your account names" : `the project \`${service.group}/${names.agent}-desk\``}, private: push the desk to it. Where your role in the group does not let you make the project, ask whoever made your account to. ${DESK_BY_THE_PACK}`,
         },
       ];
     }
@@ -187,7 +197,7 @@ const gitlab: ServiceProvider = {
       },
       {
         title: "Make your desk there and push it",
-        body: `Make the project \`${account ?? "<your account>"}/desk\`, private, and push the desk to it.`,
+        body: `Make the project \`${account ?? "<your account>"}/desk\`, private, and push the desk to it. ${DESK_BY_THE_PACK}`,
       },
     ];
   },
@@ -239,6 +249,10 @@ const googleWorkspace: ServiceProvider = {
   deskRemote: () => undefined,
 };
 
+/** The Slack workspace an entry names, as a line says it. */
+const slackPlace = (service: RestWorkspaceService): string =>
+  service.workspace === undefined ? "the Slack workspace" : `\`${service.workspace}\``;
+
 const slack: ServiceProvider = {
   kind: "slack",
   name: "Slack",
@@ -246,23 +260,26 @@ const slack: ServiceProvider = {
   account: undefined,
   signsInThrough: undefined,
   wakeSource: "slack",
-  guide: ({ service }) => [
-    `An invitation for the agent's own address to ${service.workspace === undefined ? "the Slack workspace" : `\`${service.workspace}\``}, as a member: it is a member there as a person is, called by its name.`,
+  guide: ({ service, address }) => [
+    `An invitation to ${slackPlace(service)} as a member, sent to ${address === undefined ? "an address the agent reads" : `\`${address}\`, the address the agent signs in with`}: it is a member there as a person is, called by its name.`,
   ],
-  onboarding: ({ service }) => [
+  onboarding: ({ service, address }) => [
     {
       title: "Join the messenger and say who you are",
-      body: `Accept the invitation to ${service.workspace === undefined ? "the Slack workspace" : `\`${service.workspace}\``} with your own address, set your name, your title and your picture (console agent <handle> --avatar <file> writes the file), and say in your profile that you are an agent.`,
+      body: `Accept the invitation to ${slackPlace(service)} ${address === undefined ? "where one has reached you" : `that came to \`${address}\`, the address you sign in with`}, set your name, your title and your picture (console agent <handle> --avatar <file> writes the file), and say in your profile that you are an agent.`,
     },
     {
       title: "Connect the messenger to your product, and be woken by it",
       body: "Add the messenger's own MCP server to your product, and make the app that wakes you from the manifest your skill carries; keep its tokens in your store.",
     },
   ],
-  asks: ({ service, names }) => [
+  asks: ({ service, names, address }) => [
     {
       title: `An invitation for ${names.agent} to the messenger`,
-      body: `Where none has reached your address: an invitation to ${service.workspace === undefined ? "the Slack workspace" : `\`${service.workspace}\``} as a member, and the approval of the app you ask to install for yourself.`,
+      body:
+        address === undefined
+          ? `Where you hold none: ask which address an invitation to ${slackPlace(service)} is to be sent to, and name none yourself, since an address put together from your names is nobody's. Then an invitation there as a member, and the approval of the app you ask to install for yourself.`
+          : `Where none has come to \`${address}\`, the address you sign in with: an invitation to ${slackPlace(service)} as a member, sent there, and the approval of the app you ask to install for yourself.`,
     },
   ],
   deskRemote: () => undefined,
@@ -329,6 +346,8 @@ export function describeService(
   role: ServiceRole,
   service: RestWorkspaceService,
   names: ServiceNames,
+  /** The agent's own address, where it signs in to the console with one. */
+  address?: string,
 ): {
   readonly provider: ServiceProvider;
   readonly account: string | undefined;
@@ -338,7 +357,7 @@ export function describeService(
 } {
   const provider = serviceProviderOf(service.kind ?? "");
   const account = serviceAccountOf(service, names);
-  const context: ServiceContext = { role, service, names, account };
+  const context: ServiceContext = { role, service, names, account, address };
   return {
     provider,
     account,
@@ -346,6 +365,22 @@ export function describeService(
     onboarding: provider.onboarding(context),
     asks: provider.asks(context),
   };
+}
+
+/**
+ * The agent account's own address (ADR-0094): the login it signs in to the console with, where
+ * that is an address, as at a Workspace. A login at a git host is none, and nothing is made of
+ * the workspace's names in its place: an invitation sent to an address nobody reads reaches
+ * nobody.
+ */
+export function agentAddressOf(
+  workspace: Pick<RestWorkspace, "handle" | "domain" | "services">,
+  agent: string,
+  /** The login the account signs in with, where it is known; else what the identity service makes of the names. */
+  login?: string,
+): string | undefined {
+  const signsInWith = login ?? agentLoginOf(workspace, agent)?.login;
+  return signsInWith?.includes("@") === true ? signsInWith : undefined;
 }
 
 /**

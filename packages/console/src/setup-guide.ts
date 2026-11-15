@@ -1,5 +1,6 @@
 import type { RestAgentSetup, RestWorkspace } from "./schemas.js";
 import {
+  agentAddressOf,
   describeService,
   HELD_BEFORE_ADDED,
   type ServiceItem,
@@ -103,15 +104,18 @@ function itemsOnce(items: readonly ServiceItem[], more: readonly ServiceItem[]):
 export function guideServicesOf(
   workspace: Pick<RestWorkspace, "handle" | "domain" | "services">,
   handle: string,
+  /** The login the account signs in with, where it is known: an address there is its own address. */
+  login?: string,
 ): GuideService[] {
   const names = serviceNamesOf(workspace, handle);
+  const address = agentAddressOf(workspace, handle, login);
   const services: GuideService[] = [];
   for (const role of SERVICE_ROLES) {
     const service = workspace.services?.[role];
     if (service === undefined) {
       continue;
     }
-    const said = describeService(role, service, names);
+    const said = describeService(role, service, names, address);
     const same = services.find(
       (other) => other.kind === said.provider.kind && other.account === said.account,
     );
@@ -149,7 +153,7 @@ export function setupGuideOf(setup: RestAgentSetup, code: string): SetupGuide {
     account.name === null || account.name.length === 0
       ? `@${account.handle}`
       : `@${account.handle} (${[account.name, account.title].filter((part) => part !== null && part.length > 0).join(", ")})`;
-  const described = guideServicesOf(workspace, account.handle);
+  const described = guideServicesOf(workspace, account.handle, account.login);
   const serviceTitle = (one: GuideService): string =>
     `${one.name}, ${one.roles.map((role) => ROLE_WORDS[role]).join(" and ")}`;
 

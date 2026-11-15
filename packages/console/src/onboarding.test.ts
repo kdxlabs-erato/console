@@ -72,7 +72,7 @@ describe("the onboarding task of an agent account", () => {
         "- **The account `acme-mira` at GitHub.** Where you cannot sign in at GitHub as `acme-mira`: that the account is made",
       ),
       expect.stringContaining(
-        "- **An invitation for mira to the messenger.** Where none has reached your address",
+        "- **An invitation for mira to the messenger.** Where none has come to `mira@acme.example`, the address you sign in with",
       ),
     ]);
   });
@@ -105,5 +105,72 @@ describe("the onboarding task of an agent account", () => {
       expect.stringContaining("Introduce yourself to your manager"),
     ]);
     expect(body).not.toContain("## What you ask for");
+  });
+
+  it("keeps the run open while anything of the task waits on a person, and is done when nothing does", () => {
+    const { body } = onboardingOf({ handle: "mira", workspace: WORKSPACE });
+    // A run that waits for a decision is never ended by the console, and a finished run asks
+    // nothing more: the task is not finished around what it asked.
+    expect(body).toContain(
+      "What waits on a person you ask for as a decision, and a run that waits for a decision stays open: the answer wakes you, and you go on with that run (`--run <id>`). The task is finished when nothing of it waits on anyone.",
+    );
+    expect(body.slice(body.indexOf("## When you are done"))).toBe(
+      [
+        "## When you are done",
+        "",
+        "You are done when nothing of this task waits on anyone: every item above is set up, and every decision you raised is answered and acted on. Until then the run stays open and waits, since a decision is asked on a run and a run that is finished asks none. Then report what is set up, and finish the task.",
+        "",
+      ].join("\n"),
+    );
+    expect(body).not.toContain("what still waits on a person");
+  });
+
+  it("names the account's own address where it signs in with one, and has it ask for one where it does not", () => {
+    // At a Workspace the account signs in with an address, which is its address everywhere.
+    const named = onboardingOf({ handle: "mira", workspace: WORKSPACE }).body;
+    expect(named).toContain(
+      "Accept the invitation to `acme.slack.com` that came to `mira@acme.example`, the address you sign in with, set your name",
+    );
+    expect(named).toContain(
+      "Where none has come to `mira@acme.example`, the address you sign in with: an invitation to `acme.slack.com` as a member, sent there",
+    );
+    // The login the account was made with is the one that counts, where it is known.
+    const given = onboardingOf({
+      handle: "mira",
+      workspace: WORKSPACE,
+      login: "release-bot@acme.example",
+    }).body;
+    expect(given).toContain("that came to `release-bot@acme.example`");
+    expect(given).not.toContain("that came to `mira@acme.example`");
+    // A login at a git host is no address: the task has it ask which address, and offer none.
+    const gitHost = {
+      handle: "acme",
+      domain: "acme.example",
+      services: {
+        identity: { kind: "github" },
+        git: { kind: "github", organization: "acme" },
+        messenger: { kind: "slack", workspace: "acme.slack.com" },
+      },
+    };
+    for (const asked of [
+      onboardingOf({ handle: "mira", workspace: gitHost }).body,
+      onboardingOf({ handle: "mira", workspace: WORKSPACE, login: "acme-mira" }).body,
+    ]) {
+      expect(asked).toContain(
+        "Where you hold none: ask which address an invitation to `acme.slack.com` is to be sent to, and name none yourself, since an address put together from your names is nobody's.",
+      );
+      expect(asked).toContain(
+        "Accept the invitation to `acme.slack.com` where one has reached you",
+      );
+      expect(asked).not.toContain("mira@acme.example`, the address");
+      expect(asked).not.toMatch(/your (own )?address/);
+    }
+  });
+
+  it("names the organization's pack where the desk is made, for the skill that sets one up", () => {
+    const { body } = onboardingOf({ handle: "mira", workspace: WORKSPACE });
+    expect(body).toContain(
+      '- **Make your desk there and push it.** Make the repository `acme-mira/desk`, private, and push the desk to it. Where the organization\'s pack has a skill for setting a desk up, go by it: console skills --search "desk setup".',
+    );
   });
 });

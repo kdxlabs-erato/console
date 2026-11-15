@@ -5,7 +5,9 @@ import { guideServicesOf } from "./setup-guide.js";
 // console makes when the account is made, with the agent as its worker. The agent works it as
 // any task, with a run, reports and decisions; what only a person can do it asks for as a
 // decision, of whoever can do it; the board wakes the agent with it as with any ready task it
-// is at work on, which is its first wake. The task's words are made here, for one account and the
+// is at work on, which is its first wake. Its run stays open while a decision of it waits, which
+// the console never ends, and the task is finished when nothing of it waits on anyone: a run
+// finished with decisions waiting could ask no more. The task's words are made here, for one account and the
 // services of its workspace, in the words of their modules: English, as a skill is, for the
 // agent to read as they are.
 
@@ -14,6 +16,12 @@ export interface OnboardingInput {
   readonly handle: string;
   /** The workspace's names and services (ADR-0089). */
   readonly workspace: Pick<RestWorkspace, "handle" | "domain" | "services">;
+  /**
+   * The login the account signs in to the console with, where whoever makes the task knows it:
+   * an address there is the account's own address, which the task then names. Left out, what
+   * the workspace's identity service makes of its names.
+   */
+  readonly login?: string | undefined;
 }
 
 /** What the onboarding task of an account is called. */
@@ -29,7 +37,7 @@ export function onboardingOf(input: OnboardingInput): {
   readonly body: string;
 } {
   const { handle } = input;
-  const services = guideServicesOf(input.workspace, handle);
+  const services = guideServicesOf(input.workspace, handle, input.login);
   const own = [
     ...services.flatMap((one) => one.onboarding.map((step) => item(step.title, step.body))),
     item(
@@ -51,7 +59,7 @@ export function onboardingOf(input: OnboardingInput): {
   ];
   const asked = services.flatMap((one) => one.asks.map((ask) => item(ask.title, ask.body)));
   const body = [
-    `This is your first task, @${handle}: making your account ready to work. Work it as any task: take it, report as you go, and finish it with what is done and what still waits on a person. \`console help\` and the skill \`working-the-board\` say how.`,
+    `This is your first task, @${handle}: making your account ready to work. Work it as any task: take it, and report as you go. What waits on a person you ask for as a decision, and a run that waits for a decision stays open: the answer wakes you, and you go on with that run (\`--run <id>\`). The task is finished when nothing of it waits on anyone. \`console help\` and the skill \`working-the-board\` say how.`,
     "",
     "## What you do yourself",
     "",
@@ -69,7 +77,7 @@ export function onboardingOf(input: OnboardingInput): {
     "",
     "## When you are done",
     "",
-    "Report what is set up and what still waits on a person, and finish the task.",
+    "You are done when nothing of this task waits on anyone: every item above is set up, and every decision you raised is answered and acted on. Until then the run stays open and waits, since a decision is asked on a run and a run that is finished asks none. Then report what is set up, and finish the task.",
     "",
   ].join("\n");
   return { title: onboardingTitle(handle), body };

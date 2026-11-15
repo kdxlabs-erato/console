@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isDomain, restWorkspacePatchSchema, serviceProblem, serviceProblemOf } from "./schemas.js";
 import {
+  agentAddressOf,
   agentLoginOf,
   describeService,
   deskRemoteOf,
@@ -15,6 +16,12 @@ import {
 // handles and the domain, what each kind says of itself, and what an administrator may name.
 
 const ACME = { workspace: "acme", agent: "mira", domain: "acme.example" };
+/** A workspace whose agents sign in to the console with an address. */
+const WORKSPACE_WITH_IDENTITY = {
+  handle: "acme",
+  domain: "acme.example",
+  services: { identity: { kind: "google-workspace" } },
+};
 
 describe("a name at a service", () => {
   it("is put together from the workspace's short name, the agent's handle and the domain", () => {
@@ -129,6 +136,28 @@ describe("what a kind of service says of itself", () => {
     expect(messenger.provider.wakeSource).toBe("slack");
     expect(messenger.guide[0]).toContain("`acme.slack.com`");
     expect(messenger.asks[0]?.title).toBe("An invitation for mira to the messenger");
+    // The agent's own address is the one it signs in with, where that is an address; a login
+    // at a git host is none, and nothing is put together in its place.
+    expect(agentAddressOf(WORKSPACE_WITH_IDENTITY, "mira")).toBe("mira@acme.example");
+    expect(agentAddressOf(WORKSPACE_WITH_IDENTITY, "mira", "bot@acme.example")).toBe(
+      "bot@acme.example",
+    );
+    expect(agentAddressOf(WORKSPACE_WITH_IDENTITY, "mira", "acme-mira")).toBeUndefined();
+    expect(
+      agentAddressOf({ handle: "acme", domain: "acme.example", services: {} }, "mira"),
+    ).toBeUndefined();
+    const told = describeService(
+      "messenger",
+      { kind: "slack", workspace: "acme.slack.com" },
+      ACME,
+      "mira@acme.example",
+    );
+    expect(told.guide[0]).toBe(
+      "An invitation to `acme.slack.com` as a member, sent to `mira@acme.example`, the address the agent signs in with: it is a member there as a person is, called by its name.",
+    );
+    expect(messenger.guide[0]).toBe(
+      "An invitation to `acme.slack.com` as a member, sent to an address the agent reads: it is a member there as a person is, called by its name.",
+    );
   });
 
   it("names a GitLab by its group and its host, and an account there in the form the entry says", () => {

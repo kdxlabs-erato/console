@@ -319,7 +319,7 @@ export function registerAgentsRest(app: Hono<AppEnv>, dependencies: AgentsRestDe
       return null;
     }
     const settings = await readWorkspaceSettings(database, account.workspaceId);
-    const words = onboardingOf({ handle, workspace: settings });
+    const words = onboardingOf({ handle, workspace: settings, login: account.login });
     const task = await createTask(database, {
       scope: { workspaceId: account.workspaceId, projectId: project.id },
       actor: actorOf(caller),
