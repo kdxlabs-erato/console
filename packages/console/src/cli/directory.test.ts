@@ -1,8 +1,31 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { createDirectoryStore, DIRECTORY_FILE, parseDirectorySettings } from "./directory.js";
+import {
+  createDirectoryStore,
+  DIRECTORY_FILE,
+  parseDirectorySettings,
+  THE_SENTENCE,
+} from "./directory.js";
+
+/** The page of the skill working-the-board that keeps the sentence, in the console's repository. */
+const THE_PAGE = fileURLToPath(
+  new URL("../../../../skills/working-the-board/references/the-sentence.md", import.meta.url),
+);
+
+describe("the sentence a checkout's agreement carries", () => {
+  it("says to run whoami before the first step, and is what the skill's page quotes", async () => {
+    expect(THE_SENTENCE).toBe(
+      "**Bound to a console?** Before the first step, run `console whoami`: when it names a project, or `.skillcdn-console.json` is in this checkout, work the task through that SkillCDN console (`console help` says how).",
+    );
+    // A pack says it with "the checkout" for "this checkout": the words it changes are there, once.
+    expect(THE_SENTENCE.split("this checkout")).toHaveLength(2);
+    // One sentence, kept in two places: what console use prints is what the page gives to copy.
+    expect(await readFile(THE_PAGE, "utf8")).toContain(`\n> ${THE_SENTENCE}\n`);
+  });
+});
 
 describe("what a directory says of its project", () => {
   const made: string[] = [];

@@ -20,10 +20,14 @@ export const DIRECTORY_FILE = ".skillcdn-console.json";
  * The sentence a checkout's agreement carries to send the agents working there to the console:
  * the one the skill working-the-board keeps (references/the-sentence.md) and this repository's
  * own agreement carries. `console use` prints it, since nothing tells an agent to look until the
- * checkout says so, as `skillcdn use` prints the sentence for a pack.
+ * checkout says so, as `skillcdn use` prints the sentence for a pack. It says to run
+ * `console whoami` before the first step, where it once stated the two conditions alone: a
+ * condition nobody tested is passed over, and an agent in a checkout bound to a project its
+ * console did not have began the work with no task. The command changes nothing on the board,
+ * and is refused where the binding is wrong (ADR-0112), which is what stops the work.
  */
 export const THE_SENTENCE =
-  "**Bound to a console?** When `.skillcdn-console.json` is in this checkout, or `console whoami` names a project, work the task through that SkillCDN console (`console help` says how).";
+  "**Bound to a console?** Before the first step, run `console whoami`: when it names a project, or `.skillcdn-console.json` is in this checkout, work the task through that SkillCDN console (`console help` says how).";
 
 /** How large the file may be before it is not read: a few names, never more. */
 const MAX_FILE_CHARS = 16 * 1024;

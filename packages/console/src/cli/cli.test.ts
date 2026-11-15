@@ -776,9 +776,15 @@ describe("the console command", () => {
     expect(used.out()).toContain("names the project and the console, never a token");
     expect(used.out()).toContain("left out of a public one");
     expect(used.out()).toContain("/work/app/.skillcdn-console.json");
-    expect(used.out()).toContain(
-      "**Bound to a console?** When `.skillcdn-console.json` is in this checkout, or `console whoami` names a project",
-    );
+    // The sentence says to check, where it stated a condition: a condition nobody tested is
+    // passed over, and an agent that never ran whoami began work with no task.
+    expect(
+      used
+        .out()
+        .endsWith(
+          "\n\n**Bound to a console?** Before the first step, run `console whoami`: when it names a project, or `.skillcdn-console.json` is in this checkout, work the task through that SkillCDN console (`console help` says how).\n",
+        ),
+    ).toBe(true);
     expect(directory.kept()).toEqual({ project: "web", url: ORIGIN });
     const unknown = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["use", "nothing"], unknown.io)).toBe(EXIT.failed);
