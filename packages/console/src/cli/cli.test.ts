@@ -5920,6 +5920,104 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     }
   });
 
+  it("loads a skill by its folder too, says so where no skill is at a path, and names the load after a search and a listing", async () => {
+    const LOAD =
+      "A skill is loaded whole, its rules first, with console skill <the path of its SKILL.md>; --file reads a file of the pack as it is, without the rules.";
+    const nothing = (code: string, message: string) => ({
+      ...AT,
+      status: "not_found",
+      refusal: { code, message, sourceUrl: null, directories: [] },
+      read: null,
+    });
+    const { fetch, calls } = fakeConsole({
+      [`GET ${IN}/skills`]: { body: LISTING },
+      [`GET ${IN}/skills/one?path=review%2FSKILL.md`]: { body: PAGE_ONE },
+      [`GET ${IN}/skills/one?path=review%2FSKILL.md&cursor=two`]: { body: PAGE_TWO },
+      [`GET ${IN}/skills/one?path=SKILL.md`]: {
+        body: nothing("skill.not_found", "No skill at that SKILL.md path."),
+      },
+      [`GET ${IN}/skills/one?path=docs%2Fguide.md%2FSKILL.md`]: {
+        body: nothing("skill.not_found", "No skill at that SKILL.md path."),
+      },
+      [`GET ${IN}/skills/file?path=review%2Fnothing.md`]: {
+        body: nothing("file.not_found", "No file at that path in this pack."),
+      },
+      [`GET ${IN}/skills/one?path=hidden%2FSKILL.md`]: {
+        body: nothing("mount.repo_not_found", "Nothing is served here to the asker."),
+      },
+      [`GET ${IN}/skills/find?query=review`]: {
+        body: {
+          ...AT,
+          read: {
+            status: "ready",
+            commit: COMMIT,
+            query: "review",
+            path: "",
+            items: [
+              {
+                kind: "skill",
+                path: "review/SKILL.md",
+                name: "review",
+                directory: "review",
+                description: "Reviews a change.",
+                translations: {},
+                files: [],
+                moreFiles: 0,
+                license: { kind: "permissive", name: "MIT", source: null },
+              },
+            ],
+            diagnostics: [],
+            nextCursor: null,
+            totals: null,
+          },
+        },
+      },
+    });
+    // A skill's folder is its skill: what a search prints beside the name is often cut there.
+    for (const given of ["review", "review/", "review/SKILL.md"]) {
+      const h = harness({ fetch, env: SIGNED_IN });
+      expect(await runCli(["skill", given], h.io), given).toBe(EXIT.ok);
+      expect(h.out(), given).toContain("Read the diff.");
+      expect(calls.at(-1)?.key, given).toBe(
+        `GET ${IN}/skills/one?path=review%2FSKILL.md&cursor=two`,
+      );
+    }
+    // The root's own skill is read by the dot, as the root is everywhere.
+    const root = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "."], root.io)).toBe(EXIT.ok);
+    expect(calls.at(-1)?.key).toBe(`GET ${IN}/skills/one?path=SKILL.md`);
+    // No skill at the path: said as that, with the path that was read and how the pack is
+    // listed, and nothing of a token, since the pack has just answered its listing.
+    const missing = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "docs/guide.md"], missing.io)).toBe(EXIT.ok);
+    expect(missing.out()).toBe(
+      "skill at /gh/acme/skills, served by https://skillcdn.test: not_found\nNo skill is at docs/guide.md/SKILL.md in this pack. console skills lists every skill with the path of its SKILL.md, and console skills --search <words> finds one; a file that is no skill is read with console skill --file <path>.\n",
+    );
+    const noFile = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "--file", "review/nothing.md"], noFile.io)).toBe(EXIT.ok);
+    expect(noFile.out()).toBe(
+      "file at /gh/acme/skills, served by https://skillcdn.test: not_found\nNo file at that path in this pack.\nconsole skills <folder> shows what a folder of the pack holds, . for the root.\n",
+    );
+    // A pack that stops answering between the listing and the read is still the token's to mend.
+    const hidden = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "hidden"], hidden.io)).toBe(EXIT.ok);
+    expect(hidden.out()).toContain("the project holds no pack token for it");
+    expect(hidden.out()).toContain("Nothing is served here to the asker.");
+    // After what a search found, and after the listing, how a skill is loaded: the pack's own
+    // footer names how a section is read, and a skill read as a file comes without its rules.
+    const found = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skills", "--search", "review"], found.io)).toBe(EXIT.ok);
+    expect(found.out()).toContain("skill: review (review/SKILL.md)");
+    expect(found.out().endsWith(`\n${LOAD}\n`)).toBe(true);
+    const listed = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skills"], listed.io)).toBe(EXIT.ok);
+    expect(listed.out()).toContain(`\n${LOAD}\nThe plugins of this console have skills`);
+    // What a program takes carries no such line.
+    const json = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skills", "--search", "review", "--json"], json.io)).toBe(EXIT.ok);
+    expect(json.out()).not.toContain("A skill is loaded whole");
+  });
+
   it("reads the organization's pack where no project is named, and says whose pack it is (ADR-0113)", async () => {
     const ORG = "/api/v1/workspace/skills";
     const LINE =

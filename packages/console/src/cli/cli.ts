@@ -1575,6 +1575,9 @@ async function readSkills(
   const owner = extras.owner ?? "project";
   const say = (value: unknown, words: () => string): void =>
     answerPack(io, session, owner, value, words);
+  // How a skill is loaded, said after a listing and after what a search found: the pack's own
+  // words there name how a section is read, and a skill read as a file comes without its rules.
+  const loading = `A skill is loaded whole, its rules first, with ${extras.command.replace(/skills$/, "skill")} <the path of its SKILL.md>; --file reads a file of the pack as it is, without the rules.`;
   if (positionals.length > 1) {
     throw misuse(`Say one folder: ${extras.command} [<folder>] [--search <words>]`);
   }
@@ -1626,7 +1629,11 @@ async function readSkills(
   // The pack as it stands; or why it does not answer, which a folder or a search would meet too.
   if (summary === undefined || (words === undefined && given === undefined)) {
     say(listing, () =>
-      [formatSkills(listing, extras.own, owner), extras.afterwards]
+      [
+        formatSkills(listing, extras.own, owner),
+        summary === undefined ? undefined : loading,
+        extras.afterwards,
+      ]
         .filter((part): part is string => part !== undefined)
         .join("\n"),
     );
@@ -1635,7 +1642,12 @@ async function readSkills(
   if (words !== undefined) {
     // One page of what the words find; more is said, and asked for with --cursor.
     const found = await reader.skillFind(words, { path: folder, limit: atMost, cursor });
-    say(found, () => formatSkillFind(found, summary, owner));
+    say(found, () => {
+      const results = formatSkillFind(found, summary, owner);
+      return found.status === "ready" && found.read?.status === "ready"
+        ? `${results}\n${loading}`
+        : results;
+    });
     return EXIT.ok;
   }
   // The folder whole: its pages until the end, as the pack lists them.
@@ -1795,7 +1807,7 @@ async function readSkill(
     const page = await reader.skillFile(file, { offset, limit });
     const section = page.read === null ? undefined : joinFile([page], summary, limit);
     say({ ...page, read: section === undefined ? null : bodyOfFile(section) }, () =>
-      formatSkillFile(page, section, owner),
+      formatSkillFile(page, section, owner, command),
     );
     return EXIT.ok;
   }
@@ -1821,7 +1833,7 @@ async function readSkill(
     const fileRead = last;
     const whole = joinFile(pages, summary);
     say({ ...fileRead, read: whole === undefined ? null : bodyOfFile(whole) }, () =>
-      formatSkillFile(fileRead, whole, owner),
+      formatSkillFile(fileRead, whole, owner, command),
     );
     return EXIT.ok;
   }
@@ -1856,7 +1868,7 @@ async function readSkill(
   const loaded = last;
   const whole = joinSkill(pages, summary);
   say({ ...loaded, read: whole === undefined ? null : bodyOfSkill(whole) }, () =>
-    formatSkillLoad(loaded, whole, owner),
+    formatSkillLoad(loaded, whole, owner, { path: wanted.path, command }),
   );
   return EXIT.ok;
 }

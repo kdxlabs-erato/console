@@ -112,10 +112,23 @@ function head(what: string, answer: Envelope): string {
   return `${what} at ${answer.address}, ${where}: ${answer.status}`;
 }
 
+/**
+ * The pack's own codes for a path with nothing at it. The console answers them, and a pack that
+ * serves nothing to the console, as `not_found`; the code tells the two apart: with one of
+ * these the pack answered, so no token is what is missing, and saying so sends an agent to mend
+ * a pack that is served.
+ */
+const NOTHING_AT_PATH: ReadonlySet<string> = new Set(["skill.not_found", "file.not_found"]);
+
+const nothingAtPath = (answer: Envelope): boolean =>
+  answer.status === "not_found" &&
+  answer.refusal !== null &&
+  NOTHING_AT_PATH.has(answer.refusal.code);
+
 /** A read that did not happen: the head, the words of its status, and the pack's own refusal when it gave one. */
 function refused(what: string, answer: Envelope, owner: PackOwner = "project"): string {
   const lines = [head(what, answer)];
-  if (answer.status !== "none" && answer.status !== "ready") {
+  if (answer.status !== "none" && answer.status !== "ready" && !nothingAtPath(answer)) {
     lines.push(
       owner === "organization" &&
         (answer.status === "not_found" || answer.status === "token_invalid")
@@ -225,6 +238,19 @@ export function formatSkills(
 }
 
 /**
+ * The `SKILL.md` a path names: the path itself where it names one, else the one in the folder
+ * it names, since a skill is its folder and a listing cut short shows the folder alone; the
+ * root's own for the dot, as the root is everywhere.
+ */
+function skillFileOf(given: string): string {
+  const path = given.replace(/\/+$/, "");
+  if (path === "" || path === ".") {
+    return "SKILL.md";
+  }
+  return path === "SKILL.md" || path.endsWith("/SKILL.md") ? path : `${path}/SKILL.md`;
+}
+
+/**
  * A skill's path as given, or taken out of the URI the listing names it by
  * (`skill://<host>/<owner>/<name>/<path>`); a URI of another pack would read this pack's skill
  * at the same path, or nothing, so it is said instead.
@@ -239,7 +265,7 @@ export function skillPathIn(
       ? {
           error: `Not a skill's URI the console knows: ${given}. Say the path of its SKILL.md from the repository's root, or the URI console skills lists.`,
         }
-      : { path: given };
+      : { path: skillFileOf(given) };
   }
   const pack = packAddress === null ? undefined : parseAddress(packAddress);
   if (
@@ -281,11 +307,18 @@ export function formatSkillLoad(
   loaded: RestSkillLoad,
   whole: SkillResult | undefined,
   owner: PackOwner = "project",
+  /** The path that was read and the command it was read with, for what is said where no skill is there. */
+  asked?: { readonly path: string; readonly command: string },
 ): string {
   if (loaded.status === "none" || loaded.address === null) {
     return noAddress(owner);
   }
   if (loaded.status !== "ready") {
+    if (asked !== undefined && nothingAtPath(loaded)) {
+      // The listing is the command's plural: console skills, or console plugin <key> skills.
+      const listing = `${asked.command}s`;
+      return `${head("skill", loaded)}\nNo skill is at ${asked.path} in this pack. ${listing} lists every skill with the path of its SKILL.md, and ${listing} --search <words> finds one; a file that is no skill is read with ${asked.command} --file <path>.`;
+    }
     return refused("skill", loaded, owner);
   }
   if (whole === undefined) {
@@ -513,12 +546,17 @@ export function formatSkillFile(
   read: RestSkillFile,
   whole: FileResult | DirectoryResult | undefined,
   owner: PackOwner = "project",
+  /** The command the file was read with, for what is said where nothing is at the path. */
+  command = "console skill",
 ): string {
   if (read.status === "none" || read.address === null) {
     return noAddress(owner);
   }
   if (read.status !== "ready") {
-    return refused("file", read, owner);
+    const words = refused("file", read, owner);
+    return nothingAtPath(read)
+      ? `${words}\n${command}s <folder> shows what a folder of the pack holds, . for the root.`
+      : words;
   }
   if (whole === undefined) {
     return `${head("file", read)}\nNothing was read.`;
