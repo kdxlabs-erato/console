@@ -1957,8 +1957,11 @@ export const en = {
           tool: "tool",
           id: "call",
           files: "files",
+          subagent: "sub-agent",
         },
         through: (agent: string) => `through ${agent}`,
+        /** The label of what a sub-agent did: its name, where the runner said one. */
+        subagent: (name: string) => (name.length === 0 ? "Sub-agent" : `Sub-agent: ${name}`),
         files: "Files",
         unseen: (names: string) =>
           `Not shown to the agent as a picture, since its product takes none: handed over as a file in its desk (${names}).`,

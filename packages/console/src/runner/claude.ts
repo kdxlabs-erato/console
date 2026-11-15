@@ -83,6 +83,29 @@ function inputOf(input: unknown, cut: Cut): string {
   return cut(whole, MAX_INPUT_LENGTH);
 }
 
+/** The most characters of what a sub-agent is called that an event carries. */
+const MAX_SUBAGENT_LENGTH = 80;
+/** How many calls that started a sub-agent are remembered by their ids: the oldest is let go past it. */
+const MAX_SUBAGENTS = 500;
+/** The product's tools that start a sub-agent, as it has called them: one whose input names a kind of sub-agent is one too. */
+const SUBAGENT_TOOLS: ReadonlySet<string> = new Set(["Agent", "Task"]);
+
+/**
+ * What a call that starts a sub-agent calls it: the kind of sub-agent its input names, else
+ * what its input says it is for; nothing for a call that starts none.
+ */
+function subagentOf(tool: string, input: unknown): string | undefined {
+  const kind = isObject(input) ? textOf(input.subagent_type)?.trim() : undefined;
+  if (kind !== undefined && kind.length > 0) {
+    return kind.slice(0, MAX_SUBAGENT_LENGTH);
+  }
+  if (!SUBAGENT_TOOLS.has(tool)) {
+    return undefined;
+  }
+  const about = isObject(input) ? textOf(input.description)?.trim() : undefined;
+  return about !== undefined && about.length > 0 ? about.slice(0, MAX_SUBAGENT_LENGTH) : tool;
+}
+
 /** The pictures and the text of what a tool returned: a string, or blocks of text and pictures. */
 function resultOf(
   content: unknown,
@@ -161,8 +184,25 @@ interface Read {
   acknowledges: boolean;
   /** The tool calls of the turn it said were denied, which the turn's result says again. */
   readonly denied: Set<string>;
+  /** The calls that started a sub-agent, by their ids, with what each calls it. */
+  readonly subagents: Map<string, string>;
   /** What cuts a text to what is shown of it. */
   readonly cut: Cut;
+}
+
+/**
+ * Whose a line of the product is, as facts of its events (ADR-0131): a line a sub-agent wrote
+ * names the call that started that sub-agent, by the id the product gave the call, as the
+ * product's documentation has it (`parent_tool_use_id`), and what that call called it, where
+ * the call was read. Nothing for a line of the session's own.
+ */
+function whoseOf(line: Json, state: Read): Record<string, Fact> {
+  const parent = textOf(line.parent_tool_use_id);
+  if (parent === undefined || parent.length === 0) {
+    return {};
+  }
+  const subagent = state.subagents.get(parent);
+  return subagent === undefined ? { parent } : { parent, subagent };
 }
 
 /** The product's permission modes, as its documentation and its own help name them. */
@@ -278,21 +318,36 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
       return events;
     }
     case "assistant": {
+      const whose = whoseOf(line, state);
+      // A fact is said only where there is one: a line of the session's own carries none.
+      const said = Object.keys(whose).length === 0 ? {} : { data: whose };
       for (const block of blocks) {
         if (!isObject(block)) {
           continue;
         }
         if (block.type === "text" && typeof block.text === "string") {
-          events.push({ type: "event", kind: "assistant", text: block.text });
+          events.push({ type: "event", kind: "assistant", text: block.text, ...said });
         } else if (block.type === "thinking" && typeof block.thinking === "string") {
-          events.push({ type: "event", kind: "thinking", text: block.thinking });
+          events.push({ type: "event", kind: "thinking", text: block.thinking, ...said });
         } else if (block.type === "tool_use") {
           const tool = textOf(block.name) ?? "a tool";
+          const id = textOf(block.id);
+          const subagent = subagentOf(tool, block.input);
+          if (id !== undefined && subagent !== undefined) {
+            // What the sub-agent this call starts does names the call: remembered by its id.
+            if (state.subagents.size >= MAX_SUBAGENTS) {
+              const oldest = state.subagents.keys().next().value;
+              if (oldest !== undefined) {
+                state.subagents.delete(oldest);
+              }
+            }
+            state.subagents.set(id, subagent);
+          }
           events.push({
             type: "event",
             kind: "tool_call",
             text: inputOf(block.input, state.cut),
-            data: { tool, id: textOf(block.id) ?? null },
+            data: { tool, id: id ?? null, ...whose },
           });
         }
       }
@@ -309,7 +364,8 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
         }
         return events;
       }
-      // What came back from a tool is recorded here.
+      // What came back from a tool is recorded here, a sub-agent's tool as the session's own.
+      const whose = whoseOf(line, state);
       for (const block of blocks) {
         if (!isObject(block) || block.type !== "tool_result") {
           continue;
@@ -320,7 +376,11 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
           type: "event",
           kind: "tool_result",
           text: result.text,
-          data: { id: textOf(block.tool_use_id) ?? null, error: block.is_error === true },
+          data: {
+            id: textOf(block.tool_use_id) ?? null,
+            error: block.is_error === true,
+            ...whose,
+          },
           pictures: result.pictures,
         });
       }
@@ -463,6 +523,7 @@ function sessionOf(child: Child, asked: string, uuid: () => string, cut: Cut): D
     waiting: new Set(),
     denied: new Set(),
     acknowledges: false,
+    subagents: new Map(),
     cut,
   };
 

@@ -490,6 +490,138 @@ describe("the claude driver", () => {
     expect(asked.map((one) => one.most)).toEqual([4000, 4000]);
   });
 
+  it("says which sub-agent a line is of, by the call that started it, and nothing for a line of the session's own", async () => {
+    // As the product's documentation has a sub-agent's lines: each names the tool call that
+    // started the sub-agent (`parent_tool_use_id`). Not seen run by this driver's fixtures.
+    const { session, says, exits } = started();
+    says(INIT);
+    says({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "text", text: "Two of them, side by side." },
+          {
+            type: "tool_use",
+            id: "toolu_a1",
+            name: "Agent",
+            input: { subagent_type: "Explore", description: "Find the routes", prompt: "Look." },
+          },
+          {
+            type: "tool_use",
+            id: "toolu_a2",
+            name: "Task",
+            input: { description: "Read the spec", prompt: "Read." },
+          },
+        ],
+      },
+      parent_tool_use_id: null,
+    });
+    // What the first sub-agent thinks, says and calls, and what its tool answered.
+    says({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "thinking", thinking: "Where are they?" },
+          { type: "text", text: "Looking in the routes." },
+          { type: "tool_use", id: "toolu_s1", name: "Bash", input: { command: "ls src" } },
+        ],
+      },
+      parent_tool_use_id: "toolu_a1",
+    });
+    says({
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "toolu_s1", content: "rest.ts" }] },
+      parent_tool_use_id: "toolu_a1",
+    });
+    // The second, whose call named no kind: called by what it is for.
+    says({
+      type: "assistant",
+      message: {
+        content: [{ type: "tool_use", id: "toolu_s2", name: "Read", input: { file_path: "a.md" } }],
+      },
+      parent_tool_use_id: "toolu_a2",
+    });
+    // A line that names a call the driver never read still says whose it is, by the id alone.
+    says({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "From elsewhere." }] },
+      parent_tool_use_id: "toolu_unknown",
+    });
+    // What came back to the session itself from the first call: the session's own.
+    says({
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "toolu_a1", content: "Found." }] },
+      parent_tool_use_id: null,
+    });
+    says(says1("Done with both."));
+    exits(0);
+    const events = (await collect(session.events)).filter((event) => event.type === "event");
+    expect(events.slice(1).map((event) => [event.kind, event.text, event.data])).toEqual([
+      ["assistant", "Two of them, side by side.", undefined],
+      ["tool_call", expect.stringContaining("Find the routes"), { tool: "Agent", id: "toolu_a1" }],
+      ["tool_call", expect.stringContaining("Read the spec"), { tool: "Task", id: "toolu_a2" }],
+      ["thinking", "Where are they?", { parent: "toolu_a1", subagent: "Explore" }],
+      ["assistant", "Looking in the routes.", { parent: "toolu_a1", subagent: "Explore" }],
+      [
+        "tool_call",
+        "ls src",
+        { tool: "Bash", id: "toolu_s1", parent: "toolu_a1", subagent: "Explore" },
+      ],
+      [
+        "tool_result",
+        "rest.ts",
+        { id: "toolu_s1", error: false, parent: "toolu_a1", subagent: "Explore" },
+      ],
+      [
+        "tool_call",
+        "a.md",
+        { tool: "Read", id: "toolu_s2", parent: "toolu_a2", subagent: "Read the spec" },
+      ],
+      ["assistant", "From elsewhere.", { parent: "toolu_unknown" }],
+      ["tool_result", "Found.", { id: "toolu_a1", error: false }],
+      ["assistant", "Done with both.", undefined],
+    ]);
+  });
+
+  it("reads who a line is of as data: a name of any length is bounded, and what is no id names nobody", async () => {
+    const { session, says, exits } = started();
+    says({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_a1",
+            name: "Agent",
+            input: { subagent_type: `  ${"k".repeat(5000)}  `, description: 7 },
+          },
+          // A kind that is no word, on a tool that starts no sub-agent: none is remembered.
+          { type: "tool_use", id: "toolu_b1", name: "Bash", input: { subagent_type: 42 } },
+          // A tool that starts one and says nothing of it: called as the tool is.
+          { type: "tool_use", id: "toolu_a3", name: "Agent", input: null },
+        ],
+      },
+    });
+    for (const parent of ["toolu_a1", "toolu_b1", "toolu_a3", "", 42, { id: "x" }, ["toolu_a1"]]) {
+      says({
+        type: "assistant",
+        message: { content: [{ type: "text", text: "A line." }] },
+        parent_tool_use_id: parent,
+      });
+    }
+    exits(0);
+    const events = (await collect(session.events)).filter((event) => event.type === "event");
+    expect(events.slice(3).map((event) => event.data)).toEqual([
+      { parent: "toolu_a1", subagent: "k".repeat(80) },
+      { parent: "toolu_b1" },
+      { parent: "toolu_a3", subagent: "Agent" },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
   it("says that the model refused, and that the product is not signed in, as an agent that cannot go on", async () => {
     const refused = started();
     refused.says(INIT);

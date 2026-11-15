@@ -1845,8 +1845,10 @@ export const ko: Messages = {
           tool: "도구",
           id: "호출",
           files: "파일",
+          subagent: "서브 에이전트",
         },
         through: (agent) => `${agent}(으)로`,
+        subagent: (name) => (name.length === 0 ? "서브 에이전트" : `서브 에이전트: ${name}`),
         files: "파일",
         unseen: (names) =>
           `에이전트의 제품이 사진을 직접 받지 못해 데스크의 파일로 전달했습니다 (${names}).`,

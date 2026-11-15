@@ -39,6 +39,7 @@ import {
   pastedName,
   SignalComposer,
   sameLine,
+  subagentOf,
   type TalkHands,
   TalkWaiting,
   TalkWorking,
@@ -2266,6 +2267,89 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     expect(talkOf([])).toEqual([]);
   });
 
+  it("labels what a sub-agent did with its name, and folds what it said, which is not the agent's word", () => {
+    const whose = { parent: "toolu_a1", subagent: "Explore" };
+    const seen = renderToStaticMarkup(
+      <TranscriptView
+        agent={mira}
+        events={[
+          event(1, { text: "I will have it looked at." }),
+          event(2, {
+            kind: "tool_call",
+            text: '{"subagent_type":"Explore","prompt":"Look."}',
+            data: { tool: "Agent", id: "toolu_a1" },
+          }),
+          event(3, { kind: "thinking", text: "Where are they?", data: whose }),
+          event(4, { text: "Looking in the routes.\nThen the tests.", data: whose }),
+          event(5, {
+            kind: "tool_call",
+            text: "ls src",
+            data: { tool: "Bash", id: "s1", ...whose },
+          }),
+          event(6, {
+            kind: "tool_result",
+            text: "rest.ts",
+            data: { id: "s1", error: false, ...whose },
+          }),
+          // What the runner knew of only by the call: labelled, without a name.
+          event(7, { text: "From another.", data: { parent: "toolu_a2" } }),
+          // A name is text as everything of an event is, and is shown to a length.
+          event(8, {
+            kind: "thinking",
+            text: "Hm.",
+            data: { parent: "toolu_a3", subagent: `<b>${"n".repeat(200)}` },
+          }),
+          event(9, { kind: "tool_result", text: "Found.", data: { id: "toolu_a1", error: false } }),
+          event(10, { kind: "error", text: "A request failed.", data: whose }),
+        ]}
+        fileHref={(id) => id}
+      />,
+    );
+    // The agent's own word stands as it did, beside its picture.
+    expect(seen).toContain('<li class="sc-talk-item sc-talk-said" data-n="1">');
+    // The call that started the sub-agent is the session's own: no label on it.
+    expect(seen).toMatch(
+      /data-n="2"><details class="sc-talk-tool-fold"><summary class="sc-talk-tool-head"><code class="sc-talk-tool-name">Agent<\/code><span class="sc-talk-tool-line">[^<]*<\/span><time/,
+    );
+    // What the sub-agent thought, said and called: steps, each under its name.
+    const label = '<span class="sc-badge sc-badge-neutral">Sub-agent: Explore</span>';
+    expect(seen).toContain(
+      `<li class="sc-talk-item sc-talk-step sc-talk-thought" data-n="3"><details class="sc-talk-tool-fold"><summary class="sc-talk-tool-head"><span class="sc-talk-kind">Thought</span><span class="sc-talk-tool-line">Where are they?</span>${label}`,
+    );
+    expect(seen).toContain(
+      `<li class="sc-talk-item sc-talk-step sc-talk-thought" data-n="4"><details class="sc-talk-tool-fold"><summary class="sc-talk-tool-head"><span class="sc-talk-kind">Said</span><span class="sc-talk-tool-line">Looking in the routes.</span>${label}`,
+    );
+    expect(seen).toContain(
+      '<pre class="sc-talk-text">Looking in the routes.\nThen the tests.</pre>',
+    );
+    expect(seen).not.toContain('<li class="sc-talk-item sc-talk-said" data-n="4">');
+    expect(seen).toContain(
+      `<code class="sc-talk-tool-name">Bash</code><span class="sc-talk-tool-line">ls src</span>${label}`,
+    );
+    expect(seen).toContain(
+      '<span class="sc-talk-tool-line">From another.</span><span class="sc-badge sc-badge-neutral">Sub-agent</span>',
+    );
+    expect(seen).toContain(`Sub-agent: &lt;b&gt;${"n".repeat(37)}</span>`);
+    expect(seen).not.toContain("<b>");
+    // A note of a sub-agent says whose it is as a fact, and never the id of the call.
+    expect(seen).toContain('<span class="sc-talk-fact">sub-agent Explore</span>');
+    expect(seen).not.toContain("toolu_a1</span>");
+    expect(subagentOf(event(1, { data: { parent: 7, subagent: "x" } }))).toBeUndefined();
+    expect(subagentOf(event(1, { data: { subagent: "x" } }))).toBeUndefined();
+    expect(subagentOf(event(1, { data: { parent: "p", subagent: 7 } }))).toBe("");
+    expect(subagentOf(undefined)).toBeUndefined();
+    // In Korean too.
+    const korean = renderToStaticMarkup(
+      <LanguageContext.Provider value={KOREAN}>
+        <TranscriptView
+          events={[event(1, { text: "보는 중.", data: whose })]}
+          fileHref={(id) => id}
+        />
+      </LanguageContext.Provider>,
+    );
+    expect(korean).toContain(">서브 에이전트: Explore<");
+  });
+
   it("shows a session as a conversation, what an agent's product printed as text and never as markup", () => {
     const picture = {
       id: "0199c4d8-0000-7000-8000-0000000000f1",
@@ -2647,6 +2731,78 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     expect(
       same(before, linesOf(session, { began: new Map([[6, "2026-11-14T02:00:00.000Z"]]) })),
     ).toEqual([true, true, true, true, false, true]);
+  });
+
+  it("draws a sub-agent's line once too: its label is read off the line's own events, and the account's picture is none of it", () => {
+    const hands: TalkHands = {
+      fileHref: (id) => id,
+      signalFileHref: undefined,
+      readWhole: () => undefined,
+      openPicture: () => undefined,
+    };
+    const linesOf = (
+      events: Parameters<typeof talkOf>[0],
+      over: Partial<Parameters<typeof talkLinesOf>[0]> = {},
+    ) =>
+      talkLinesOf({
+        items: talkOf(events),
+        hands,
+        agent: mira,
+        began: turnStarts(events),
+        signalFiles: undefined,
+        whole: NO_WHOLE,
+        of: "session",
+        reading: undefined,
+        today: "2026-11-14",
+        ...over,
+      });
+    const whose = { parent: "a1", subagent: "Explore" };
+    const session = [
+      event(1, { kind: "tool_call", text: "{}", data: { tool: "Agent", id: "a1" } }),
+      event(2, { kind: "thinking", text: "Hm.", data: whose }),
+      event(3, { kind: "assistant", text: "Looking.", data: whose }),
+      event(4, { kind: "tool_call", text: "ls", data: { tool: "Bash", id: "s1", ...whose } }),
+      event(5, { kind: "assistant", text: "Mine." }),
+    ];
+    const before = linesOf(session);
+    const same = (a: typeof before, b: typeof before) =>
+      a.map((line, index) => {
+        const other = b[index];
+        return other !== undefined && sameLine(line, other);
+      });
+    // More of the sub-agent arrives: the lines there were say the same, the sub-agent's among
+    // them, but for the call that was answered.
+    const after = linesOf([
+      ...session,
+      event(6, { kind: "tool_result", text: "a b", data: { id: "s1", ...whose } }),
+      event(7, { kind: "assistant", text: "Found.", data: whose }),
+    ]);
+    expect(after.map((line) => line.key)).toEqual([1, 2, 3, 4, 5, 7]);
+    expect(same(before, after)).toEqual([true, true, true, false, true]);
+    // What a sub-agent said is a step with no picture beside it: another picture of the account
+    // draws the account's own word again, and no line of the sub-agent's.
+    expect(before.map((line) => line.agent)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      mira,
+    ]);
+    expect(same(before, linesOf(session, { agent: { ...mira } }))).toEqual([
+      true,
+      true,
+      true,
+      true,
+      false,
+    ]);
+    // Whose an event is, is a fact of the event: another fact is another event, and its line
+    // is drawn again, and that line alone.
+    const renamed = session.map((one) =>
+      one.n === 3
+        ? event(3, { kind: "assistant", text: "Looking.", data: { ...whose, subagent: "Plan" } })
+        : one,
+    );
+    expect(same(before, linesOf(renamed))).toEqual([true, true, false, true, true]);
   });
 
   it("reads off a session's events whether a turn is under way, and what the agent is at", () => {

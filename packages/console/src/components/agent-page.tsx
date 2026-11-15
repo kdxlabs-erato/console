@@ -156,6 +156,23 @@ export type TalkItem =
       readonly permission: RestTranscriptEvent | undefined;
     };
 
+/** The most characters of a sub-agent's name that a label shows. */
+const MAX_SUBAGENT_LABEL = 40;
+
+/**
+ * Whose an event is, where a sub-agent made it (ADR-0131): what the call that started the
+ * sub-agent called it, an empty name where the runner knew only that call, and nothing for an
+ * event of the session's own, which is every event of a runner that does not say.
+ */
+export function subagentOf(event: RestTranscriptEvent | undefined): string | undefined {
+  const parent = event?.data.parent;
+  if (typeof parent !== "string" || parent.length === 0) {
+    return undefined;
+  }
+  const name = event?.data.subagent;
+  return typeof name === "string" ? name.trim().slice(0, MAX_SUBAGENT_LABEL) : "";
+}
+
 const idOf = (event: RestTranscriptEvent): string | undefined => {
   const id = event.data.id;
   return typeof id === "string" && id.length > 0 ? id : undefined;
@@ -572,8 +589,9 @@ export function talkLinesOf(input: {
         key: first.n,
         one,
         hands: input.hands,
-        // The account's picture stands beside what it said, and nowhere else.
-        agent: one.type === "said" ? input.agent : undefined,
+        // The account's picture stands beside what it said, and nowhere else: what a
+        // sub-agent said is a step, with no picture, and is not drawn again for one.
+        agent: one.type === "said" && subagentOf(one.event) === undefined ? input.agent : undefined,
         began: one.type === "tool" ? undefined : input.began.get(one.event.n),
         files: typeof signal === "number" ? input.signalFiles?.(signal) : undefined,
         whole: main === undefined ? undefined : wholeOf(whole, of, main.n),
@@ -656,6 +674,9 @@ const TalkLine = memo(function TalkLine(props: TalkLineProps): ReactNode {
     const answer = word(one.permission?.data.answer);
     const refused = answer !== undefined && answer !== "allowed";
     const line = firstLine(one.call?.text ?? one.permission?.text ?? one.result?.text ?? "");
+    // Whose the call is, where a sub-agent made it: read off the line's own events, as
+    // everything a line shows is, so that it is drawn again only when they are others.
+    const sub = subagentOf(first);
     return (
       <li
         className={cx(
@@ -670,6 +691,7 @@ const TalkLine = memo(function TalkLine(props: TalkLineProps): ReactNode {
           <summary className="sc-talk-tool-head">
             <code className="sc-talk-tool-name">{name ?? kinds.tool_call}</code>
             <span className="sc-talk-tool-line">{line}</span>
+            {sub !== undefined && <Badge>{words.subagent(sub)}</Badge>}
             {failed && <Badge tone="danger">{words.toolFailed}</Badge>}
             {refused && <Badge tone="warning">{words.toolRefused}</Badge>}
             {one.result === undefined && one.call !== undefined && !refused && (
@@ -783,6 +805,27 @@ const TalkLine = memo(function TalkLine(props: TalkLineProps): ReactNode {
     );
   }
   if (one.type === "said") {
+    const sub = subagentOf(event);
+    // What a sub-agent said is a step of the work, and not the agent's word to whoever reads:
+    // folded as a thought is, under the sub-agent's name.
+    if (sub !== undefined) {
+      return (
+        <li className="sc-talk-item sc-talk-step sc-talk-thought" data-n={event.n}>
+          <details className="sc-talk-tool-fold">
+            <summary className="sc-talk-tool-head">
+              <span className="sc-talk-kind">{kinds.assistant}</span>
+              <span className="sc-talk-tool-line">{firstLine(event.text)}</span>
+              <Badge>{words.subagent(sub)}</Badge>
+              {when(event)}
+            </summary>
+            <div className="sc-talk-tool-body">
+              {text(event, "sc-talk-text", props.whole)}
+              {pictures(event)}
+            </div>
+          </details>
+        </li>
+      );
+    }
     return (
       <li className="sc-talk-item sc-talk-said" data-n={event.n}>
         {props.agent !== undefined && <Avatar person={props.agent} size="sm" />}
@@ -795,12 +838,14 @@ const TalkLine = memo(function TalkLine(props: TalkLineProps): ReactNode {
     );
   }
   if (one.type === "thought") {
+    const sub = subagentOf(event);
     return (
       <li className="sc-talk-item sc-talk-step sc-talk-thought" data-n={event.n}>
         <details className="sc-talk-tool-fold">
           <summary className="sc-talk-tool-head">
             <span className="sc-talk-kind">{kinds.thinking}</span>
             <span className="sc-talk-tool-line">{firstLine(event.text)}</span>
+            {sub !== undefined && <Badge>{words.subagent(sub)}</Badge>}
             {when(event)}
           </summary>
           <div className="sc-talk-tool-body">{text(event, "sc-talk-text", props.whole)}</div>
@@ -826,8 +871,14 @@ const TalkLine = memo(function TalkLine(props: TalkLineProps): ReactNode {
   }
   // A wake, a status, an error, and whatever a newer runner calls otherwise: a note between.
   // What the note's own words say already, how a session ended, is not said twice as a fact.
+  // The id of the call that started a sub-agent is for joining, and says nothing to a reader.
   const facts = Object.entries(event.data).filter(
-    ([name, fact]) => fact !== null && name !== "signal" && name !== "kind" && name !== "ended",
+    ([name, fact]) =>
+      fact !== null &&
+      name !== "signal" &&
+      name !== "kind" &&
+      name !== "ended" &&
+      name !== "parent",
   );
   const lines = event.text.split("\n").filter((line) => line.trim().length > 0);
   return (
