@@ -109,6 +109,52 @@ function literal(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
+/**
+ * What a statement that gave the plugin's role its password failed with, as a refusal that names
+ * the role and gives the database's code and words, and nothing of the statement: the ORM's error
+ * quotes the statement whole, the password in it, in its message, beside it and in its stack, and
+ * whatever is thrown here goes on to the log and to the plugin's `plugin.failed` event. The words
+ * are the driver's own error's, beneath the ORM's: its message and its detail, which say why
+ * without quoting the statement, and are cleared of the password all the same. Nothing of what was
+ * thrown is kept as the refusal's cause.
+ */
+export function roleRefusal(
+  name: string,
+  doing: "made" | "changed",
+  error: unknown,
+  password: string,
+): PluginRefusal {
+  let driver: unknown = error;
+  for (let depth = 0; depth < 4; depth += 1) {
+    const cause =
+      typeof driver === "object" && driver !== null && "cause" in driver ? driver.cause : undefined;
+    if (typeof cause !== "object" || cause === null) {
+      break;
+    }
+    driver = cause;
+  }
+  // The ORM's error with nothing beneath it says nothing: its message is the statement.
+  const told = driver === error && error instanceof Error && "query" in error ? undefined : driver;
+  const field = (key: string): string | undefined => {
+    const value =
+      typeof told === "object" && told !== null
+        ? (told as Readonly<Record<string, unknown>>)[key]
+        : undefined;
+    return typeof value === "string" && value.length > 0
+      ? value.replaceAll(password, "[password]").slice(0, 300)
+      : undefined;
+  };
+  const code = field("code");
+  const message = field("message");
+  const detail = field("detail");
+  const words =
+    message === undefined ? "" : `, ${message}${detail === undefined ? "" : ` (${detail})`}`;
+  return new PluginRefusal(
+    "plugin.unavailable",
+    `the role ${quoted(name)} could not be ${doing}: the database answered ${code ?? "without a code"}${words}`,
+  );
+}
+
 export class PluginSqlService {
   private readonly options: PluginSqlOptions;
   private readonly passwords = new Map<string, string>();
@@ -229,21 +275,20 @@ export class PluginSqlService {
       sql`select ${sql.raw(ROLE_POWERS.map(([column]) => column).join(", "))} from pg_roles where rolname = ${name}`,
     );
     const role = roles.rows[0];
-    if (role !== undefined) {
-      // Only a power the role holds is named to be taken: a database user that is no superuser
-      // may not name SUPERUSER at all, nor CREATEDB without holding it, even to say "no".
-      const taken = ROLE_POWERS.filter(([column]) => role[column]).map(([, without]) => without);
-      await db.execute(
-        sql.raw(
-          `alter role ${quoted(name)} with login noinherit ${taken.join(" ")} connection limit ${PLUGIN_SQL_CONNECTIONS} password ${literal(password)}`,
-        ),
-      );
-    } else {
-      await db.execute(
-        sql.raw(
-          `create role ${quoted(name)} with login noinherit nocreatedb nocreaterole nosuperuser connection limit ${PLUGIN_SQL_CONNECTIONS} password ${literal(password)}`,
-        ),
-      );
+    // Only a power the role holds is named to be taken: a database user that is no superuser
+    // may not name SUPERUSER at all, nor CREATEDB without holding it, even to say "no".
+    const taken = ROLE_POWERS.filter(([column]) => role?.[column] === true).map(
+      ([, without]) => without,
+    );
+    const statement =
+      role !== undefined
+        ? `alter role ${quoted(name)} with login noinherit ${taken.join(" ")} connection limit ${PLUGIN_SQL_CONNECTIONS} password ${literal(password)}`
+        : `create role ${quoted(name)} with login noinherit nocreatedb nocreaterole nosuperuser connection limit ${PLUGIN_SQL_CONNECTIONS} password ${literal(password)}`;
+    try {
+      await db.execute(sql.raw(statement));
+    } catch (error) {
+      // The statement carries the password, and what the ORM throws quotes it whole.
+      throw roleRefusal(name, role === undefined ? "made" : "changed", error, password);
     }
     await db.execute(sql.raw(`alter role ${quoted(name)} set search_path = ${quoted(name)}`));
     await db.execute(
