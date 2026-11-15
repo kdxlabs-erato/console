@@ -144,6 +144,7 @@ export const ko: Messages = {
     "document.too_many_versions": "문서에 남길 수 있는 버전 수를 다 채웠습니다.",
     "document.version_not_found": "문서에 그런 버전이 없습니다.",
     "feed.too_many": "실시간 화면이 너무 많이 열려 있습니다. 탭을 닫고 다시 시도하세요.",
+    "feed.unsettled": "피드를 아직 읽을 수 없습니다. 잠시 후 다시 시도하세요.",
     "file.not_found": "파일을 찾을 수 없습니다.",
     "file.not_served": "제공되지 않는 파일입니다.",
     "file.not_text": "글로 읽을 수 없는 파일입니다.",

@@ -176,6 +176,7 @@ import {
   setArchived,
   writeDocument,
 } from "../db/queries/documents.js";
+import { settledEnd } from "../db/queries/event-order.js";
 import {
   type Actor,
   latestEventId,
@@ -300,7 +301,7 @@ import {
 import { filenameParameters, imageTypeOf } from "./kept-pictures.js";
 import type { LiveFeed } from "./live-feed.js";
 import type { PictureCache } from "./pictures.js";
-import { type Quotas, tooManyStreams } from "./quotas.js";
+import { feedUnsettled, type Quotas, tooManyStreams } from "./quotas.js";
 import type { AppEnv } from "./request-context.js";
 import {
   restCategory,
@@ -2024,10 +2025,16 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
       return administratorRequired(c);
     }
     const scope = { workspaceId: person.workspaceId, projectId: null };
+    // Read to the feed's settled end (ADR-0125), and refused where this process knows none:
+    // an empty page would send its reader on from the beginning.
+    const through = await settledEnd(database, "console");
+    if (through === undefined) {
+      return feedUnsettled(c);
+    }
     const page =
       query.data.latest === "true"
-        ? await listLatestEvents(database, scope, query.data.limit)
-        : await listEventsAfter(database, scope, query.data.after, query.data.limit);
+        ? await listLatestEvents(database, scope, query.data.limit, through)
+        : await listEventsAfter(database, scope, query.data.after, query.data.limit, through);
     const body: RestEvents = { items: page.items.map(restEvent), more: page.more };
     return c.json(body);
   });
@@ -4516,10 +4523,16 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
       documentId: query.data.document,
       goalId: query.data.goal,
     };
+    // Read to the feed's settled end (ADR-0125), and refused where this process knows none:
+    // an empty page would send its reader on from the beginning, the page's stream above all.
+    const through = await settledEnd(database, "console");
+    if (through === undefined) {
+      return feedUnsettled(c);
+    }
     const page =
       query.data.latest === "true"
-        ? await listLatestEvents(database, scope, query.data.limit)
-        : await listEventsAfter(database, scope, query.data.after, query.data.limit);
+        ? await listLatestEvents(database, scope, query.data.limit, through)
+        : await listEventsAfter(database, scope, query.data.after, query.data.limit, through);
     const body: RestEvents = { items: page.items.map(restEvent), more: page.more };
     return c.json(body);
   });

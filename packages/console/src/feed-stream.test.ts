@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { STREAM_RETRY_MOST_MS, STREAM_RETRY_MS } from "./agent-stream.js";
-import type { RestEvent } from "./api.js";
-import { followFeed } from "./feed-stream.js";
+import { ApiError, type RestEvent } from "./api.js";
+import {
+  FEED_UNSETTLED_RETRY_MS,
+  FEED_UNSETTLED_TRIES,
+  followFeed,
+  whileFeedSettles,
+} from "./feed-stream.js";
 
 const PROJECT = "0199c4d8-0000-7000-8000-0000000000b1";
 
@@ -193,5 +198,72 @@ describe("the board's stream", () => {
     });
     expect(FakeSource.made).toHaveLength(0);
     end();
+  });
+});
+
+describe("a read of the feed while the console cannot say where it stands", () => {
+  const unsettled = () =>
+    new ApiError(503, "feed.unsettled", "The feed cannot be read yet. Try again in a moment.");
+
+  it("asks again after a second until the console answers, and never takes the refusal for an empty feed", async () => {
+    const waits: number[] = [];
+    let asked = 0;
+    const read = async () => {
+      asked += 1;
+      if (asked < 3) {
+        throw unsettled();
+      }
+      return { items: [event(7)], more: false };
+    };
+    const answer = await whileFeedSettles(read, {
+      sleep: async (milliseconds) => {
+        waits.push(milliseconds);
+      },
+    });
+    expect(answer.items.map((item) => item.id)).toEqual([7]);
+    expect([asked, waits]).toEqual([3, [FEED_UNSETTLED_RETRY_MS, FEED_UNSETTLED_RETRY_MS]]);
+  });
+
+  it("gives any other refusal to whoever asked at once, and this one after its tries or once nobody waits for it", async () => {
+    let asked = 0;
+    const sleep = async () => undefined;
+    const forbidden = new ApiError(403, "auth.forbidden", "Not yours to read.");
+    await expect(
+      whileFeedSettles(
+        async () => {
+          asked += 1;
+          throw forbidden;
+        },
+        { sleep },
+      ),
+    ).rejects.toBe(forbidden);
+    expect(asked).toBe(1);
+
+    asked = 0;
+    await expect(
+      whileFeedSettles(
+        async () => {
+          asked += 1;
+          throw unsettled();
+        },
+        { sleep },
+      ),
+    ).rejects.toMatchObject({ code: "feed.unsettled" });
+    expect(asked).toBe(FEED_UNSETTLED_TRIES);
+
+    // The page went elsewhere: the read is not asked again for it.
+    asked = 0;
+    const gone = new AbortController();
+    gone.abort();
+    await expect(
+      whileFeedSettles(
+        async () => {
+          asked += 1;
+          throw unsettled();
+        },
+        { sleep, signal: gone.signal },
+      ),
+    ).rejects.toMatchObject({ code: "feed.unsettled" });
+    expect(asked).toBe(1);
   });
 });

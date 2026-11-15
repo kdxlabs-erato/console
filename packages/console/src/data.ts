@@ -73,7 +73,7 @@ import {
   type RestWorkspacePackConnect,
   type RestWorkspacePatch,
 } from "./api.js";
-import { followFeed } from "./feed-stream.js";
+import { followFeed, whileFeedSettles } from "./feed-stream.js";
 
 // What the console shows, and how it stays current: the workspace (who is signed in, the
 // projects, the people, the tokens) is loaded once; the project the page is on is loaded whole,
@@ -324,7 +324,11 @@ async function readFeed(
   key: string,
   signal: AbortSignal,
 ): Promise<RestEvent[]> {
-  const result = await client.project(key).events(0, { latest: true }, signal);
+  // Asked again where the console cannot say yet where the feed stands: never begun from nothing.
+  const result = await whileFeedSettles(
+    () => client.project(key).events(0, { latest: true }, signal),
+    { signal },
+  );
   return result.items.slice(-FEED_KEEP);
 }
 
@@ -959,7 +963,11 @@ export function useConsoleData(client: ConsoleClient, projectKey: string | undef
         const history: RestEvent[] = [];
         let after = 0;
         for (let page = 0; page < FEED_MAX_PAGES; page += 1) {
-          const result = await scope().events(after, { task: taskId }, signal);
+          const from = after;
+          const result = await whileFeedSettles(
+            () => scope().events(from, { task: taskId }, signal),
+            { signal },
+          );
           history.push(...result.items);
           after = result.items.at(-1)?.id ?? after;
           if (!result.more) {

@@ -1,5 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { sql } from "drizzle-orm";
+import { DomainError } from "../../errors.js";
 import { type Database, drizzleOf, type Transaction } from "../client.js";
 import { events, eventsOrder, pluginEvents, pluginEventsOrder } from "../schema.js";
 
@@ -168,4 +169,27 @@ export function settledEnd(database: Database, stream: EventStream): Promise<num
 export function unsettledFor(database: Database, stream: EventStream): number {
   const since = settlingOf(database, stream).refusedSince;
   return since === undefined ? 0 : performance.now() - since;
+}
+
+/**
+ * A feed this process cannot read by number yet: it never saw the feed settle, and a writer has
+ * been under way for as long as it asked. What a read that answers a page of the feed says in
+ * place of an empty one, which its reader would take for the feed's beginning.
+ */
+export class FeedUnsettledError extends DomainError {
+  constructor() {
+    super("feed.unsettled", "the feed has not settled in this process yet");
+  }
+}
+
+/** The settled end for a read that answers where the feed stands: refused where this process has none. */
+export async function settledEndOrRefused(
+  database: Database,
+  stream: EventStream,
+): Promise<number> {
+  const end = await settledEnd(database, stream);
+  if (end === undefined) {
+    throw new FeedUnsettledError();
+  }
+  return end;
 }

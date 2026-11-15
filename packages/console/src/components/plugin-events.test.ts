@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../client.js";
 import type { RestPluginEvent, RestPluginEvents } from "../plugin/rest-schemas.js";
 import { EVENTS_POLL_MS, type PageView, PluginEventsReader } from "./plugin-events.js";
 
@@ -109,6 +110,39 @@ describe("the reader of a plugin's events", () => {
     await vi.advanceTimersByTimeAsync(EVENTS_POLL_MS);
     expect(asks.at(-1)).toEqual({ after: 4, limit: 50 });
     expect(heardA).toEqual([3, 4]);
+  });
+
+  it("takes no place in the stream while the console cannot say where it stands, and asks again", async () => {
+    // A process of the console that has not seen the stream settle answers 503 in place of a
+    // newest of 0, which would be the stream's beginning: every event there ever was, replayed.
+    const { client, asks, events } = consoleWith([eventOf(1), eventOf(2)]);
+    let refusals = 2;
+    const unsettled = {
+      pluginEvents: async (page: { after: number; limit: number }) => {
+        if (refusals > 0) {
+          refusals -= 1;
+          asks.push(page);
+          throw new ApiError(503, "feed.unsettled", "The feed cannot be read yet.");
+        }
+        return client.pluginEvents(page);
+      },
+    };
+    const reader = new PluginEventsReader(unsettled, pageView().view);
+    const heard: number[] = [];
+    reader.listen((event) => heard.push(event.id));
+    await vi.advanceTimersByTimeAsync(EVENTS_POLL_MS);
+    await vi.advanceTimersByTimeAsync(EVENTS_POLL_MS);
+    // Asked where the stream stands three times, and placed at its end by the third.
+    expect(asks).toEqual([
+      { after: 0, limit: 1 },
+      { after: 0, limit: 1 },
+      { after: 0, limit: 1 },
+    ]);
+    expect(heard).toEqual([]);
+    events.push(eventOf(3));
+    await vi.advanceTimersByTimeAsync(EVENTS_POLL_MS);
+    expect(asks.at(-1)).toEqual({ after: 2, limit: 50 });
+    expect(heard).toEqual([3]);
   });
 
   it("asks nothing while the page is out of view, and at once when it comes back", async () => {

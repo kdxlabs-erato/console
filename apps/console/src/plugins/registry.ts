@@ -63,7 +63,7 @@ import { configuresPlugins, personVisibleTo } from "../auth/policy.js";
 import type { Secrets } from "../auth/secrets.js";
 import type { Database } from "../db/client.js";
 import { findDecisionReachable } from "../db/queries/decisions.js";
-import { settledEnd } from "../db/queries/event-order.js";
+import { settledEnd, settledEndOrRefused } from "../db/queries/event-order.js";
 import { type Actor, type EventRecord, listEventsOfPlugin } from "../db/queries/events.js";
 import {
   findPerson,
@@ -3223,8 +3223,10 @@ export class Plugins {
   }> {
     this.entryOf(key);
     const workspace = await this.options.workspace();
-    // One look for both: the page and where the stream stands end at the same number.
-    const through = (await settledEnd(this.options.database, "plugin")) ?? 0;
+    // One look for both: the page and where the stream stands end at the same number. Refused
+    // where this process knows no settled end: `newest` would be 0, and a frame would go on from
+    // the stream's beginning.
+    const through = await settledEndOrRefused(this.options.database, "plugin");
     const [read, newest] = await Promise.all([
       listPluginEventsOf(this.options.database, workspace.id, key, page, through),
       newestPluginEventOf(this.options.database, workspace.id, key, through),

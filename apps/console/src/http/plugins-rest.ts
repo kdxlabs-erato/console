@@ -50,6 +50,7 @@ import { bodyLimit } from "hono/body-limit";
 import { stream } from "hono/streaming";
 import * as z from "zod";
 import { configuresPlugins } from "../auth/policy.js";
+import { FeedUnsettledError } from "../db/queries/event-order.js";
 import { PluginStoreError } from "../db/queries/plugins.js";
 import { ProjectError } from "../db/queries/projects.js";
 import type { Logger } from "../logger.js";
@@ -60,6 +61,7 @@ import type { Clock } from "../ports/clock.js";
 import { errorBody } from "./app.js";
 import { type Access, administratorRequired, foreignOrigin, signInRequired } from "./auth.js";
 import type { PictureCache } from "./pictures.js";
+import { feedUnsettled } from "./quotas.js";
 import type { AppEnv } from "./request-context.js";
 import { restEvent } from "./rest-shapes.js";
 
@@ -919,7 +921,8 @@ export function registerPluginsRest(
       const body: RestPluginEvents = await plugins.pluginEvents(key, query.data);
       return c.json(body);
     } catch (error) {
-      return failure(c, error);
+      // A frame asks again at its next tick, and takes its place in the stream then.
+      return error instanceof FeedUnsettledError ? feedUnsettled(c) : failure(c, error);
     }
   });
 

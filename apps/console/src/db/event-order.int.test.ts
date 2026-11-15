@@ -3,7 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabase, type Database, drizzleOf } from "./client.js";
-import { holdEventOrder, settledEnd } from "./queries/event-order.js";
+import { holdEventOrder, settledEnd, settledEndOrRefused } from "./queries/event-order.js";
 import { latestEventId, listEventsAfter, recordEvent } from "./queries/events.js";
 import { emitPluginEvent, listPluginEventsAfter } from "./queries/plugin-board.js";
 import { ensureWorkspace } from "./queries/workspaces.js";
@@ -351,19 +351,29 @@ describe("the settled end of a feed", () => {
       maxConnections: 2,
     });
     const slow = slowChange();
+    const emitting = slowChange("plugin");
     await slow.number;
+    await emitting.number;
     try {
       expect(await settledEnd(other, "console")).toBeUndefined();
       expect(await latestEventId(other, workspaceId)).toBe(0);
       expect((await listEventsAfter(other, scope(), 0, 10)).items).toEqual([]);
+      // A read that answers where a stream stands is refused there: 0 would be its beginning.
+      await expect(settledEndOrRefused(other, "plugin")).rejects.toMatchObject({
+        name: "FeedUnsettledError",
+        code: "feed.unsettled",
+      });
     } finally {
       slow.commit();
+      emitting.commit();
       await slow.done;
+      await emitting.done;
     }
     try {
       const end = await settledEnd(other, "console");
       expect(end).toBe(await slow.number);
       expect((await listEventsAfter(other, scope(), 0, 1000)).items.at(-1)?.id).toBe(end);
+      expect(await settledEndOrRefused(other, "plugin")).toBe(await emitting.number);
     } finally {
       await other.close();
     }

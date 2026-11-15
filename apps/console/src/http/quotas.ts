@@ -93,6 +93,26 @@ export function tooManyStreams(
   );
 }
 
+/**
+ * The refusal of a read of a feed in a process that never saw the feed settle while a writer is
+ * under way (ADR-0125): it cannot say where the feed stands, and an empty page would be taken
+ * for a feed with nothing in it, whose reader then goes on from the beginning and is sent the
+ * whole history. The reader asks again in a second, by when the writer has ended or another
+ * process answers.
+ */
+export function feedUnsettled(c: Context): Response {
+  c.header("retry-after", "1");
+  return c.json(
+    {
+      error: {
+        code: "feed.unsettled",
+        message: "The feed cannot be read yet. Try again in a moment.",
+      },
+    },
+    503,
+  );
+}
+
 /** The quotas with what a deployment, or a test, set; a bound left out, or left undefined, keeps its default. */
 export function quotasOf(given: Partial<Quotas> | undefined): Quotas {
   const set = Object.fromEntries(

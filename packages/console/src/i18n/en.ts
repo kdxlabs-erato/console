@@ -188,6 +188,7 @@ export const en = {
     "document.too_many_versions": "The page has as many versions as it can hold.",
     "document.version_not_found": "The page has no such version.",
     "feed.too_many": "Too many live views are open. Close a tab and try again.",
+    "feed.unsettled": "The feed cannot be read yet. Try again in a moment.",
     "file.not_found": "The file was not found.",
     "file.not_served": "This file is not served.",
     "file.not_text": "This file can't be read as text.",

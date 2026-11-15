@@ -1,5 +1,5 @@
 import { STREAM_RETRY_MOST_MS, STREAM_RETRY_MS, type StreamSource } from "./agent-stream.js";
-import { EVENT_KINDS, type RestEvent, restEventSchema } from "./api.js";
+import { ApiError, EVENT_KINDS, type RestEvent, restEventSchema } from "./api.js";
 
 // How a project's page follows its board: the feed is read as it stands, and what happens
 // after arrives by a stream, numbered, which the console begins after the event it is told. A
@@ -12,6 +12,44 @@ import { EVENT_KINDS, type RestEvent, restEventSchema } from "./api.js";
 
 /** `EventSource.CLOSED`: the browser gave the stream up and opens it no more. */
 const CLOSED = 2;
+
+/** How long a read of the feed waits before it asks again, where the console could not say where the feed stands. */
+export const FEED_UNSETTLED_RETRY_MS = 1_000;
+/** How many times such a read asks before it gives the refusal to whoever asked. */
+export const FEED_UNSETTLED_TRIES = 10;
+
+/**
+ * A read of the feed, asked again while the console answers that it cannot be read yet
+ * (`feed.unsettled`, a 503): a process of the console that has not seen the feed settle since
+ * it began, while a change is still under way, cannot say where the feed stands, and says so in
+ * place of an empty page. An empty page would be a board on which nothing ever happened, and the
+ * page's stream would go on from the beginning and be sent the whole history. It is over within a
+ * moment: the change ends, or another process answers. Any other refusal is whoever asked's at
+ * once, and so is this one after `FEED_UNSETTLED_TRIES`.
+ */
+export async function whileFeedSettles<T>(
+  read: () => Promise<T>,
+  options: {
+    readonly signal?: AbortSignal | undefined;
+    /** How a wait is made: a timer where left out. */
+    readonly sleep?: ((milliseconds: number) => Promise<void>) | undefined;
+  } = {},
+): Promise<T> {
+  const sleep =
+    options.sleep ??
+    ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  for (let asked = 1; ; asked += 1) {
+    try {
+      return await read();
+    } catch (failure) {
+      const unsettled = failure instanceof ApiError && failure.code === "feed.unsettled";
+      if (!unsettled || asked >= FEED_UNSETTLED_TRIES || options.signal?.aborted === true) {
+        throw failure;
+      }
+    }
+    await sleep(FEED_UNSETTLED_RETRY_MS);
+  }
+}
 
 export interface FollowFeedOptions {
   /** Where the stream is, for what happens after an event's number. */

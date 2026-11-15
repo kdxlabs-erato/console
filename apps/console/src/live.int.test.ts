@@ -7,7 +7,7 @@ import {
 } from "@skillcdn/console/api";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { drizzleOf } from "./db/client.js";
+import { createDatabase, drizzleOf } from "./db/client.js";
 import { recordEvent } from "./db/queries/events.js";
 import { tasks } from "./db/schema.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "./db/testing.js";
@@ -277,6 +277,72 @@ describe("the live feed of a project", () => {
     expect(carried.map((entry) => entry.id)).toEqual([settled + 1, settled + 2]);
     await reading.cancel();
   });
+
+  it("refuses to say where the feed stands in a process that never saw it settle, so that no page begins from nothing (ADR-0125)", async () => {
+    // Another process of the deployment: a pool of its own, which has read no feed yet.
+    const database = createDatabase({
+      connectionString: testDatabase.connectionString,
+      maxConnections: 4,
+    });
+    const other = createHarness(
+      { ...testDatabase, database },
+      { providers: [createFixtureProvider()] },
+    );
+    const handle = drizzleOf(testDatabase.database);
+    const [task] = await handle.select().from(tasks).where(eq(tasks.title, "Numbered around"));
+    if (task === undefined) {
+      throw new Error("the task is not there");
+    }
+    let numbered: () => void = () => {};
+    let commit: () => void = () => {};
+    const wasNumbered = new Promise<void>((resolve) => {
+      numbered = resolve;
+    });
+    const mayCommit = new Promise<void>((resolve) => {
+      commit = resolve;
+    });
+    try {
+      const cookie = await other.signIn("alice");
+      const read = (query: string) =>
+        other.request(`${IN}/events?${query}`, { headers: { cookie } });
+      const slow = handle.transaction(async (tx) => {
+        await recordEvent(tx, {
+          workspaceId: task.workspaceId,
+          projectId: task.projectId,
+          kind: "task.commented",
+          actor: undefined,
+          taskId: task.id,
+          data: { number: task.number, title: task.title, excerpt: "Still under way", files: 0 },
+          now: new Date(),
+        });
+        numbered();
+        await mayCommit;
+      });
+      try {
+        await wasNumbered;
+        // An empty page would be taken for a feed with nothing in it: the page's stream would go
+        // on from the beginning, and be sent the project's whole history. It is told to ask again.
+        for (const query of ["latest=true", "after=0"]) {
+          const refused = await read(query);
+          expect(refused.status, query).toBe(503);
+          expect(refused.headers.get("retry-after"), query).toBe("1");
+          expect(await refused.json(), query).toMatchObject({ error: { code: "feed.unsettled" } });
+        }
+      } finally {
+        commit();
+        await slow;
+      }
+      // Once the writer has ended the feed is read as it stands.
+      const shown = await read("latest=true");
+      expect(shown.status).toBe(200);
+      const { items } = (await shown.json()) as { items: { data: { excerpt?: string } }[] };
+      expect(items.at(-1)?.data.excerpt).toBe("Still under way");
+    } finally {
+      commit();
+      await other.close();
+      await database.close();
+    }
+  }, 30_000);
 
   it("ends every stream when the feed closes, so that shutdown can finish", async () => {
     const stream = await h.request(`${IN}/events/stream?after=1000000`, {
