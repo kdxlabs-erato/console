@@ -78,7 +78,7 @@ Packages compile to `dist/` and consume each other's compiled output. Going thro
 
 **Bound to a console?** Before the first step, run `console whoami`: when it names a project, or `.skillcdn-console.json` is in this checkout, work the task through that SkillCDN console (its answer says how).
 
-**The binding file is never committed.** This repository is public and `.skillcdn-console.json` names an organization's console, so `.gitignore` lists it, and whoever works here through a console runs `console use <key>` once in their own checkout.
+**The binding file is never committed, and no file here names a project's key.** This repository is public, and both name an organization's own console project: `.gitignore` lists `.skillcdn-console.json`, and `<key>` is a placeholder on purpose. In a fresh checkout `console whoami` names no project: ask the person for the key (`console projects` lists the projects they may work in), run `console use <key>` once, and write the key into no file of this repository.
 
 **Before you start.** Read this file and the workspace's `README.md`, its Rules first. Check [docs/roadmap.md](docs/roadmap.md) for the current milestone, [docs/architecture.md](docs/architecture.md) for the design and its open questions, and [docs/adr/](docs/adr/) before questioning a past decision. If a product decision is missing, do not guess: add it to the open questions or ask.
 
