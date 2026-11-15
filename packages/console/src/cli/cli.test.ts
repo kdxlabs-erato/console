@@ -415,7 +415,7 @@ describe("the console command", () => {
     // line each.
     expect(whole.out().length).toBeLessThan(11_300);
     // What holds everywhere: every exit code, the fourth included.
-    expect(whole.out()).toContain("4 the command and the\nconsole do not go together");
+    expect(whole.out()).toContain("4 the\ncommand and the console do not go together");
     // Where the skill is, when the command knows; else where to ask.
     expect(whole.out()).toContain("first command of a run (console whoami says where it is)");
     const located = harness({
@@ -640,6 +640,273 @@ describe("the console command", () => {
       expect(await runCli(["login", "--url", ORIGIN], u.io)).toBe(EXIT.failed);
       expect(late.calls.at(-2)?.body).toEqual({ agent });
     }
+  });
+
+  describe("login where no terminal shows its words (ADR-0129)", () => {
+    // A machine whose clock moves as the command sleeps: the code lasts ten minutes from now.
+    const START = Date.parse("2026-10-09T09:50:00.000Z");
+    const WHEN_MS = Date.parse(WHEN);
+    function clock() {
+      let now = START;
+      return {
+        now: () => now,
+        sleep: async (ms: number) => {
+          now += ms;
+        },
+        pass: (ms: number) => {
+          now += ms;
+        },
+      };
+    }
+    const PENDING = {
+      url: ORIGIN,
+      secret: "cns_c_secret",
+      code: "ABCD-EFGH",
+      page: "https://console.test/connect/ABCD-EFGH",
+      expiresAt: WHEN,
+      interval: 1,
+    };
+    const CONNECTED = { body: { status: "connected", token: TOKEN, secret: "cns_t_handed" } };
+    const WAITS = { status: 202, body: { status: "pending", expiresAt: WHEN } };
+    const GONE = { status: 404, body: { error: { code: "connect.not_found", message: "Gone." } } };
+    const claims = (calls: readonly { key: string }[]): number =>
+      calls.filter((call) => call.key === "POST /api/v1/connect/claim").length;
+    const begun = (calls: readonly { key: string }[]): number =>
+      calls.filter((call) => call.key === "POST /api/v1/connect").length;
+
+    it("the first call says the address and the code and ends at once; the next waits for the approval and keeps the token", async () => {
+      const { fetch, calls } = fakeConsole({
+        "POST /api/v1/connect": { status: 201, body: CONNECTION },
+        "POST /api/v1/connect/claim": CONNECTED,
+        "GET /api/v1/me": { body: ME },
+      });
+      const memory = memoryStore();
+      const time = clock();
+      const first = harness({
+        fetch,
+        store: memory.store,
+        hostname: "laptop",
+        terminal: false,
+        ...time,
+      });
+      expect(await runCli(["login", "--url", ORIGIN, "--agent", "Claude Code"], first.io)).toBe(
+        EXIT.ok,
+      );
+      // Everything a person needs, in what the host shows when the command ends: now.
+      expect(first.out()).toBe(
+        "To connect this agent, a person opens https://console.test/connect/ABCD-EFGH signed in, checks that the page shows the code ABCD-EFGH, names the agent and approves.\n" +
+          `Tell the person that address and that code now, then run console login --url https://console.test once more: it waits for the approval, until ${WHEN}.\n`,
+      );
+      // Nothing was waited for, and nothing claimed.
+      expect(claims(calls)).toBe(0);
+      expect(time.now()).toBe(START);
+      // The connection rests with the credentials, its secret never printed.
+      expect(memory.kept()).toEqual({ default: undefined, logins: [], pending: [PENDING] });
+      expect(first.out() + first.err()).not.toContain("cns_");
+
+      // The next call begins no connection: it claims the one kept, at once.
+      const second = harness({
+        fetch,
+        store: memory.store,
+        hostname: "laptop",
+        terminal: false,
+        ...time,
+      });
+      expect(await runCli(["login", "--url", ORIGIN], second.io)).toBe(EXIT.ok);
+      expect(begun(calls)).toBe(1);
+      expect(claims(calls)).toBe(1);
+      expect(time.now()).toBe(START);
+      expect(second.out()).toMatch(/^Connected as "Claude Code on laptop" to Acme at /);
+      expect(memory.kept()).toEqual({
+        default: ORIGIN,
+        logins: [
+          {
+            url: ORIGIN,
+            account: "alice",
+            token: "cns_t_handed",
+            agent: "Claude Code on laptop",
+            since: new Date(START).toISOString(),
+          },
+        ],
+      });
+      expect(memory.kept()?.pending).toBeUndefined();
+      expect(second.out() + second.err()).not.toContain("cns_");
+    });
+
+    it("a call that goes on waits ninety seconds at most, says the code again and how to wait on, and ends with the code of a wait", async () => {
+      const { fetch, calls } = fakeConsole({ "POST /api/v1/connect/claim": WAITS });
+      const memory = memoryStore({ default: undefined, logins: [], pending: [PENDING] });
+      const time = clock();
+      const h = harness({ fetch, store: memory.store, terminal: false, ...time });
+      expect(await runCli(["login", "--url", ORIGIN], h.io)).toBe(EXIT.waiting);
+      // Claimed at once, then after each breath the console asked for, within ninety seconds.
+      expect(time.now() - START).toBe(90_000);
+      expect(claims(calls)).toBe(91);
+      expect(begun(calls)).toBe(0);
+      expect(h.out()).toBe(
+        "Not approved yet. To connect this agent, a person opens https://console.test/connect/ABCD-EFGH signed in, checks that the page shows the code ABCD-EFGH, names the agent and approves.\n" +
+          `Keep waiting with: console login --url https://console.test, as often as needed until ${WHEN}.\n`,
+      );
+      // The connection is kept for the call after this one, and --wait says another wait.
+      expect(memory.kept()?.pending).toEqual([PENDING]);
+      const short = harness({ fetch, store: memory.store, terminal: false, ...time });
+      const before = time.now();
+      expect(await runCli(["login", "--url", ORIGIN, "--wait", "5"], short.io)).toBe(EXIT.waiting);
+      expect(time.now() - before).toBe(5_000);
+      // No wait at all: the connection is claimed once.
+      const none = harness({ fetch, store: memory.store, terminal: false, ...time });
+      const then = claims(calls);
+      expect(await runCli(["login", "--url", ORIGIN, "--wait", "0"], none.io)).toBe(EXIT.waiting);
+      expect(claims(calls)).toBe(then + 1);
+      // A wait that is no number of seconds is refused before anything is asked of the console.
+      const bad = harness({ fetch, store: memory.store, terminal: false, ...time });
+      expect(await runCli(["login", "--url", ORIGIN, "--wait", "soon"], bad.io)).toBe(EXIT.usage);
+      expect(claims(calls)).toBe(then + 1);
+      // A wait never outlasts the code: the last claim is made while it lasts.
+      time.pass(WHEN_MS - time.now() - 3_000);
+      const late = harness({ fetch, store: memory.store, terminal: false, ...time });
+      expect(await runCli(["login", "--url", ORIGIN], late.io)).toBe(EXIT.waiting);
+      expect(time.now()).toBeLessThanOrEqual(WHEN_MS);
+    });
+
+    it("forgets a connection whose code ran out, or that the console no longer knows, says so and begins a new one", async () => {
+      const next = { ...CONNECTION, code: "WXYZ-1234", url: `${ORIGIN}/connect/WXYZ-1234` };
+      const ranOut = fakeConsole({ "POST /api/v1/connect": { status: 201, body: next } });
+      const memory = memoryStore({ default: undefined, logins: [], pending: [PENDING] });
+      const time = clock();
+      time.pass(11 * 60_000);
+      const h = harness({ fetch: ranOut.fetch, store: memory.store, terminal: false, ...time });
+      expect(await runCli(["login", "--url", ORIGIN], h.io)).toBe(EXIT.ok);
+      // The code that ran out is never claimed with: the console is asked for a new one.
+      expect(claims(ranOut.calls)).toBe(0);
+      expect(h.out()).toContain(
+        "The code ABCD-EFGH ran out before a person approved it. A new one:\nTo connect this agent, a person opens https://console.test/connect/WXYZ-1234 signed in",
+      );
+      expect(memory.kept()?.pending).toEqual([
+        { ...PENDING, code: "WXYZ-1234", page: `${ORIGIN}/connect/WXYZ-1234` },
+      ]);
+
+      // One the console no longer knows: a person said it was not theirs, or it ran out there.
+      const refused = fakeConsole({
+        "POST /api/v1/connect": { status: 201, body: next },
+        "POST /api/v1/connect/claim": GONE,
+      });
+      const kept = memoryStore({ ...one(ORIGIN, "cns_t_before"), pending: [PENDING] });
+      const r = harness({ fetch: refused.fetch, store: kept.store, terminal: false, ...clock() });
+      expect(await runCli(["login", "--url", ORIGIN], r.io)).toBe(EXIT.ok);
+      expect(r.out()).toContain(
+        "The code ABCD-EFGH is good no longer: it ran out, or a person said the connection was not theirs. A new one:\nTo connect this agent, a person opens https://console.test/connect/WXYZ-1234 signed in",
+      );
+      expect(kept.kept()?.pending).toEqual([
+        { ...PENDING, code: "WXYZ-1234", page: `${ORIGIN}/connect/WXYZ-1234` },
+      ]);
+      // The login that was there is as it was.
+      expect(kept.kept()?.logins).toEqual(one(ORIGIN, "cns_t_before").logins);
+      expect(r.out() + r.err()).not.toContain("cns_");
+
+      // A call that asks to be the account itself does not go on with an agent's connection.
+      const other = fakeConsole({ "POST /api/v1/connect": { status: 201, body: next } });
+      const mixed = memoryStore({ default: undefined, logins: [], pending: [PENDING] });
+      const m = harness({ fetch: other.fetch, store: mixed.store, terminal: false, ...clock() });
+      expect(await runCli(["login", "--url", ORIGIN, "--self"], m.io)).toBe(EXIT.ok);
+      expect(other.calls[0]?.body).toEqual({ agent: "An agent", as: "self" });
+      expect(m.out()).toContain(
+        "Have that done now, then run console login --url https://console.test --self once more",
+      );
+      expect(mixed.kept()?.pending).toEqual([
+        { ...PENDING, code: "WXYZ-1234", page: `${ORIGIN}/connect/WXYZ-1234`, self: true },
+      ]);
+    });
+
+    it("at a terminal it waits in the one call as before and keeps nothing; a wait said there is kept to go on with", async () => {
+      const { fetch, calls } = fakeConsole({
+        "POST /api/v1/connect": { status: 201, body: CONNECTION },
+        "POST /api/v1/connect/claim": WAITS,
+      });
+      const memory = memoryStore();
+      const time = clock();
+      const h = harness({ fetch, store: memory.store, terminal: true, ...time });
+      expect(await runCli(["login", "--url", ORIGIN, "--wait", "3"], h.io)).toBe(EXIT.waiting);
+      expect(h.out()).toContain(`\nWaiting for that, until ${WHEN}.\n`);
+      expect(h.out()).toContain("Keep waiting with: console login --url https://console.test,");
+      expect(claims(calls)).toBe(3);
+      expect(memory.kept()?.pending).toEqual([PENDING]);
+      // A person who then runs it at the terminal is shown the same code, and waits for it.
+      const again = fakeConsole({
+        "POST /api/v1/connect/claim": [WAITS, CONNECTED],
+        "GET /api/v1/me": { body: ME },
+      });
+      const a = harness({ fetch: again.fetch, store: memory.store, terminal: true, ...time });
+      expect(await runCli(["login", "--url", ORIGIN, "--default"], a.io)).toBe(EXIT.ok);
+      expect(begun(again.calls)).toBe(0);
+      expect(a.out()).toContain("checks that the page shows the code ABCD-EFGH");
+      expect(a.out()).toContain(`\nWaiting for that, until ${WHEN}.\n`);
+      expect(memory.kept()?.pending).toBeUndefined();
+      expect(memory.kept()?.default).toBe(ORIGIN);
+
+      // With no wait said, the secret never leaves the process, whatever becomes of the call.
+      const plain = fakeConsole({
+        "POST /api/v1/connect": { status: 201, body: CONNECTION },
+        "POST /api/v1/connect/claim": GONE,
+      });
+      const untouched = memoryStore();
+      const p = harness({ fetch: plain.fetch, store: untouched.store, terminal: true, ...clock() });
+      expect(await runCli(["login", "--url", ORIGIN], p.io)).toBe(EXIT.failed);
+      expect(p.err()).toContain("not approved in time");
+      expect(untouched.kept()).toBeUndefined();
+    });
+
+    it("logins says a connection that waits by its code, never its secret, and logout forgets it", async () => {
+      const { fetch } = fakeConsole({});
+      const time = clock();
+      const memory = memoryStore({
+        ...one(ORIGIN, "cns_t_secret"),
+        pending: [
+          { ...PENDING, url: "https://other.test", page: "https://other.test/connect/ABCD-EFGH" },
+          { ...PENDING, url: "https://old.test", expiresAt: "2026-10-09T09:00:00.000Z" },
+        ],
+      });
+      const listed = harness({ fetch, store: memory.store, ...time });
+      expect(await runCli(["logins"], listed.io)).toBe(EXIT.ok);
+      expect(listed.out()).toBe(
+        "https://console.test  alice  (default)\n" +
+          `https://other.test  waits for a person to approve the code ABCD-EFGH, until ${WHEN}: console login --url https://other.test\n`,
+      );
+      const json = harness({ fetch, store: memory.store, ...time });
+      expect(await runCli(["logins", "--json"], json.io)).toBe(EXIT.ok);
+      expect(JSON.parse(json.out()).waiting).toEqual([
+        { url: "https://other.test", code: "ABCD-EFGH", expiresAt: WHEN, self: false },
+      ]);
+      expect(listed.out() + json.out()).not.toContain("cns_");
+
+      // Signing out of a console forgets the connection that waited there, and any that ran out.
+      const waiting = memoryStore({
+        ...one(ORIGIN, "cns_t_secret"),
+        pending: [
+          PENDING,
+          { ...PENDING, url: "https://old.test", expiresAt: "2026-10-09T09:00:00.000Z" },
+        ],
+      });
+      const out = harness({ fetch, store: waiting.store, ...time });
+      expect(await runCli(["logout", "--url", ORIGIN], out.io)).toBe(EXIT.ok);
+      expect(waiting.kept()).toBeUndefined();
+      // With nobody signed in, a connection that waited is forgotten all the same.
+      const only = memoryStore({ default: undefined, logins: [], pending: [PENDING] });
+      const o = harness({ fetch, store: only.store, ...time });
+      expect(await runCli(["logout"], o.io)).toBe(EXIT.ok);
+      expect(o.out()).toContain("the connection that waited for a person is forgotten");
+      expect(only.kept()).toBeUndefined();
+      // A token given by hand at a console ends the connection that waited there.
+      const byHand = memoryStore({ default: undefined, logins: [], pending: [PENDING] });
+      const t = harness({
+        fetch: fakeConsole({ "GET /api/v1/me": { body: ME } }).fetch,
+        store: byHand.store,
+        readStdin: async () => "cns_t_new\n",
+        ...time,
+      });
+      expect(await runCli(["login", "--url", ORIGIN, "--token-stdin"], t.io)).toBe(EXIT.ok);
+      expect(byHand.kept()?.pending).toBeUndefined();
+    });
   });
 
   it("signs in as the account itself with --self: a session of the command's, kept as a token is, and said to be one (ADR-0084)", async () => {

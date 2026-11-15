@@ -49,6 +49,9 @@ process.exitCode = await runCli(process.argv.slice(2), {
   readSecret,
   hostname: hostname(),
   timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  // Whether a terminal shows what is printed as it is printed: an agent's host, a pipe and a
+  // file show it when the command ends, where login says its code and ends (ADR-0129).
+  terminal: process.stdout.isTTY === true,
   readFile: readFileAt,
   readBytes: readBytesAt,
   writeBytes: writeBytesAt,

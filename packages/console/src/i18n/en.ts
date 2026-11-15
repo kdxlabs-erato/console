@@ -1096,7 +1096,7 @@ export const en = {
       title: "A desk of your own",
       line: "A place of your own to work with your agent, kept at your git account. Tell your agent, in its own chat:",
       quote: (origin: string) =>
-        `Run these: tell me the address and the code the second shows, and go on as the last one says:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}\nconsole desk`,
+        `Run these in order, doing what each one says before the next:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}\nconsole desk`,
     },
   },
 
@@ -2290,7 +2290,7 @@ export const en = {
       title: "Connecting an agent",
       tellYourAgent: "Tell your agent, in its own chat:",
       quote: (origin: string) =>
-        `Run these two commands, and tell me the address and the code the second shows:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}`,
+        `Run these two commands, and do what the second says:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}`,
       doesTheRest:
         "An agent that can run commands does the rest: it installs the command, connects, and shows you an address with a code.",
       byHand: "By hand, where no agent runs the command for you:",

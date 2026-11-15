@@ -7,11 +7,17 @@ import {
   CredentialsError,
   createFileStore,
   defaultConfigDir,
+  keepsNothing,
   type Login,
+  lasts,
+  type PendingConnection,
   parseCredentials,
+  pendingAt,
   resolveLogin,
   withLogin,
   withoutLogin,
+  withoutPending,
+  withPending,
 } from "./credentials.js";
 
 const A = "https://a.test";
@@ -178,6 +184,79 @@ describe("the credentials the command keeps", () => {
     ).toMatchObject({ ok: true, token: "cns_t_old", account: undefined });
   });
 
+  it("keep a connection that waits for a person, one a console, and none past the end of its code (ADR-0129)", () => {
+    const END = "2026-10-09T10:00:00.000Z";
+    const before = Date.parse("2026-10-09T09:55:00.000Z");
+    const after = Date.parse("2026-10-09T10:00:00.000Z");
+    const waits = (url: string, code: string, expiresAt = END): PendingConnection => ({
+      url,
+      secret: "cns_c_secret",
+      code,
+      page: `${url}/connect/${code}`,
+      expiresAt,
+      interval: 5,
+    });
+    expect(lasts(waits(A, "AAAA-AAAA"), before)).toBe(true);
+    // At its end a code is over, and an end that is no moment never lasts.
+    expect(lasts(waits(A, "AAAA-AAAA"), after)).toBe(false);
+    expect(lasts(waits(A, "AAAA-AAAA", "soon"), before)).toBe(false);
+    const one = withPending(kept, waits(B, "BBBB-BBBB"), before);
+    expect(one.logins).toEqual(kept.logins);
+    expect(pendingAt(one, B)?.code).toBe("BBBB-BBBB");
+    expect(pendingAt(one, A)).toBeUndefined();
+    expect(pendingAt(undefined, A)).toBeUndefined();
+    // A second at the same console takes the place of the first; one elsewhere stands beside it.
+    const two = withPending(
+      withPending(one, waits(B, "CCCC-CCCC"), before),
+      waits(A, "AAAA-AAAA"),
+      before,
+    );
+    expect(two.pending?.map((waiting) => waiting.code)).toEqual(["CCCC-CCCC", "AAAA-AAAA"]);
+    // Whatever is kept anew carries no connection whose code ran out.
+    const stale = withPending(one, waits(A, "AAAA-AAAA", "2026-10-09T11:00:00.000Z"), after);
+    expect(stale.pending?.map((waiting) => waiting.code)).toEqual(["AAAA-AAAA"]);
+    expect(withoutPending(two, B, before).pending?.map((waiting) => waiting.code)).toEqual([
+      "AAAA-AAAA",
+    ]);
+    expect(withoutPending(two, "https://c.test", after).pending).toBeUndefined();
+    // A login kept or let go leaves the connections that wait as they are.
+    expect(withLogin(two, login(A, "carol", "cns_t_c")).pending).toEqual(two.pending);
+    expect(withoutLogin(two, A).pending).toEqual(two.pending);
+    expect(keepsNothing({ default: undefined, logins: [] })).toBe(true);
+    expect(keepsNothing({ default: undefined, logins: [], pending: [] })).toBe(true);
+    expect(keepsNothing({ default: undefined, logins: [], pending: [waits(A, "AAAA-AAAA")] })).toBe(
+      false,
+    );
+    expect(keepsNothing(kept)).toBe(false);
+
+    // Read from a file: whole, or not at all. A file from before has none.
+    const file = {
+      version: 2,
+      default: A,
+      logins: [{ url: A, account: "alice", token: "cns_t_a" }],
+    };
+    expect(parseCredentials(file)?.pending).toBeUndefined();
+    expect(parseCredentials({ ...file, pending: [] })?.pending).toBeUndefined();
+    expect(
+      parseCredentials({
+        ...file,
+        pending: [{ ...waits(B, "BBBB-BBBB"), self: true, default: true }],
+      })?.pending,
+    ).toEqual([{ ...waits(B, "BBBB-BBBB"), self: true, default: true }]);
+    for (const hostile of [
+      "many",
+      [{ ...waits(B, "BBBB-BBBB"), secret: "" }],
+      [{ ...waits(B, "BBBB-BBBB"), secret: "x".repeat(1025) }],
+      [{ ...waits(B, "BBBB-BBBB"), code: "x".repeat(65) }],
+      [{ ...waits(B, "BBBB-BBBB"), interval: 0 }],
+      [{ ...waits(B, "BBBB-BBBB"), interval: "5" }],
+      [{ ...waits(B, "BBBB-BBBB"), url: { nested: [[[[]]]] } }],
+      Array.from({ length: 101 }, () => waits(B, "BBBB-BBBB")),
+    ]) {
+      expect(parseCredentials({ ...file, pending: hostile })).toBeUndefined();
+    }
+  });
+
   it("name the directory the file lives in", () => {
     expect(defaultConfigDir({ XDG_CONFIG_HOME: "/xdg" })).toBe(join("/xdg", "skillcdn-console"));
     expect(defaultConfigDir({})).toContain(join(".config", "skillcdn-console"));
@@ -224,6 +303,36 @@ describe("the credentials file", () => {
     };
     await store.save(own);
     expect(await store.load()).toEqual(own);
+  });
+
+  it("keeps a connection that waits beside the logins, in the one file under the one mode (ADR-0129)", async () => {
+    const dir = await directory();
+    const store = createFileStore(dir);
+    const waiting: Credentials = {
+      default: undefined,
+      logins: [],
+      pending: [
+        {
+          url: A,
+          secret: "cns_c_secret",
+          code: "ABCD-EFGH",
+          page: `${A}/connect/ABCD-EFGH`,
+          expiresAt: "2026-10-09T10:00:00.000Z",
+          interval: 5,
+          self: true,
+          default: true,
+        },
+      ],
+    };
+    const path = await store.save(waiting);
+    expect(await store.load()).toEqual(waiting);
+    expect(await readdir(dir)).toEqual(["credentials.json"]);
+    if (process.platform !== "win32") {
+      expect((await stat(path)).mode & 0o777).toBe(0o600);
+    }
+    // With none, the file names none: a command from before reads it as it always did.
+    await store.save(kept);
+    expect(JSON.parse(await readFile(path, "utf8"))).not.toHaveProperty("pending");
   });
 
   it("reads the file of before as one login, and refuses one it cannot read without touching it", async () => {

@@ -127,13 +127,15 @@ const TASK_FIELD_REFUSALS = [
 
 export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
   login: {
-    usage: "login --url <origin> [--agent <name>] [--self] [--token-stdin] [--default]",
+    usage:
+      "login --url <origin> [--agent <name>] [--self] [--token-stdin] [--default] [--wait <seconds>]",
+    overview: "login --url <origin> [flags]",
     synopsis:
       "Connects this agent to the console with a code a person approves; keeps the token, never shows it.",
     about:
-      "Connects this agent to the console: shows an address and a code, which a person opens signed in, names the agent and approves; the command then receives a token of its own and keeps it, with the console's address and the account, in your home directory, never showing it. One login per console and account: a second console adds a login beside the first, the first is the default console a directory that names none works at, and --default makes this one that. A login repeated for the same console and account replaces its token, which is given up at the console. An agent running the command relays the address and the code to its person and waits. --agent says what the agent calls itself; left out, the command names the agent it runs under where its environment says so (Claude Code, Codex), else An agent; the machine's name follows, and the pages show the name before 'on' with the whole on hover. --token-stdin takes a token made by hand instead, typed unseen at the terminal, or from standard input for a script or a job; never an argument, which a shell would keep. --self signs the command in as the account itself (ADR-0084), which is how an agent account's own command signs in: the page asks whoever is signed in there whether the command is them, and what the command then holds is a session of its own in place of a token, kept for as long as it is used and ended when left unused as a browser's session is, so that an agent at work has nothing to renew. What is done with it is done by the account, with no agent named beside it; it does what a token may, and is seen and ended among the account's sessions. console logout gives it up. The wait's end is printed as a moment is, in the workspace's time zone where a login at the console kept it. The last line says what is bound to a project, a project's checkout with console use <key>, and names no next step: a desk, or a folder that is no checkout of a project's repository, is bound to none.",
+      "Connects this agent to the console: shows an address and a code, which a person opens signed in, names the agent and approves; the command then receives a token of its own and keeps it, with the console's address and the account, in your home directory, never showing it. One login per console and account: a second console adds a login beside the first, the first is the default console a directory that names none works at, and --default makes this one that. A login repeated for the same console and account replaces its token, which is given up at the console. At a terminal the command waits for the approval where it stands. Where no terminal shows its words as they are printed, as under an agent, whose host shows them when the command ends, the first call says the address and the code and ends at once (ADR-0129): the agent tells its person both, then runs the same command once more, which begins no new code and waits for the approval, ninety seconds a call, ending with the code of a wait (3) and how to wait on while the code lasts. --wait <seconds> says another wait for either call. The connection that waits is kept with the logins for as long as its code lasts and never shown; console logins names its code, and console logout forgets it. One whose code ran out, or that the console no longer knows, is forgotten and said, and a new code begun. --agent says what the agent calls itself; left out, the command names the agent it runs under where its environment says so (Claude Code, Codex), else An agent; the machine's name follows, and the pages show the name before 'on' with the whole on hover. --token-stdin takes a token made by hand instead, typed unseen at the terminal, or from standard input for a script or a job; never an argument, which a shell would keep. --self signs the command in as the account itself (ADR-0084), which is how an agent account's own command signs in: the page asks whoever is signed in there whether the command is them, and what the command then holds is a session of its own in place of a token, kept for as long as it is used and ended when left unused as a browser's session is, so that an agent at work has nothing to renew. What is done with it is done by the account, with no agent named beside it; it does what a token may, and is seen and ended among the account's sessions. console logout gives it up. The wait's end is printed as a moment is, in the workspace's time zone where a login at the console kept it. The last line says what is bound to a project, a project's checkout with console use <key>, and names no next step: a desk, or a folder that is no checkout of a project's repository, is bound to none.",
     refusals: [
-      "connect.not_found: the code was not approved in time, or the person said it was not theirs; run login again",
+      "connect.not_found: the code was not approved in time, or the person said it was not theirs; run login again (a connection kept from a call before is forgotten, and a new code begun in its place)",
       "the console does not know the token given: make one on the Agents page and try again",
     ],
   },
@@ -141,13 +143,13 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     usage: "logins",
     synopsis: "The consoles this machine is signed in to, and which is the default.",
     about:
-      "The consoles this machine is signed in to, each with the account, what the token is called there, since when, and which is the default; never a token.",
+      "The consoles this machine is signed in to, each with the account, what the token is called there, since when, and which is the default; never a token. A connection that waits for a person's approval (console login) is named by its console, its code and the code's end while it lasts, never by its secret.",
   },
   logout: {
     usage: "logout [--url <origin>] [--account <login>]",
     synopsis: "Gives this agent's token up at one console and forgets it here.",
     about:
-      "Signs this agent out of one console: gives the token up there, so that it is good for nothing from now on, and forgets it here. Which console: --url, else the one this directory is bound to, else the default, else the one console signed in to; --account says which account where the console has several. A console out of reach leaves the token to the Agents page.",
+      "Signs this agent out of one console: gives the token up there, so that it is good for nothing from now on, and forgets it here. Which console: --url, else the one this directory is bound to, else the default, else the one console signed in to; --account says which account where the console has several. A console out of reach leaves the token to the Agents page. A connection that waited for a person's approval at that console is forgotten with it.",
   },
   whoami: {
     usage: "whoami",
@@ -859,8 +861,8 @@ with several open, say which with --run <id>. A Markdown body given as - is read
 console --version says which version of the command this is.
 
 Exit codes: 0 done; 1 the console refused, or could not be reached (the reason is on stderr);
-2 the command was not understood; 3 the decision still waits for a person; 4 the command and the
-console do not go together, and stderr says which to update and how.
+2 the command was not understood; 3 a decision, or a connection, still waits for a person; 4 the
+command and the console do not go together, and stderr says which to update and how.
 What the console refuses is printed as its code and its words. Everywhere:
 ${COMMON_REFUSALS.map((refusal) => `  ${refusal}`).join("\n")}
 

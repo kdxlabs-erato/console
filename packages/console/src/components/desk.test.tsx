@@ -462,9 +462,10 @@ describe("a desk of one's own, on the Agents page", () => {
       '<section class="sc-panel sc-desk-command" aria-label="A desk of your own"><h2 class="sc-section-title">A desk of your own</h2><p>A place of your own to work with your agent, kept at your git account. Tell your agent, in its own chat:</p><div class="sc-copyable">',
     );
     // The block is a sentence for the agent over three commands, in their order: the command's
-    // install, the connection to this console, and the desk. The command says what is next.
+    // install, the connection to this console, and the desk. Each command says what is next:
+    // the connection, to tell the person its code and to run it once more (ADR-0129).
     expect(quoteOf(html)?.split("\n")).toEqual([
-      "Run these: tell me the address and the code the second shows, and go on as the last one says:",
+      "Run these in order, doing what each one says before the next:",
       ...COMMANDS,
     ]);
     // The pages come when they are asked for, and the command's own last lines say the rest:
@@ -490,7 +491,7 @@ describe("a desk of one's own, on the Agents page", () => {
       "<p>내 깃 계정에 두는, 에이전트와 일하는 나만의 공간입니다. 에이전트의 대화창에서 이렇게 말하세요:</p>",
     );
     expect(quoteOf(html)?.split("\n")).toEqual([
-      "이 명령들을 실행해 줘. 두 번째가 보여 주는 주소와 코드를 내게 알려 주고, 마지막 명령이 말하는 대로 이어서 해 줘:",
+      "이 명령들을 차례로 실행해 줘. 각 명령이 말하는 대로 한 다음 넘어가 줘:",
       ...COMMANDS,
     ]);
     expect(html.match(/<p>/g)).toHaveLength(1);

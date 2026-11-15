@@ -114,11 +114,17 @@ import {
   type Credentials,
   CredentialsError,
   EMPTY_CREDENTIALS,
+  keepsNothing,
+  lasts,
   loginsAt,
+  type PendingConnection,
+  pendingAt,
   type Resolution,
   resolveLogin,
   withLogin,
   withoutLogin,
+  withoutPending,
+  withPending,
 } from "./credentials.js";
 import {
   DIRECTORY_FILE,
@@ -217,7 +223,7 @@ export const EXIT = {
   failed: 1,
   /** The command was not understood. */
   usage: 2,
-  /** The decision still waits for a person. */
+  /** What was waited for still waits for a person: a decision's answer, or a connection's approval. */
   waiting: 3,
   /** The command and the console do not go together (ADR-0025): stderr says which to update, and how. */
   incompatible: 4,
@@ -234,6 +240,12 @@ const WAIT_PAUSE_MS = 500;
 const DEFAULT_ASK_WAIT_SECONDS = 60;
 /** The longest wait a person may ask for: a day. */
 const MAX_WAIT_SECONDS = 86_400;
+/**
+ * How long `login` waits for the approval of a connection a call before it began, where no
+ * terminal shows its words as they are printed (ADR-0129): within the two minutes an agent's
+ * host gives a command before it cuts it off.
+ */
+const DEFAULT_LOGIN_WAIT_SECONDS = 90;
 
 export interface CliIo {
   readonly env: Readonly<Record<string, string | undefined>>;
@@ -252,6 +264,12 @@ export interface CliIo {
   readonly hostname?: string | undefined;
   /** The machine's own time zone, for a moment printed before the workspace's is known. */
   readonly timeZone?: string | undefined;
+  /**
+   * Whether a terminal shows the command's words as they are printed. Where none does, whoever
+   * runs the command sees them when it ends, so `login` says its code and ends, and waits for
+   * the approval in the next call (ADR-0129). Left out, one is taken to be there.
+   */
+  readonly terminal?: boolean | undefined;
   /** A file named with `--file`, as text. */
   readonly readFile: (path: string) => Promise<string>;
   /** A file handed in, as bytes. */
@@ -1012,7 +1030,9 @@ async function keep(
     },
     { default: asDefault },
   );
-  const kept = await io.store.save(next);
+  // A login kept at a console ends the connection that waited there (ADR-0129): its secret
+  // is spent, and is kept no longer.
+  const kept = await io.store.save(withoutPending(next, url, io.now()));
   const standing = next.default === url ? ", the default console here" : "";
   // Last, what holds where, never a next step: the line once said to bind this directory
   // next, and a folder that is no checkout of a project's repository, a desk or a home
@@ -1035,6 +1055,7 @@ const login: Command = async (args, io) => {
       agent: { type: "string" },
       self: { type: "boolean" },
       default: { type: "boolean" },
+      wait: { type: "string" },
     },
     false,
   );
@@ -1055,45 +1076,156 @@ const login: Command = async (args, io) => {
   // A connection (ADR-0011): a code a person approves on the console's own pages, and the token
   // handed over here once, never shown.
   const client = clientOf(io, url);
-  // "<agent> on <machine>": the pages say the agent and keep the machine for a hover.
-  const agent = text(values, "agent") ?? agentOf(io.env) ?? "An agent";
   // With --self the command asks to be the account itself (ADR-0084): whoever approves says
   // "this is me", and what is handed over is a session of the command's, in place of a token.
   const self = on(values, "self");
-  const begun = await client.connect({
-    agent: io.hostname === undefined ? agent : `${agent} on ${io.hostname}`,
-    ...(self ? { as: "self" as const } : {}),
-  });
+  // Where no terminal shows the command's words as they are printed, whoever runs it sees them
+  // when it ends: an agent's host held the address and the code back until its own limit, two
+  // minutes on, while a person waited for them. There the call that begins a connection says
+  // them and ends, and the next call waits for the approval (ADR-0129).
+  const attended = io.terminal !== false;
+  const wait = text(values, "wait");
+  const waitGiven = wait === undefined ? undefined : secondsOf(wait, 0);
   // The end of the wait is a moment as any other the command prints (ADR-0035): in the
   // workspace's time zone where a login at this console kept it, which is one zone whoever
   // signed in; on a first sign-in, when none is known yet, in the machine's own, since an agent
   // relays the moment to a person; as the API gave it where the machine says none.
   setMomentZone(credentials?.logins.find((login) => login.url === url)?.timeZone ?? io.timeZone);
-  const until = moment(begun.expiresAt);
-  io.stdout(
+  const again = `console login --url ${url}${self ? " --self" : ""}`;
+  /** Whom the code is shown to, and what they do with it. */
+  const asked = (page: string, code: string): string =>
     self
-      ? `To sign this command in as an account itself, open ${begun.url} signed in as that account, check that the page shows the code ${begun.code}, and say that it is you.\nWaiting for that, until ${until}.\n`
-      : `To connect this agent, a person opens ${begun.url} signed in, checks that the page shows the code ${begun.code}, names the agent and approves.\nWaiting for that, until ${until}.\n`,
-  );
+      ? `To sign this command in as an account itself, open ${page} signed in as that account, check that the page shows the code ${code}, and say that it is you.`
+      : `To connect this agent, a person opens ${page} signed in, checks that the page shows the code ${code}, names the agent and approves.`;
+  /** Forgets the connection kept for this console, and any whose code ran out; writes nothing where none was kept. */
+  const forget = async (): Promise<void> => {
+    const kept = await loadCredentials(io);
+    if (kept === undefined || (kept.pending ?? []).length === 0) {
+      return;
+    }
+    const next = withoutPending(kept, url, io.now());
+    if (keepsNothing(next)) {
+      await io.store.clear();
+    } else {
+      await io.store.save(next);
+    }
+  };
+
+  // A connection a call before this one began at this console, of the kind this call asks for:
+  // it is gone on with, and no new code is made while its code lasts.
+  let waiting = pendingAt(credentials, url);
+  if (waiting !== undefined && ((waiting.self === true) !== self || !lasts(waiting, io.now()))) {
+    const ranOut = !lasts(waiting, io.now());
+    await forget();
+    if (ranOut) {
+      io.stdout(`The code ${waiting.code} ran out before a person approved it. A new one:\n`);
+    }
+    waiting = undefined;
+  }
   for (;;) {
-    await io.sleep(begun.interval * 1000);
-    let claim: RestClaim;
-    try {
-      claim = await client.claimConnection(begun.secret);
-    } catch (error) {
-      if (error instanceof ApiError && error.code === "connect.not_found") {
+    const resumed = waiting !== undefined;
+    if (waiting === undefined) {
+      // "<agent> on <machine>": the pages say the agent and keep the machine for a hover.
+      const agent = text(values, "agent") ?? agentOf(io.env) ?? "An agent";
+      const begun = await client.connect({
+        agent: io.hostname === undefined ? agent : `${agent} on ${io.hostname}`,
+        ...(self ? { as: "self" as const } : {}),
+      });
+      waiting = {
+        url,
+        secret: begun.secret,
+        code: begun.code,
+        page: begun.url,
+        expiresAt: begun.expiresAt,
+        interval: begun.interval,
+        ...(self ? { self: true } : {}),
+        ...(asDefault ? { default: true } : {}),
+      };
+      // Kept only where this call may end before the approval: at a terminal, with no wait
+      // said, the secret stays in the process as it always did.
+      if (!attended || waitGiven !== undefined) {
+        await io.store.save(
+          withPending((await loadCredentials(io)) ?? EMPTY_CREDENTIALS, waiting, io.now()),
+        );
+      }
+    }
+    const pending: PendingConnection = waiting;
+    const until = moment(pending.expiresAt);
+    const end = Date.parse(pending.expiresAt);
+    const seconds =
+      waitGiven ?? (attended ? MAX_WAIT_SECONDS : resumed ? DEFAULT_LOGIN_WAIT_SECONDS : 0);
+    // A call that begins a connection and waits for nothing says what a person does and ends:
+    // the words reach whoever ran it now, and the next call waits. A call that goes on with a
+    // connection says nothing before its wait where no terminal would show it.
+    const told = !resumed && seconds === 0;
+    if (!resumed || attended) {
+      io.stdout(
+        told
+          ? `${asked(pending.page, pending.code)}\n${self ? "Have that done" : "Tell the person that address and that code"} now, then run ${again} once more: it waits for the approval, until ${until}.\n`
+          : `${asked(pending.page, pending.code)}\nWaiting for that, until ${until}.\n`,
+      );
+    }
+    if (told) {
+      return EXIT.ok;
+    }
+    // Where the call may end before the approval, it waits no longer than it was given, and no
+    // longer than the code lasts; at a terminal with no wait said, until the console says how
+    // the connection ended, as before.
+    const bounded = waitGiven !== undefined || !attended;
+    const deadline = Math.min(
+      io.now() + seconds * 1000,
+      Number.isFinite(end) ? end : Number.POSITIVE_INFINITY,
+    );
+    // A connection gone on with is claimed at once, since its person may have approved between
+    // the two calls; one begun now, after the breath the console asked for, as before.
+    let first = resumed;
+    let gone = false;
+    for (;;) {
+      if (!first) {
+        if (bounded && io.now() + pending.interval * 1000 > deadline) {
+          break;
+        }
+        await io.sleep(pending.interval * 1000);
+      }
+      first = false;
+      let claim: RestClaim;
+      try {
+        claim = await client.claimConnection(pending.secret);
+      } catch (error) {
+        if (error instanceof ApiError && error.code === "connect.not_found") {
+          gone = true;
+          break;
+        }
+        throw error;
+      }
+      if (claim.status === "connected") {
+        return keep(io, url, claim.secret, claim.token.name, asDefault || pending.default === true);
+      }
+      if (claim.status === "signed_in") {
+        return keep(io, url, claim.secret, undefined, asDefault || pending.default === true, true);
+      }
+    }
+    if (gone) {
+      await forget();
+      if (!resumed) {
         throw failed(
           "The connection was not approved in time, or the person said it was not theirs. Run console login again for a new code.",
         );
       }
-      throw error;
+      // A connection kept from a call before, which the console no longer knows: its code ran
+      // out there, or a person said it was not theirs. It is forgotten, and a new one begun.
+      io.stdout(
+        `The code ${pending.code} is good no longer: it ran out, or a person said the connection was not theirs. A new one:\n`,
+      );
+      waiting = undefined;
+      continue;
     }
-    if (claim.status === "connected") {
-      return keep(io, url, claim.secret, claim.token.name, asDefault);
-    }
-    if (claim.status === "signed_in") {
-      return keep(io, url, claim.secret, undefined, asDefault, true);
-    }
+    // The wait this call was given is over and the code still lasts: the connection stays kept,
+    // and the same command goes on waiting for it.
+    io.stdout(
+      `${self ? "Not signed in yet" : "Not approved yet"}. ${asked(pending.page, pending.code)}\nKeep waiting with: ${again}, as often as needed until ${until}.\n`,
+    );
+    return EXIT.waiting;
   }
 };
 
@@ -1107,7 +1239,14 @@ const logout: Command = async (args, io) => {
     }
   };
   if (credentials === undefined || credentials.logins.length === 0) {
-    io.stdout("Not signed in here: nothing to forget.\n");
+    // Nobody is signed in; a connection that waited for a person is forgotten all the same
+    // (ADR-0129), with its secret.
+    if (credentials !== undefined && (credentials.pending ?? []).length > 0) {
+      await io.store.clear();
+      io.stdout("Not signed in here; the connection that waited for a person is forgotten.\n");
+    } else {
+      io.stdout("Not signed in here: nothing to forget.\n");
+    }
     envNote();
     return EXIT.ok;
   }
@@ -1157,8 +1296,10 @@ const logout: Command = async (args, io) => {
       outcome = "left";
     }
   }
-  const next = withoutLogin(credentials, url, login.account);
-  if (next.logins.length === 0) {
+  // A connection that waited at this console goes with its login (ADR-0129), as does any
+  // whose code ran out: signing out leaves no secret of the console here.
+  const next = withoutPending(withoutLogin(credentials, url, login.account), url, io.now());
+  if (keepsNothing(next)) {
     await io.store.clear();
   } else {
     await io.store.save(next);
@@ -1188,24 +1329,49 @@ const logins: Command = async (args, io) => {
     since: login.since ?? null,
     default: credentials?.default === login.url,
   }));
+  // The connections that wait for a person while their codes last (ADR-0129): the console, the
+  // code and its end, never the secret; one whose code ran out is not shown.
+  const waiting = (credentials?.pending ?? [])
+    .filter((pending) => lasts(pending, io.now()))
+    .map((pending) => ({
+      url: pending.url,
+      code: pending.code,
+      expiresAt: pending.expiresAt,
+      self: pending.self === true,
+    }));
   if (on(values, "json")) {
     io.stdout(
-      `${JSON.stringify({ default: credentials?.default ?? null, logins: kept }, null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          default: credentials?.default ?? null,
+          logins: kept,
+          ...(waiting.length === 0 ? {} : { waiting }),
+        },
+        null,
+        2,
+      )}\n`,
     );
     return EXIT.ok;
   }
-  if (kept.length === 0) {
-    io.stdout("Not signed in anywhere here: console login --url <the console's origin>\n");
-    return EXIT.ok;
+  const lines = [
+    ...kept.map(
+      (login) =>
+        `${login.url}  ${login.account ?? "(account unknown)"}${login.agent === null ? "" : `  ${login.agent}`}${login.self ? "  as the account itself" : ""}${login.since === null ? "" : `  since ${login.since.slice(0, 10)}`}${login.default ? "  (default)" : ""}`,
+    ),
+  ];
+  for (const pending of waiting) {
+    // The code's end as login printed it: in the zone a login at that console kept, else the machine's.
+    setMomentZone(
+      credentials?.logins.find((login) => login.url === pending.url)?.timeZone ?? io.timeZone,
+    );
+    lines.push(
+      `${pending.url}  waits for a person to approve the code ${pending.code}, until ${moment(pending.expiresAt)}: console login --url ${pending.url}${pending.self ? " --self" : ""}`,
+    );
   }
-  io.stdout(
-    `${kept
-      .map(
-        (login) =>
-          `${login.url}  ${login.account ?? "(account unknown)"}${login.agent === null ? "" : `  ${login.agent}`}${login.self ? "  as the account itself" : ""}${login.since === null ? "" : `  since ${login.since.slice(0, 10)}`}${login.default ? "  (default)" : ""}`,
-      )
-      .join("\n")}\n`,
-  );
+  if (kept.length === 0) {
+    lines.unshift("Not signed in anywhere here: console login --url <the console's origin>");
+  }
+  io.stdout(`${lines.join("\n")}\n`);
   return EXIT.ok;
 };
 

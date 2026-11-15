@@ -1015,7 +1015,7 @@ export const ko: Messages = {
       title: "내 데스크",
       line: "내 깃 계정에 두는, 에이전트와 일하는 나만의 공간입니다. 에이전트의 대화창에서 이렇게 말하세요:",
       quote: (origin) =>
-        `이 명령들을 실행해 줘. 두 번째가 보여 주는 주소와 코드를 내게 알려 주고, 마지막 명령이 말하는 대로 이어서 해 줘:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}\nconsole desk`,
+        `이 명령들을 차례로 실행해 줘. 각 명령이 말하는 대로 한 다음 넘어가 줘:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}\nconsole desk`,
     },
   },
 
@@ -2174,7 +2174,7 @@ export const ko: Messages = {
       title: "에이전트 연결하기",
       tellYourAgent: "에이전트의 대화창에서 이렇게 말하세요:",
       quote: (origin) =>
-        `이 두 명령을 실행하고, 두 번째 명령이 보여 주는 주소와 코드를 알려 줘:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}`,
+        `이 두 명령을 실행하고, 두 번째 명령이 말하는 대로 해 줘:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}`,
       doesTheRest:
         "명령을 실행할 수 있는 에이전트는 나머지를 알아서 합니다. 명령을 설치하고, 연결하고, 코드가 있는 주소를 보여 줍니다.",
       byHand: "에이전트가 명령을 대신 실행하지 않는다면, 직접:",

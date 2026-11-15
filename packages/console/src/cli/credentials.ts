@@ -34,10 +34,37 @@ export interface Login {
   readonly timeZone?: string | undefined;
 }
 
+/**
+ * A connection begun and not yet approved (ADR-0129): what a later `login` needs to go on
+ * waiting for it, kept for the few minutes its code lasts where the call that began it ended
+ * before a person approved. Its secret is good for nothing until a person signed in at the
+ * console approves the code, and is kept as a token is: here, and never printed.
+ */
+export interface PendingConnection {
+  /** The origin of the console the connection was begun at. */
+  readonly url: string;
+  /** What the command claims the token with, once a person approved. */
+  readonly secret: string;
+  /** The code the person checks on the page, to say again. */
+  readonly code: string;
+  /** The page the person opens to approve. */
+  readonly page: string;
+  /** When the code runs out, as the console said it. */
+  readonly expiresAt: string;
+  /** How many seconds the console asked for between two claims. */
+  readonly interval: number;
+  /** Whether the command asked to be the account itself (ADR-0084). */
+  readonly self?: boolean | undefined;
+  /** Whether the login is to be the default console here. */
+  readonly default?: boolean | undefined;
+}
+
 /** Everything the command keeps: the logins, and the console a directory that names none works at. */
 export interface Credentials {
   readonly default: string | undefined;
   readonly logins: readonly Login[];
+  /** The connections begun and waiting for a person, one a console at most (ADR-0129); left out when none is. */
+  readonly pending?: readonly PendingConnection[] | undefined;
 }
 
 export const EMPTY_CREDENTIALS: Credentials = { default: undefined, logins: [] };
@@ -84,10 +111,23 @@ const loginSchema = z.object({
   self: z.optional(z.boolean()),
   timeZone: z.optional(z.string().check(z.minLength(1), z.maxLength(64))),
 });
+const pendingSchema = z.object({
+  url: z.string().check(z.minLength(1), z.maxLength(2048)),
+  secret: z.string().check(z.minLength(1), z.maxLength(1024)),
+  code: z.string().check(z.minLength(1), z.maxLength(64)),
+  page: z.string().check(z.minLength(1), z.maxLength(2048)),
+  expiresAt: z.string().check(z.minLength(1), z.maxLength(40)),
+  interval: z.number().check(z.gte(1), z.lte(600)),
+  self: z.optional(z.boolean()),
+  default: z.optional(z.boolean()),
+});
 const fileSchema = z.object({
   version: z.literal(2),
   default: z.optional(z.string().check(z.minLength(1), z.maxLength(2048))),
   logins: z.array(loginSchema).check(z.maxLength(MAX_LOGINS)),
+  // Left out by a command from before ADR-0129, which reads the file without it and writes it
+  // back without it: a connection that waited is begun again.
+  pending: z.optional(z.array(pendingSchema).check(z.maxLength(MAX_LOGINS))),
 });
 /** The file as the command kept it before 2026-10: one console, one token. */
 const firstFileSchema = z.object({
@@ -110,6 +150,20 @@ export function parseCredentials(json: unknown): Credentials | undefined {
         ...(login.self === true ? { self: true } : {}),
         ...(login.timeZone === undefined ? {} : { timeZone: login.timeZone }),
       })),
+      ...(current.data.pending === undefined || current.data.pending.length === 0
+        ? {}
+        : {
+            pending: current.data.pending.map((waiting) => ({
+              url: waiting.url,
+              secret: waiting.secret,
+              code: waiting.code,
+              page: waiting.page,
+              expiresAt: waiting.expiresAt,
+              interval: waiting.interval,
+              ...(waiting.self === true ? { self: true } : {}),
+              ...(waiting.default === true ? { default: true } : {}),
+            })),
+          }),
     };
   }
   const first = firstFileSchema.safeParse(json);
@@ -156,7 +210,62 @@ export function withLogin(
   return {
     default: options.default === true ? login.url : (credentials.default ?? first),
     logins: [...rest, login],
+    ...carried(credentials.pending),
   };
+}
+
+/** The connections that wait, as a field of what is kept: left out when none does. */
+function carried(pending: readonly PendingConnection[] | undefined): {
+  readonly pending?: readonly PendingConnection[];
+} {
+  return pending === undefined || pending.length === 0 ? {} : { pending };
+}
+
+/** Whether a connection's code still lasts at a moment; one whose end does not read as a moment does not. */
+export function lasts(pending: PendingConnection, now: number): boolean {
+  const end = Date.parse(pending.expiresAt);
+  return Number.isFinite(end) && end > now;
+}
+
+/** The connection that waits at a console, whether or not its code still lasts. */
+export function pendingAt(
+  credentials: Credentials | undefined,
+  url: string,
+): PendingConnection | undefined {
+  return credentials?.pending?.find((waiting) => waiting.url === url);
+}
+
+/**
+ * With a connection that waits: in place of the one at the same console, and without any whose
+ * code ran out, so that a secret rests here no longer than its code lasts once anything is kept
+ * again (ADR-0129).
+ */
+export function withPending(
+  credentials: Credentials,
+  pending: PendingConnection,
+  now: number,
+): Credentials {
+  const rest = (credentials.pending ?? []).filter(
+    (waiting) => waiting.url !== pending.url && lasts(waiting, now),
+  );
+  return {
+    default: credentials.default,
+    logins: credentials.logins,
+    pending: [...rest, pending],
+  };
+}
+
+/** Without the connection that waits at a console, and without any whose code ran out. */
+export function withoutPending(credentials: Credentials, url: string, now: number): Credentials {
+  const rest = (credentials.pending ?? []).filter(
+    (waiting) => waiting.url !== url && lasts(waiting, now),
+  );
+  return { default: credentials.default, logins: credentials.logins, ...carried(rest) };
+}
+
+/** Whether nothing is kept: no login, and no connection that waits. */
+export function keepsNothing(credentials: Credentials): boolean {
+  return credentials.logins.length === 0 && (credentials.pending ?? []).length === 0;
 }
 
 /**
@@ -176,6 +285,7 @@ export function withoutLogin(credentials: Credentials, url: string, account?: st
         ? credentials.default
         : fallback,
     logins,
+    ...carried(credentials.pending),
   };
 }
 
@@ -331,6 +441,22 @@ export function createFileStore(directory: string): CredentialStore {
           ...(login.self === true ? { self: true } : {}),
           ...(login.timeZone === undefined ? {} : { timeZone: login.timeZone }),
         })),
+        // The connections that wait for a person (ADR-0129), each with its secret, in this file
+        // and under its mode as a token is.
+        ...(credentials.pending === undefined || credentials.pending.length === 0
+          ? {}
+          : {
+              pending: credentials.pending.map((waiting) => ({
+                url: waiting.url,
+                secret: waiting.secret,
+                code: waiting.code,
+                page: waiting.page,
+                expiresAt: waiting.expiresAt,
+                interval: waiting.interval,
+                ...(waiting.self === true ? { self: true } : {}),
+                ...(waiting.default === true ? { default: true } : {}),
+              })),
+            }),
       };
       // Written beside the file and moved over it in one step, so that a command that stops
       // half-way leaves the file as it was, whole.
