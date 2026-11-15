@@ -267,6 +267,12 @@ export interface TaskData {
   readonly body?: string;
   /** Who wrote it; the administrator where left out. */
   readonly by?: Member;
+  /**
+   * How many days before the preview starts the task was done. The board dates a task done as
+   * it is moved there, so the preview dates such a task anew: a page that counts what was done
+   * by week has weeks to count.
+   */
+  readonly doneAgo?: number;
 }
 
 /** The task whose page shows everything a task's page can. */
@@ -591,6 +597,35 @@ export const WEBSITE_TASKS: readonly TaskData[] = [
     due: 40,
     by: "alice",
   },
+  // What the administrator finished in the weeks before, for a desk's figures and its archive.
+  {
+    title: "Pick the new wordmark with the agency",
+    state: "done",
+    category: "design",
+    workers: ["alice"],
+    doneAgo: 26,
+  },
+  {
+    title: "Agree the budget of the relaunch",
+    state: "done",
+    category: "operations",
+    workers: ["alice", "bob"],
+    doneAgo: 33,
+  },
+  {
+    title: "Take stock of every page of the old site",
+    state: "done",
+    category: "product",
+    workers: ["alice"],
+    doneAgo: 40,
+  },
+  {
+    title: "Write the brief of the relaunch",
+    state: "done",
+    category: "product",
+    workers: ["alice"],
+    doneAgo: 47,
+  },
 ];
 
 export const HANDBOOK_TASKS: readonly TaskData[] = [
@@ -702,6 +737,34 @@ export const OPS_TASKS: readonly TaskData[] = [
     category: "operations",
     workers: ["bob"],
     by: "bob",
+  },
+  {
+    title: "Move the mail to the new provider",
+    state: "done",
+    category: "operations",
+    workers: ["alice"],
+    doneAgo: 4,
+  },
+  {
+    title: "Pay the year's insurance",
+    state: "done",
+    category: "finance",
+    workers: ["alice"],
+    doneAgo: 11,
+  },
+  {
+    title: "Close the old bank account",
+    state: "done",
+    category: "finance",
+    workers: ["alice", "bob"],
+    doneAgo: 12,
+  },
+  {
+    title: "Find the movers and book the day",
+    state: "done",
+    category: "operations",
+    workers: ["alice"],
+    doneAgo: 19,
   },
 ];
 
@@ -871,6 +934,15 @@ export const RUNS: readonly RunData[] = [
     task: "Halve the weight of the front page",
     reports: [
       "The pictures are a third of their weight in the new format, and the two scripts nothing called are gone. The page is at 46% of what it was.",
+    ],
+  },
+  // A run of the administrator's own that is under way, for what stands on a desk.
+  {
+    by: "alice",
+    through: LAPTOP_AGENT,
+    task: "Open the workspace straight after sign-up, without the tour",
+    reports: [
+      "The tour is off behind a setting, and a new workspace opens on its board. Next: the three places that still link to the tour.",
     ],
   },
 ];

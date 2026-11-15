@@ -279,6 +279,7 @@ export async function seedPreviewWork(options: {
   // The projects' work, each project in its own order and the projects side by side, which is
   // what keeps a start short: a task's number and a page's version follow the order within one.
   const website = await seedBoard(cast, now, WEBSITE, WEBSITE_GOALS, WEBSITE_TASKS);
+  await dateDoneTasks(harness, now, WEBSITE_TASKS, website);
   await Promise.all([
     (async () => {
       await seedThread(cast, website);
@@ -292,6 +293,7 @@ export async function seedPreviewWork(options: {
     })(),
     (async () => {
       const ops = await seedBoard(cast, now, OPS, OPS_GOALS, OPS_TASKS);
+      await dateDoneTasks(harness, now, OPS_TASKS, ops);
       for (const decision of OPS_DECISIONS) {
         await seedDecision(cast, OPS, ops, decision);
       }
@@ -430,6 +432,29 @@ async function seedBoard(
     board.set(task.title, { id: made.id, number: made.number });
   }
   return board;
+}
+
+/**
+ * The day each task done in the weeks before was done on, written back in time: the board
+ * dates a task done as it is moved there, which here is the moment the preview starts.
+ */
+async function dateDoneTasks(
+  harness: Harness,
+  now: Date,
+  tasks: readonly TaskData[],
+  board: Board,
+): Promise<void> {
+  const handle = drizzleOf(harness.database);
+  for (const task of tasks) {
+    const id = board.get(task.title)?.id;
+    if (task.doneAgo === undefined || id === undefined) {
+      continue;
+    }
+    const done = new Date(now.getTime() - task.doneAgo * 86_400_000).toISOString();
+    await handle.execute(sql`
+      update tasks set done_at = ${done}::timestamptz where id = ${id}::uuid
+    `);
+  }
 }
 
 /** Whoever the data names, through the agent it names where it names one. */

@@ -232,13 +232,15 @@ describe("the preview console", () => {
   it("makes an invented organization's work once: a board shown at a glance on a member's page (ADR-0105), and something on every page", async () => {
     const admin = await started.harness.signIn(BROWSER_ADMIN);
     const member = await started.harness.signIn("bob");
+    /** The day the work is made on, by this test's own clock. */
+    const SEEDED = new Date("2026-11-14T09:00:00Z");
     const seed = () =>
       seedPreviewBoard({
         harness: started.harness,
         origin: started.origin,
         admin,
         member,
-        now: new Date("2026-11-14T09:00:00Z"),
+        now: SEEDED,
       });
     expect(await seed()).toBe(true);
     const project = restProjectSchema.parse(
@@ -295,7 +297,17 @@ describe("the preview console", () => {
     expect(await count(REST_ROUTES.categories)).toBe(8);
     expect(await count(`${website("tasks")}?limit=100`)).toBeGreaterThan(30);
     expect(await count(website("goals"))).toBe(8);
-    expect(await count(website("runs"))).toBe(6);
+    expect(await count(website("runs"))).toBe(7);
+    // What was finished in the weeks before is dated back to them, for a page that counts what
+    // was done by week: the board itself dates a task done at the moment it is moved there. Read
+    // against the day the work was made on, since the board's own moments are the real day's.
+    const done = (await read(`${website("tasks")}?state=done&limit=100`)).items;
+    const weeksAgo = done.filter(
+      (task) =>
+        typeof task.doneAt === "string" &&
+        SEEDED.getTime() - new Date(task.doneAt).getTime() > 20 * 86_400_000,
+    );
+    expect(weeksAgo.length).toBe(4);
     expect(await count(projectPath("lab", "tasks"))).toBe(0);
     expect(await count(projectPath("handbook", "docs"))).toBeGreaterThan(0);
     // Decisions that wait for the administrator, in a project open to all and in a private one,
