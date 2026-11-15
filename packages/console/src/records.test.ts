@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   checkRecords,
@@ -9,7 +11,15 @@ import {
   MAX_RECORD_COLLECTIONS,
   MAX_RECORD_FILE_BYTES,
   MAX_RECORD_ITEMS,
+  MAX_RECORD_KEY_LENGTH,
   MAX_RECORD_LINE_LENGTH,
+  MAX_RECORD_METRIC_ROWS,
+  MAX_RECORD_TEXT_LENGTH,
+  MAX_RECORD_USES,
+  RECORD_FIELD_KINDS,
+  RECORD_METRIC_UNITS,
+  RECORD_PREVIEW_KINDS,
+  RECORD_RATIO_FORMS,
   type RecordsFiles,
   readRecords,
   recordsCollectionSchema,
@@ -560,5 +570,80 @@ describe("the check of a desk's records (ADR-0117)", () => {
     const many = await checkRecords(desk({ ...WHOLE, "ad-creatives/uses.json": strays }));
     expect(many.problems).toHaveLength(201);
     expect(many.problems.at(-1)).toEqual({ file: "records", problem: "and 100 more problems" });
+  });
+});
+
+describe("the collections' page of the skill keeping-a-desk (ADR-0122)", () => {
+  // The form of a desk's collections is said to an agent in one page of the console's own
+  // skill, and no longer written into every desk. The page is held to the schemas here: its
+  // examples read by them and pass the check, and it says the bounds they hold.
+  const PAGE = readFileSync(
+    fileURLToPath(new URL("../../../skills/keeping-a-desk/collections.md", import.meta.url)),
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  /** The JSON the page gives as examples, in the order it gives them. */
+  const examples = [...PAGE.matchAll(/```json\n([\s\S]*?)\n```/g)].map((found) => found[1] ?? "");
+
+  it("gives one example of each file, and each reads by the format's own schema", () => {
+    expect(examples).toHaveLength(5);
+    const [index, collection, items, uses, metrics] = examples;
+    expect(readRecords(recordsIndexSchema, index ?? "").ok).toBe(true);
+    expect(readRecords(recordsCollectionSchema, collection ?? "").ok).toBe(true);
+    expect(readRecords(recordsItemsSchema, items ?? "").ok).toBe(true);
+    expect(readRecords(recordsUsesSchema, uses ?? "").ok).toBe(true);
+    expect(readRecords(recordsMetricsSchema, metrics ?? "").ok).toBe(true);
+  });
+
+  it("gives examples that pass the check together, as a desk that copied them would", async () => {
+    const [index, collection, items, uses, metrics] = examples;
+    const found = await checkRecords(
+      desk({
+        "index.json": index ?? "",
+        "ad-creatives/collection.json": collection ?? "",
+        "ad-creatives/items.json": items ?? "",
+        "ad-creatives/uses.json": uses ?? "",
+        "ad-creatives/metrics.json": metrics ?? "",
+        "ad-creatives/files/c-001.png": 48_000,
+        "ad-creatives/files/c-001.mp4": 480_000_000,
+      }),
+    );
+    expect(found).toEqual({
+      found: true,
+      problems: [],
+      notes: [],
+      collections: [{ key: "ad-creatives", items: 1, uses: 1, metricRows: 1 }],
+    });
+  });
+
+  it("says the bounds and the words the schemas hold, the check, where large files go and what never goes in", () => {
+    const count = (value: number): string => value.toLocaleString("en-US");
+    expect(PAGE).toContain(
+      `At most ${count(MAX_RECORD_COLLECTIONS)} collections; in a collection ${count(MAX_RECORD_ITEMS)} items, ${count(MAX_RECORD_USES)} uses and ${count(MAX_RECORD_METRIC_ROWS)} rows of figures; ${MAX_RECORD_KEY_LENGTH} characters in a key or an id, ${MAX_RECORD_LINE_LENGTH} in a title, a label or \`where\`, ${count(MAX_RECORD_TEXT_LENGTH)} in a description, a note or a field that is text; ${MAX_RECORD_FILE_BYTES / (1024 * 1024)} MiB in a JSON file.`,
+    );
+    const words = (values: readonly string[]): string =>
+      values
+        .map((value) => `\`${value}\``)
+        .join(", ")
+        .replace(/, ([^,]*)$/, " or $1");
+    expect(PAGE).toContain(`A field's \`kind\` is ${words(RECORD_FIELD_KINDS)}.`);
+    expect(PAGE).toContain(`A metric's \`unit\` is ${words(RECORD_METRIC_UNITS)}.`);
+    expect(PAGE).toContain(`shown \`as\` ${words(RECORD_RATIO_FORMS)}`);
+    expect(PAGE).toContain(
+      `\`preview\` is a picture (${RECORD_PREVIEW_KINDS.map((kind) => kind.slice(1)).join(", ")}).`,
+    );
+    expect(PAGE).toContain("run `console desk check` in the desk");
+    expect(PAGE).toContain("A large file goes in with git LFS");
+    expect(PAGE).toContain("A secret: a token, a key, a password.");
+    // What fresh agents left out with the example before them: a status on every item, a status
+    // for every state, and a ratio for a rate.
+    expect(PAGE).toContain(
+      "`status` is one of the collection's, and where the collection has statuses every item carries one.",
+    );
+    expect(PAGE).toContain("Each state an item can be in is a status, the one it begins in too.");
+    expect(PAGE).toContain("a rate that is no ratio is shown nowhere.");
+    // It is one shape a desk may take, and says so before anything of the shape.
+    expect(PAGE).toContain("It is not the shape of a desk");
+    // A page an agent reads whole before its first collection.
+    expect(PAGE.length).toBeLessThan(5200);
   });
 });
