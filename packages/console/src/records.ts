@@ -435,7 +435,8 @@ function twice(keys: readonly string[]): string[] {
  * that is no JSON or not in the format, a key or an id given twice, a status, a field or a
  * metric the collection does not name, a use or a figure of an item that is not there, a
  * preview or a file that is not there, a JSON file over its bound, a folder the index leaves
- * out. A file that is a git LFS pointer is a note, since nothing is wrong with the record. What
+ * out. A file that is a git LFS pointer is a note, since nothing is wrong with the record, and
+ * so is a use or a row of figures dated before its item was made. What
  * reads right is counted, so that the command can say how much a desk keeps.
  */
 export async function checkRecords(files: RecordsFiles): Promise<RecordsCheck> {
@@ -454,6 +455,17 @@ export async function checkRecords(files: RecordsFiles): Promise<RecordsCheck> {
     unsaid === 0
       ? problems
       : [...problems, { file: RECORDS_DIR, problem: `and ${unsaid} more problems` }];
+  let unnoted = 0;
+  /** What is worth knowing and wrong with nothing, bounded as the problems are. */
+  const note = (file: string, words: string): void => {
+    if (notes.length < MAX_PROBLEMS) {
+      notes.push({ file: `${RECORDS_DIR}/${file}`, problem: words });
+    } else {
+      unnoted += 1;
+    }
+  };
+  const noted = (): RecordsProblem[] =>
+    unnoted === 0 ? notes : [...notes, { file: RECORDS_DIR, problem: `and ${unnoted} more notes` }];
   /** A JSON file within its bound, read by a schema; its problems said, and nothing where it does not read. */
   const read = async <T>(
     file: string,
@@ -488,7 +500,7 @@ export async function checkRecords(files: RecordsFiles): Promise<RecordsCheck> {
   }
   const index = await read(RECORDS_INDEX_FILE, recordsIndexSchema);
   if (index === undefined) {
-    return { found: true, problems: said(), notes, collections: [] };
+    return { found: true, problems: said(), notes: noted(), collections: [] };
   }
   const keys = index.value.collections.map((one) => one.key);
   for (const again of twice(keys)) {
@@ -542,6 +554,8 @@ export async function checkRecords(files: RecordsFiles): Promise<RecordsCheck> {
 
     const items = await read(at(RECORDS_ITEMS_FILE), recordsItemsSchema);
     const ids = new Set<string>();
+    /** The day each item was made, by its id: what a use or a figure of it is not dated before. */
+    const madeOn = new Map<string, string>();
     if (items !== undefined) {
       for (const again of twice(items.value.map((item) => item.id))) {
         say(at(RECORDS_ITEMS_FILE), `gives the id ${again} to more than one item`);
@@ -550,6 +564,9 @@ export async function checkRecords(files: RecordsFiles): Promise<RecordsCheck> {
       for (const [position, item] of items.value.entries()) {
         const here = `[${position}] (${item.id})`;
         ids.add(item.id);
+        if (!madeOn.has(item.id)) {
+          madeOn.set(item.id, item.madeOn);
+        }
         for (const stranger of strangers(raw[position], ITEM_KEYS)) {
           say(at(RECORDS_ITEMS_FILE), `${here} ${stranger} is no part of an item`);
         }
@@ -592,20 +609,32 @@ export async function checkRecords(files: RecordsFiles): Promise<RecordsCheck> {
             notes.length < MAX_PROBLEMS &&
             (await files.pointer?.(at(path))) === true
           ) {
-            notes.push({
-              file: `${RECORDS_DIR}/${at(RECORDS_ITEMS_FILE)}`,
-              problem: `${here} ${what} ${path} is a git LFS pointer, not fetched on this machine: git lfs pull fetches it`,
-            });
+            note(
+              at(RECORDS_ITEMS_FILE),
+              `${here} ${what} ${path} is a git LFS pointer, not fetched on this machine: git lfs pull fetches it`,
+            );
           }
         }
       }
     }
 
+    /**
+     * A use or a row of figures dated before its item was made: most often a day written
+     * wrong, and now and then a thing used before it was recorded, which only the member
+     * knows. A note, so that it is seen and nothing is refused.
+     */
+    const early = (file: string, position: number, item: string, on: string): void => {
+      const made = madeOn.get(item);
+      if (made !== undefined && on < made) {
+        note(at(file), `[${position}] is dated ${on}, before its item ${item} was made (${made})`);
+      }
+    };
     const uses = await read(at(RECORDS_USES_FILE), recordsUsesSchema, true);
     for (const [position, use] of (uses?.value ?? []).entries()) {
       if (items !== undefined && !ids.has(use.item)) {
         say(at(RECORDS_USES_FILE), `[${position}] names the item ${use.item}, which is not there`);
       }
+      early(RECORDS_USES_FILE, position, use.item, use.on);
     }
     const rows = await read(at(RECORDS_METRICS_FILE), recordsMetricsSchema, true);
     for (const [position, row] of (rows?.value ?? []).entries()) {
@@ -615,6 +644,7 @@ export async function checkRecords(files: RecordsFiles): Promise<RecordsCheck> {
           `[${position}] names the item ${row.item}, which is not there`,
         );
       }
+      early(RECORDS_METRICS_FILE, position, row.item, row.on);
       for (const [name, value] of Object.entries(row.values)) {
         if (!metrics.includes(name)) {
           say(
@@ -635,5 +665,5 @@ export async function checkRecords(files: RecordsFiles): Promise<RecordsCheck> {
       });
     }
   }
-  return { found: true, problems: said(), notes, collections };
+  return { found: true, problems: said(), notes: noted(), collections };
 }

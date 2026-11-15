@@ -5369,6 +5369,28 @@ describe("the check of a desk's records on the command line (ADR-0117)", () => {
     );
   });
 
+  it("notes a use dated before its item was made, and ends in 0: only the member knows which day is wrong", async () => {
+    const run = harness({
+      fetch: silent,
+      recordsAt: recordsOf({
+        ...RECORDS,
+        "ad-creatives/uses.json": [{ item: "c-001", on: "2026-11-02", where: "The teaser" }],
+        "ad-creatives/metrics.json": [{ item: "c-001", on: "2026-11-01", values: { clicks: 3 } }],
+      }).recordsAt,
+    });
+    expect(await runCli(["desk", "check"], run.io)).toBe(EXIT.ok);
+    expect(run.out()).toBe(
+      [
+        "note: records/ad-creatives/uses.json: [0] is dated 2026-11-02, before its item c-001 was made (2026-11-03)",
+        "note: records/ad-creatives/metrics.json: [0] is dated 2026-11-01, before its item c-001 was made (2026-11-03)",
+        "The records in /work/desk read right: 1 collection.",
+        "  ad-creatives: 1 item, 1 use, 1 row of figures",
+        "",
+      ].join("\n"),
+    );
+    expect(run.err()).toBe("");
+  });
+
   it("answers what it found as JSON with --json, and still ends in 1 where there is a problem", async () => {
     const run = harness({ fetch: silent, recordsAt: recordsOf(RECORDS).recordsAt });
     expect(await runCli(["desk", "check", "--json"], run.io)).toBe(EXIT.ok);

@@ -93,7 +93,7 @@ The names of the bounds are the package's (`MAX_RECORD_ITEMS` and the rest), and
 - a preview or a file that is not there; a use or a row of figures of an item that is not there; a figure for what is no metric;
 - a JSON file over its bound, which is not read.
 
-A file an item names that is a git LFS pointer is said as a note, `note: …`, and is no problem. With any problem the command ends in 1; with none it says how many collections read and what each keeps, and where `records/index.json` is not there, that the desk has no records yet, which is no failure. At most 20 problems of one file and 200 in all are said. `--json` answers `{ "directory", "found", "problems": [ { "file", "problem" } ], "notes", "collections": [ { "key", "items", "uses", "metricRows" } ] }`.
+A file an item names that is a git LFS pointer is said as a note, `note: …`, and is no problem; so is a use or a row of figures dated before its item was made, which is most often a day written wrong and now and then a thing used before it was recorded: only the member knows. With any problem the command ends in 1; with none it says how many collections read and what each keeps, and where `records/index.json` is not there, that the desk has no records yet, which is no failure. At most 20 problems of one file and 200 in all are said. `--json` answers `{ "directory", "found", "problems": [ { "file", "problem" } ], "notes", "collections": [ { "key", "items", "uses", "metricRows" } ] }`.
 
 ## Serving
 

@@ -457,6 +457,55 @@ describe("the check of a desk's records (ADR-0117)", () => {
     expect(asked).toBe(0);
   });
 
+  it("notes a use or a row of figures dated before its item was made, and finds nothing wrong with the record", async () => {
+    // c-001 was made on 2026-11-03: a use the day before is most likely a day written wrong,
+    // and may be a thing used before it was recorded. A note, since only the member knows.
+    const found = await checkRecords(
+      desk({
+        ...WHOLE,
+        "ad-creatives/uses.json": [
+          { item: "c-001", on: "2026-11-02", where: "The teaser" },
+          { item: "c-001", on: "2026-11-03", where: "The day it was made" },
+        ],
+        "ad-creatives/metrics.json": [
+          { item: "c-001", on: "2026-10-31", values: { impressions: 10 } },
+          { item: "c-001", on: "2026-11-06", values: { impressions: 1200 } },
+        ],
+      }),
+    );
+    expect(found.problems).toEqual([]);
+    expect(found.notes).toEqual([
+      {
+        file: "records/ad-creatives/uses.json",
+        problem: "[0] is dated 2026-11-02, before its item c-001 was made (2026-11-03)",
+      },
+      {
+        file: "records/ad-creatives/metrics.json",
+        problem: "[0] is dated 2026-10-31, before its item c-001 was made (2026-11-03)",
+      },
+    ]);
+    expect(found.collections).toEqual([{ key: "ad-creatives", items: 2, uses: 2, metricRows: 2 }]);
+    // A use of an item that is not there is the problem it was, and no note beside it.
+    const stray = await checkRecords(
+      desk({
+        ...WHOLE,
+        "ad-creatives/uses.json": [{ item: "c-404", on: "2020-01-01", where: "Nowhere" }],
+      }),
+    );
+    expect(stray.notes).toEqual([]);
+    expect(stray.problems).toHaveLength(1);
+    // Notes are bounded as problems are: the first of them, and how many more there are.
+    const early = Array.from({ length: 300 }, () => ({
+      item: "c-001",
+      on: "2026-01-01",
+      values: { impressions: 1 },
+    }));
+    const many = await checkRecords(desk({ ...WHOLE, "ad-creatives/metrics.json": early }));
+    expect(many.problems).toEqual([]);
+    expect(many.notes).toHaveLength(201);
+    expect(many.notes.at(-1)).toEqual({ file: "records", problem: "and 100 more notes" });
+  });
+
   it("reads no JSON file over its bound, and stops saying problems where there are too many to read", async () => {
     let read = 0;
     const files = desk({ ...WHOLE, "ad-creatives/items.json": MAX_RECORD_FILE_BYTES + 1 });
