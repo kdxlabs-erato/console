@@ -175,6 +175,8 @@ import {
   joinFolder,
   joinRows,
   joinSkill,
+  ORGANIZATION_PACK_LINE,
+  type PackOwner,
   type PackSummary,
   skillPathIn,
   summaryOf,
@@ -1358,6 +1360,7 @@ async function readData(
     readonly path: string | undefined;
     readonly heading: string | undefined;
     readonly out: string | undefined;
+    readonly owner: PackOwner;
   },
 ): Promise<number> {
   const where = asked.path ?? "the pack";
@@ -1392,7 +1395,7 @@ async function readData(
         cursor: next,
         limit: DATA_PAGE_ROWS,
       });
-      const refusal = dataRefusal("tables", page);
+      const refusal = dataRefusal("tables", page, asked.owner);
       if (refusal !== undefined) {
         throw failed(refusal);
       }
@@ -1429,7 +1432,7 @@ async function readData(
       cursor: next,
       limit: DATA_PAGE_BLOCKS,
     });
-    const refusal = dataRefusal("code blocks", page);
+    const refusal = dataRefusal("code blocks", page, asked.owner);
     if (refusal !== undefined) {
       throw failed(refusal);
     }
@@ -1485,8 +1488,13 @@ async function readSkills(
     readonly own?: string | undefined;
     /** A line after the listing whole. */
     readonly afterwards?: string | undefined;
+    /** Whose pack it is: the organization's where no project is named (ADR-0113), else a project's. */
+    readonly owner?: PackOwner | undefined;
   },
 ): Promise<number> {
+  const owner = extras.owner ?? "project";
+  const say = (value: unknown, words: () => string): void =>
+    answerPack(io, session, owner, value, words);
   if (positionals.length > 1) {
     throw misuse(`Say one folder: ${extras.command} [<folder>] [--search <words>]`);
   }
@@ -1531,13 +1539,14 @@ async function readSkills(
       path: folder,
       heading,
       out,
+      owner,
     });
   }
   const { listing, summary } = await packOf(reader);
   // The pack as it stands; or why it does not answer, which a folder or a search would meet too.
   if (summary === undefined || (words === undefined && given === undefined)) {
-    answer(io, session, listing, () =>
-      [formatSkills(listing, extras.own), extras.afterwards]
+    say(listing, () =>
+      [formatSkills(listing, extras.own, owner), extras.afterwards]
         .filter((part): part is string => part !== undefined)
         .join("\n"),
     );
@@ -1546,7 +1555,7 @@ async function readSkills(
   if (words !== undefined) {
     // One page of what the words find; more is said, and asked for with --cursor.
     const found = await reader.skillFind(words, { path: folder, limit: atMost, cursor });
-    answer(io, session, found, () => formatSkillFind(found, summary));
+    say(found, () => formatSkillFind(found, summary, owner));
     return EXIT.ok;
   }
   // The folder whole: its pages until the end, as the pack lists them.
@@ -1569,21 +1578,72 @@ async function readSkills(
   }
   const browsed = last;
   const whole = joinFolder(pages, summary);
-  answer(io, session, { ...browsed, read: whole === undefined ? null : bodyOfFolder(whole) }, () =>
-    formatSkillBrowse(browsed, whole, extras.command),
+  say({ ...browsed, read: whole === undefined ? null : bodyOfFolder(whole) }, () =>
+    formatSkillBrowse(browsed, whole, extras.command, owner),
   );
   return EXIT.ok;
+}
+
+/**
+ * The pack a command reads (ADR-0113): the project's where one is named; else the
+ * organization's, which a desk and a folder a repository is about to be made in read, since
+ * neither names a project and the skill that sets one up is in that pack.
+ */
+async function packNamed(
+  session: Session,
+): Promise<{ readonly reader: PackReader; readonly owner: PackOwner }> {
+  const key = await session.projectKey();
+  return key === undefined
+    ? { reader: session.client.organizationPack(), owner: "organization" }
+    : { reader: session.client.project(key), owner: "project" };
+}
+
+/**
+ * A read of the organization's pack at a console from before ADR-0113, which has no such
+ * routes and answers that nothing is at the path: said as what it is, with what still reads a
+ * pack there, where the console's own words would read as a missing skill.
+ */
+async function readingPack(owner: PackOwner, read: () => Promise<number>): Promise<number> {
+  try {
+    return await read();
+  } catch (error) {
+    if (owner === "organization" && error instanceof ApiError && error.code === "not_found") {
+      throw failed(
+        `This console does not read the organization's pack where no project is named: it is older than the command. ${NO_PROJECT}`,
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * Prints a read of a pack: as `answer` does, and, where the pack is the organization's, under
+ * the line that says so. `--json` stays what the console answered.
+ */
+function answerPack(
+  io: CliIo,
+  session: Session,
+  owner: PackOwner,
+  value: unknown,
+  words: () => string,
+): void {
+  answer(io, session, value, () =>
+    owner === "organization" ? `${ORGANIZATION_PACK_LINE}\n${words()}` : words(),
+  );
 }
 
 const skills: Command = async (args, io) => {
   const { values, positionals } = parse(args, SKILLS_OPTIONS);
   const session = await open(io, values);
-  const project = await session.project();
-  return readSkills(io, session, project, values, positionals, {
-    command: "console skills",
-    own: io.skillsDir,
-    afterwards: PLUGIN_SKILLS_LINE,
-  });
+  const { reader, owner } = await packNamed(session);
+  return readingPack(owner, () =>
+    readSkills(io, session, reader, values, positionals, {
+      command: "console skills",
+      own: io.skillsDir,
+      afterwards: PLUGIN_SKILLS_LINE,
+      owner,
+    }),
+  );
 };
 
 /** The most characters one read of a file asks for: what the console's API allows on one page. */
@@ -1622,7 +1682,10 @@ async function readSkill(
   values: Values,
   positionals: readonly string[],
   command: string,
+  owner: PackOwner = "project",
 ): Promise<number> {
+  const say = (value: unknown, words: () => string): void =>
+    answerPack(io, session, owner, value, words);
   const file = text(values, "file");
   // A file is read by its own path from the repository's root; a skill's path beside it would be
   // ignored, which reads as if it mattered, so the two together are not understood.
@@ -1644,7 +1707,7 @@ async function readSkill(
   const limit = countOf(text(values, "limit"), "limit", { least: 1, most: MAX_FILE_LIMIT });
   const { listing, summary } = await packOf(reader);
   if (summary === undefined) {
-    answer(io, session, listing, () => formatSkills(listing, io.skillsDir));
+    say(listing, () => formatSkills(listing, io.skillsDir, owner));
     return EXIT.ok;
   }
   if (file !== undefined && (offset !== undefined || limit !== undefined)) {
@@ -1652,8 +1715,8 @@ async function readSkill(
     // file continues, and asks for nothing.
     const page = await reader.skillFile(file, { offset, limit });
     const section = page.read === null ? undefined : joinFile([page], summary, limit);
-    answer(io, session, { ...page, read: section === undefined ? null : bodyOfFile(section) }, () =>
-      formatSkillFile(page, section),
+    say({ ...page, read: section === undefined ? null : bodyOfFile(section) }, () =>
+      formatSkillFile(page, section, owner),
     );
     return EXIT.ok;
   }
@@ -1678,8 +1741,8 @@ async function readSkill(
     }
     const fileRead = last;
     const whole = joinFile(pages, summary);
-    answer(io, session, { ...fileRead, read: whole === undefined ? null : bodyOfFile(whole) }, () =>
-      formatSkillFile(fileRead, whole),
+    say({ ...fileRead, read: whole === undefined ? null : bodyOfFile(whole) }, () =>
+      formatSkillFile(fileRead, whole, owner),
     );
     return EXIT.ok;
   }
@@ -1713,8 +1776,8 @@ async function readSkill(
   }
   const loaded = last;
   const whole = joinSkill(pages, summary);
-  answer(io, session, { ...loaded, read: whole === undefined ? null : bodyOfSkill(whole) }, () =>
-    formatSkillLoad(loaded, whole),
+  say({ ...loaded, read: whole === undefined ? null : bodyOfSkill(whole) }, () =>
+    formatSkillLoad(loaded, whole, owner),
   );
   return EXIT.ok;
 }
@@ -1722,8 +1785,10 @@ async function readSkill(
 const skill: Command = async (args, io) => {
   const { values, positionals } = parse(args, SKILL_OPTIONS);
   const session = await open(io, values);
-  const project = await session.project();
-  return readSkill(io, session, project, values, positionals, "console skill");
+  const { reader, owner } = await packNamed(session);
+  return readingPack(owner, () =>
+    readSkill(io, session, reader, values, positionals, "console skill", owner),
+  );
 };
 
 // ---- The plugins (docs/specs/plugins.md, "The command") ----

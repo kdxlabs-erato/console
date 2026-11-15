@@ -3417,215 +3417,215 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
     const held = await readWorkspacePackToken(database, project.workspaceId);
     return held === undefined ? undefined : secrets.open("pack-token", held.sealed);
   };
-  app.get(`${PROJECT}/skills`, async (c) => {
+  /**
+   * A pack a request reads: whose it is to read, where it is and with what, and what the log
+   * says of it. A project's pack is read by whoever may see the project; the organization's,
+   * where no project is named, by every member of the workspace (ADR-0113).
+   */
+  interface PackAsked {
+    readonly person: PersonRecord;
+    /** The project's own address; nothing for the organization's pack. */
+    readonly address: string | undefined;
+    /** The token the pack is read with, opened; nothing for a pack that needs none. */
+    readonly token: string | undefined;
+    /** The project the read was asked in, for the log; nothing for the organization's pack. */
+    readonly project: string | undefined;
+    /** The route the reads are under, which an outline names for its tables and its code. */
+    readonly root: string;
+  }
+  const projectPack = async (c: Context<AppEnv>): Promise<PackAsked | Response> => {
     const found = await reading(c);
     if (found instanceof Response) {
       return found;
     }
-    const body: RestSkills = await skills.read(
-      found.project.skillsAddress,
-      await packTokenFor(found.project),
-    );
-    return c.json(body);
-  });
-  app.get(`${PROJECT}/skills/one`, async (c) => {
-    const found = await reading(c);
-    if (found instanceof Response) {
-      return found;
+    return {
+      person: found.person,
+      address: found.project.skillsAddress,
+      token: await packTokenFor(found.project),
+      project: found.project.key,
+      root: projectPath(found.project.key, "skills"),
+    };
+  };
+  // The organization's pack, for a command in a directory that names no project (ADR-0113): a
+  // desk, or a folder a repository is about to be made in. Every member of the workspace reads
+  // it, as every member reads the workspace's rules; someone who is out, and nobody, do not.
+  const workspacePack = async (c: Context<AppEnv>): Promise<PackAsked | Response> => {
+    const caller = await askingCaller(c);
+    if (caller instanceof Response) {
+      return caller;
     }
-    const query = skillQuerySchema.safeParse({
-      path: c.req.query("path"),
-      cursor: c.req.query("cursor"),
+    const held =
+      secrets === undefined
+        ? undefined
+        : await readWorkspacePackToken(database, caller.person.workspaceId);
+    return {
+      person: caller.person,
+      address: undefined,
+      token:
+        held === undefined || secrets === undefined
+          ? undefined
+          : secrets.open("pack-token", held.sealed),
+      project: undefined,
+      root: REST_ROUTES.workspaceSkills,
+    };
+  };
+  /** The reads of a pack under `root`, one set of handlers for a project's pack and the organization's. */
+  const packRoutes = (
+    root: string,
+    asked: (c: Context<AppEnv>) => Promise<PackAsked | Response>,
+  ): void => {
+    /** What every read is logged with: who read which path of which pack, never what was read. */
+    const logged = (
+      c: Context<AppEnv>,
+      pack: PackAsked,
+      body: { readonly address: string | null; readonly status: string },
+      at: string,
+    ) => ({
+      person: pack.person.id,
+      ...(pack.project === undefined ? {} : { project: pack.project }),
+      address: body.address,
+      path: at,
+      status: body.status,
+      requestId: c.get("requestId"),
     });
-    if (!query.success) {
-      return c.json(errorBody("request.invalid", `query: ${query.error.message}`), 400);
-    }
-    const body: RestSkillLoad = await skills.load(
-      found.project.skillsAddress,
-      query.data.path,
-      query.data.cursor,
-      await packTokenFor(found.project),
-    );
-    logger.info(
-      {
-        person: found.person.id,
-        project: found.project.key,
-        address: body.address,
-        path: query.data.path,
-        status: body.status,
-        requestId: c.get("requestId"),
-      },
-      "a skill of the pack was read",
-    );
-    return c.json(body);
-  });
-  app.get(`${PROJECT}/skills/file`, async (c) => {
-    const found = await reading(c);
-    if (found instanceof Response) {
-      return found;
-    }
-    const query = fileQuerySchema.safeParse({
-      path: c.req.query("path"),
-      offset: c.req.query("offset"),
-      limit: c.req.query("limit"),
+    app.get(root, async (c) => {
+      const pack = await asked(c);
+      if (pack instanceof Response) {
+        return pack;
+      }
+      const body: RestSkills = await skills.read(pack.address, pack.token);
+      return c.json(body);
     });
-    if (!query.success) {
-      return c.json(errorBody("request.invalid", `query: ${query.error.message}`), 400);
-    }
-    const body: RestSkillFile = await skills.file(
-      found.project.skillsAddress,
-      query.data,
-      await packTokenFor(found.project),
-    );
-    logger.info(
-      {
-        person: found.person.id,
-        project: found.project.key,
-        address: body.address,
-        path: query.data.path,
-        status: body.status,
-        requestId: c.get("requestId"),
-      },
-      "a file of the pack was read",
-    );
-    return c.json(body);
-  });
+    app.get(`${root}/one`, async (c) => {
+      const pack = await asked(c);
+      if (pack instanceof Response) {
+        return pack;
+      }
+      const query = skillQuerySchema.safeParse({
+        path: c.req.query("path"),
+        cursor: c.req.query("cursor"),
+      });
+      if (!query.success) {
+        return c.json(errorBody("request.invalid", `query: ${query.error.message}`), 400);
+      }
+      const body: RestSkillLoad = await skills.load(
+        pack.address,
+        query.data.path,
+        query.data.cursor,
+        pack.token,
+      );
+      logger.info(logged(c, pack, body, query.data.path), "a skill of the pack was read");
+      return c.json(body);
+    });
+    app.get(`${root}/file`, async (c) => {
+      const pack = await asked(c);
+      if (pack instanceof Response) {
+        return pack;
+      }
+      const query = fileQuerySchema.safeParse({
+        path: c.req.query("path"),
+        offset: c.req.query("offset"),
+        limit: c.req.query("limit"),
+      });
+      if (!query.success) {
+        return c.json(errorBody("request.invalid", `query: ${query.error.message}`), 400);
+      }
+      const body: RestSkillFile = await skills.file(pack.address, query.data, pack.token);
+      logger.info(logged(c, pack, body, query.data.path), "a file of the pack was read");
+      return c.json(body);
+    });
 
-  app.get(`${PROJECT}/skills/browse`, async (c) => {
-    const found = await reading(c);
-    if (found instanceof Response) {
-      return found;
-    }
-    const query = browseQuerySchema.safeParse({
-      path: c.req.query("path"),
-      cursor: c.req.query("cursor"),
-      limit: c.req.query("limit"),
+    app.get(`${root}/browse`, async (c) => {
+      const pack = await asked(c);
+      if (pack instanceof Response) {
+        return pack;
+      }
+      const query = browseQuerySchema.safeParse({
+        path: c.req.query("path"),
+        cursor: c.req.query("cursor"),
+        limit: c.req.query("limit"),
+      });
+      if (!query.success) {
+        return c.json(errorBody("request.invalid", `query: ${query.error.message}`), 400);
+      }
+      // A document's outline names the two reads below for its tables and its code blocks.
+      const body: RestSkillBrowse = await skills.browse(
+        pack.address,
+        query.data,
+        pack.token,
+        (read, at) => `${pack.root}/${read}?path=${encodeURIComponent(at)}`,
+      );
+      logger.info(logged(c, pack, body, query.data.path ?? ""), "a folder of the pack was browsed");
+      return c.json(body);
     });
-    if (!query.success) {
-      return c.json(errorBody("request.invalid", `query: ${query.error.message}`), 400);
-    }
-    // A document's outline names the two reads below for its tables and its code blocks.
-    const body: RestSkillBrowse = await skills.browse(
-      found.project.skillsAddress,
-      query.data,
-      await packTokenFor(found.project),
-      (read, path) =>
-        `${projectPath(found.project.key, "skills")}/${read}?path=${encodeURIComponent(path)}`,
-    );
-    logger.info(
-      {
-        person: found.person.id,
-        project: found.project.key,
-        address: body.address,
-        path: query.data.path ?? "",
-        status: body.status,
-        requestId: c.get("requestId"),
-      },
-      "a folder of the pack was browsed",
-    );
-    return c.json(body);
-  });
-  app.get(`${PROJECT}/skills/find`, async (c) => {
-    const found = await reading(c);
-    if (found instanceof Response) {
-      return found;
-    }
-    const query = findQuerySchema.safeParse({
-      query: c.req.query("query"),
-      path: c.req.query("path"),
-      cursor: c.req.query("cursor"),
-      limit: c.req.query("limit"),
+    app.get(`${root}/find`, async (c) => {
+      const pack = await asked(c);
+      if (pack instanceof Response) {
+        return pack;
+      }
+      const query = findQuerySchema.safeParse({
+        query: c.req.query("query"),
+        path: c.req.query("path"),
+        cursor: c.req.query("cursor"),
+        limit: c.req.query("limit"),
+      });
+      if (!query.success) {
+        return c.json(errorBody("request.invalid", `query: ${query.error.message}`), 400);
+      }
+      const body: RestSkillFind = await skills.find(pack.address, query.data, pack.token);
+      // The words searched for are the agent's own and stay out of the log; the folder and the outcome go in.
+      logger.info(logged(c, pack, body, query.data.path ?? ""), "the pack was searched");
+      return c.json(body);
     });
-    if (!query.success) {
-      return c.json(errorBody("request.invalid", `query: ${query.error.message}`), 400);
-    }
-    const body: RestSkillFind = await skills.find(
-      found.project.skillsAddress,
-      query.data,
-      await packTokenFor(found.project),
-    );
-    // The words searched for are the agent's own and stay out of the log; the folder and the outcome go in.
-    logger.info(
-      {
-        person: found.person.id,
-        project: found.project.key,
-        address: body.address,
-        path: query.data.path ?? "",
-        status: body.status,
-        requestId: c.get("requestId"),
-      },
-      "the pack was searched",
-    );
-    return c.json(body);
-  });
 
-  // The tables and the fenced code blocks of the pack's documents as data (ADR-0100): a page of
-  // them as the pack answers it, read with the token the other reads are read with, so that a
-  // table is taken whole by a program and never copied out of a document by a model.
-  app.get(`${PROJECT}/skills/rows`, async (c) => {
-    const found = await reading(c);
-    if (found instanceof Response) {
-      return found;
-    }
-    const query = rowsQuerySchema.safeParse({
-      path: c.req.query("path"),
-      heading: c.req.query("heading"),
-      cursor: c.req.query("cursor"),
-      limit: c.req.query("limit"),
+    // The tables and the fenced code blocks of the pack's documents as data (ADR-0100): a page of
+    // them as the pack answers it, read with the token the other reads are read with, so that a
+    // table is taken whole by a program and never copied out of a document by a model.
+    app.get(`${root}/rows`, async (c) => {
+      const pack = await asked(c);
+      if (pack instanceof Response) {
+        return pack;
+      }
+      const query = rowsQuerySchema.safeParse({
+        path: c.req.query("path"),
+        heading: c.req.query("heading"),
+        cursor: c.req.query("cursor"),
+        limit: c.req.query("limit"),
+      });
+      if (!query.success) {
+        return c.json(errorBody("request.invalid", `query: ${query.error.message}`), 400);
+      }
+      const body: RestSkillRows = await skills.rows(pack.address, query.data, pack.token);
+      logger.info(
+        logged(c, pack, body, query.data.path ?? ""),
+        "the tables of the pack were read as data",
+      );
+      return c.json(body);
     });
-    if (!query.success) {
-      return c.json(errorBody("request.invalid", `query: ${query.error.message}`), 400);
-    }
-    const body: RestSkillRows = await skills.rows(
-      found.project.skillsAddress,
-      query.data,
-      await packTokenFor(found.project),
-    );
-    logger.info(
-      {
-        person: found.person.id,
-        project: found.project.key,
-        address: body.address,
-        path: query.data.path ?? "",
-        status: body.status,
-        requestId: c.get("requestId"),
-      },
-      "the tables of the pack were read as data",
-    );
-    return c.json(body);
-  });
-  app.get(`${PROJECT}/skills/code`, async (c) => {
-    const found = await reading(c);
-    if (found instanceof Response) {
-      return found;
-    }
-    const query = codeQuerySchema.safeParse({
-      path: c.req.query("path"),
-      heading: c.req.query("heading"),
-      cursor: c.req.query("cursor"),
-      limit: c.req.query("limit"),
+    app.get(`${root}/code`, async (c) => {
+      const pack = await asked(c);
+      if (pack instanceof Response) {
+        return pack;
+      }
+      const query = codeQuerySchema.safeParse({
+        path: c.req.query("path"),
+        heading: c.req.query("heading"),
+        cursor: c.req.query("cursor"),
+        limit: c.req.query("limit"),
+      });
+      if (!query.success) {
+        return c.json(errorBody("request.invalid", `query: ${query.error.message}`), 400);
+      }
+      const body: RestSkillCode = await skills.code(pack.address, query.data, pack.token);
+      logger.info(
+        logged(c, pack, body, query.data.path ?? ""),
+        "the code blocks of the pack were read as data",
+      );
+      return c.json(body);
     });
-    if (!query.success) {
-      return c.json(errorBody("request.invalid", `query: ${query.error.message}`), 400);
-    }
-    const body: RestSkillCode = await skills.code(
-      found.project.skillsAddress,
-      query.data,
-      await packTokenFor(found.project),
-    );
-    logger.info(
-      {
-        person: found.person.id,
-        project: found.project.key,
-        address: body.address,
-        path: query.data.path ?? "",
-        status: body.status,
-        requestId: c.get("requestId"),
-      },
-      "the code blocks of the pack were read as data",
-    );
-    return c.json(body);
-  });
+  };
+  packRoutes(`${PROJECT}/skills`, projectPack);
+  packRoutes(REST_ROUTES.workspaceSkills, workspacePack);
 
   // The pack token (ADR-0028): set by an owner from a token a person made at the deployment, tried
   // there once, kept sealed, and answered as nothing but the day it was set.

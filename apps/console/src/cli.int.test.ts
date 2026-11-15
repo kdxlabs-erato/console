@@ -868,6 +868,25 @@ describe("the command line", () => {
       "tables at /gh/acme/manual, served by https://skillcdn.test: not_found",
     );
     expect(before.err).toContain("the project holds no pack token for it");
+    // In a directory that names no project the command reads the organization's pack (ADR-0113),
+    // which is this address, as private: the words name the workspace's token, an
+    // administrator's to set, and the listing says whose pack it is before anything else.
+    const unbound = (args: readonly string[]) =>
+      console_(args, agent, { harness: served, project: undefined });
+    const without = await unbound(["skills", "--rows", "docs/annex"]);
+    expect(without.code).toBe(EXIT.failed);
+    expect(without.out).toBe("");
+    expect(without.err).toContain(
+      "tables at /gh/acme/manual, served by https://skillcdn.test: not_found",
+    );
+    expect(without.err).toContain("the workspace holds no SkillCDN token for it");
+    const whose = await unbound(["skills"]);
+    expect(whose.code, whose.err).toBe(EXIT.ok);
+    expect(
+      whose.out.startsWith(
+        "The organization's pack, since no project is named here: --project <key>, or a directory bound with console use <key>, reads a project's own.\nskills at /gh/acme/manual, served by https://skillcdn.test: not_found\n",
+      ),
+    ).toBe(true);
     // An owner sets the pack token; a member's agent then takes the table whole, both pages of
     // it as one CSV, holding no token of the pack itself.
     const set = await served.request(`${projectPath("manual")}/pack-token`, {

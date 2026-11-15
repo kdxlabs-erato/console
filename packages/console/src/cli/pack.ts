@@ -64,6 +64,25 @@ export type PackSummary = MountSummary;
 
 export const NO_ADDRESS = "No skills address: neither this project nor the console names one.";
 
+/**
+ * Whose pack a read is of, for the words of a read that did not happen: a project's, or the
+ * organization's, which is what a command reads where no project is named (ADR-0113).
+ */
+export type PackOwner = "project" | "organization";
+
+const NO_ORGANIZATION_ADDRESS =
+  "No skills address: the console names none for the organization's skills, and no project is named here.";
+
+const noAddress = (owner: PackOwner): string =>
+  owner === "organization" ? NO_ORGANIZATION_ADDRESS : NO_ADDRESS;
+
+/**
+ * What a read of the organization's pack begins with: whose pack it is, since the command
+ * would otherwise read as if a project had been named, and how a project's own is read.
+ */
+export const ORGANIZATION_PACK_LINE =
+  "The organization's pack, since no project is named here: --project <key>, or a directory bound with console use <key>, reads a project's own.";
+
 /** The words of a read that did not happen, by status, with what to do about it. */
 const SKILLS_WORDS: Readonly<Record<Exclude<SkillsStatus, "none" | "ready">, string>> = {
   indexing: "The pack is still being indexed; ask again in a moment.",
@@ -76,6 +95,14 @@ const SKILLS_WORDS: Readonly<Record<Exclude<SkillsStatus, "none" | "ready">, str
   unavailable: "The pack could not be reached; ask again later.",
 };
 
+/** The same, where the pack is the organization's: the token is the workspace's, an administrator's to set. */
+const ORGANIZATION_WORDS: Readonly<Record<"not_found" | "token_invalid", string>> = {
+  not_found:
+    "Nothing is served to the console at this address or path: it is not there, or the organization's pack is private and the workspace holds no SkillCDN token for it (console workspace pack-token --connect, for an administrator).",
+  token_invalid:
+    "The SkillCDN token the workspace holds no longer works at the deployment: an administrator sets a new one (console workspace pack-token --connect).",
+};
+
 type Envelope = Pick<RestSkills, "address" | "source" | "page" | "status" | "refusal">;
 
 /** The first line of an answer about the pack: what was read, where the pack is, and how it went. */
@@ -86,10 +113,15 @@ function head(what: string, answer: Envelope): string {
 }
 
 /** A read that did not happen: the head, the words of its status, and the pack's own refusal when it gave one. */
-function refused(what: string, answer: Envelope): string {
+function refused(what: string, answer: Envelope, owner: PackOwner = "project"): string {
   const lines = [head(what, answer)];
   if (answer.status !== "none" && answer.status !== "ready") {
-    lines.push(SKILLS_WORDS[answer.status]);
+    lines.push(
+      owner === "organization" &&
+        (answer.status === "not_found" || answer.status === "token_invalid")
+        ? ORGANIZATION_WORDS[answer.status]
+        : SKILLS_WORDS[answer.status],
+    );
   }
   if (answer.refusal !== null) {
     lines.push(answer.refusal.message);
@@ -157,17 +189,21 @@ function listingOf(mount: RestMount, summary: PackSummary): FindResult | undefin
  * deployment tells one; every skill and document; where a person connects an agent of its own;
  * and where the console's own skills are on this machine.
  */
-export function formatSkills(skills: RestSkills, ownSkills?: string): string {
+export function formatSkills(
+  skills: RestSkills,
+  ownSkills?: string,
+  owner: PackOwner = "project",
+): string {
   const own =
     ownSkills === undefined
       ? []
       : ["", `The console's own skills, for working the board: ${ownSkills}`];
   if (skills.status === "none" || skills.address === null) {
-    return [NO_ADDRESS, ...own].join("\n");
+    return [noAddress(owner), ...own].join("\n");
   }
   const summary = summaryOf(skills);
   if (skills.status !== "ready" || skills.mount === null || summary === undefined) {
-    return [refused("skills", skills), ...own].join("\n");
+    return [refused("skills", skills, owner), ...own].join("\n");
   }
   const lines = [
     head("skills", skills),
@@ -241,12 +277,16 @@ export function bodyOfSkill(skill: SkillResult): RestSkill {
 }
 
 /** One skill as `load_skill` lays it out for a model: the rules, the body, the included files, its files and references. */
-export function formatSkillLoad(loaded: RestSkillLoad, whole: SkillResult | undefined): string {
+export function formatSkillLoad(
+  loaded: RestSkillLoad,
+  whole: SkillResult | undefined,
+  owner: PackOwner = "project",
+): string {
   if (loaded.status === "none" || loaded.address === null) {
-    return NO_ADDRESS;
+    return noAddress(owner);
   }
   if (loaded.status !== "ready") {
-    return refused("skill", loaded);
+    return refused("skill", loaded, owner);
   }
   if (whole === undefined) {
     return `${head("skill", loaded)}\nNothing was read.`;
@@ -320,12 +360,13 @@ export function formatSkillBrowse(
   browsed: RestSkillBrowse,
   whole: BrowseResult | undefined,
   command = "console skills",
+  owner: PackOwner = "project",
 ): string {
   if (browsed.status === "none" || browsed.address === null) {
-    return NO_ADDRESS;
+    return noAddress(owner);
   }
   if (browsed.status !== "ready") {
-    return refused("folder", browsed);
+    return refused("folder", browsed, owner);
   }
   if (whole === undefined) {
     return `${head("folder", browsed)}\nNothing was read.`;
@@ -371,11 +412,12 @@ export function joinCode(pages: readonly RestSkillCode[]): ReadyCode | undefined
 export function dataRefusal(
   what: "tables" | "code blocks",
   read: RestSkillRows | RestSkillCode,
+  owner: PackOwner = "project",
 ): string | undefined {
   if (read.status === "none" || read.address === null) {
-    return NO_ADDRESS;
+    return noAddress(owner);
   }
-  return read.status === "ready" ? undefined : refused(what, read);
+  return read.status === "ready" ? undefined : refused(what, read, owner);
 }
 
 /** How many files the tables, or the blocks, stand in. */
@@ -411,12 +453,16 @@ export const describeCode = (whole: ReadyCode): string =>
   `${counted(whole.blocks.length, "code block")} in ${counted(filesOf(whole.blocks), "file")}`;
 
 /** What words found, as `search_repo` lays it out for a model, one page of it. */
-export function formatSkillFind(found: RestSkillFind, summary: PackSummary | undefined): string {
+export function formatSkillFind(
+  found: RestSkillFind,
+  summary: PackSummary | undefined,
+  owner: PackOwner = "project",
+): string {
   if (found.status === "none" || found.address === null) {
-    return NO_ADDRESS;
+    return noAddress(owner);
   }
   if (found.status !== "ready" || found.read?.status !== "ready" || summary === undefined) {
-    return refused("search", found);
+    return refused("search", found, owner);
   }
   return renderFindResult(findResultOf(found.read, summary), CONSOLE_WORDS);
 }
@@ -466,12 +512,13 @@ export const bodyOfFile = (result: FileResult | DirectoryResult): RestFile =>
 export function formatSkillFile(
   read: RestSkillFile,
   whole: FileResult | DirectoryResult | undefined,
+  owner: PackOwner = "project",
 ): string {
   if (read.status === "none" || read.address === null) {
-    return NO_ADDRESS;
+    return noAddress(owner);
   }
   if (read.status !== "ready") {
-    return refused("file", read);
+    return refused("file", read, owner);
   }
   if (whole === undefined) {
     return `${head("file", read)}\nNothing was read.`;

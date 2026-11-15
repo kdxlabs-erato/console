@@ -17,6 +17,8 @@ export const REST_ROUTES = {
   workspace: "/api/v1/workspace",
   /** The SkillCDN token the organization's pack is read with (ADR-0036), an administrator's; `/connect` under it connects one with a code. */
   workspacePackToken: "/api/v1/workspace/pack-token",
+  /** The organization's pack, read where no project is named (ADR-0113): the reads of a project's pack, under it. */
+  workspaceSkills: "/api/v1/workspace/skills",
   /** The people of the workspace: everyone who has signed in, and the logins let in that have not. */
   people: "/api/v1/people",
   /** The teams of the workspace (ADR-0073): a name and its members, kept by an administrator. */

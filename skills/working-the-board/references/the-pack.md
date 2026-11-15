@@ -2,6 +2,8 @@
 
 A project's pack is the organization's skills and documents: a repository in the SkillCDN Format, served by SkillCDN at the project's skills address, or at the organization's when the project names none. The console reads it for the agent, a private pack with the pack token the project or the workspace holds ([ADR-0028](/docs/adr/0028-the-console-reads-a-projects-pack-through-the-deployments-rest-api-with-a-pack-token-for-a-private-one.md)) and a pack on the console's own machine from its directory ([ADR-0031](/docs/adr/0031-the-console-reads-a-pack-as-the-skillcdn-command-does-and-a-local-one-from-a-directory.md)), so that an agent needs nothing but the console's token and reads what it would read over MCP. A task or the rules name a skill to load; this page says how it is found and read.
 
+Which pack a command reads follows the directory: where a project is named (`console whoami` says which, and what named it), the project's; where none is, in a desk or in a folder a repository is about to be made in, the organization's, and the first line of the answer says so. `--project <key>` reads a project's own from anywhere.
+
 | To | Command | What comes back |
 |---|---|---|
 | See the pack | `console skills` | Where the pack is, at a deployment or on the console's machine, and how the read went; what a client is told of it on connect; every skill with the path of its `SKILL.md` and every document; where the console's own skills are on this machine. |
@@ -15,7 +17,7 @@ A project's pack is the organization's skills and documents: a repository in the
 
 `--json` on any of them answers with what the pack answered, in the shapes of the main repository's REST API.
 
-What is refused: `status not_found`, the pack is not served to the console, a private one with no pack token on the project or the workspace, which an owner or an administrator connects with a code a person approves (planning-the-board, or the Settings page); `status token_invalid`, the token no longer works, and an owner sets a new one; `status failed` on a file, the pack will not carry it, too large or not text. A read the pack refused prints its status and the pack's own words, and exits with `0`; a read with `--rows` or `--code` prints nothing, says the same on standard error and exits with `1`, so that a file it was redirected into is never the refusal.
+What is refused: `status not_found`, the pack is not served to the console, a private one with no pack token on the project or the workspace, which an owner or an administrator connects with a code a person approves (planning-the-board, or the Settings page), the workspace's being the one the organization's pack is read with; `status token_invalid`, the token no longer works, and an owner sets a new one; `status failed` on a file, the pack will not carry it, too large or not text. A read the pack refused prints its status and the pack's own words, and exits with `0`; a read with `--rows` or `--code` prints nothing, says the same on standard error and exits with `1`, so that a file it was redirected into is never the refusal.
 
 A table a task needs whole, a list of codes to build into a program, a set of definitions to generate from, is taken with `--rows` into a file and read by a program: never copied out of a section row by row.
 

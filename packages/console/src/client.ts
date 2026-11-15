@@ -363,6 +363,16 @@ export interface DocumentFilter {
   readonly archived?: boolean | undefined;
 }
 
+/**
+ * The reads of a pack: the listing, one skill, a file, a folder, what words find, and the tables
+ * and the code blocks as data. A project's client has them for the project's pack, a plugin's
+ * for its own, and the console's client for the organization's (`organizationPack()`).
+ */
+export type PackClient = Pick<
+  ProjectClient,
+  "skills" | "skill" | "skillFile" | "skillBrowse" | "skillFind" | "skillRows" | "skillCode"
+>;
+
 /** The board of one project, as the asker may see and change it. */
 export interface ProjectClient {
   /** The key the project is reached by. */
@@ -707,6 +717,12 @@ export interface ConsoleClient {
   workspacePackTokenConnection(signal?: AbortSignal): Promise<RestWorkspacePackConnect>;
   claimWorkspacePackTokenConnection(signal?: AbortSignal): Promise<RestWorkspacePackConnect>;
   cancelWorkspacePackTokenConnection(): Promise<void>;
+  /**
+   * The organization's pack, read where no project is named (ADR-0113): the workspace's skills
+   * address, with the workspace's SkillCDN token where the pack is private; for every member
+   * of the workspace, as the workspace's rules are.
+   */
+  organizationPack(): PackClient;
   /** The people the asker may see: everyone, or those they share a project with (ADR-0035). */
   people(signal?: AbortSignal): Promise<RestPeople>;
   /**
@@ -1101,6 +1117,85 @@ export function createClient(options: ClientOptions = {}): ConsoleClient {
     return form;
   };
 
+  /**
+   * The reads of a pack under `root`: a project's, a plugin's own, and the organization's where
+   * no project is named (ADR-0113) are read by the same seven routes, each under its own root.
+   */
+  const packAt = (root: string): PackClient => ({
+    skills: (signal) => request("GET", `${base}${root}`, undefined, restSkillsSchema, signal),
+    skill: (path, cursor, signal) =>
+      request(
+        "GET",
+        withQuery(`${root}/one`, { path, cursor }),
+        undefined,
+        restSkillLoadSchema,
+        signal,
+      ),
+    skillFile: (path, page = {}, signal) =>
+      request(
+        "GET",
+        withQuery(`${root}/file`, {
+          path,
+          offset: number(page.offset),
+          limit: number(page.limit),
+        }),
+        undefined,
+        restSkillFileSchema,
+        signal,
+      ),
+    skillBrowse: (page = {}, signal) =>
+      request(
+        "GET",
+        withQuery(`${root}/browse`, {
+          path: page.path,
+          cursor: page.cursor,
+          limit: number(page.limit),
+        }),
+        undefined,
+        restSkillBrowseSchema,
+        signal,
+      ),
+    skillFind: (query, options = {}, signal) =>
+      request(
+        "GET",
+        withQuery(`${root}/find`, {
+          query,
+          path: options.path,
+          cursor: options.cursor,
+          limit: number(options.limit),
+        }),
+        undefined,
+        restSkillFindSchema,
+        signal,
+      ),
+    skillRows: (page = {}, signal) =>
+      request(
+        "GET",
+        withQuery(`${root}/rows`, {
+          path: page.path,
+          heading: page.heading,
+          cursor: page.cursor,
+          limit: number(page.limit),
+        }),
+        undefined,
+        restSkillRowsSchema,
+        signal,
+      ),
+    skillCode: (page = {}, signal) =>
+      request(
+        "GET",
+        withQuery(`${root}/code`, {
+          path: page.path,
+          heading: page.heading,
+          cursor: page.cursor,
+          limit: number(page.limit),
+        }),
+        undefined,
+        restSkillCodeSchema,
+        signal,
+      ),
+  });
+
   const projectClient = (key: string): ProjectClient => {
     const at = (collection?: Parameters<typeof projectPath>[1], id?: string) =>
       projectPath(key, collection, id);
@@ -1249,79 +1344,7 @@ export function createClient(options: ClientOptions = {}): ConsoleClient {
           signal,
         ),
       eventStreamUrl: (after) => withQuery(`${at("events")}/stream`, { after: String(after) }),
-      skills: (signal) =>
-        request("GET", `${base}${at("skills")}`, undefined, restSkillsSchema, signal),
-      skill: (path, cursor, signal) =>
-        request(
-          "GET",
-          withQuery(`${at("skills")}/one`, { path, cursor }),
-          undefined,
-          restSkillLoadSchema,
-          signal,
-        ),
-      skillFile: (path, page = {}, signal) =>
-        request(
-          "GET",
-          withQuery(`${at("skills")}/file`, {
-            path,
-            offset: page.offset === undefined ? undefined : String(page.offset),
-            limit: page.limit === undefined ? undefined : String(page.limit),
-          }),
-          undefined,
-          restSkillFileSchema,
-          signal,
-        ),
-      skillBrowse: (page = {}, signal) =>
-        request(
-          "GET",
-          withQuery(`${at("skills")}/browse`, {
-            path: page.path,
-            cursor: page.cursor,
-            limit: page.limit === undefined ? undefined : String(page.limit),
-          }),
-          undefined,
-          restSkillBrowseSchema,
-          signal,
-        ),
-      skillFind: (query, options = {}, signal) =>
-        request(
-          "GET",
-          withQuery(`${at("skills")}/find`, {
-            query,
-            path: options.path,
-            cursor: options.cursor,
-            limit: options.limit === undefined ? undefined : String(options.limit),
-          }),
-          undefined,
-          restSkillFindSchema,
-          signal,
-        ),
-      skillRows: (page = {}, signal) =>
-        request(
-          "GET",
-          withQuery(`${at("skills")}/rows`, {
-            path: page.path,
-            heading: page.heading,
-            cursor: page.cursor,
-            limit: page.limit === undefined ? undefined : String(page.limit),
-          }),
-          undefined,
-          restSkillRowsSchema,
-          signal,
-        ),
-      skillCode: (page = {}, signal) =>
-        request(
-          "GET",
-          withQuery(`${at("skills")}/code`, {
-            path: page.path,
-            heading: page.heading,
-            cursor: page.cursor,
-            limit: page.limit === undefined ? undefined : String(page.limit),
-          }),
-          undefined,
-          restSkillCodeSchema,
-          signal,
-        ),
+      ...packAt(at("skills")),
       setPackToken: (input) =>
         request("PUT", `${base}${at()}/pack-token`, input, restProjectSchema),
       removePackToken: () =>
@@ -1421,8 +1444,6 @@ export function createClient(options: ClientOptions = {}): ConsoleClient {
 
   const pluginClient = (key: string): PluginClient => {
     const at = (...parts: readonly string[]) => pluginPath(key, ...parts);
-    const skillsQuery = (part: string, params: Record<string, string | undefined>): string =>
-      withQuery(at("skills", part), params);
     const queryUrl = (
       name: string,
       args: Readonly<Record<string, unknown>>,
@@ -1492,75 +1513,7 @@ export function createClient(options: ClientOptions = {}): ConsoleClient {
           signal,
         ),
       purge: (confirm) => request("POST", `${base}${at("purge")}`, { confirm }, undefined),
-      skills: (signal) =>
-        request("GET", `${base}${at("skills")}`, undefined, restSkillsSchema, signal),
-      skill: (path, cursor, signal) =>
-        request(
-          "GET",
-          skillsQuery("one", { path, cursor }),
-          undefined,
-          restSkillLoadSchema,
-          signal,
-        ),
-      skillFile: (path, page = {}, signal) =>
-        request(
-          "GET",
-          skillsQuery("file", { path, offset: number(page.offset), limit: number(page.limit) }),
-          undefined,
-          restSkillFileSchema,
-          signal,
-        ),
-      skillBrowse: (page = {}, signal) =>
-        request(
-          "GET",
-          skillsQuery("browse", {
-            path: page.path,
-            cursor: page.cursor,
-            limit: number(page.limit),
-          }),
-          undefined,
-          restSkillBrowseSchema,
-          signal,
-        ),
-      skillFind: (query, options = {}, signal) =>
-        request(
-          "GET",
-          skillsQuery("find", {
-            query,
-            path: options.path,
-            cursor: options.cursor,
-            limit: number(options.limit),
-          }),
-          undefined,
-          restSkillFindSchema,
-          signal,
-        ),
-      skillRows: (page = {}, signal) =>
-        request(
-          "GET",
-          skillsQuery("rows", {
-            path: page.path,
-            heading: page.heading,
-            cursor: page.cursor,
-            limit: number(page.limit),
-          }),
-          undefined,
-          restSkillRowsSchema,
-          signal,
-        ),
-      skillCode: (page = {}, signal) =>
-        request(
-          "GET",
-          skillsQuery("code", {
-            path: page.path,
-            heading: page.heading,
-            cursor: page.cursor,
-            limit: number(page.limit),
-          }),
-          undefined,
-          restSkillCodeSchema,
-          signal,
-        ),
+      ...packAt(at("skills")),
       events: (page = {}, signal) =>
         request(
           "GET",
@@ -1612,6 +1565,7 @@ export function createClient(options: ClientOptions = {}): ConsoleClient {
       );
       return found.items[0];
     },
+    organizationPack: () => packAt(REST_ROUTES.workspaceSkills),
     updateWorkspace: (patch) =>
       request("PATCH", `${base}${REST_ROUTES.workspace}`, patch, restWorkspaceSchema),
     setWorkspacePackToken: (input) =>

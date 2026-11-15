@@ -668,6 +668,9 @@ describe("createConsole", () => {
       `/api/v1/decisions/${decisionId}/files/${fileId}`,
     readDecisionFile: never,
     plugins: never,
+    organizationPack: () => {
+      throw new Error("no pack read without a project in this test");
+    },
     plugin: () => {
       throw new Error("no plugins in this test");
     },

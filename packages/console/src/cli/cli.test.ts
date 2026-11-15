@@ -5533,6 +5533,144 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     }
   });
 
+  it("reads the organization's pack where no project is named, and says whose pack it is (ADR-0113)", async () => {
+    const ORG = "/api/v1/workspace/skills";
+    const LINE =
+      "The organization's pack, since no project is named here: --project <key>, or a directory bound with console use <key>, reads a project's own.\n";
+    const pair = { CONSOLE_URL: ORIGIN, CONSOLE_TOKEN: "cns_t_secret" };
+    const { fetch, calls } = fakeConsole({
+      [`GET ${ORG}`]: { body: LISTING },
+      [`GET ${ORG}/one?path=review%2FSKILL.md`]: { body: PAGE_ONE },
+      [`GET ${ORG}/one?path=review%2FSKILL.md&cursor=two`]: { body: PAGE_TWO },
+      [`GET ${ORG}/file?path=review%2Fguide.md`]: {
+        body: file("review/guide.md", "How to review.", 0, null, 14),
+      },
+      [`GET ${ORG}/find?query=review&limit=5`]: {
+        body: {
+          ...AT,
+          read: {
+            status: "ready",
+            commit: COMMIT,
+            query: "review",
+            path: "",
+            items: [],
+            diagnostics: [],
+            nextCursor: null,
+            totals: null,
+          },
+        },
+      },
+      [`GET ${ORG}/rows?path=docs%2Fcodes.md&limit=5000`]: {
+        body: {
+          ...AT,
+          read: {
+            status: "ready",
+            commit: COMMIT,
+            path: "docs/codes.md",
+            tables: [
+              { path: "docs/codes.md", heading: ["Codes"], columns: ["Code"], rows: [["A1"]] },
+            ],
+            rowCount: 1,
+            nextCursor: null,
+          },
+        },
+      },
+      // A project is named in another directory: its own pack, as before.
+      [`GET ${IN}/skills`]: { body: LISTING },
+    });
+    // The listing: the line first, then the pack as a project's is listed.
+    const listed = harness({
+      fetch,
+      env: pair,
+      skillsDir: "/usr/lib/node_modules/@skillcdn/console/skills/",
+    });
+    expect(await runCli(["skills"], listed.io)).toBe(EXIT.ok);
+    expect(listed.out().startsWith(LINE)).toBe(true);
+    expect(listed.out()).toContain(
+      "skills at /gh/acme/skills, served by https://skillcdn.test: ready",
+    );
+    expect(listed.out()).toContain(
+      "The console's own skills, for working the board: /usr/lib/node_modules/@skillcdn/console/skills/",
+    );
+    // A skill whole, a file and a search, each under the line.
+    const loaded = harness({ fetch, env: pair });
+    expect(await runCli(["skill", "review/SKILL.md"], loaded.io)).toBe(EXIT.ok);
+    expect(loaded.out().startsWith(`${LINE}Skill: review\n`)).toBe(true);
+    expect(loaded.out()).toContain("Read the diff.");
+    const read = harness({ fetch, env: pair });
+    expect(await runCli(["skill", "--file", "review/guide.md"], read.io)).toBe(EXIT.ok);
+    expect(read.out().startsWith(LINE)).toBe(true);
+    expect(read.out()).toContain("--- content ---\nHow to review.");
+    const found = harness({ fetch, env: pair });
+    expect(await runCli(["skills", "--search", "review", "--limit", "5"], found.io)).toBe(EXIT.ok);
+    expect(found.out().startsWith(LINE)).toBe(true);
+    // What a program takes carries no line: the tables as data, and --json.
+    const data = harness({ fetch, env: pair });
+    expect(await runCli(["skills", "--rows", "docs/codes.md"], data.io)).toBe(EXIT.ok);
+    expect(data.out()).toBe("path,heading,Code\r\ndocs/codes.md,Codes,A1\r\n");
+    const json = harness({ fetch, env: pair });
+    expect(await runCli(["skills", "--json"], json.io)).toBe(EXIT.ok);
+    expect(JSON.parse(json.out())).toMatchObject({ address: "/gh/acme/skills", status: "ready" });
+    // Every read went to the workspace's routes, and none to a project's.
+    expect(calls.map((call) => call.key)).toEqual([
+      `GET ${ORG}`,
+      `GET ${ORG}`,
+      `GET ${ORG}/one?path=review%2FSKILL.md`,
+      `GET ${ORG}/one?path=review%2FSKILL.md&cursor=two`,
+      `GET ${ORG}`,
+      `GET ${ORG}/file?path=review%2Fguide.md`,
+      `GET ${ORG}`,
+      `GET ${ORG}/find?query=review&limit=5`,
+      `GET ${ORG}/rows?path=docs%2Fcodes.md&limit=5000`,
+      `GET ${ORG}`,
+    ]);
+    // A project named, by the flag here: its own pack, and no line.
+    const named = harness({ fetch, env: pair });
+    expect(await runCli(["skills", "--project", "web"], named.io)).toBe(EXIT.ok);
+    expect(named.out()).not.toContain("The organization's pack");
+    expect(calls.at(-1)?.key).toBe(`GET ${IN}/skills`);
+    // A pack that is not served, or whose token went stale, is the workspace's to mend, by an
+    // administrator; and no address is the console's to name.
+    const refusal = (status: string) =>
+      fakeConsole({
+        [`GET ${ORG}`]: {
+          body: {
+            ...LISTING,
+            status,
+            refusal: null,
+            items: [],
+            mount: null,
+            ...(status === "none" ? { address: null, page: null } : {}),
+          },
+        },
+      }).fetch;
+    const hidden = harness({ fetch: refusal("not_found"), env: pair });
+    expect(await runCli(["skills"], hidden.io)).toBe(EXIT.ok);
+    expect(hidden.out()).toContain(
+      "the organization's pack is private and the workspace holds no SkillCDN token for it (console workspace pack-token --connect, for an administrator)",
+    );
+    expect(hidden.out()).not.toContain("console project pack-token");
+    const stale = harness({ fetch: refusal("token_invalid"), env: pair });
+    expect(await runCli(["skill", "review/SKILL.md"], stale.io)).toBe(EXIT.ok);
+    expect(stale.out()).toContain(
+      "The SkillCDN token the workspace holds no longer works at the deployment: an administrator sets a new one (console workspace pack-token --connect).",
+    );
+    const none = harness({ fetch: refusal("none"), env: pair });
+    expect(await runCli(["skills"], none.io)).toBe(EXIT.ok);
+    expect(none.out()).toContain(
+      "No skills address: the console names none for the organization's skills, and no project is named here.",
+    );
+    // A console from before has no such routes: the command says so, and what still reads a pack.
+    for (const args of [["skills"], ["skill", "review/SKILL.md"], ["skills", "--rows"]]) {
+      const older = harness({ fetch: fakeConsole({}).fetch, env: pair });
+      expect(await runCli(args, older.io), args.join(" ")).toBe(EXIT.failed);
+      expect(older.out()).toBe("");
+      expect(older.err()).toBe(
+        "This console does not read the organization's pack where no project is named: it is older than the command. Say which project: --project <key>, CONSOLE_PROJECT in the environment, or console use <key> once in this directory. console projects lists the projects you may work in.\n",
+      );
+    }
+  });
+
   it("takes the tables and the code blocks of the pack as data: the pages joined, one CSV or the blocks as written, printed or written to a file (ADR-0100)", async () => {
     const table = (path: string, heading: string, rows: string[][]) => ({
       path,

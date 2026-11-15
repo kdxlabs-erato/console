@@ -43,6 +43,7 @@ export {
   type FileRead,
   type FileUpload,
   type GoalFilter,
+  type PackClient,
   type Page,
   type ProjectClient,
   type TaskFilter,
