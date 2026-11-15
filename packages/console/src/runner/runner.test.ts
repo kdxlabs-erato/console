@@ -1641,6 +1641,92 @@ describe("the runner", () => {
     expect(await done).toBe("updated");
   });
 
+  it("counts a signal as delivered when the product took it: a product that did not start, and a runner ended then, lose none", async () => {
+    // The product does not start, and the runner's process ends before it is tried again.
+    const first = setup({
+      driver: {
+        onStart: (session) => {
+          session.emit(
+            { type: "cannot_go_on", state: "failed", reason: "start" },
+            { type: "ended", how: "crashed" },
+          );
+        },
+      },
+    });
+    first.console.signal({ text: "Hold the release." });
+    await until("the failure", () => first.console.beats.some((beat) => beat.state === "failed"));
+    await until("the end of the session", () => first.console.ended.length === 1);
+    first.runner.stop();
+    await first.done;
+    // Neither the runner's own file nor the console's record says the signal was delivered.
+    expect(first.saved.every((state) => state.delivered === 0)).toBe(true);
+    expect(first.console.beats.every((beat) => beat.delivered === 0)).toBe(true);
+    expect(first.console.says.delivered).toBe(0);
+
+    // The runner started after is sent it again from the console's record, and hands it over once.
+    const again = (at: ReturnType<typeof fakeConsole>, delivered: number) => {
+      at.says.delivered = delivered;
+      at.signal({ text: "Hold the release." });
+    };
+    const second = setup({
+      state: first.saved.at(-1) ?? { delivered: 0, conversation: undefined },
+      before: (at) => again(at, first.console.says.delivered),
+    });
+    const session = await sessionOf(second.product);
+    await until("the message", () => session.sent.length === 1);
+    expect(session.sent[0]?.text).toContain("#1 · tell · Jane · 14:02]\nHold the release.");
+    // Handed over is not delivered yet: the product has not said it took it.
+    expect(second.saved.every((state) => state.delivered === 0)).toBe(true);
+    session.emit(...STARTED, { type: "taken" });
+    await until("the signal to be counted", () => second.saved.at(-1)?.delivered === 1);
+    session.emit({ type: "turn_completed" });
+    await until("the heartbeat", () => second.console.beats.some((beat) => beat.delivered === 1));
+    second.runner.stop();
+    await second.done;
+    expect(session.sent).toHaveLength(1);
+
+    // And the one after that is sent nothing: delivered once, and only once.
+    const third = setup({
+      state: second.saved.at(-1),
+      before: (at) => again(at, second.console.says.delivered),
+    });
+    await until("the stream to be asked for", () => third.console.streams.length === 1);
+    expect(third.console.streams).toEqual([1]);
+    await sleep(80);
+    expect(third.product.sessions).toHaveLength(0);
+  });
+
+  it("counts what the record says was never read, and what the runner acted on, behind what the product still owes a word of", async () => {
+    const { console, product, saved } = setup();
+    console.signal({ text: "First." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    session.emit(...STARTED);
+    // A second message in the turn, and a choice the runner takes itself: neither is counted
+    // while the first is not said taken, since signals are counted in order.
+    console.signal({ text: "Second." });
+    await until("the second message", () => session.sent.length === 2);
+    console.signal({ kind: "set", set: { model: "sonnet", effort: null } });
+    await until("the choice", () => session.state.set.length === 1);
+    expect(saved.every((state) => state.delivered === 0)).toBe(true);
+    // The product says it took the first: counted, and no further.
+    session.emit({ type: "taken" });
+    await until("the first to be counted", () => saved.at(-1)?.delivered === 1);
+    await sleep(40);
+    expect(saved.at(-1)?.delivered).toBe(1);
+    // The session ends before the second is taken: the record says it was never read, which
+    // counts it, and the choice behind it with it.
+    console.signal({ kind: "stop", text: "Enough." });
+    await until("the stop", () => console.ended.length === 1);
+    await until("the rest to be counted", () => saved.at(-1)?.delivered === 4);
+    expect(
+      console.kept
+        .values()
+        .next()
+        .value?.map((event) => [event.text, event.data?.unread]),
+    ).toEqual(expect.arrayContaining([["Second.", true]]));
+  });
+
   it("gives what a product never took one more try after a reset, and lets it go where the product does not start with it again", async () => {
     let starts = 0;
     const { console, product, log } = setup({

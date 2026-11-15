@@ -393,7 +393,7 @@ export const agentRunners = pgTable(
     reason: text(),
     stateAt: instant(),
     heardAt: instant(),
-    /** The number of the last signal the runner handed to its product. */
+    /** The number of the last signal the runner said was delivered: its product took it, or the record says what became of it. */
     delivered: integer().notNull().default(0),
     /** The number the next signal of the account takes. */
     nextSignal: integer().notNull().default(1),

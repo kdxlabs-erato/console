@@ -830,7 +830,7 @@ export const restRunnerHeartbeatInputSchema = z.object({
   /** How the runner says its agent stands; `unheard` is the console's word, never the runner's. */
   state: z.enum(["running", "stopped", "refused", "failed"]),
   reason: z.enum(AGENT_STATE_REASONS),
-  /** The number of the last signal handed to the product; `0` for none. */
+  /** The number of the last signal delivered, every one before it too: the product took it, or the record says what became of it; `0` for none. */
   delivered: z.int().check(z.gte(0)),
   /** The open session, or `null`. */
   session: z.nullable(uuid),
@@ -847,7 +847,7 @@ export type RestRunnerHeartbeatInput = z.infer<typeof restRunnerHeartbeatInputSc
 /** What the heartbeat is answered: where the account's record of signals stands, what its supervisors chose, and how the console has the agent. */
 export const restRunnerHeartbeatSchema = z.object({
   latest: z.int().check(z.gte(0)),
-  /** The number of the last signal the console has as handed to the product: where a runner that lost its own count goes on from. */
+  /** The number of the last signal the console has as delivered: where a runner that lost its own count goes on from. */
   delivered: z.int().check(z.gte(0)),
   settings: restAgentChoiceSchema,
   state: z.enum(AGENT_STATES),
