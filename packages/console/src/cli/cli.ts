@@ -4444,7 +4444,22 @@ const agentSecrets = async (args: readonly string[], io: CliIo): Promise<number>
   const { values, positionals } = parse(args, {});
   const handle = handleOf(theOne(positionals, "Say whose: console agent secrets <handle>"));
   const session = await open(io, values);
-  const found = await session.client.agentSecrets(handle);
+  let found: Awaited<ReturnType<ConsoleClient["agentSecrets"]>>;
+  try {
+    found = await session.client.agentSecrets(handle);
+  } catch (error) {
+    // An account that asks for its own secrets by the supervisor's command is told which
+    // command is its own, where the console's refusal says only whose this one is.
+    if (error instanceof ApiError && error.code === "auth.forbidden") {
+      const me = await session.client.me().catch(() => undefined);
+      if (me?.person?.kind === "agent" && me.person.handle === handle) {
+        throw failed(
+          `auth.forbidden: console agent secrets is a supervisor's command, and you are @${handle} yourself. Your own store is read with console secrets, and one secret of it with console secret <name>.`,
+        );
+      }
+    }
+    throw error;
+  }
   answer(io, session, found, () =>
     found.items.length === 0
       ? `@${handle} keeps no secret yet.`

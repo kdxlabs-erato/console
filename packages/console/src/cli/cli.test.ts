@@ -2922,6 +2922,53 @@ describe("configuring, as the person", () => {
     expect(await runCli(["secret"], harness({ fetch, env: SIGNED_IN }).io)).toBe(EXIT.usage);
   });
 
+  it("tells an agent account that asks for its own secrets as a supervisor would which command is its own", async () => {
+    const refusal = {
+      status: 403,
+      body: {
+        error: {
+          code: "auth.forbidden",
+          message: "Only a supervisor of the agent account may do this.",
+        },
+      },
+    };
+    const mira = {
+      ...ME,
+      person: { ...PERSON, login: "acme-mira", name: "Mira", kind: "agent", handle: "mira" },
+      agent: null,
+      session: { kind: "command", name: "console as mira on mac-mini" },
+    };
+    const asItself = fakeConsole({
+      "GET /api/v1/agents/mira/secrets": refusal,
+      "GET /api/v1/me": { body: mira },
+    });
+    const own = harness({ fetch: asItself.fetch, env: SIGNED_IN });
+    expect(await runCli(["agent", "secrets", "@mira"], own.io)).toBe(EXIT.failed);
+    expect(own.err()).toBe(
+      "auth.forbidden: console agent secrets is a supervisor's command, and you are @mira yourself. Your own store is read with console secrets, and one secret of it with console secret <name>.\n",
+    );
+    expect(own.out()).toBe("");
+    // Asked of another account, or by a person who supervises none, it is the console's own refusal.
+    const another = fakeConsole({
+      "GET /api/v1/agents/juno/secrets": refusal,
+      "GET /api/v1/me": { body: mira },
+    });
+    const other = harness({ fetch: another.fetch, env: SIGNED_IN });
+    expect(await runCli(["agent", "secrets", "juno"], other.io)).toBe(EXIT.failed);
+    expect(other.err()).toContain(
+      "auth.forbidden: Only a supervisor of the agent account may do this.",
+    );
+    expect(other.err()).not.toContain("console secrets");
+    const person = fakeConsole({
+      "GET /api/v1/agents/mira/secrets": refusal,
+      "GET /api/v1/me": { body: ME },
+    });
+    const member = harness({ fetch: person.fetch, env: SIGNED_IN });
+    expect(await runCli(["agent", "secrets", "mira"], member.io)).toBe(EXIT.failed);
+    expect(member.err()).toContain("Only a supervisor of the agent account may do this.");
+    expect(member.err()).not.toContain("console secrets");
+  });
+
   it("seeds a secret for an agent account one supervises, write-only, and lists and removes them (ADR-0087)", async () => {
     const seeded = { name: "mail.password", setAt: WHEN, seeded: true, expiresOn: null };
     const { fetch, calls } = fakeConsole({
