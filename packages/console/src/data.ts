@@ -4,7 +4,6 @@ import {
   type CommentInput,
   type ConsoleClient,
   type DocumentFilter,
-  EVENT_KINDS,
   type FileUpload,
   LIST_LIMIT,
   type ProjectClient,
@@ -73,8 +72,8 @@ import {
   type RestWorkspace,
   type RestWorkspacePackConnect,
   type RestWorkspacePatch,
-  restEventSchema,
 } from "./api.js";
+import { followFeed } from "./feed-stream.js";
 
 // What the console shows, and how it stays current: the workspace (who is signed in, the
 // projects, the people, the tokens) is loaded once; the project the page is on is loaded whole,
@@ -608,7 +607,7 @@ export function useConsoleData(client: ConsoleClient, projectKey: string | undef
     }
     const controller = new AbortController();
     const { signal } = controller;
-    let source: EventSource | undefined;
+    let unfollow: (() => void) | undefined;
     let reloadTimer: ReturnType<typeof setTimeout> | undefined;
     const scope = client.project(projectKey);
     const run = async () => {
@@ -653,42 +652,38 @@ export function useConsoleData(client: ConsoleClient, projectKey: string | undef
             });
           }
         });
-      if (typeof EventSource === "undefined") {
+      // The stream begins after the feed read, and is opened again from the last event that
+      // arrived when the browser gives it up, while the console restarts say (`feed-stream.ts`).
+      if (signal.aborted) {
         return;
       }
-      source = new EventSource(scope.eventStreamUrl(lastEvent.current));
-      source.onopen = () => setLive(true);
-      source.onerror = () => setLive(false);
-      const arrived = (message: MessageEvent) => {
-        const parsed = restEventSchema.safeParse(JSON.parse(String(message.data)));
-        if (!parsed.success || parsed.data.id <= lastEvent.current) {
-          return;
-        }
-        lastEvent.current = parsed.data.id;
-        const event = parsed.data;
-        setEvents((current) => [...current, event].slice(-FEED_KEEP));
-        clearTimeout(reloadTimer);
-        reloadTimer = setTimeout(() => {
-          refreshProject(signal).catch(() => undefined);
-          if (event.kind.startsWith("project.")) {
-            refreshWorkspace(signal).catch(() => undefined);
-          }
-          // A decision raised or answered here may be one of the person's own: the count beside
-          // My decisions follows it.
-          if (event.kind.startsWith("decision.")) {
-            refreshMe(signal).catch(() => undefined);
-          }
-        }, RELOAD_DELAY_MS);
-      };
-      for (const kind of EVENT_KINDS) {
-        source.addEventListener(kind, arrived);
-      }
+      unfollow = followFeed({
+        url: (after) => scope.eventStreamUrl(after),
+        after: lastEvent.current,
+        onLive: setLive,
+        onEvent: (event) => {
+          lastEvent.current = event.id;
+          setEvents((current) => [...current, event].slice(-FEED_KEEP));
+          clearTimeout(reloadTimer);
+          reloadTimer = setTimeout(() => {
+            refreshProject(signal).catch(() => undefined);
+            if (event.kind.startsWith("project.")) {
+              refreshWorkspace(signal).catch(() => undefined);
+            }
+            // A decision raised or answered here may be one of the person's own: the count
+            // beside My decisions follows it.
+            if (event.kind.startsWith("decision.")) {
+              refreshMe(signal).catch(() => undefined);
+            }
+          }, RELOAD_DELAY_MS);
+        },
+      });
     };
     void run();
     return () => {
       controller.abort();
       clearTimeout(reloadTimer);
-      source?.close();
+      unfollow?.();
       setLive(false);
     };
   }, [client, projectKey, signedIn, generation, refreshProject, refreshWorkspace, refreshMe]);
