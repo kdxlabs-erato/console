@@ -5912,7 +5912,7 @@ describe("the consoles the command is signed in to (ADR-0027)", () => {
       `alice (member) at Acme, ${ORIGIN}; project elsewhere, named by .skillcdn-console.json in /work/app, which this console does not have or does not show you\n${LINES}`,
     );
     expect(missing.err()).toBe(
-      `project.not_found: ${ORIGIN} has no project elsewhere, or it is not yours to see. The key is named by .skillcdn-console.json in /work/app.\nWhere the project is there and you are not in it, one of its owners lists you: console member add alice --project elsewhere. Where the key is wrong, bind this directory anew: console use <key>; console projects lists the projects you may work in at this console.\n`,
+      `project.not_found: ${ORIGIN} has no project elsewhere, or it is not yours to see. The key is named by .skillcdn-console.json in /work/app.\nWhere the project is there and you are not in it, one of its owners lists you: console member add alice --project elsewhere. Where the key is wrong, the directory is bound to the right one, the key the repository's agreement names or the one the person says, with console use <key>; console projects lists the projects you may work in at this console.\n`,
     );
     const missingJson = harness({ fetch: gone.fetch, env: pair, directory: stale });
     expect(await runCli(["whoami", "--json"], missingJson.io)).toBe(EXIT.failed);
@@ -5945,7 +5945,7 @@ describe("the consoles the command is signed in to (ADR-0027)", () => {
           : answered.fetch(url, init),
     };
     const TWO_CASES =
-      "Where the project is there and you are not in it, one of its owners lists you: console member add alice --project elsewhere. Where the key is wrong, bind this directory anew: console use <key>; console projects lists the projects you may work in at this console.\n";
+      "Where the project is there and you are not in it, one of its owners lists you: console member add alice --project elsewhere. Where the key is wrong, the directory is bound to the right one, the key the repository's agreement names or the one the person says, with console use <key>; console projects lists the projects you may work in at this console.\n";
     const kept = memoryStore(one(ORIGIN, "cns_t_kept")).store;
     for (const args of [["tasks"], ["rules"], ["task", "7"], ["take", "7"], ["skills"]]) {
       const refused = harness({ fetch: unseen.fetch, store: kept, directory: stale });
@@ -5955,6 +5955,12 @@ describe("the consoles the command is signed in to (ADR-0027)", () => {
         `project.not_found: ${ORIGIN} has no project elsewhere, or it is not yours to see. The key is named by .skillcdn-console.json in /work/app.\n${TWO_CASES}`,
       );
     }
+    // The second case says who settles it and with what, and hands the reader no command to
+    // run: an agent told to do as it sees fit ran "console use" at once and went on with no task.
+    expect(TWO_CASES).not.toMatch(/\bbind this directory\b/);
+    expect(TWO_CASES).toContain(
+      "the key the repository's agreement names or the one the person says",
+    );
     // Named by the environment, the key is mended there; and a login the command does not know
     // is left for the person to fill in.
     const byEnvironment = harness({
@@ -5963,7 +5969,7 @@ describe("the consoles the command is signed in to (ADR-0027)", () => {
     });
     expect(await runCli(["tasks"], byEnvironment.io)).toBe(EXIT.failed);
     expect(byEnvironment.err()).toBe(
-      `project.not_found: ${ORIGIN} has no project elsewhere, or it is not yours to see. The key is named by CONSOLE_PROJECT.\nWhere the project is there and you are not in it, one of its owners lists you: console member add <your login> --project elsewhere. Where the key is wrong, set CONSOLE_PROJECT to another, or unset it; console projects lists the projects you may work in at this console.\n`,
+      `project.not_found: ${ORIGIN} has no project elsewhere, or it is not yours to see. The key is named by CONSOLE_PROJECT.\nWhere the project is there and you are not in it, one of its owners lists you: console member add <your login> --project elsewhere. Where the key is wrong, CONSOLE_PROJECT is set to the right one, the key the repository's agreement names or the one the person says, or unset; console projects lists the projects you may work in at this console.\n`,
     );
     // Named on the command itself, the key is in front of whoever typed it: the console's own words.
     const byFlag = harness({ fetch: unseen.fetch, env: pair });

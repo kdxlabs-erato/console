@@ -401,19 +401,25 @@ type ProjectSource =
  * What is said of a project the console does not have, or does not show the member: the key,
  * the console and what named the key, then the two things a person can do about it, each
  * something to ask for or to do. An agent that reads only "not found" guesses at causes; one of
- * these two is always the one. `login` is the member's, where the command knows it.
+ * these two is always the one. `login` is the member's, where the command knows it. Both are
+ * said as what is done and by whom, never as a command to whoever reads: an agent told to do
+ * as it saw fit took "bind this directory anew" for its own step, bound the checkout to another
+ * project and went on with no task. Which key is right is the repository's agreement's to say,
+ * or the person's.
  */
 function unseenProjectWords(
   url: string,
   named: { readonly key: string; readonly source: ProjectSource },
   login: string | undefined,
 ): string {
+  const right =
+    "the right one, the key the repository's agreement names or the one the person says";
   const mend =
     named.source.kind === "directory"
-      ? "bind this directory anew: console use <key>"
+      ? `the directory is bound to ${right}, with console use <key>`
       : named.source.kind === "environment"
-        ? "set CONSOLE_PROJECT to another, or unset it"
-        : "say another with --project";
+        ? `CONSOLE_PROJECT is set to ${right}, or unset`
+        : `--project is given ${right}`;
   return [
     `project.not_found: ${url} has no project ${named.key}, or it is not yours to see. The key is named by ${sourceWords(named.source)}.`,
     `Where the project is there and you are not in it, one of its owners lists you: console member add ${login ?? "<your login>"} --project ${named.key}. Where the key is wrong, ${mend}; console projects lists the projects you may work in at this console.`,

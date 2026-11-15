@@ -376,14 +376,14 @@ describe("the command line", () => {
       `Alice (member) at Acme, ${SIGN_IN_URL}; project secret, named by CONSOLE_PROJECT, which this console does not have or does not show you\n`,
     );
     expect(elsewhere.err).toBe(
-      `project.not_found: ${SIGN_IN_URL} has no project secret, or it is not yours to see. The key is named by CONSOLE_PROJECT.\nWhere the project is there and you are not in it, one of its owners lists you: console member add Alice --project secret. Where the key is wrong, set CONSOLE_PROJECT to another, or unset it; console projects lists the projects you may work in at this console.\n`,
+      `project.not_found: ${SIGN_IN_URL} has no project secret, or it is not yours to see. The key is named by CONSOLE_PROJECT.\nWhere the project is there and you are not in it, one of its owners lists you: console member add Alice --project secret. Where the key is wrong, CONSOLE_PROJECT is set to the right one, the key the repository's agreement names or the one the person says, or unset; console projects lists the projects you may work in at this console.\n`,
     );
     // The same of any command that works in that project, where the console's own line names nothing.
     for (const args of [["rules"], ["tasks"], ["take", "1"]]) {
       const refused = await console_(args, aliceToken, { project: "secret" });
       expect(refused.code, args.join(" ")).toBe(EXIT.failed);
       expect(refused.err, args.join(" ")).toBe(
-        `project.not_found: ${SIGN_IN_URL} has no project secret, or it is not yours to see. The key is named by CONSOLE_PROJECT.\nWhere the project is there and you are not in it, one of its owners lists you: console member add <your login> --project secret. Where the key is wrong, set CONSOLE_PROJECT to another, or unset it; console projects lists the projects you may work in at this console.\n`,
+        `project.not_found: ${SIGN_IN_URL} has no project secret, or it is not yours to see. The key is named by CONSOLE_PROJECT.\nWhere the project is there and you are not in it, one of its owners lists you: console member add <your login> --project secret. Where the key is wrong, CONSOLE_PROJECT is set to the right one, the key the repository's agreement names or the one the person says, or unset; console projects lists the projects you may work in at this console.\n`,
       );
     }
     // The directory's file is named as what decided, and no project named ends well.

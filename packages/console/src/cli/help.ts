@@ -150,7 +150,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     about:
       "Who the token acts as, which console the command talks to from here and as which account, and which project this directory works in: its key and its name as the console has it, and what named it, .skillcdn-console.json with the directory that holds it, CONSOLE_PROJECT or --project (ADR-0112). Changes nothing on the board. A directory that names no project is said so, and the command ends well. Then where the organization's rules and the skill working-the-board are read, and the versions of the command and the console.",
     refusals: [
-      "project.not_found: the console the command talks to has no project of the key this directory names, or does not show it to you; said after who and where, with what named the key and the two things to do: where the project is there and you are not in it, one of its owners lists you (console member add <login> --project <key>); where the key is wrong, console use <key> binds the directory anew. Every command that works in the directory's project says the same of it",
+      "project.not_found: the console the command talks to has no project of the key this directory names, or does not show it to you; said after who and where, with what named the key and the two things to do: where the project is there and you are not in it, one of its owners lists you (console member add <login> --project <key>); where the key is wrong, the directory is bound to the right one, the key the repository's agreement names or the one the person says, with console use <key>. Every command that works in the directory's project says the same of it",
     ],
   },
   projects: {
