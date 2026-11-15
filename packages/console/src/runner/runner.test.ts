@@ -791,7 +791,8 @@ describe("the runner", () => {
     console.signal({ text: "Begin." });
     const first = await sessionOf(product);
     await until("the message", () => first.sent.length === 1);
-    first.emit(...STARTED);
+    // The product took the message, as a driver says of every one it reads, and is at work.
+    first.emit(...STARTED, { type: "taken" });
     await until("the conversation", () => saved.at(-1)?.conversation === "c-1");
     // In the middle of a turn: the session ends all the same.
     console.signal({ kind: "reset", text: "Start over from the board." });
@@ -1712,6 +1713,192 @@ describe("the runner", () => {
     expect(third.console.streams).toEqual([1]);
     await sleep(80);
     expect(third.product.sessions).toHaveLength(0);
+  });
+
+  it("counts nothing its product had not taken when the runner itself ends: the runner started after is sent it again", async () => {
+    // A signal is handed over, and the product is still starting: it has said nothing.
+    const first = setup();
+    first.console.signal({ text: "Hold the release." });
+    const starting = await sessionOf(first.product);
+    await until("the message", () => starting.sent.length === 1);
+    // The runner is ended: its service stopped, the process that keeps it gone.
+    first.runner.stop();
+    expect(await first.done).toBe("stopped");
+    expect(first.console.ended).toEqual(["exited"]);
+    // Neither the runner's own file nor the console's record says the signal was delivered.
+    expect(first.saved.every((state) => state.delivered === 0)).toBe(true);
+    expect(first.console.beats.every((beat) => beat.delivered === 0)).toBe(true);
+    expect(first.console.says.delivered).toBe(0);
+    // The first message of a session is written when it is handed over: the record says that
+    // the product never took it, and that it is sent again.
+    expect(first.console.events()).toEqual([
+      [1, "person", "Hold the release."],
+      [
+        2,
+        "status",
+        "The session ended before the product took what it was sent: #1. It is sent again.",
+      ],
+      [3, "status", "The session ended: exited."],
+    ]);
+    expect(first.log).toContain(
+      "#1 not taken when session 0199c4d8-0000-7000-8000-000000000001 ended: sent again",
+    );
+
+    // The runner started after is sent it again from the console's record, and hands it over.
+    const again = (at: ReturnType<typeof fakeConsole>, delivered: number, texts: string[]) => {
+      at.says.delivered = delivered;
+      for (const text of texts) {
+        at.signal({ text });
+      }
+    };
+    const second = setup({
+      state: first.saved.at(-1) ?? { delivered: 0, conversation: undefined },
+      before: (at) => again(at, first.console.says.delivered, ["Hold the release."]),
+    });
+    await until("the stream to be asked for", () => second.console.streams.length === 1);
+    expect(second.console.streams).toEqual([0]);
+    const session = await sessionOf(second.product);
+    await until("the message", () => session.sent.length === 1);
+    expect(session.sent[0]?.text).toContain("#1 · tell · Jane · 14:02]\nHold the release.");
+    // The product takes it, and a second message is handed over in the turn, which it has
+    // not come to when the runner ends again.
+    session.emit(...STARTED, { type: "taken" });
+    await until("the first to be counted", () => second.saved.at(-1)?.delivered === 1);
+    second.console.signal({ text: "And say which failed." });
+    await until("the second message", () => session.sent.length === 2);
+    second.runner.stop();
+    await second.done;
+    // What the product took is delivered, and what it had not is neither delivered nor on the
+    // record as read, or as never read: the record says that it is sent again.
+    expect(second.saved.at(-1)).toMatchObject({ delivered: 1, conversation: "c-1" });
+    expect(second.console.says.delivered).toBe(1);
+    expect(second.console.events()).toEqual([
+      [1, "person", "Hold the release."],
+      [2, "status", "The product started."],
+      [
+        3,
+        "status",
+        "The session ended before the product took what it was sent: #2. It is sent again.",
+      ],
+      [4, "status", "The session ended: exited."],
+    ]);
+
+    // The runner after that is sent the second alone: nothing twice to a product that took it.
+    const third = setup({
+      state: second.saved.at(-1),
+      before: (at) =>
+        again(at, second.console.says.delivered, ["Hold the release.", "And say which failed."]),
+    });
+    await until("the stream to be asked for", () => third.console.streams.length === 1);
+    expect(third.console.streams).toEqual([1]);
+    const last = await sessionOf(third.product);
+    await until("the message", () => last.sent.length === 1);
+    expect(last.sent[0]?.text).toContain("#2 · tell · Jane · 14:02]\nAnd say which failed.");
+    expect(last.sent[0]?.text).not.toContain("Hold the release.");
+    expect(last.options.resume).toBe("c-1");
+  });
+
+  it("hears what the product said as its session was ended: a message it took then is taken, and is not sent again", async () => {
+    const { console, product, runner, done, saved } = setup();
+    console.signal({ text: "Hold the release." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    // The product comes up as the runner is ended, and says what it runs with, the
+    // conversation and that it took the message: its words stand behind the runner's end.
+    runner.stop();
+    session.emit(...STARTED, { type: "taken" });
+    await done;
+    expect(saved.at(-1)).toEqual({ delivered: 1, conversation: "c-1", driver: "claude" });
+    expect(console.events()).toEqual([
+      [1, "person", "Hold the release."],
+      [2, "status", "The product started."],
+      [3, "status", "The session ended: exited."],
+    ]);
+  });
+
+  it("hands what a product that had taken nothing was sent to the session that follows, where a supervisor ends the session", async () => {
+    const { console, product, saved, log } = setup();
+    console.signal({ text: "Hold the release." });
+    const first = await sessionOf(product);
+    await until("the message", () => first.sent.length === 1);
+    // The product is still starting, and a supervisor restarts the agent.
+    console.signal({ kind: "restart", text: "Go on." });
+    const second = await sessionOf(product, 2);
+    await until("the message", () => second.sent.length === 1);
+    expect(console.ended).toEqual(["restarted"]);
+    // Nothing was delivered: what the first product was handed is handed to the second, before
+    // the restart's own words.
+    expect(saved.every((state) => state.delivered === 0)).toBe(true);
+    const text = second.sent[0]?.text ?? "";
+    expect(text).toContain("#1 · tell · Jane · 14:02]\nHold the release.");
+    expect(text).toContain("#2 · restart · Jane · 14:02]\nGo on.");
+    expect(text.indexOf("Hold the release.")).toBeLessThan(text.indexOf("Go on."));
+    // The record of the session that ended does not say the product read it.
+    expect(console.events(1)).toEqual([
+      [1, "person", "Hold the release."],
+      [
+        2,
+        "status",
+        "The session ended before the product took what it was sent: #1. It is sent again.",
+      ],
+      [3, "status", "The session ended: restarted."],
+    ]);
+    expect(log).toContain(
+      "#1 not taken when session 0199c4d8-0000-7000-8000-000000000001 ended: sent again",
+    );
+    // Taken in the session that follows, it is delivered, once.
+    second.emit(...STARTED, { type: "taken" }, { type: "turn_completed" });
+    await until("both to be counted", () => saved.at(-1)?.delivered === 2);
+    expect(second.sent).toHaveLength(1);
+
+    // A stop is no other: what the product had not started with waits for the restart.
+    const stopped = setup();
+    stopped.console.signal({ text: "Look at the build." });
+    const starting = await sessionOf(stopped.product);
+    await until("the message", () => starting.sent.length === 1);
+    stopped.console.signal({ kind: "stop", text: "Wait." });
+    await until("the stop", () => stopped.console.ended.length === 1);
+    await sleep(60);
+    expect(stopped.product.sessions).toHaveLength(1);
+    expect(stopped.saved.every((state) => state.delivered === 0)).toBe(true);
+    expect(stopped.console.events(1)).toEqual([
+      [1, "person", "Look at the build."],
+      [
+        2,
+        "status",
+        "The session ended before the product took what it was sent: #1. It is sent again.",
+      ],
+      [3, "person", "Wait."],
+      [4, "status", "The session ended: stopped."],
+    ]);
+    stopped.console.signal({ kind: "restart" });
+    const next = await sessionOf(stopped.product, 2);
+    await until("the message", () => next.sent.length === 1);
+    expect(next.sent[0]?.text).toContain("#1 · tell · Jane · 14:02]\nLook at the build.");
+  });
+
+  it("says on the record that the first message was never taken where the product ends by itself before it took it", async () => {
+    const { console, product, saved } = setup();
+    console.signal({ text: "Hold the release." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    // The product's process ends, with no word that it could not start: nothing is sent again,
+    // and the record, which holds the message since it was handed over, says it was not taken.
+    session.emit({ type: "ended", how: "exited" });
+    await until("the end of the session", () => console.ended.length === 1);
+    await until("the transcript", () => console.events().length === 3);
+    expect(console.events()).toEqual([
+      [1, "person", "Hold the release."],
+      [
+        2,
+        "status",
+        "The session ended before the product took what it was sent: #1. Whoever sent it says it again where it still matters.",
+      ],
+      [3, "status", "The session ended: exited."],
+    ]);
+    await until("the signal to be counted", () => saved.at(-1)?.delivered === 1);
+    await sleep(60);
+    expect(product.sessions).toHaveLength(1);
   });
 
   it("counts what the record says was never read, and what the runner acted on, behind what the product still owes a word of", async () => {

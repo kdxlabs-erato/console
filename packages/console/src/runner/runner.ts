@@ -266,9 +266,14 @@ interface OpenSession {
     written: boolean;
     /** Writes its signals on the record, as never read where so, and only those asked for where some are. */
     readonly write: (unread?: boolean, only?: (signal: RestSignal) => boolean) => void;
-    /** The numbers of its signals: counted as delivered once the product took the message. */
-    readonly signals: readonly number[];
+    /** Its signals: counted as delivered once the product took the message. */
+    readonly signals: readonly RestSignal[];
   }[];
+  /**
+   * Whether the product took a message of this session, or completed a turn of it. One that
+   * has not is still starting, for all the runner knows: it took nothing it was handed.
+   */
+  took: boolean;
   /** The number of the last event of it. */
   n: number;
   /** What the product did and the console has not been sent yet, and what that holds of memory. */
@@ -839,6 +844,7 @@ export function createRunner(options: RunnerOptions): Runner {
       turn: false,
       sent: [],
       handed: [],
+      took: false,
       n: 0,
       outbox: [],
       waiting: 0,
@@ -871,8 +877,11 @@ export function createRunner(options: RunnerOptions): Runner {
       await target.driver.stop().catch(() => undefined);
     }
     await target.pumped;
-    // What the product was handed and never took is on the record as that.
-    await settle(target, true);
+    await hearLast(target);
+    // What the product was handed and never took is sent again, by the console where the
+    // runner itself ends and by the runner where the product had not started; else it is on
+    // the record as never read.
+    await leave(target, stopped ? "after" : already || target.took ? undefined : "next");
     record(target, "status", `The session ended: ${how}.`, { ended: how });
     await flush(target, true);
     try {
@@ -1076,43 +1085,136 @@ export function createRunner(options: RunnerOptions): Runner {
     if (waited) {
       write();
     }
-    const numbers = batch.map((signal) => signal.number);
-    target.handed.push({ written: waited, write, signals: numbers });
+    target.handed.push({ written: waited, write, signals: batch });
     target.turn = true;
     // Everything handed over since the agent was last done: what a product that took nothing is sent again.
     target.sent = [...target.sent, ...batch];
     // Handed over, and not delivered until the product says it took it: a product that did
     // not start took nothing, and a runner that ends then is sent it again when it is back.
-    for (const number of numbers) {
-      owed.add(number);
+    for (const signal of batch) {
+      owed.add(signal.number);
     }
     await account();
   };
 
   /** Counts signals as delivered: the product took them, or the record says what became of them. */
-  const count = async (numbers: readonly number[]): Promise<void> => {
-    for (const number of numbers) {
-      owed.delete(number);
-      settled = Math.max(settled, number);
+  const count = async (signals: readonly RestSignal[]): Promise<void> => {
+    for (const signal of signals) {
+      owed.delete(signal.number);
+      settled = Math.max(settled, signal.number);
     }
     await account();
   };
 
   /**
-   * Writes on the record what the product was handed and the record does not hold yet: all of
-   * it once the agent is done with what it was sent, or as never read where the session is
-   * over or the agent cannot go on.
+   * The product took the oldest message it was handed: on the record now, where it was not
+   * written at once, and delivered.
    */
-  const settle = async (target: OpenSession, unread = false): Promise<void> => {
-    const counted: number[] = [];
+  const take = async (target: OpenSession): Promise<void> => {
+    target.took = true;
+    const message = target.handed.shift();
+    if (message !== undefined) {
+      if (!message.written) {
+        message.write();
+      }
+      await count(message.signals);
+    }
+  };
+
+  /**
+   * The agent is done with what it was sent: what the product was handed and did not say it
+   * took is taken, on the record where the record does not hold it yet, and delivered.
+   */
+  const settle = async (target: OpenSession): Promise<void> => {
+    target.took = true;
+    const counted: RestSignal[] = [];
     for (const message of target.handed.splice(0)) {
       if (!message.written) {
-        message.write(unread);
+        message.write();
       }
       counted.push(...message.signals);
     }
-    // On the record, as taken or as never read: delivered either way.
     await count(counted);
+  };
+
+  /**
+   * Hears what the product said as its session was ended. Its words wait in the queue behind
+   * whatever ended the session, and are let go there once the session is no longer the open
+   * one: a message it said it took then is taken, and not sent again, and the conversation it
+   * named is the one to go on with, where that message is.
+   */
+  const hearLast = async (target: OpenSession): Promise<void> => {
+    let named = false;
+    for (const message of queue) {
+      if (message.t !== "driver" || message.session !== target) {
+        continue;
+      }
+      const { event } = message;
+      if (event.type === "conversation") {
+        conversation = event.id;
+        named = true;
+      } else if (event.type === "taken") {
+        await take(target);
+      } else if (event.type === "turn_completed") {
+        await settle(target);
+        record(target, "status", "The turn completed.", { turn: "completed" });
+      }
+    }
+    if (named) {
+      await persist();
+    }
+  };
+
+  /**
+   * What becomes of what the product was handed and never took, as its session ends
+   * (ADR-0131). Sent again, it is not delivered, and the record holds nothing more of it than
+   * a line that says so: by the console to the runner started `after` this one, where the
+   * runner itself ends; by this runner in the `next` session, where the product had taken
+   * nothing of this one, and so had not started. Else it is let go: on the record as never
+   * read, which delivers it; what the record holds since it was handed over, to a product that
+   * waited for a message, is said in a line not to have been taken.
+   */
+  const leave = async (target: OpenSession, again?: "after" | "next"): Promise<void> => {
+    const messages = target.handed.splice(0);
+    const signals = messages.flatMap((message) => message.signals);
+    if (signals.length === 0) {
+      return;
+    }
+    const numbersOf = (some: readonly RestSignal[]): string =>
+      some.map((signal) => `#${signal.number}`).join(", ");
+    if (again !== undefined) {
+      const numbers = numbersOf(signals);
+      record(
+        target,
+        "status",
+        `The session ended before the product took what it was sent: ${numbers}. It is sent again.`,
+      );
+      log(`${numbers} not taken when session ${target.id} ended: sent again`);
+      if (again === "next") {
+        for (const signal of signals) {
+          // Waits to be handed over again: owed no word of the product's, and not delivered.
+          owed.delete(signal.number);
+          sentBefore.add(signal.number);
+        }
+        pending = [...signals, ...pending];
+      }
+      return;
+    }
+    const written = messages.filter((message) => message.written).flatMap((one) => one.signals);
+    if (written.length > 0) {
+      record(
+        target,
+        "status",
+        `The session ended before the product took what it was sent: ${numbersOf(written)}. Whoever sent it says it again where it still matters.`,
+      );
+    }
+    for (const message of messages) {
+      if (!message.written) {
+        message.write(true);
+      }
+    }
+    // On the record as never read: delivered.
+    await count(signals);
   };
 
   /**
@@ -1180,8 +1282,9 @@ export function createRunner(options: RunnerOptions): Runner {
       case "stop": {
         held = true;
         if (session !== undefined) {
-          // What the product had not taken is on the record before the stop that leaves it unread.
-          await settle(session, true);
+          // What the product had not taken is on the record before the stop that leaves it
+          // unread; what a product that had not started was handed waits for the restart.
+          await leave(session, session.took ? undefined : "next");
           record(session, "person", signal.text, signalData(signal));
         }
         await end("stopped");
@@ -1302,15 +1405,7 @@ export function createRunner(options: RunnerOptions): Runner {
         return;
       }
       case "taken": {
-        // The oldest message handed over: on the record now, where it was not written at once,
-        // and delivered.
-        const message = target.handed.shift();
-        if (message !== undefined) {
-          if (!message.written) {
-            message.write();
-          }
-          await count(message.signals);
-        }
+        await take(target);
         return;
       }
       case "turn_completed": {
@@ -1375,7 +1470,7 @@ export function createRunner(options: RunnerOptions): Runner {
           // Sent again, and on the record when it is taken then.
           target.handed = [];
           // What was let go is on the record as that, and is delivered: it is sent no more.
-          await count(gone.map((signal) => signal.number));
+          await count(gone);
         }
         target.sent = [];
         waits = cooled(waits);
