@@ -187,7 +187,14 @@ export function createApi(
       ttlMs: config.auth.sessionTtlMs,
       secure,
     });
-    const secrets = createSecrets(config.auth.secret);
+    const secrets = createSecrets(config.auth.secret, config.auth.previousSecret);
+    if (config.auth.previousSecret !== undefined) {
+      // A rotation under way (ADR-0127): said at every start, so that the secret before does
+      // not stay read for good once what it sealed is sealed again.
+      logger.warn(
+        "a previous secret is read beside the current one: run migrate reseal, then take AUTH_SECRET_PREVIOUS out",
+      );
+    }
     const tokens = new Tokens({
       database,
       clock,
@@ -713,7 +720,10 @@ export async function buildPlugins(
     host,
     discovery,
     memoryMb: config.plugins.memoryMb,
-    secrets: config.auth === undefined ? undefined : createSecrets(config.auth.secret),
+    secrets:
+      config.auth === undefined
+        ? undefined
+        : createSecrets(config.auth.secret, config.auth.previousSecret),
     records: new RecordStore({
       database,
       blobs,

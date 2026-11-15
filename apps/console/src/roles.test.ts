@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectRole } from "./roles.js";
+import { migrateStep, selectRole } from "./roles.js";
 
 describe("selectRole", () => {
   it("selects a known role from the first argument", () => {
@@ -22,5 +22,25 @@ describe("selectRole", () => {
     expect(selectRole([])).toEqual({ ok: false, reason: "missing" });
     expect(selectRole(["check"])).toEqual({ ok: false, reason: "unknown" });
     expect(selectRole(["API"])).toEqual({ ok: false, reason: "unknown" });
+  });
+});
+
+describe("migrateStep", () => {
+  it("is the migrations with no word, and the rotation's step with its own (ADR-0127)", () => {
+    expect(migrateStep([])).toBe("migrate");
+    expect(migrateStep(["reseal"])).toBe("reseal");
+  });
+
+  it("reads no other word, so that a word mistyped runs neither step", () => {
+    for (const words of [
+      ["resael"],
+      ["Reseal"],
+      ["reseal", "now"],
+      ["--reseal"],
+      [""],
+      ["migrate"],
+    ]) {
+      expect(migrateStep(words), words.join(" ")).toBeUndefined();
+    }
   });
 });

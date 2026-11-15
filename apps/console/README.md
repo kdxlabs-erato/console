@@ -6,7 +6,7 @@ The single deployable of the console: the API people and agents talk to, the wor
 |---|---|---|---|
 | `api` | `node dist/main.js api` | Serves HTTP: the probes, signing in and who is signed in, the [REST API](../../docs/specs/rest.md) of the board with its live feed, which people's pages and agents' commands both work through, and the default UI from `WEB_ROOT`. Stateless. | implemented |
 | `worker` | `node dist/main.js worker` | The schedules: the sweep of what time has ended, and the putting away of what was done or dropped long enough ago (ADR-0029). The job queue arrives with the first job. | implemented |
-| `migrate` | `node dist/main.js migrate` | Applies pending migrations, then exits. | implemented |
+| `migrate` | `node dist/main.js migrate` | Applies pending migrations, then exits. With the word `reseal` (`migrate reseal`), no migration: seals again, under the current `AUTH_SECRET`, every value that only `AUTH_SECRET_PREVIOUS` opens, says how many of each kind and how many are left, and exits, `1` where one is left ([ADR-0127](../../docs/adr/0127-the-deployments-secret-is-rotated-with-the-one-before-read-beside-it-and-a-step-that-seals-again.md)). | implemented |
 | `verify` | `node dist/main.js verify [<month>...]` | Checks the transcript of the months named, or of every month whose events are there, against the chains their sessions keep ([ADR-0090](../../docs/adr/0090-a-sessions-events-are-held-by-a-chain-whose-head-stays-with-the-session.md)): a line for every session that does not hold, a last line with the counts, and exit code 1 where one does not. Reads, and changes nothing. | implemented |
 
 ## Running locally
@@ -38,8 +38,9 @@ src/
   main.ts        role dispatch and exit codes; nothing else
   roles.ts       the list of roles
   roles/         api.ts (the composition root: wiring, the server, shutdown), worker.ts (the
-                 schedules), migrate.ts, verify.ts (the check of the transcript against its
-                 chains); each loaded only when selected
+                 schedules), migrate.ts, reseal.ts (`migrate reseal`, the step that ends a
+                 rotation of the deployment's secret, ADR-0127), verify.ts (the check of the
+                 transcript against its chains); each loaded only when selected
   transcript-chain.ts  what of an event is hashed, and how a session's chain folds (ADR-0090)
   config/        the only reader of process.env: schema, defaults, validation, NAME_FILE secrets
   logger.ts      pino, JSON to stdout, with the second fence of redaction; an error is logged by
@@ -53,8 +54,8 @@ src/
                  (records as they are on the wire), server.ts (listening and the shutdown of the
                  listener), request-context.ts (an id, a client address and an access-log line per
                  request), client-address.ts (trusted proxies and forwarding headers)
-  auth/          signing in and what follows from it: secrets.ts (sealing, token making and
-                 hashing), login.ts (the round trip to the git host), sessions.ts, connect.ts (an agent connecting with a code, ADR-0011), tokens.ts (the
+  auth/          signing in and what follows from it: secrets.ts (sealing, under the secret and
+                 read under the one before too, ADR-0127; token making and hashing), login.ts (the round trip to the git host), sessions.ts, connect.ts (an agent connecting with a code, ADR-0011), tokens.ts (the
                  tokens people make for their agents, scripts and consoles of their own, presented
                  as bearers), membership.ts (who may sign in, and whether a person is still in:
                  the domain and the administrators the configuration names, the listings an
@@ -157,6 +158,7 @@ migrations/      generated SQL and its journal, committed, shipped inside the im
 Read the root [`AGENTS.md`](../../AGENTS.md) first. This workspace is the composition root: it wires ports to adapters and exposes the console over HTTP and the job queue.
 
 - **`src/config/` is the only reader of `process.env`** (lint enforces it). A new variable means: schema in the config module, an entry in `.env.example`, and a row in the table in `deploy/README.md`, all in the same change. Every tunable has a safe generic default; production values are never committed.
+- **A value is sealed and opened through `createSecrets` alone** (`auth/secrets.ts`), made from the configuration with the secret before, so that a rotation reads everything ([ADR-0127](../../docs/adr/0127-the-deployments-secret-is-rotated-with-the-one-before-read-beside-it-and-a-step-that-seals-again.md)). A row that keeps a sealed value is a store of `db/queries/reseal.ts`, added there in the change that adds the column; a new purpose fails `reseal.test.ts` until the step reads it.
 - **`api` is stateless.** No in-memory state that affects correctness; everything several replicas must agree on is in the database.
 - **Every handler runs in this order:** validate input with a schema, check who is asking and what they may do, then do the work. Under a project, the project is found as the asker may see it before anything else (`inProject` in `rest.ts`), and every query that follows is scoped to it. Unknown and forbidden answer the same: a project that is not the asker's to see is not found.
 - **What an agent sends is data.** Bounded, stored, shown as text; never executed, never HTML.

@@ -32,16 +32,19 @@ const TOKEN_BYTES = 32;
 /**
  * Encrypts and authenticates with keys derived from the deployment's secret. A sealed value is
  * opaque and tamper-evident: `open` answers `undefined` for anything `seal` did not write for
- * the same purpose under the same secret, and never says why.
+ * the same purpose under the same secret, and never says why. Where the deployment names the
+ * secret it had before (ADR-0127), `open` reads what that one sealed too, and `seal` still
+ * writes under the current one alone.
  */
 export interface Secrets {
   seal(purpose: SealPurpose, plaintext: string): string;
   open(purpose: SealPurpose, sealed: string): string | undefined;
 }
 
-export function createSecrets(secret: string): Secrets {
+/** One secret's keys, a key to a purpose, derived once. */
+function keysOf(secret: string): (purpose: SealPurpose) => Buffer {
   const keys = new Map<SealPurpose, Buffer>();
-  const keyFor = (purpose: SealPurpose): Buffer => {
+  return (purpose) => {
     let key = keys.get(purpose);
     if (key === undefined) {
       key = Buffer.from(hkdfSync("sha256", secret, "console", purpose, KEY_BYTES));
@@ -49,37 +52,79 @@ export function createSecrets(secret: string): Secrets {
     }
     return key;
   };
+}
 
+function sealWith(key: Buffer, plaintext: string): string {
+  const iv = randomBytes(IV_BYTES);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const body = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  return `${VERSION}.${Buffer.concat([iv, body, cipher.getAuthTag()]).toString("base64url")}`;
+}
+
+function openWith(key: Buffer, sealed: string): string | undefined {
+  const [version, encoded, ...rest] = sealed.split(".");
+  if (version !== VERSION || encoded === undefined || rest.length > 0) {
+    return undefined;
+  }
+  const bytes = Buffer.from(encoded, "base64url");
+  if (bytes.byteLength < IV_BYTES + TAG_BYTES) {
+    return undefined;
+  }
+  try {
+    const decipher = createDecipheriv("aes-256-gcm", key, bytes.subarray(0, IV_BYTES));
+    decipher.setAuthTag(bytes.subarray(bytes.byteLength - TAG_BYTES));
+    return Buffer.concat([
+      decipher.update(bytes.subarray(IV_BYTES, bytes.byteLength - TAG_BYTES)),
+      decipher.final(),
+    ]).toString("utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The one sealer and opener of the deployment: every value the console seals goes through what
+ * this answers, so that a secret read beside the current one is read everywhere at once.
+ * `previous` is the secret the deployment had before, while a rotation lasts (ADR-0127).
+ */
+export function createSecrets(secret: string, previous?: string): Secrets {
+  const current = keysOf(secret);
+  const before = previous === undefined ? undefined : keysOf(previous);
   return {
-    seal(purpose, plaintext) {
-      const iv = randomBytes(IV_BYTES);
-      const cipher = createCipheriv("aes-256-gcm", keyFor(purpose), iv);
-      const body = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-      return `${VERSION}.${Buffer.concat([iv, body, cipher.getAuthTag()]).toString("base64url")}`;
-    },
-    open(purpose, sealed) {
-      const [version, encoded, ...rest] = sealed.split(".");
-      if (version !== VERSION || encoded === undefined || rest.length > 0) {
-        return undefined;
+    seal: (purpose, plaintext) => sealWith(current(purpose), plaintext),
+    open: (purpose, sealed) =>
+      openWith(current(purpose), sealed) ??
+      (before === undefined ? undefined : openWith(before(purpose), sealed)),
+  };
+}
+
+/**
+ * What a rotation finds of one sealed value (ADR-0127): the current secret opens it and it stays;
+ * the previous one alone does, and here it is sealed again under the current; or neither does.
+ * The value itself never leaves this function.
+ */
+export type Resealed =
+  | { readonly by: "current" }
+  | { readonly by: "previous"; readonly sealed: string }
+  | { readonly by: "neither" };
+
+/** Reads a sealed value under the two secrets of a rotation, the current one first. */
+export interface Rotation {
+  reseal(purpose: SealPurpose, sealed: string): Resealed;
+}
+
+export function createRotation(secret: string, previous: string): Rotation {
+  const current = keysOf(secret);
+  const before = keysOf(previous);
+  return {
+    reseal(purpose, sealed) {
+      if (openWith(current(purpose), sealed) !== undefined) {
+        return { by: "current" };
       }
-      const bytes = Buffer.from(encoded, "base64url");
-      if (bytes.byteLength < IV_BYTES + TAG_BYTES) {
-        return undefined;
-      }
-      try {
-        const decipher = createDecipheriv(
-          "aes-256-gcm",
-          keyFor(purpose),
-          bytes.subarray(0, IV_BYTES),
-        );
-        decipher.setAuthTag(bytes.subarray(bytes.byteLength - TAG_BYTES));
-        return Buffer.concat([
-          decipher.update(bytes.subarray(IV_BYTES, bytes.byteLength - TAG_BYTES)),
-          decipher.final(),
-        ]).toString("utf8");
-      } catch {
-        return undefined;
-      }
+      const plaintext = openWith(before(purpose), sealed);
+      return plaintext === undefined
+        ? { by: "neither" }
+        : { by: "previous", sealed: sealWith(current(purpose), plaintext) };
     },
   };
 }

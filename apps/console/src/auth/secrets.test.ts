@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createRotation,
   createSecrets,
   hashToken,
   newToken,
@@ -48,5 +49,72 @@ describe("secrets", () => {
     expect(sameSecret(token, `${token}x`)).toBe(false);
     expect(sameSecret("", "a")).toBe(false);
     expect(pkceChallenge("verifier")).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  });
+});
+
+describe("a rotation of the secret (ADR-0127)", () => {
+  const OLD = "the secret the deployment had before, long enough";
+  const OTHER = "a secret this deployment never had, as long as one is";
+  const before = createSecrets(OLD);
+  const now = createSecrets(SECRET);
+  const both = createSecrets(SECRET, OLD);
+
+  it("opens what the secret before sealed, and seals with the current one alone", () => {
+    const old = before.seal("pack-token", "kept from before");
+    expect(now.open("pack-token", old)).toBeUndefined();
+    expect(both.open("pack-token", old)).toBe("kept from before");
+    // An empty value is a value: it is the one before's to open as any other.
+    expect(both.open("pack-token", before.seal("pack-token", ""))).toBe("");
+
+    const sealed = both.seal("pack-token", "sealed now");
+    expect(now.open("pack-token", sealed)).toBe("sealed now");
+    expect(before.open("pack-token", sealed)).toBeUndefined();
+    expect(both.open("pack-token", sealed)).toBe("sealed now");
+  });
+
+  it("keeps a purpose's key its own under the secret before too, and opens nothing of a third secret", () => {
+    const old = before.seal("login", "a sign-in in flight");
+    expect(both.open("login", old)).toBe("a sign-in in flight");
+    expect(both.open("pack-token", old)).toBeUndefined();
+    expect(both.open("login", createSecrets(OTHER).seal("login", "x"))).toBeUndefined();
+    for (const bad of ["", "v1.", "v2.abc", `${old}.x`, `${old.slice(0, -2)}xx`, "v1.AAAA"]) {
+      expect(both.open("login", bad), bad).toBeUndefined();
+    }
+    // What is good until a moment is read under either secret, and no longer.
+    const until = new Date("2026-01-01T00:10:00Z");
+    const pending = sealJson(before, "login", { state: "s" }, until);
+    expect(openJson(both, "login", pending, new Date("2026-01-01T00:09:59Z"))).toEqual({
+      state: "s",
+    });
+    expect(openJson(both, "login", pending, until)).toBeUndefined();
+  });
+
+  it("says of a sealed value which secret opens it, and seals again what only the one before does", () => {
+    const rotation = createRotation(SECRET, OLD);
+    expect(rotation.reseal("agent-secret", now.seal("agent-secret", "current"))).toEqual({
+      by: "current",
+    });
+    const old = before.seal("agent-secret", "from before");
+    const read = rotation.reseal("agent-secret", old);
+    expect(read.by).toBe("previous");
+    if (read.by === "previous") {
+      expect(read.sealed).not.toBe(old);
+      expect(read.sealed).not.toContain("from before");
+      expect(now.open("agent-secret", read.sealed)).toBe("from before");
+      expect(before.open("agent-secret", read.sealed)).toBeUndefined();
+      // Sealed again, it is the current secret's, and a second reading leaves it.
+      expect(rotation.reseal("agent-secret", read.sealed)).toEqual({ by: "current" });
+    }
+    // Another purpose's value, a third secret's, and what is no sealed value at all.
+    for (const neither of [
+      before.seal("plugin-secret", "another purpose"),
+      createSecrets(OTHER).seal("agent-secret", "a third secret"),
+      "",
+      "v1.AAAA",
+      "x".repeat(100_000),
+      `v1.${"A".repeat(1_000_000)}`,
+    ]) {
+      expect(rotation.reseal("agent-secret", neither)).toEqual({ by: "neither" });
+    }
   });
 });

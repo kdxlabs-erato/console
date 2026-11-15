@@ -382,6 +382,58 @@ describe("signing in", () => {
     expect(short.problems).toEqual(["AUTH_SECRET: must be at least 32 characters"]);
     expect(short.message).not.toContain("hunter2");
   });
+
+  it("reads the secret before beside the current one, while a rotation lasts (ADR-0127)", () => {
+    const previous = "the-secret-the-deployment-had-before-this-one";
+    expect(loadConfig(signIn, noFiles).auth?.previousSecret).toBeUndefined();
+    expect(loadConfig({ ...signIn, AUTH_SECRET_PREVIOUS: previous }, noFiles).auth).toMatchObject({
+      secret: signIn.AUTH_SECRET,
+      previousSecret: previous,
+    });
+    // Empty counts as unset, and a file serves as for every secret.
+    expect(
+      loadConfig({ ...signIn, AUTH_SECRET_PREVIOUS: "" }, noFiles).auth?.previousSecret,
+    ).toBeUndefined();
+    expect(
+      loadConfig({ ...signIn, AUTH_SECRET_PREVIOUS_FILE: "/run/secrets/before" }, (path) => {
+        expect(path).toBe("/run/secrets/before");
+        return `${previous}\n`;
+      }).auth?.previousSecret,
+    ).toBe(previous);
+    expect(
+      problemsOf({
+        ...signIn,
+        AUTH_SECRET_PREVIOUS: previous,
+        AUTH_SECRET_PREVIOUS_FILE: "/run/secrets/before",
+      }).problems,
+    ).toEqual(["AUTH_SECRET_PREVIOUS and AUTH_SECRET_PREVIOUS_FILE are both set; use one"]);
+  });
+
+  it("refuses a secret before that is short, equal to the current one, or alone, and never says a value", () => {
+    const short = problemsOf({ ...signIn, AUTH_SECRET_PREVIOUS: "hunter2" });
+    expect(short.problems).toEqual(["AUTH_SECRET_PREVIOUS: must be at least 32 characters"]);
+    expect(short.message).not.toContain("hunter2");
+
+    const same = problemsOf({ ...signIn, AUTH_SECRET_PREVIOUS: signIn.AUTH_SECRET });
+    expect(same.problems).toEqual(["AUTH_SECRET_PREVIOUS: must differ from AUTH_SECRET"]);
+    expect(same.message).not.toContain(signIn.AUTH_SECRET);
+
+    // Without the current one it opens nothing, whether or not anything else of signing in is set.
+    const previous = "the-secret-the-deployment-had-before-this-one";
+    const alone = problemsOf({ DATABASE_URL, AUTH_SECRET_PREVIOUS: previous });
+    expect(alone.problems).toEqual(["AUTH_SECRET_PREVIOUS: read only beside AUTH_SECRET"]);
+    expect(alone.message).not.toContain(previous);
+    const { AUTH_SECRET: _auth, ...partial } = signIn;
+    expect(problemsOf({ ...partial, AUTH_SECRET_PREVIOUS: previous }).problems).toEqual([
+      "AUTH_SECRET_PREVIOUS: read only beside AUTH_SECRET",
+      "AUTH_SECRET: required once signing in is configured",
+    ]);
+    // A long value is a value still: it is bounded as the current one is, from below alone.
+    expect(
+      loadConfig({ ...signIn, AUTH_SECRET_PREVIOUS: "p".repeat(4096) }, noFiles).auth
+        ?.previousSecret,
+    ).toHaveLength(4096);
+  });
 });
 
 describe("a bucket", () => {

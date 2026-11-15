@@ -14,6 +14,7 @@ const SECRET_NAMES = [
   "GITHUB_APP_PRIVATE_KEY",
   "GOOGLE_CLIENT_SECRET",
   "AUTH_SECRET",
+  "AUTH_SECRET_PREVIOUS",
   "S3_SECRET_ACCESS_KEY",
   "S3_SESSION_TOKEN",
 ] as const;
@@ -209,6 +210,11 @@ const environmentSchema = z.object({
     .string()
     .min(MIN_SECRET_LENGTH, `must be at least ${MIN_SECRET_LENGTH} characters`)
     .optional(),
+  /** The secret the deployment had before, read beside the current one while a rotation lasts (ADR-0127). */
+  AUTH_SECRET_PREVIOUS: z
+    .string()
+    .min(MIN_SECRET_LENGTH, `must be at least ${MIN_SECRET_LENGTH} characters`)
+    .optional(),
   ADMINS: loginList,
   SESSION_TTL_DAYS: integer(30, 1, 365),
   TOKEN_DAYS_AT_MOST: z.coerce.number().int().min(1).max(MAX_TOKEN_DAYS).optional(),
@@ -299,8 +305,14 @@ export interface AuthConfig {
         readonly domain: string | undefined;
       }
     | undefined;
-  /** What travels through a browser between two requests is sealed with. */
+  /** What travels through a browser between two requests is sealed with, and everything the console keeps sealed. */
   readonly secret: string;
+  /**
+   * The secret the deployment had before (ADR-0127): what it sealed is still opened, nothing is
+   * sealed with it, and the `migrate` role's `reseal` seals what is left under it again. Unset
+   * but while a rotation lasts.
+   */
+  readonly previousSecret?: string | undefined;
   /**
    * The logins the operator names administrators (ADR-0022): let in when they sign in, and made
    * administrators then, so that the first one can get in; who else is in is the People page's.
@@ -489,6 +501,15 @@ function authOf(
     GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
     GOOGLE_WORKSPACE_DOMAIN: env.GOOGLE_WORKSPACE_DOMAIN,
   };
+  // The secret before is no setting of signing in: it opens what was sealed, beside the current
+  // one, and means nothing without it or equal to it.
+  if (env.AUTH_SECRET_PREVIOUS !== undefined) {
+    if (env.AUTH_SECRET === undefined) {
+      problems.push("AUTH_SECRET_PREVIOUS: read only beside AUTH_SECRET");
+    } else if (env.AUTH_SECRET_PREVIOUS === env.AUTH_SECRET) {
+      problems.push("AUTH_SECRET_PREVIOUS: must differ from AUTH_SECRET");
+    }
+  }
   if (Object.values(given).every((value) => value === undefined)) {
     if (env.ADMINS.length > 0) {
       problems.push("ADMINS: names administrators, and is read only with signing in configured");
@@ -553,6 +574,7 @@ function authOf(
     github,
     google,
     secret: env.AUTH_SECRET,
+    previousSecret: env.AUTH_SECRET_PREVIOUS,
     admins: env.ADMINS,
     domains,
     sessionTtlMs: env.SESSION_TTL_DAYS * 86_400_000,

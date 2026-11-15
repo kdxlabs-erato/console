@@ -1,11 +1,12 @@
 import process from "node:process";
 import { ConfigError, loadConfig } from "./config/config.js";
 import { createLogger } from "./logger.js";
-import { ROLES, type Role, selectRole } from "./roles.js";
+import { migrateStep, ROLES, type Role, selectRole } from "./roles.js";
 
 // The one entry point of the image: the first argument selects the role (ADR-0002). Exit
 // codes, which the image keeps: 64 for a usage error, 78 for invalid configuration, 70 for an
-// internal failure, and 1 where `verify` found a transcript that does not hold.
+// internal failure, and 1 where `verify` found a transcript that does not hold, or `migrate
+// reseal` left a value under the secret before.
 const EXIT_BROKEN = 1;
 const EXIT_USAGE = 64;
 const EXIT_CONFIG = 78;
@@ -42,8 +43,19 @@ async function run(role: Role, args: readonly string[]): Promise<void> {
         process.exitCode = EXIT_BROKEN;
       }
     } else {
-      const { runMigrate } = await import("./roles/migrate.js");
-      await runMigrate(config, logger);
+      const step = migrateStep(args);
+      if (step === undefined) {
+        process.stderr.write("usage: console migrate [reseal]\n");
+        process.exitCode = EXIT_USAGE;
+      } else if (step === "reseal") {
+        const { runReseal } = await import("./roles/reseal.js");
+        if ((await runReseal(config, logger)).left > 0) {
+          process.exitCode = EXIT_BROKEN;
+        }
+      } else {
+        const { runMigrate } = await import("./roles/migrate.js");
+        await runMigrate(config, logger);
+      }
     }
   } catch (error) {
     // Settings that only a role can check, such as a directory it is pointed at.

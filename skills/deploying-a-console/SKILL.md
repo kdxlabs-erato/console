@@ -95,7 +95,7 @@ Produces **`DEPLOY.md`** in the repository, from the template in resources.md: w
 
 ### Running it again
 
-The same skill, from phase 2, with the plan naming only what changes and its price: a new version of the console or of the connector, a plugin installed, updated or removed, the next size, a person let in or taken out, a secret rotated, a console shared with outside teams or customers, the console paused or removed. What each takes is in [running-it-again.md](references/running-it-again.md); each is confirmed at the plan, and the record is updated with it.
+The same skill, from phase 2, with the plan naming only what changes and its price: a new version of the console or of the connector, a plugin installed, updated or removed, the next size, a person let in or taken out, a secret rotated, the console's own secret replaced, a console shared with outside teams or customers, the console paused or removed. What each takes is in [running-it-again.md](references/running-it-again.md); each is confirmed at the plan, and the record is updated with it.
 
 ### Verdicts
 

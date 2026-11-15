@@ -310,7 +310,7 @@ The same with `"family": "console-worker"`, `"cpu": "256"`, `"memory": "512"`, o
 
 ### `deploy/migrate.task.json`
 
-The same with `"family": "console-migrate"`, `"cpu": "256"`, `"memory": "512"`, one container `migrate` with `"command": ["migrate"]` and the read-only root filesystem, `secrets` `DATABASE_URL` and `DATABASE_CA`, no environment, no port, no health check, the log stream prefix `migrate`, and no tunnel: a connector must never start for a one-off task. Where the image carries plugins, the task takes the `environment` and the task role of `api.task.json` as well: the role runs the plugins' upgrades, and an upgrade that reads a file of the plugin's records finds it only in the bucket the `api` wrote it to ([deploy/README.md](/deploy/README.md#plugins-in-the-image)).
+The same with `"family": "console-migrate"`, `"cpu": "256"`, `"memory": "512"`, one container `migrate` with `"command": ["migrate"]` and the read-only root filesystem, `secrets` `DATABASE_URL` and `DATABASE_CA`, no environment, no port, no health check, the log stream prefix `migrate`, and no tunnel: a connector must never start for a one-off task. Where the image carries plugins, the task takes the `environment`, the `secrets` and the task role of `api.task.json` as well: the role runs the plugins' upgrades, and an upgrade that reads a file of the plugin's records finds it only in the bucket the `api` wrote it to ([deploy/README.md](/deploy/README.md#plugins-in-the-image)); the console starts on the whole of signing in or on none of it, so the `secrets` come with the `environment`. The same `environment` and `secrets` are what the step that ends a rotation of the console's own secret runs with ("The console's own secret replaced").
 
 **Without a pipeline.** A deployment that is rolled by hand, or on a platform that runs one task definition and nothing before it, can run `migrate` inside the tasks instead of as a one-off: a container `migrate` in `api.task.json`, and at `large` in `worker.task.json` too, from the same image with `"command": ["migrate"]`, `"essential": false` and the `secrets` of the migrate task, and the role's own container with `"dependsOn": [{ "containerName": "migrate", "condition": "SUCCESS" }]` (the tunnel keeps its `dependsOn` on `api`). Every task of every role then migrates before it serves; tasks that start together wait on the advisory lock the migration takes, so none races another; a migration that fails leaves the role's container unstarted and the circuit breaker rolls the deployment back. The contract then holds per task rather than per rollout, which hard rule 8 allows in these words. The one-off task stays the default here because it stops the rollout before a single task is replaced.
 
@@ -528,7 +528,7 @@ Made on <date> with the skill `deploying-a-console` of the SkillCDN Console (ski
 - **A new version of the console:** set `CONSOLE_REF` in `deploy/console.env` to the commit of the newest release tag: the last line of `git ls-remote --tags https://github.com/skillcdn/console 'refs/tags/@skillcdn/console@*' | sort -t@ -k3 -V` is the highest version, with the commit in its first column; move `console-ui/` to the same version of the package when there is one; push. **A new connector:** `CLOUDFLARED_VERSION` there, push.
 - **A person added or removed:** with an organization at GitHub (`GITHUB_ORG`), in the organization, which the console reads every ten minutes; otherwise on the People page, or with `console person add <login>` and `console person deactivate <login>`, by an administrator; nothing to push. With a Google Workspace, everyone of `GOOGLE_WORKSPACE_DOMAIN` is in. `ADMINS` in `deploy/api.task.json` names only the first administrators, who make others on the People page.
 - **The next size:** the numbers in `deploy/api.task.json` (and `deploy/worker.task.json` at `large`), `API_COUNT` and `WORKER_COUNT` in `deploy/console.env`, push; to `large`, also `deploy/worker.task.json` written as the skill's resources.md gives it and `WORKER_IN_PROCESS` dropped from the api task; the database: `aws rds modify-db-instance --db-instance-identifier console --db-instance-class <class> --apply-immediately` (a few minutes of unavailability).
-- **A secret rotated:** the new value into a secrets file of the same shape with the skill's script (`set`), then `node <the script> store <file> /console`, which overwrites the parameter in its tier (`$(npm root -g)/@skillcdn/console/skills/deploying-a-console/scripts/store-secrets.mjs`; `DATABASE_CA` is in the advanced tier, which an `aws ssm put-parameter --overwrite` by hand must name with `--tier Advanced`); then `aws ecs update-service --cluster console --service api --force-new-deployment`.
+- **A secret rotated:** the new value into a secrets file of the same shape with the skill's script (`set`), then `node <the script> store <file> /console`, which overwrites the parameter in its tier (`$(npm root -g)/@skillcdn/console/skills/deploying-a-console/scripts/store-secrets.mjs`; `DATABASE_CA` is in the advanced tier, which an `aws ssm put-parameter --overwrite` by hand must name with `--tier Advanced`); then `aws ecs update-service --cluster console --service api --force-new-deployment`. **The console's own secret (`AUTH_SECRET`)** is never overwritten alone: it is replaced with the skill, in three steps that lose nothing it sealed and sign nobody out.
 - **The organization's own console:** its source in `console-ui/` (building-a-console makes it); a push builds it into the image.
 - **Paused:** `aws ecs update-service --cluster console --service api --desired-count 0` (and `worker`), `aws rds stop-db-instance --db-instance-identifier console` (seven days at most); the reverse resumes.
 - **Removed:** the skill's "Removing", resource by resource, confirmed.
@@ -543,6 +543,43 @@ Made on <date> with the skill `deploying-a-console` of the SkillCDN Console (ski
 ```
 
 A change to `DEPLOY.md` or `README.md` alone does not run the workflow (its `paths`), so the record is pushed without a deployment: `git add DEPLOY.md README.md && git commit -m "The record" && git push`, never `git add -A` here, after `git status --short` shows nothing else of the folder as untracked (`scratch/`, the files and `.skillcdn-console.json` are ignored).
+
+## The console's own secret replaced
+
+`AUTH_SECRET` keys everything the console seals, so it is never overwritten alone: it is replaced in three steps, and then nothing sealed is lost and nobody is signed out ([deploy/README.md](/deploy/README.md#rotating-the-secret)). The console must be at 0.5.1 or later (`console whoami` says its version); an older one is moved to a new version first. The plan names the three steps and the two pushes.
+
+**1. The new secret beside the old one.** In the repository first, without pushing: one line more in the `secrets` of `deploy/api.task.json`, and of every other task definition that carries `AUTH_SECRET`,
+
+```json
+{ "name": "AUTH_SECRET_PREVIOUS", "valueFrom": "arn:aws:ssm:<region>:<account>:parameter/console/AUTH_SECRET_PREVIOUS" }
+```
+
+and `deploy/migrate.task.json` given the `environment` and the `secrets` of `deploy/api.task.json`, this line among them, where it does not carry them yet; commit. Then the two values, neither ever shown: the old one from its parameter into the secrets file under its new name, a new one generated, both stored:
+
+```sh
+aws ssm get-parameter --name /console/AUTH_SECRET --with-decryption --query Parameter.Value --output text | set_secret AUTH_SECRET_PREVIOUS
+node -e "process.stdout.write(require('node:crypto').randomBytes(36).toString('base64url'))" | set_secret AUTH_SECRET
+node scratch/store-secrets.mjs store "$SECRETS" /console
+```
+
+Push at once, and watch the run to green: the services roll with both secrets. Check: the `api` says so as it starts, `aws logs tail /console --since 15m --format short --log-stream-name-prefix api | grep 'previous secret'`.
+
+**2. What the old one sealed, sealed again.** When the run is green and the services have rolled, the console's own step, as a one-off task from the migrate task definition with its word:
+
+```sh
+set -a; . deploy/console.env; set +a
+NETWORK="awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$TASKS_SECURITY_GROUP],assignPublicIp=ENABLED}"
+TASK=$(aws ecs run-task --cluster "$ECS_CLUSTER" --task-definition console-migrate --launch-type FARGATE --network-configuration "$NETWORK" --overrides '{"containerOverrides":[{"name":"migrate","command":["migrate","reseal"]}]}' --query 'tasks[0].taskArn' --output text)
+aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK"
+aws ecs describe-tasks --cluster "$ECS_CLUSTER" --tasks "$TASK" --query 'tasks[0].containers[0].exitCode' --output text
+aws logs tail /console --since 15m --format short --log-stream-name-prefix migrate | grep 'sealed again'
+```
+
+The exit code is `0` and the line says `"left":0`: nothing is under the old secret any more. `resealed` is how many values were sealed again; `unopened`, where it is not `0`, is how many were already lost before this, under a secret from an earlier time, which the person is told with their kinds (`kinds` in the line) so that their holders set them again. An exit code of `1` with `left` above `0` means a task of the old definition was still running: wait for the rollout to end and run the step again. An exit code of `78` means the task was not given the two secrets: step 1's lines are missing from `deploy/migrate.task.json`.
+
+**3. The old one taken out.** Only after `"left":0`: the `AUTH_SECRET_PREVIOUS` line out of every task definition, commit, push, the run watched to green. Then, on the person's word, the parameter deleted (`aws ssm delete-parameter --name /console/AUTH_SECRET_PREVIOUS`) and the secrets file deleted again. The record's line, with the date.
+
+Where the secret leaked to someone who may hold a copy of the database too, the tokens it sealed are made anew at their sources as well, each by whoever holds it: a pack token at the SkillCDN deployment, a plugin's credential at its service. The person is told this at the plan.
 
 ## Removing
 

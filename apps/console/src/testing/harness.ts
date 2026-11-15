@@ -91,6 +91,10 @@ export interface HarnessOptions {
   readonly listed?: readonly string[];
   /** The logins the operator names administrators. Nobody when left out. */
   readonly admins?: readonly string[];
+  /** The deployment's secret; the harness's own when left out. */
+  readonly secret?: string;
+  /** The secret the deployment had before, read beside the current one (ADR-0127). None when left out. */
+  readonly previousSecret?: string;
   /** The time everything is told; the system's when left out. */
   readonly clock?: Clock;
   readonly sessionTtlMs?: number;
@@ -185,7 +189,8 @@ export function createHarness(testDatabase: TestDatabase, options: HarnessOption
         : {
             auth: {
               publicUrl: origin,
-              secret: "a secret for tests, long enough to be one",
+              secret: options.secret ?? "a secret for tests, long enough to be one",
+              previousSecret: options.previousSecret,
               admins: options.admins ?? [],
               domains: options.domains ?? [],
               sessionTtlMs: options.sessionTtlMs ?? 30 * 86_400_000,
