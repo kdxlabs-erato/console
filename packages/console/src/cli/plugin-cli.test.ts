@@ -5,11 +5,13 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import type { PluginDescription } from "../plugin/define.js";
 import type { ServerLoad } from "../plugin/load.js";
+import { forbiddenImportsIn, removedGlobalsIn } from "../plugin/sandbox.js";
 import {
   classesIn,
   consoleNamesIn,
   coveredByFiles,
   isPermissiveLicense,
+  MAX_CHECKED_FILE_BYTES,
   readConsoleClasses,
   sameAsEnglish,
   strayConsoleClasses,
@@ -475,6 +477,77 @@ describe("console-plugin check", () => {
     expect(without.out()).toMatch(/^ok: hello 0.1.0: .*; 1 warning$/m);
   });
 
+  it("refuses a file larger than it reads whole, by its size, and reads one that is not", async () => {
+    const root = await pluginDir();
+    await built(root);
+    const chunks = join(root, "dist", "web", "chunks");
+    await mkdir(chunks, { recursive: true });
+    const name = '"sc-buton";';
+    // A file of exactly the bound is read, to its last byte: the name at its end is found.
+    await writeFile(
+      join(chunks, "most.js"),
+      `${"/".repeat(MAX_CHECKED_FILE_BYTES - name.length - 1)}\n${name}`,
+    );
+    const most = ioOf(root);
+    expect(await runPluginCli(["check", root], most.io)).toBe(0);
+    expect(most.out()).toContain("warning: dist/web/chunks/most.js names sc-buton:");
+
+    // One byte more, and the file is refused by its size, in words that say the bound, and is
+    // not read: nothing is said of what it holds.
+    const refusal = (file: string) =>
+      `error: ${file} is ${MAX_CHECKED_FILE_BYTES + 1} bytes: the check reads a file of up to 4 MiB (${MAX_CHECKED_FILE_BYTES} bytes) whole, and did not read this one`;
+    await writeFile(
+      join(chunks, "big.js"),
+      `${"/".repeat(MAX_CHECKED_FILE_BYTES - name.length)}\n${name}`,
+    );
+    const big = ioOf(root);
+    expect(await runPluginCli(["check", root], big.io)).toBe(1);
+    expect(big.out()).toContain(refusal("dist/web/chunks/big.js"));
+    expect(big.out()).not.toContain("big.js names");
+    expect(big.out()).toMatch(/^1 problem in hello 0.1.0/m);
+    await rm(join(chunks, "big.js"));
+    await rm(join(chunks, "most.js"));
+
+    // Every file the check reads whole is held to it: the bundle's entry and its stylesheet,
+    // the server module, which is then neither read nor loaded, and a skill.
+    const over = "/".repeat(MAX_CHECKED_FILE_BYTES + 1);
+    let loaded = 0;
+    const loading = async (): Promise<ServerLoad> => {
+      loaded += 1;
+      return { ok: true, description: HELLO_DESCRIPTION };
+    };
+    for (const file of [
+      "dist/web/index.js",
+      "dist/web/index.css",
+      "dist/server/index.js",
+      "skills/hello/SKILL.md",
+      "SKILLCDN.md",
+    ]) {
+      const path = join(root, ...file.split("/"));
+      const kept = await readFile(path, "utf8");
+      await writeFile(path, over);
+      loaded = 0;
+      const one = ioOf(root, loading);
+      expect(await runPluginCli(["check", root], one.io), file).toBe(1);
+      expect(one.out(), file).toContain(refusal(file));
+      expect(one.out(), file).toMatch(/^1 problem in hello 0.1.0/m);
+      expect(loaded, file).toBe(file === "dist/server/index.js" ? 0 : 1);
+      await writeFile(path, kept);
+    }
+
+    // The two manifests are read first, and nothing is read after one that is not.
+    for (const file of ["package.json", "console-plugin.json"]) {
+      const path = join(root, file);
+      const kept = await readFile(path, "utf8");
+      await writeFile(path, over);
+      const one = ioOf(root);
+      expect(await runPluginCli(["check", root], one.io), file).toBe(1);
+      expect(one.out(), file).toContain(refusal(file));
+      await writeFile(path, kept);
+    }
+    expect(await runPluginCli(["check", root], ioOf(root).io)).toBe(0);
+  });
+
   it("holds package.json to what a store asks", async () => {
     const root = await pluginDir();
     await built(root);
@@ -566,6 +639,10 @@ describe("console-plugin", () => {
     const { io, out, err } = ioOf(".");
     expect(await runPluginCli([], io)).toBe(0);
     expect(out()).toMatch(/console-plugin init <dir> --key <key>/);
+    // The bound of what the check reads is said where the check is.
+    expect(out()).toContain(
+      "A file is read whole, up to 4 MiB: a larger one is a problem, and is not read.",
+    );
     expect(await runPluginCli(["--version"], io)).toBe(0);
     expect(out()).toMatch(/0\.4\.1/);
     expect(await runPluginCli(["publish"], io)).toBe(2);
@@ -637,6 +714,48 @@ describe("the checks", () => {
     expect(
       strayConsoleClasses("index.js", '"sc-panel sc-plugin-held sc-buton sc-nothing-"', classes),
     ).toEqual({ pagesOwn: ["sc-plugin-held"], unknown: ["sc-buton", "sc-nothing-"] });
+  });
+
+  it("read a file as large as the check takes in a time that grows with its size, whatever it holds", () => {
+    // What a reader answered, where it answered within the time: each of these took minutes on
+    // a file of this size, or threw, when it was read with an expression that tries again from
+    // every place it could have begun.
+    const within = <T>(ms: number, read: () => T): T => {
+      const from = performance.now();
+      const answer = read();
+      expect(performance.now() - from).toBeLessThan(ms);
+      return answer;
+    };
+    const most = MAX_CHECKED_FILE_BYTES;
+    // Comments opened and never closed: the rest of the sheet is a comment, as a browser reads it.
+    expect(within(2_000, () => classesIn("/* ".repeat(Math.floor(most / 3))))).toEqual([]);
+    expect(classesIn(".a { } /* .b { } */ .c { } /* .d { }")).toEqual(["a", "c"]);
+    // One name without end, as a script or a stylesheet holds it: read as one name, at any length.
+    const endless = `sc-${"a-".repeat(2 * most)}`;
+    expect(within(2_000, () => consoleNamesIn(`"${endless}"`))).toEqual([endless]);
+    expect(within(2_000, () => classesIn(`.${endless} { }`))).toEqual([endless]);
+    // A name is read as it was: up to the hyphen it ends on, and no further than a doubled one.
+    expect(consoleNamesIn('"sc-a--b sc-c--- sc-d-9 sc-e-f- sc-g-_h sc--i"')).toEqual([
+      "sc-a-",
+      "sc-c-",
+      "sc-d-9",
+      "sc-e-f-",
+      "sc-g-",
+    ]);
+    // An import, a call or a member with nothing after it but blanks.
+    const blanks = " ".repeat(most);
+    expect(within(2_000, () => webBundleProblems(`import${blanks}x`))).toEqual([]);
+    expect(within(2_000, () => webBundleProblems(`fetch${blanks}x`))).toEqual([]);
+    expect(within(2_000, () => forbiddenImportsIn(`import${blanks}x`))).toEqual([]);
+    expect(within(2_000, () => removedGlobalsIn(`globalThis${blanks}x`))).toEqual([]);
+    // And what they find is what they found: an import by a call, with blanks around its bracket.
+    expect(webBundleProblems('import  (  "https://cdn.example/x.js")')).toEqual([
+      "imports https://cdn.example/x.js from elsewhere: a bundle is self-contained",
+    ]);
+    expect(forbiddenImportsIn('import  (  "node:http"); import"net"; import ("fs")')).toEqual([
+      "node:http",
+      "net",
+    ]);
   });
 
   it("find what a web bundle must not do", () => {

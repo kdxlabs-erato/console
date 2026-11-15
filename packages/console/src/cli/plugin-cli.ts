@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 import type { ServerLoad } from "../plugin/load.js";
 import { isPluginKey, RESERVED_PLUGIN_KEYS } from "../plugin/manifest.js";
 import { lineRangeFrom, versionOfDependency } from "../plugin/semver.js";
-import { checkPlugin, readConsoleClasses } from "./plugin-check.js";
+import { checkPlugin, MAX_CHECKED_FILE_BYTES, readConsoleClasses } from "./plugin-check.js";
 import { LANGUAGE_TAG, nameFromKey, PACKAGE_NAME, writePluginFromTemplate } from "./plugin-init.js";
 
 export interface PluginCliIo {
@@ -51,6 +51,7 @@ export const PLUGIN_USAGE = `console-plugin: writes and checks a plugin of the S
       the manifest, package.json (a permissive license, no install scripts, files that ship
       what runs), the server module loaded under the host's hardening and held to the manifest,
       the web bundle self-contained and its classes prefixed, the skills, the migrations.
+      A file is read whole, up to ${MAX_CHECKED_FILE_BYTES / (1024 * 1024)} MiB: a larger one is a problem, and is not read.
       Exits 0 with a summary, 1 with every problem found.
 
   console-plugin help | --version

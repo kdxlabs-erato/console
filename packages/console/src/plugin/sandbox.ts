@@ -43,8 +43,11 @@ export function isForbiddenBuiltin(specifier: string): boolean {
   );
 }
 
+// The blanks around an import's bracket are taken in one way only, `\s*(?:\(\s*)?`: written as
+// `\s*\(?\s*`, a run of blanks with no bracket in it is divided between the two in every way
+// before the expression gives up, the square of its length, and a bundle is megabytes.
 const IMPORT_OR_REQUIRE =
-  /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*|\bprocess\.getBuiltinModule\s*\(\s*)["'`](node:)?([a-z_/]+)["'`]/g;
+  /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\brequire\s*\(\s*|\bprocess\.getBuiltinModule\s*\(\s*)["'`](node:)?([a-z_/]+)["'`]/g;
 
 /** The built-ins a bundle's text imports or requires that the host refuses, each once, as written. */
 export function forbiddenImportsIn(source: string): string[] {

@@ -82,14 +82,96 @@ export function coveredByFiles(files: readonly string[], path: string): boolean 
   });
 }
 
+/**
+ * The most the check reads of one file of a plugin's package, in bytes: 4 MiB. A file is read
+ * whole, into memory and through every reader here, and a plugin's files are a fraction of
+ * that: the example's server module, with everything it bundles, is under 1 MiB, the script of
+ * its pages a few dozen KiB. One beyond the bound is refused by its size and not read. The
+ * readers themselves take a time that grows with a file's size, whatever it holds: a bound on
+ * the size bounds nothing where a reader tries again from every place it could have begun.
+ */
+export const MAX_CHECKED_FILE_BYTES = 4 * 1024 * 1024;
+
+/** What is said of a file beyond the bound, in the words of a problem. */
+const tooLarge = (file: string, bytes: number): string =>
+  `${file} is ${bytes} bytes: the check reads a file of up to ${MAX_CHECKED_FILE_BYTES / (1024 * 1024)} MiB (${MAX_CHECKED_FILE_BYTES} bytes) whole, and did not read this one`;
+
+/** A file of the package as text; or nothing of one that is not there, and its size of one too large to read whole. */
+async function readWhole(
+  path: string,
+): Promise<{ readonly text: string } | { readonly bytes: number } | null> {
+  try {
+    const found = await stat(path);
+    if (!found.isFile()) {
+      return null;
+    }
+    if (found.size > MAX_CHECKED_FILE_BYTES) {
+      return { bytes: found.size };
+    }
+    return { text: await readFile(path, "utf8") };
+  } catch {
+    return null;
+  }
+}
+
+/** A file of the package as one check reads it: its text, or that it is not there, or that it was refused by its size. */
+type PackageFile = { readonly text: string } | "missing" | "refused";
+
+/**
+ * The reader of one check: a file of the package by its path under the root, as the manifest
+ * writes it and a problem names it. A file beyond the bound is a problem said once, however
+ * often the check comes to it, and is not read.
+ */
+function packageReader(root: string, errors: string[]): (file: string) => Promise<PackageFile> {
+  const refused = new Set<string>();
+  return async (file) => {
+    const read = await readWhole(join(root, file));
+    if (read === null) {
+      return "missing";
+    }
+    if ("bytes" in read) {
+      if (!refused.has(file)) {
+        refused.add(file);
+        errors.push(tooLarge(file, read.bytes));
+      }
+      return "refused";
+    }
+    return read;
+  };
+}
+
 /** A class selector: a dot not after a digit or another dot (0.5em is a number), then a name. */
 const CLASS_SELECTOR = /(?<![\d.])\.(-?[A-Za-z_][\w-]*)/g;
 
+/**
+ * A stylesheet without its comments, read from one end to the other once: a comment opened and
+ * never closed takes the rest of the sheet with it, as a browser reads it. An expression that
+ * looks for the closing of each would look to the end of the sheet again for every one opened.
+ */
+function withoutComments(css: string): string {
+  const kept: string[] = [];
+  let at = 0;
+  for (;;) {
+    const open = css.indexOf("/*", at);
+    if (open < 0) {
+      kept.push(css.slice(at));
+      break;
+    }
+    kept.push(css.slice(at, open));
+    const close = css.indexOf("*/", open + 2);
+    if (close < 0) {
+      break;
+    }
+    at = close + 2;
+  }
+  return kept.join("");
+}
+
 /** The classes a stylesheet styles, each once; comments and quoted strings are not read. */
 export function classesIn(css: string): string[] {
-  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/"[^"]*"|'[^']*'/g, '""');
+  const bare = withoutComments(css).replace(/"[^"]*"|'[^']*'/g, '""');
   const found = new Set<string>();
-  for (const match of withoutComments.matchAll(CLASS_SELECTOR)) {
+  for (const match of bare.matchAll(CLASS_SELECTOR)) {
     if (match[1] !== undefined && !/^\d/.test(match[1])) {
       found.add(match[1]);
     }
@@ -156,13 +238,21 @@ export async function readConsoleClasses(stylesDir: string): Promise<ConsoleClas
 /**
  * A name in the console's own prefix, as a script holds one: `sc-` not inside a longer word nor
  * a custom property (`--sc-color-text` is a token), then the name, with the hyphen it ends on
- * where the script finishes it itself (`sc-badge-` and a tone).
+ * where the script finishes it itself (`sc-badge-` and a tone). The expression takes the run of
+ * letters, digits and hyphens whole, and the name ends in it at the first hyphen doubled: an
+ * expression that takes it a word and a hyphen at a time keeps a place for each, and a name of
+ * some megabytes was more places than it has.
  */
-const CONSOLE_NAME = /(?<![\w-])sc-[a-z][a-z0-9]*(?:-[a-z0-9]+)*-?/g;
+const CONSOLE_NAME = /(?<![\w-])sc-[a-z][a-z0-9-]*/g;
 
 /** The names in the console's prefix a script holds, each once. */
 export function consoleNamesIn(script: string): string[] {
-  return [...new Set(script.match(CONSOLE_NAME) ?? [])];
+  const found = new Set<string>();
+  for (const [run] of script.matchAll(CONSOLE_NAME)) {
+    const doubled = run.indexOf("--");
+    found.add(doubled < 0 ? run : run.slice(0, doubled + 1));
+  }
+  return [...found];
 }
 
 /**
@@ -194,7 +284,11 @@ export function strayConsoleClasses(
 const some = (names: readonly string[], most = 8): string =>
   `${names.slice(0, most).join(", ")}${names.length > most ? `, and ${names.length - most} more` : ""}`;
 
-const WEB_IMPORT = /(?:\bfrom\s*|\bimport\s*\(?\s*|\bexport\s+\*\s+from\s*)["'`]([^"'`]+)["'`]/g;
+// The blanks around an import's bracket are taken in one way only, `\s*(?:\(\s*)?`: written as
+// `\s*\(?\s*`, a run of blanks with no bracket in it is divided between the two in every way
+// before the expression gives up, which is the square of its length.
+const WEB_IMPORT =
+  /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\bexport\s+\*\s+from\s*)["'`]([^"'`]+)["'`]/g;
 const WEB_FORBIDDEN =
   /\b(fetch|XMLHttpRequest|WebSocket|EventSource|importScripts|sendBeacon)\s*\(|document\.cookie|\bnavigator\.serviceWorker\b/g;
 
@@ -228,18 +322,23 @@ async function exists(path: string): Promise<"file" | "directory" | null> {
   }
 }
 
-async function readJson(path: string): Promise<{ value: unknown } | { problem: string }> {
-  let text: string;
-  try {
-    text = await readFile(path, "utf8");
-  } catch {
-    return { problem: `${posix.basename(path)} is missing` };
+/** A JSON file at the package's root, by its name, which is what a problem with it is said by. */
+async function readJson(
+  root: string,
+  name: string,
+): Promise<{ value: unknown } | { problem: string }> {
+  const read = await readWhole(join(root, name));
+  if (read === null) {
+    return { problem: `${name} is missing` };
+  }
+  if ("bytes" in read) {
+    return { problem: tooLarge(name, read.bytes) };
   }
   try {
-    return { value: JSON.parse(text) as unknown };
+    return { value: JSON.parse(read.text) as unknown };
   } catch (error) {
     return {
-      problem: `${posix.basename(path)} is not JSON: ${error instanceof Error ? error.message : String(error)}`,
+      problem: `${name} is not JSON: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }
@@ -269,15 +368,15 @@ async function checkSkills(
   skillsDir: string,
   errors: string[],
   warnings: string[],
+  read: (file: string) => Promise<PackageFile>,
 ): Promise<number> {
-  const manifestPath = join(root, "SKILLCDN.md");
-  const manifestText = await readFile(manifestPath, "utf8").catch(() => null);
-  if (manifestText === null) {
+  const manifest = await read("SKILLCDN.md");
+  if (manifest === "missing") {
     errors.push(
       "SKILLCDN.md is missing at the package root: a plugin with skills has their manifest there",
     );
-  } else {
-    const matter = frontMatter(manifestText);
+  } else if (manifest !== "refused") {
+    const matter = frontMatter(manifest.text);
     if (matter === null || !matter.scalars.name || !matter.scalars.description) {
       errors.push("SKILLCDN.md has no front-matter with name and description");
     }
@@ -293,13 +392,16 @@ async function checkSkills(
       continue;
     }
     const file = posix.join(skillsDir, entry.name, "SKILL.md");
-    const text = await readFile(join(root, file), "utf8").catch(() => null);
-    if (text === null) {
+    const skill = await read(file);
+    if (skill === "missing") {
       errors.push(`${file} is missing: a skill directory holds a SKILL.md`);
       continue;
     }
     count += 1;
-    const matter = frontMatter(text);
+    if (skill === "refused") {
+      continue;
+    }
+    const matter = frontMatter(skill.text);
     if (matter === null) {
       errors.push(`${file} has no front-matter`);
       continue;
@@ -365,22 +467,24 @@ async function checkWeb(
   errors: string[],
   warnings: string[],
   classes: ConsoleClasses | undefined,
+  read: (file: string) => Promise<PackageFile>,
 ): Promise<void> {
   const dir = join(root, webDir);
   if ((await exists(dir)) !== "directory") {
     errors.push(`web names ${webDir}, which is not a directory: build the bundle first`);
     return;
   }
-  const script = await readFile(join(dir, "index.js"), "utf8").catch(() => null);
-  if (script === null) {
+  const script = await read(`${webDir}/index.js`);
+  if (script === "missing") {
     errors.push(`${webDir}/index.js is missing: the frame loads the bundle from there`);
-  } else {
-    for (const problem of webBundleProblems(script)) {
+  } else if (script !== "refused") {
+    for (const problem of webBundleProblems(script.text)) {
       errors.push(`${webDir}/index.js ${problem}`);
     }
   }
-  const css = await readFile(join(dir, "index.css"), "utf8").catch(() => null);
-  if (css !== null) {
+  const sheet = await read(`${webDir}/index.css`);
+  if (sheet !== "missing" && sheet !== "refused") {
+    const css = sheet.text;
     if (
       /@import\s+(?:url\()?["']?(?:https?:)?\/\//.test(css) ||
       /url\(\s*["']?(?:https?:)?\/\//.test(css)
@@ -403,11 +507,11 @@ async function checkWeb(
   // A plugin's pages are built from the console's parts, as the console's own are (ADR-0106):
   // every file of the bundle is read for the classes of the console it uses.
   for (const file of await bundleFiles(dir)) {
-    const text = await readFile(join(dir, file), "utf8").catch(() => null);
-    if (text === null) {
+    const found = await read(`${webDir}/${file}`);
+    if (found === "missing" || found === "refused") {
       continue;
     }
-    const stray = strayConsoleClasses(file, text, classes);
+    const stray = strayConsoleClasses(file, found.text, classes);
     if (stray.pagesOwn.length > 0) {
       const one = stray.pagesOwn.length === 1;
       errors.push(
@@ -483,7 +587,7 @@ export async function checkPlugin(
     return { ok: false, errors: [`${root} is not a directory`], warnings, summary: null };
   }
 
-  const manifestRead = await readJson(join(root, "console-plugin.json"));
+  const manifestRead = await readJson(root, "console-plugin.json");
   if ("problem" in manifestRead) {
     return { ok: false, errors: [manifestRead.problem], warnings, summary: null };
   }
@@ -517,7 +621,7 @@ export async function checkPlugin(
     );
   }
 
-  const packageRead = await readJson(join(root, "package.json"));
+  const packageRead = await readJson(root, "package.json");
   let version = "0.0.0";
   if ("problem" in packageRead) {
     errors.push(packageRead.problem);
@@ -595,12 +699,15 @@ export async function checkPlugin(
     }
   }
 
+  const read = packageReader(root, errors);
   let description: PluginDescription | null = null;
   const serverPath = join(root, manifest.server);
-  if ((await exists(serverPath)) !== "file") {
+  const server = await read(manifest.server);
+  if (server === "missing") {
     errors.push(`server names ${manifest.server}, which is missing: build the server module first`);
-  } else {
-    const source = await readFile(serverPath, "utf8");
+  } else if (server !== "refused") {
+    // A module beyond the bound is neither read nor loaded: what it is was not looked at.
+    const source = server.text;
     for (const specifier of forbiddenImportsIn(source)) {
       errors.push(`${manifest.server} imports ${specifier}, which the host refuses`);
     }
@@ -645,11 +752,11 @@ export async function checkPlugin(
   }
 
   if (manifest.web !== undefined) {
-    await checkWeb(root, manifest, manifest.web, errors, warnings, options.consoleClasses);
+    await checkWeb(root, manifest, manifest.web, errors, warnings, options.consoleClasses, read);
   }
   let skills = 0;
   if (manifest.skills !== undefined) {
-    skills = await checkSkills(root, manifest.skills, errors, warnings);
+    skills = await checkSkills(root, manifest.skills, errors, warnings, read);
   } else {
     warnings.push(
       "console-plugin.json: names no skills; an agent learns the plugin from its command's help alone",
