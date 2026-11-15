@@ -1018,10 +1018,15 @@ async function keep(
   );
   const kept = await io.store.save(next);
   const standing = next.default === url ? ", the default console here" : "";
+  // Last, what holds where, never a next step: the line once said to bind this directory
+  // next, and a folder that is no checkout of a project's repository, a desk or a home
+  // directory, was bound to a project because it said so.
+  const binding =
+    "Only a project's checkout is bound to it: console use <key> (console projects lists them).";
   say(
     self
-      ? `Signed in to ${me.workspace.name} at ${url} as ${whoOf(person)}, the account itself${standing}: what this command does, ${person.login} does, and no agent is named beside it. The session is kept while it is used; its secret is kept in ${kept}.\nNext, say which project this directory works in: console use <key> (console projects lists them).\n`
-      : `${agent === undefined ? "Signed in" : `Connected as "${agent}"`} to ${me.workspace.name} at ${url} as ${whoOf(person)}${standing}. The token is kept in ${kept}.\nNext, say which project this directory works in: console use <key> (console projects lists them).\n`,
+      ? `Signed in to ${me.workspace.name} at ${url} as ${whoOf(person)}, the account itself${standing}: what this command does, ${person.login} does, and no agent is named beside it. The session is kept while it is used; its secret is kept in ${kept}.\n${binding}\n`
+      : `${agent === undefined ? "Signed in" : `Connected as "${agent}"`} to ${me.workspace.name} at ${url} as ${whoOf(person)}${standing}. The token is kept in ${kept}.\n${binding}\n`,
   );
   return EXIT.ok;
 }
@@ -1063,10 +1068,15 @@ const login: Command = async (args, io) => {
     agent: io.hostname === undefined ? agent : `${agent} on ${io.hostname}`,
     ...(self ? { as: "self" as const } : {}),
   });
+  // The end of the wait is a moment as any other the command prints (ADR-0035): in the
+  // workspace's time zone where a login at this console kept it, which is one zone whoever
+  // signed in; as the API gave it on a first sign-in, when none is known yet.
+  setMomentZone(credentials?.logins.find((login) => login.url === url)?.timeZone);
+  const until = moment(begun.expiresAt);
   io.stdout(
     self
-      ? `To sign this command in as an account itself, open ${begun.url} signed in as that account, check that the page shows the code ${begun.code}, and say that it is you.\nWaiting for that, until ${begun.expiresAt}.\n`
-      : `To connect this agent, a person opens ${begun.url} signed in, checks that the page shows the code ${begun.code}, names the agent and approves.\nWaiting for that, until ${begun.expiresAt}.\n`,
+      ? `To sign this command in as an account itself, open ${begun.url} signed in as that account, check that the page shows the code ${begun.code}, and say that it is you.\nWaiting for that, until ${until}.\n`
+      : `To connect this agent, a person opens ${begun.url} signed in, checks that the page shows the code ${begun.code}, names the agent and approves.\nWaiting for that, until ${until}.\n`,
   );
   for (;;) {
     await io.sleep(begun.interval * 1000);

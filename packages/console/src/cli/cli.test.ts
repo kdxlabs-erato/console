@@ -542,6 +542,53 @@ describe("the console command", () => {
     expect(h.out()).toContain("https://console.test/connect/ABCD-EFGH");
     expect(h.out()).toContain("code ABCD-EFGH");
     expect(h.out()).toContain('Connected as "Claude Code on laptop" to Acme');
+    // The end of the wait is printed as every moment is: as the API gave it while no login at
+    // this console has kept the workspace's time zone.
+    expect(h.out()).toContain(`\nWaiting for that, until ${WHEN}.\n`);
+    // Last, what holds where, and no next step: a folder that is no checkout of a project's
+    // repository, a desk say, was bound to a project because the line said to do so next.
+    expect(
+      h
+        .out()
+        .endsWith(
+          "The token is kept in /home/alice/.config/skillcdn-console/credentials.json.\nOnly a project's checkout is bound to it: console use <key> (console projects lists them).\n",
+        ),
+    ).toBe(true);
+    expect(h.out()).not.toContain("Next,");
+    expect(
+      "Only a project's checkout is bound to it: console use <key> (console projects lists them)."
+        .length,
+    ).toBeLessThanOrEqual(
+      "Next, say which project this directory works in: console use <key> (console projects lists them)."
+        .length,
+    );
+    // Signed in again where a login kept the workspace's time zone: the wait ends in it.
+    const zoned = memoryStore({
+      default: ORIGIN,
+      logins: [
+        {
+          url: ORIGIN,
+          account: "alice",
+          token: "cns_t_before",
+          agent: undefined,
+          since: undefined,
+          timeZone: "Asia/Seoul",
+        },
+      ],
+    });
+    const second = harness({
+      fetch: fakeConsole({
+        "POST /api/v1/connect": { status: 201, body: CONNECTION },
+        "POST /api/v1/connect/claim": {
+          body: { status: "connected", token: TOKEN, secret: "cns_t_handed" },
+        },
+        "GET /api/v1/me": { body: ME },
+      }).fetch,
+      store: zoned.store,
+      hostname: "laptop",
+    });
+    expect(await runCli(["login", "--url", ORIGIN], second.io)).toBe(EXIT.ok);
+    expect(second.out()).toContain("\nWaiting for that, until 2026-10-09T19:00:00+09:00.\n");
     expect(memory.kept()?.logins).toEqual([
       {
         url: ORIGIN,
@@ -4553,7 +4600,7 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
       "Signed in as @mira: what this command does from now on, the account does.",
     );
     expect(out).not.toContain("cns_a_handed");
-    expect(out).not.toContain("Next, say which project");
+    expect(out).not.toContain("is bound to it: console use");
     // The desk, from the template, in the OS account's home.
     expect(at.written.filter((file) => file.path.startsWith("/Users/mira/desk/"))).toEqual(
       ["README.md", "AGENTS.md", "CLAUDE.md", "runner.json", ".gitignore", "records/README.md"].map(
