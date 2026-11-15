@@ -508,7 +508,8 @@ export async function updateTask(database: Database, input: TaskUpdate): Promise
 
 export interface TaskUpdate {
   readonly scope: Scope;
-  readonly actor: Actor;
+  /** Who makes the change; nobody for the console itself, as where it ends a run it had not heard from. */
+  readonly actor: Actor | undefined;
   readonly taskId: string;
   readonly patch: TaskPatch;
   readonly now: Date;

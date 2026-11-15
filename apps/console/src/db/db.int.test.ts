@@ -73,7 +73,7 @@ import {
   touchToken,
 } from "./queries/tokens.js";
 import { ensureWorkspace } from "./queries/workspaces.js";
-import { decisions } from "./schema.js";
+import { decisions, runs } from "./schema.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "./testing.js";
 
 let testDatabase: TestDatabase;
@@ -1265,7 +1265,9 @@ describe("runs", () => {
       now: minutes(103),
     });
     expect(ended).toMatchObject({ status: "abandoned", endedAt: minutes(103) });
-    expect((await getTask(database, scope, task.id))?.openRuns).toBe(0);
+    // Given up with no run left on it, the task is back as the first take found it: a run that
+    // takes another over keeps the state that one found (ADR-0114).
+    expect(await getTask(database, scope, task.id)).toMatchObject({ openRuns: 0, state: "ready" });
     const closed = await createTask(database, {
       scope,
       actor: bob,
@@ -1350,8 +1352,107 @@ describe("runs", () => {
       ["run.started", alice.id, undefined],
       ["run.ended", undefined, "unheard"],
     ]);
-    // The task stays as the run left it.
-    expect((await getTask(database, scope, quietTask.id))?.state).toBe("in_progress");
+    // The task is back as the take found it (ADR-0114), moved by the console itself.
+    expect((await getTask(database, scope, quietTask.id))?.state).toBe("ready");
+    const ofQuietTask = (
+      await listEventsAfter(database, { ...scope, taskId: quietTask.id }, 0, 100)
+    ).items;
+    expect(
+      ofQuietTask.map((event) => [event.kind, event.actor?.id, event.data.to]).slice(-2),
+    ).toEqual([
+      ["run.ended", undefined, undefined],
+      ["task.moved", undefined, "ready"],
+    ]);
+    expect((await getTask(database, scope, askingTask.id))?.state).toBe("in_progress");
+  });
+
+  it("leave no task at work behind them: a failed run puts it up for review, one given up puts it back as the take found it (ADR-0114)", async () => {
+    const take = (taskId: string, at: number, actor = alice) =>
+      startRun(database, {
+        scope,
+        actor,
+        tokenId: undefined,
+        taskId,
+        agent: "Codex",
+        now: minutes(at),
+      });
+    const end = (runId: string, status: "finished" | "failed" | "abandoned", at: number) =>
+      endRun(database, {
+        scope,
+        actor: alice,
+        runId,
+        status,
+        summary: undefined,
+        now: minutes(at),
+      });
+    const stateOf = async (taskId: string) => (await getTask(database, scope, taskId))?.state;
+    const write = (title: string, state: "idea" | "ready" | "in_review", at: number) =>
+      createTask(database, { scope, actor: bob, task: { title, state }, now: minutes(at) });
+
+    // Failed: a person looks at what the run ended with, as at a finished one.
+    const hard = await write("Cannot be done as written", "ready", 300);
+    await end((await take(hard.id, 301)).id, "failed", 302);
+    expect(await stateOf(hard.id)).toBe("in_review");
+    const moves = (await listEventsAfter(database, { ...scope, taskId: hard.id }, 0, 100)).items
+      .filter((event) => event.kind === "task.moved")
+      .map((event) => [event.data.from, event.data.to, event.agent]);
+    expect(moves).toEqual([
+      ["ready", "in_progress", "Codex"],
+      ["in_progress", "in_review", "Codex"],
+    ]);
+
+    // Given up: back where the take found it, an idea as an idea and a review as a review.
+    const idea = await write("Only an idea", "idea", 310);
+    await end((await take(idea.id, 311)).id, "abandoned", 312);
+    expect(await stateOf(idea.id)).toBe("idea");
+    const reviewed = await write("Sent back from review", "in_review", 320);
+    await end((await take(reviewed.id, 321)).id, "abandoned", 322);
+    expect(await stateOf(reviewed.id)).toBe("in_review");
+
+    // A person moved the task meanwhile: the run's end moves nothing.
+    const moved = await write("Moved by hand", "ready", 330);
+    const run = await take(moved.id, 331);
+    await updateTask(database, {
+      scope,
+      actor: bob,
+      taskId: moved.id,
+      patch: { state: "in_review" },
+      now: minutes(332),
+    });
+    await end(run.id, "failed", 333);
+    expect(await stateOf(moved.id)).toBe("in_review");
+    const again = await take(moved.id, 334);
+    await updateTask(database, {
+      scope,
+      actor: bob,
+      taskId: moved.id,
+      patch: { state: "idea" },
+      now: minutes(335),
+    });
+    await end(again.id, "abandoned", 336);
+    expect(await stateOf(moved.id)).toBe("idea");
+
+    // A task a person put at work by hand is found at work, and is left so.
+    const byHand = await write("At work already", "ready", 340);
+    await updateTask(database, {
+      scope,
+      actor: bob,
+      taskId: byHand.id,
+      patch: { state: "in_progress" },
+      now: minutes(341),
+    });
+    await end((await take(byHand.id, 342)).id, "abandoned", 343);
+    expect(await stateOf(byHand.id)).toBe("in_progress");
+
+    // A run from before the state was kept gives the task back as ready.
+    const old = await write("Taken before the change", "idea", 350);
+    const before = await take(old.id, 351);
+    await drizzleOf(database)
+      .update(runs)
+      .set({ taskStateBefore: null })
+      .where(eq(runs.id, before.id));
+    await end(before.id, "abandoned", 352);
+    expect(await stateOf(old.id)).toBe("ready");
   });
 
   it("say the first words of a report, in one line, bounded", () => {

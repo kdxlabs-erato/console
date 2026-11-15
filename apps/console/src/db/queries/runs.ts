@@ -3,6 +3,7 @@ import {
   MAX_RUNS_PER_TASK,
   type RunEnding,
   type RunStatus,
+  type TaskState,
 } from "@skillcdn/console/api";
 import { and, asc, count, desc, eq, inArray, lt, notInArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -279,6 +280,7 @@ async function lockRun(
       personId: runs.personId,
       agent: runs.agent,
       status: runs.status,
+      taskStateBefore: runs.taskStateBefore,
     })
     .from(runs)
     .where(and(eq(runs.projectId, scope.projectId), eq(runs.id, runId)))
@@ -305,6 +307,63 @@ async function lockRun(
 
 /** What a run's event names as its actor: the person, as the agent of the run. */
 const asAgent = (actor: Actor, agent: string): Actor => ({ id: actor.id, agent });
+
+/**
+ * Where the end of a run leaves its task (ADR-0114), so that no run leaves a task at work
+ * behind it with nobody at it: a finished or a failed run puts it up for review, where a person
+ * looks at what the run ended with; a run given up puts it back as the take found it, ready
+ * where the run is from before that was kept. Only a task still at work: one a person moved
+ * meanwhile is theirs to place. And not while another run is open on it. The caller holds the
+ * lock on the task's row, and has ended the run already.
+ */
+async function placeTask(
+  tx: Transaction,
+  input: {
+    readonly scope: Scope;
+    /** Who ended the run; nobody for the console itself. */
+    readonly actor: Actor | undefined;
+    readonly taskId: string;
+    /** The task's state as it stands, read under the lock. */
+    readonly taskState: TaskState;
+    /** The state the take found, as the run keeps it. */
+    readonly stateBefore: TaskState | null;
+    readonly status: RunEnding;
+    readonly now: Date;
+  },
+): Promise<void> {
+  const { scope, actor, taskId, status, now } = input;
+  if (input.taskState !== "in_progress") {
+    return;
+  }
+  const to = status === "abandoned" ? (input.stateBefore ?? "ready") : "in_review";
+  if (to === "in_progress" || to === "done" || to === "dropped") {
+    return;
+  }
+  const [open] = await tx
+    .select({ id: runs.id })
+    .from(runs)
+    .where(and(eq(runs.taskId, taskId), inArray(runs.status, [...OPEN_RUN_STATUSES])))
+    .limit(1);
+  if (open !== undefined) {
+    return;
+  }
+  await updateTaskIn(tx, { scope, actor, taskId, patch: { state: to }, now });
+}
+
+/**
+ * Locks a task's row before a run on it is locked: the order a take locks them in, so that the
+ * end of a run and a take of its task never wait on each other.
+ */
+async function lockTaskOf(tx: Transaction, projectId: string, runId: string): Promise<void> {
+  const [at] = await tx
+    .select({ taskId: runs.taskId })
+    .from(runs)
+    .where(and(eq(runs.projectId, projectId), eq(runs.id, runId)))
+    .limit(1);
+  if (at !== undefined) {
+    await tx.select({ id: tasks.id }).from(tasks).where(eq(tasks.id, at.taskId)).for("update");
+  }
+}
 
 /**
  * An agent takes a task for its person: the run begins, the task is at work and the person's,
@@ -348,10 +407,17 @@ export async function startRun(
     }
     const runner = asAgent(actor, agent);
     const open = await tx
-      .select({ id: runs.id, agent: runs.agent })
+      .select({ id: runs.id, agent: runs.agent, taskStateBefore: runs.taskStateBefore })
       .from(runs)
       .where(and(eq(runs.taskId, taskId), inArray(runs.status, [...OPEN_RUN_STATUSES])))
       .for("update");
+    // What this run gives the task back to when it is given up (ADR-0114): the state the take
+    // finds, and, where it takes over a run that has the task at work, the state that run
+    // found, which is the one no run had touched.
+    const stateBefore =
+      task.state === "in_progress" && open.length > 0
+        ? (open.find((previous) => previous.taskStateBefore !== null)?.taskStateBefore ?? null)
+        : task.state;
     for (const previous of open) {
       await tx
         .update(runs)
@@ -383,6 +449,7 @@ export async function startRun(
         sessionId: input.sessionId ?? null,
         agent,
         status: "running",
+        taskStateBefore: stateBefore,
         startedAt: now,
         lastHeardAt: now,
         createdAt: now,
@@ -527,9 +594,9 @@ export async function addArtifact(
 }
 
 /**
- * The run is over: the agent finished, failed, or a person gave up on it. A finished run puts
- * a task at work up for review; the rest leave the task as it is. The agent's own run, or any
- * run for `anyone`, which is an administrator.
+ * The run is over: the agent finished, failed, or a person gave up on it. A finished or a
+ * failed run puts a task at work up for review, and a run given up puts it back as the take
+ * found it (ADR-0114). The agent's own run, or any run for `anyone`, which is an owner.
  */
 export async function endRun(
   database: Database,
@@ -545,6 +612,7 @@ export async function endRun(
 ): Promise<RunRecord> {
   const { scope, actor, runId, status, summary, now } = input;
   return drizzleOf(database).transaction(async (tx) => {
+    await lockTaskOf(tx, scope.projectId, runId);
     const run = await lockRun(tx, scope, runId, actor.id, input.anyone === true);
     await tx
       .update(runs)
@@ -565,15 +633,15 @@ export async function endRun(
       data: { number: run.task.number, title: run.task.title, agent: run.agent, status },
       now,
     });
-    if (status === "finished" && run.task.state === "in_progress") {
-      await updateTaskIn(tx, {
-        scope,
-        actor: ender,
-        taskId: run.taskId,
-        patch: { state: "in_review" },
-        now,
-      });
-    }
+    await placeTask(tx, {
+      scope,
+      actor: ender,
+      taskId: run.taskId,
+      taskState: run.task.state,
+      stateBefore: run.taskStateBefore,
+      status,
+      now,
+    });
     const written = await readRun(tx, scope, runId);
     if (written === undefined) {
       throw new RunError("run.not_found");
@@ -589,54 +657,76 @@ const END_PASS_LIMIT = 200;
  * What the console ends by itself (ADR-0041): every run open, not waiting for an answer, and
  * not changed since `before`, which is the last it was heard from or the answer to what it
  * asked, across the projects, a bounded number per pass, each ended as abandoned with the
- * summary given and an event that names no actor and the reason. The task stays as it is.
- * Answers how many were ended.
+ * summary given and an event that names no actor and the reason; its task goes back as the
+ * take found it (ADR-0114), moved by nobody. Answers how many were ended.
  */
 export async function endUnheardRuns(
   database: Database,
   input: { readonly before: Date; readonly now: Date; readonly summary: string },
 ): Promise<number> {
   const { before, now, summary } = input;
+  const unheard = and(eq(runs.status, "running"), lt(runs.updatedAt, before));
   return drizzleOf(database).transaction(async (tx) => {
-    const rows = await tx
-      .select({
-        id: runs.id,
-        workspaceId: runs.workspaceId,
-        projectId: runs.projectId,
-        taskId: runs.taskId,
-        agent: runs.agent,
-        number: tasks.number,
-        title: tasks.title,
-      })
+    // Found first and locked after, each task before its run, in the order a take locks them.
+    const found = await tx
+      .select({ id: runs.id, taskId: runs.taskId })
       .from(runs)
-      .innerJoin(tasks, eq(tasks.id, runs.taskId))
-      .where(and(eq(runs.status, "running"), lt(runs.updatedAt, before)))
+      .where(unheard)
       .orderBy(runs.updatedAt)
-      .limit(END_PASS_LIMIT)
-      .for("update", { of: runs });
-    for (const row of rows) {
+      .limit(END_PASS_LIMIT);
+    let ended = 0;
+    for (const candidate of found) {
+      const [task] = await tx
+        .select({ number: tasks.number, title: tasks.title, state: tasks.state })
+        .from(tasks)
+        .where(eq(tasks.id, candidate.taskId))
+        .for("update");
+      const [run] = await tx
+        .select({
+          workspaceId: runs.workspaceId,
+          projectId: runs.projectId,
+          agent: runs.agent,
+          taskStateBefore: runs.taskStateBefore,
+        })
+        .from(runs)
+        .where(and(eq(runs.id, candidate.id), unheard))
+        .for("update");
+      // Heard from, or ended, between the look and the lock: it is not this pass's to end.
+      if (task === undefined || run === undefined) {
+        continue;
+      }
       await tx
         .update(runs)
         .set({ status: "abandoned", summary, endedAt: now, updatedAt: now })
-        .where(eq(runs.id, row.id));
+        .where(eq(runs.id, candidate.id));
+      const scope = { workspaceId: run.workspaceId, projectId: run.projectId };
       await recordEvent(tx, {
-        workspaceId: row.workspaceId,
-        projectId: row.projectId,
+        ...scope,
         kind: "run.ended",
         actor: undefined,
-        taskId: row.taskId,
-        runId: row.id,
+        taskId: candidate.taskId,
+        runId: candidate.id,
         data: {
-          number: row.number,
-          title: row.title,
-          agent: row.agent,
+          number: task.number,
+          title: task.title,
+          agent: run.agent,
           status: "abandoned",
           reason: "unheard",
         },
         now,
       });
+      await placeTask(tx, {
+        scope,
+        actor: undefined,
+        taskId: candidate.taskId,
+        taskState: task.state,
+        stateBefore: run.taskStateBefore,
+        status: "abandoned",
+        now,
+      });
+      ended += 1;
     }
-    return rows.length;
+    return ended;
   });
 }
 

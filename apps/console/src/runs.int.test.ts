@@ -368,7 +368,8 @@ describe("runs", () => {
       endedAt: expect.any(String),
     });
     expect((await giveUp(alice, run.id)).status).toBe(409);
-    expect((await readTask(task.id)).state).toBe("in_progress");
+    // Given up, the task is back as the take found it: written with no state, an idea (ADR-0114).
+    expect((await readTask(task.id)).state).toBe("idea");
     // Giving up is the person's own doing, not an agent's: the event names no agent.
     const ended = restEventsSchema
       .parse(await (await asPerson(bob, "GET", `${IN}/events?run=${run.id}`)).json())
@@ -604,6 +605,42 @@ describe("a run open on a task", () => {
     );
     expect(rest.items.map((run) => run.id)).toEqual([first.id]);
     expect(rest.more).toBe(false);
+  });
+});
+
+describe("a run that ends without finishing (ADR-0114)", () => {
+  it("puts the task up for review when it failed, and back as the take found it when it was given up", async () => {
+    const task = await writeTask(bob, { title: "Port the importer", state: "ready" });
+    const end = (id: string, body: unknown) =>
+      asAgent(aliceToken, "POST", `${IN}/runs/${id}/end`, body);
+    // The agent could not do it: the task goes up for review, for a person to look at why.
+    const failed = await startRun(aliceToken, task.id);
+    const ended = await end(failed.id, { status: "failed", summary: "The importer is gone." });
+    expect(ended.status).toBe(200);
+    expect(restRunSchema.parse(await ended.json())).toMatchObject({
+      status: "failed",
+      summary: "The importer is gone.",
+    });
+    expect(await readTask(task.id)).toMatchObject({ state: "in_review", openRuns: 0 });
+    // Taken again from the review and left: up for review again, as the take found it.
+    const left = await startRun(aliceToken, task.id);
+    expect((await readTask(task.id)).state).toBe("in_progress");
+    expect((await end(left.id, { status: "abandoned" })).status).toBe(200);
+    expect(await readTask(task.id)).toMatchObject({ state: "in_review", openRuns: 0 });
+    // The task's history says who moved it each time: the agent, by the name of its run.
+    const history = restEventsSchema.parse(
+      await (await asAgent(aliceToken, "GET", `${IN}/events?task=${task.id}`)).json(),
+    );
+    expect(
+      history.items
+        .filter((event) => event.kind === "task.moved")
+        .map((event) => [event.data.from, event.data.to, event.agent]),
+    ).toEqual([
+      ["ready", "in_progress", "Claude Code on the laptop"],
+      ["in_progress", "in_review", "Claude Code on the laptop"],
+      ["in_review", "in_progress", "Claude Code on the laptop"],
+      ["in_progress", "in_review", "Claude Code on the laptop"],
+    ]);
   });
 });
 

@@ -8,9 +8,9 @@ const HOUR_MS = 3_600_000;
 /**
  * Ends what the console has not heard from for long enough (ADR-0041): a run open, not waiting
  * for an answer, and not heard from for `afterHours` is ended as abandoned, with a word that says
- * so and an event that names no actor. The task stays as it is. Every process may run it: a pass
- * that finds nothing ends nothing. The worker runs it on a schedule, and so does the `api` role
- * when told to carry the worker's work itself.
+ * so and an event that names no actor, and its task goes back as the take found it (ADR-0114).
+ * Every process may run it: a pass that finds nothing ends nothing. The worker runs it on a
+ * schedule, and so does the `api` role when told to carry the worker's work itself.
  */
 export class RunCloser {
   readonly #database: Database;

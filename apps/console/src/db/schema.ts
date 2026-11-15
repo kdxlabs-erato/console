@@ -1009,6 +1009,12 @@ export const runs = pgTable(
     /** What the agent calls itself. */
     agent: text().notNull(),
     status: text({ enum: RUN_STATUSES }).notNull().default("running"),
+    /**
+     * The state the take found the task in (ADR-0114): what a run given up puts the task back
+     * to. A run that took another over keeps what that one found; a run from before the state
+     * was kept has none, and gives the task back as ready.
+     */
+    taskStateBefore: text({ enum: TASK_STATES }),
     /** What the agent said when the run ended: Markdown. */
     summary: text(),
     startedAt: instant().notNull(),
@@ -1025,6 +1031,10 @@ export const runs = pgTable(
     index("runs_task_idx").on(table.taskId),
     index("runs_project_status_idx").on(table.projectId, table.status),
     check("runs_status_check", sql`${table.status} in (${sql.raw(literals(RUN_STATUSES))})`),
+    check(
+      "runs_task_state_before_check",
+      sql`${table.taskStateBefore} in (${sql.raw(literals(TASK_STATES))})`,
+    ),
   ],
 );
 

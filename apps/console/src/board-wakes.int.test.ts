@@ -5,6 +5,7 @@ import {
   restAgentSchema,
   restDecisionSchema,
   restMeSchema,
+  restRunSchema,
   restSignalsSchema,
   restTaskSchema,
 } from "@skillcdn/console/api";
@@ -12,6 +13,7 @@ import { inArray, sql } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { drizzleOf } from "./db/client.js";
+import { endUnheardRuns } from "./db/queries/runs.js";
 import { people, workspaces } from "./db/schema.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "./db/testing.js";
 import { BoardWakes, dayIn } from "./jobs/board-wakes.js";
@@ -458,5 +460,46 @@ describe("the board's wakes (ADR-0085)", () => {
     await again.sweep();
     expect((await record("mira")).length).toBe(before + 1);
     await again.close();
+  });
+
+  it("wakes no agent for a task its own run's end gave back, left by itself or ended by the console (ADR-0114)", async () => {
+    const RUNS = projectPath("ops", "runs");
+    const stateOf = async (id: string) =>
+      restTaskSchema.parse(
+        await (await get(fromPages(alice), projectPath("ops", "tasks", id))).json(),
+      ).state;
+    const take = async (id: string) =>
+      restRunSchema.parse(await (await send(mira, "POST", RUNS, { taskId: id })).json());
+    const giveUp = (cookie: string, id: string) =>
+      send(cookie, "POST", `${RUNS}/${id}/end`, { status: "abandoned" });
+    const quiet = await task(alice, {
+      title: "Rotate the keys",
+      state: "ready",
+      workerIds: [miraId],
+    });
+    expect((await sent("mira")).map((signal) => signal.key)).toEqual([`ops#${quiet.number}`]);
+    // The agent takes it and leaves the run: the task is ready again, by its own doing.
+    expect((await giveUp(mira, (await take(quiet.id)).id)).status).toBe(200);
+    expect(await stateOf(quiet.id)).toBe("ready");
+    expect(await sent("mira")).toEqual([]);
+    // It takes it again and falls silent: the console ends the run and gives the task back, and
+    // sends nobody to it, or a run that dies in silence would begin again every twelve hours.
+    await take(quiet.id);
+    now = new Date(now.getTime() + 13 * 3_600_000);
+    expect(
+      await endUnheardRuns(testDatabase.database, {
+        before: new Date(now.getTime() - 12 * 3_600_000),
+        now,
+        summary: "Not heard from for 12 hours; the console ended the run.",
+      }),
+    ).toBe(1);
+    expect(await stateOf(quiet.id)).toBe("ready");
+    expect(await sent("mira")).toEqual([]);
+    // A person who gives a run of the agent's up puts the task before it again: a person did it.
+    expect((await giveUp(alice, (await take(quiet.id)).id)).status).toBe(200);
+    expect(await stateOf(quiet.id)).toBe("ready");
+    expect((await sent("mira")).map((signal) => [signal.key, signal.by])).toEqual([
+      [`ops#${quiet.number}`, "Alice"],
+    ]);
   });
 });

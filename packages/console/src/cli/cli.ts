@@ -3611,7 +3611,7 @@ const ending =
     answer(io, session, run, () =>
       status === "finished"
         ? `Run ${run.id} finished; the task is up for review.`
-        : `Run ${run.id} failed; the task stays as it is.`,
+        : `Run ${run.id} failed; the task is up for review.`,
     );
     return EXIT.ok;
   };
@@ -3633,7 +3633,7 @@ const abandon: Command = async (args, io) => {
     status: "abandoned",
     ...(summary === undefined ? {} : { summary }),
   });
-  answer(io, session, run, () => `Run ${run.id} abandoned; the task stays as it is.`);
+  answer(io, session, run, () => `Run ${run.id} abandoned; the task is back as the take found it.`);
   return EXIT.ok;
 };
 

@@ -1,0 +1,2 @@
+ALTER TABLE "runs" ADD COLUMN "task_state_before" text;--> statement-breakpoint
+ALTER TABLE "runs" ADD CONSTRAINT "runs_task_state_before_check" CHECK ("runs"."task_state_before" in ('idea', 'ready', 'in_progress', 'in_review', 'done', 'dropped'));

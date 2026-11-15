@@ -170,6 +170,11 @@ async function taskWakes(
     );
     return wake(concerned, `A comment on ${named}. Read it: ${read}`);
   }
+  // A task the console itself gave back, ending a run it had not heard from (ADR-0114), wakes
+  // nobody: an agent whose run dies in silence would be sent to take it again every twelve hours.
+  if (event.kind === "task.moved" && event.actor === undefined && event.plugin === undefined) {
+    return [];
+  }
   // Everything else is about work to begin: a ready task that is not planned for a later day.
   const due = task.dueOn === null || task.dueOn <= today;
   if (task.state !== "ready" || !due) {
