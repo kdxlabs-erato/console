@@ -484,7 +484,7 @@ aws budgets create-budget --account-id $ACCOUNT --budget file://scratch/budget.j
 The person signs in and makes the first project on the pages (the skill's phase 6). Then, in the run's folder:
 
 ```sh
-console login --url https://<hostname> --agent deploying-a-console     # relay the address and the code; the person approves
+console login --url https://<hostname> --agent deploying-a-console     # relay the address and the code and run it once more as it says; the person approves
 console use <key>
 printf '# Deployment check\n\nHanded in by the deploying agent on <date> to prove the bucket.\n' > scratch/deployment-check.md
 NUMBER=$(console task new "Deployment check" --body "What this run deployed, in a few lines: the size, the address, what is owed." --json | jq -r .number)
