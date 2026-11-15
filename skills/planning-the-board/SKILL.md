@@ -5,7 +5,7 @@ license: MIT
 compatibility: Needs a shell with the console command on the PATH (npm install -g @skillcdn/console, Node.js 24 or newer), signed in by a person who works in the project, owns it, or administers the workspace, as the step needs. Nothing else; the agent never sees a token.
 metadata:
   author: skillcdn
-  version: "1.6"
+  version: "1.7"
 skillcdn:
   translations:
     ko:
@@ -83,7 +83,7 @@ Produces the **account**: the table of phase 2 as it stands on the board, with t
 - A number or an id is read from what the command printed, never assumed; a task whose number is not known is found with `console tasks --search <words>`, a goal's id with `console goals --search <words>`.
 - Nothing is deleted: a task, a page and the rules are put away, and come back.
 - A project is made by an administrator, and a private one tells a member nothing of itself; a key does not change once made, so it is chosen with the person, and a key the console says is taken (`project.key_taken`) is not guessed around.
-- The rules of a board are the people's: written only when a person asked for exactly that, from the example, and never to loosen what they ask of agents.
+- What a board adds to the console's rules is the people's: written only when a person asked for exactly that, in the example's shape, and never to loosen what they ask of agents. The console's rules themselves are nobody's to edit.
 - Never look for, read, print or send a token. A pack token is connected with a code the person approves at SkillCDN, or read from standard input, never an argument.
 - What the console refuses goes back to the person, in their words, with who may do it: the console decides on every request, and the agent tries no other way.
 

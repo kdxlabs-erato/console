@@ -18,7 +18,7 @@ A task of the board goes in, by its number; a run comes out, on the board from t
 
 Work of a project that a person gives in chat, naming no task, goes on the board before it is done, unless the board's rules say otherwise. Read the rules first, `console rules`, since no take has printed them. Look for the work on the board, `console tasks --search <words>`: a task that is there for it is the one to take. Where none is, write it as one task, `console task new "<title>" --body <markdown> --state ready --category <key>`, the key one of `console categories`, and tell the person the number the command printed. Then take the task by its number, with the mark the rules were printed under (`--rules <mark>`), and work it as below.
 
-Beside this skill: the board's rules, which `console take` prints with the task, say what this organization asks and hold over this skill's defaults; `console help <command>` has every flag, limit and refusal of a command; and [SKILLCDN.md](/SKILLCDN.md), the file beside the `skills` folder in the package, holds the rules every skill of the console shares.
+Beside this skill: the board's rules, which `console take` prints with the task, hold over this skill's defaults: the console's, then what the organization adds, then what the project adds, each holding where it differs from what stands before it; `console help <command>` has every flag, limit and refusal of a command; and [SKILLCDN.md](/SKILLCDN.md), the file beside the `skills` folder in the package, holds the rules every skill of the console shares.
 
 ## How the person is involved
 

@@ -3,7 +3,9 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  ADDED_RULES_HEADING,
   CLAIM_PATH,
+  CONSOLE_RULES,
   connectPath,
   DEFAULT_TOKEN_DAYS,
   MAX_FILE_BYTES,
@@ -21,7 +23,6 @@ import {
   personTokensPath,
   personWorkPath,
   projectPath,
-  REFERENCE_RULES,
   REST_ROUTES,
   type RestTask,
   restCategoriesSchema,
@@ -75,6 +76,7 @@ import {
   restWorkspacePackConnectSchema,
   restWorkspaceSchema,
   rulesPath,
+  rulesWith,
 } from "@skillcdn/console/api";
 import {
   type Address,
@@ -91,6 +93,7 @@ import {
 import { eq } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import * as z from "zod";
 import { createDirectorySource } from "./adapters/directory-packs.js";
 import { MAX_WAITING_PER_ADDRESS } from "./auth/connect.js";
 import { drizzleOf } from "./db/client.js";
@@ -3814,7 +3817,15 @@ describe("the rules", () => {
     return restRulesSchema.parse(await response.json());
   };
 
-  it("are the console's own until an administrator writes the organization's, then the page written, versioned, put away and written again", async () => {
+  /** The answer as a command of 0.5.0 reads it: the shape its schema had, copied here. */
+  const rulesOfBefore = z.object({
+    source: z.enum(["reference", "written", "none"]),
+    body: z.nullable(z.string()),
+    page: z.nullable(z.looseObject({ path: z.string(), version: z.number() })),
+    plugins: z.optional(z.array(z.unknown())),
+  });
+
+  it("are the console's, which always hold, with what an administrator adds for the organization: written, versioned, put away and written again (ADR-0120)", async () => {
     const named = createHarness(testDatabase, {
       providers: [createFixtureProvider()],
       admins: ["alice"],
@@ -3823,35 +3834,41 @@ describe("the rules", () => {
     // Bob was taken out and back in above, which ended his session: a new one.
     const bob = await h.signIn("bob");
     expect((await h.request(RULES)).status).toBe(401);
-    // With the rules, the plugins the person may use: none, since this console has none.
+    // Nothing added: the console's rules, whole in `body` and apart in `own`. With the rules,
+    // the plugins the person may use: none, since this console has none.
     expect(await rulesOf(await get(bob, RULES))).toEqual({
       source: "reference",
-      body: REFERENCE_RULES,
+      body: CONSOLE_RULES,
       page: null,
       plugins: [],
+      own: CONSOLE_RULES,
+      added: null,
     });
     expect(restVersionsSchema.parse(await (await get(bob, rulesPath("versions"))).json())).toEqual({
       items: [],
     });
-    // A member may not write them, nor put them away.
-    const refused = await as(bob, "PUT", RULES, { body: "# Ours" });
+    // A member may not add to them, nor put what is added away.
+    const refused = await as(bob, "PUT", RULES, { body: "Ours." });
     expect(refused.status).toBe(403);
     expect(await errorOf(refused)).toBe("auth.forbidden");
     expect((await as(bob, "POST", rulesPath("archive"))).status).toBe(403);
-    // The console's own, sent as they are, write nothing: they keep following the console's version.
+    // The console's rules sent back as they are add nothing, and write nothing.
     const same = await rulesOf(
-      await as(admin, "PUT", RULES, { body: `${REFERENCE_RULES}\n` }, named),
+      await as(admin, "PUT", RULES, { body: `${CONSOLE_RULES}\n` }, named),
     );
-    expect(same).toMatchObject({ source: "reference", page: null });
-    // An administrator writes the organization's, and the workspace's own feed says so.
-    const written = await rulesOf(
-      await as(admin, "PUT", RULES, { body: "# Ours\n\nAsk first." }, named),
-    );
+    expect(same).toMatchObject({ source: "reference", page: null, added: null });
+    // An administrator writes what the organization adds, and the workspace's own feed says so.
+    const written = await rulesOf(await as(admin, "PUT", RULES, { body: "Ask first." }, named));
     expect(written).toMatchObject({
       source: "written",
-      body: "# Ours\n\nAsk first.",
       page: { path: "rules", title: "Rules", version: 1, agent: null, archivedAt: null },
+      own: CONSOLE_RULES,
+      added: { body: "Ask first.", page: { path: "rules", version: 1 } },
     });
+    // The whole: the console's rules, then the addition under a heading of its own.
+    expect(written.body).toBe(
+      `${CONSOLE_RULES.trimEnd()}\n\n${ADDED_RULES_HEADING}\n\nAsk first.\n`,
+    );
     const feed = restEventsSchema.parse(
       await (
         await named.request(`${REST_ROUTES.events}?after=0`, { headers: { cookie: admin } })
@@ -3862,42 +3879,51 @@ describe("the rules", () => {
       projectId: null,
       data: { path: "rules", title: "Rules", version: 1 },
     });
-    // Everyone reads them; a write from a version they have moved on from is refused.
-    expect((await rulesOf(await get(bob, RULES))).body).toBe("# Ours\n\nAsk first.");
-    const stale = await as(admin, "PUT", RULES, { body: "# Older", baseVersion: 3 }, named);
+    // Everyone reads both. What a command of 0.5.0 reads of the answer is all there, as it knew it.
+    const read: unknown = await (await get(bob, RULES)).json();
+    expect(rulesOfBefore.parse(read)).toMatchObject({
+      source: "written",
+      body: rulesWith("Ask first."),
+      page: { path: "rules", version: 1 },
+    });
+    // A write from a version the additions have moved on from is refused.
+    const stale = await as(admin, "PUT", RULES, { body: "Older.", baseVersion: 3 }, named);
     expect(await errorOf(stale)).toBe("document.conflict");
+    // A command or a page of before sends the whole back, changed: what follows the console's
+    // rules is what is added, and the console's rules are copied nowhere.
     const next = await rulesOf(
       await as(
         admin,
         "PUT",
         RULES,
-        { body: "# Ours\n\nAsk first, always.", baseVersion: 1 },
+        { body: rulesWith("Ask first, always."), baseVersion: 1 },
         named,
       ),
     );
     expect(next.page?.version).toBe(2);
+    expect(next.added?.body).toBe("Ask first, always.");
+    expect(next.body).toBe(rulesWith("Ask first, always."));
     const versions = restVersionsSchema.parse(await (await get(bob, rulesPath("versions"))).json());
     expect(versions.items.map((version) => version.number)).toEqual([2, 1]);
-    // Put away, the console's own hold again, and again changes nothing; written again, the page comes back.
+    // Put away, the console's rules stand alone, and again changes nothing; added again, the page comes back.
     expect(
       await rulesOf(await as(admin, "POST", rulesPath("archive"), undefined, named)),
-    ).toMatchObject({ source: "reference", page: null });
+    ).toMatchObject({ source: "reference", body: CONSOLE_RULES, page: null, added: null });
     expect(
       await rulesOf(await as(admin, "POST", rulesPath("archive"), undefined, named)),
     ).toMatchObject({ source: "reference" });
     const back = await rulesOf(await as(admin, "PUT", RULES, { body: "# Ours again" }, named));
     expect(back.page).toMatchObject({ version: 3, archivedAt: null });
-    // The console's own, sent as they are while the organization's are written, put the page
-    // away rather than copy it: the console's own hold again and follow the console's version.
-    const reset = await rulesOf(await as(admin, "PUT", RULES, { body: REFERENCE_RULES }, named));
-    expect(reset).toMatchObject({ source: "reference", page: null });
+    // The console's rules alone, sent as the whole, add nothing: what was added is put away.
+    const reset = await rulesOf(await as(admin, "PUT", RULES, { body: CONSOLE_RULES }, named));
+    expect(reset).toMatchObject({ source: "reference", page: null, added: null });
     const after = restEventsSchema.parse(
       await (
         await named.request(`${REST_ROUTES.events}?after=0`, { headers: { cookie: admin } })
       ).json(),
     );
     expect(after.items.at(-1)).toMatchObject({ kind: "document.archived", projectId: null });
-    // Written once more, for what follows: the page comes back again.
+    // Added once more, for what follows: the page comes back again.
     const once = await rulesOf(await as(admin, "PUT", RULES, { body: "# Ours again" }, named));
     expect(once.page).toMatchObject({ version: 4, archivedAt: null });
     // Kept short.
@@ -3913,7 +3939,9 @@ describe("the rules", () => {
     const alice = await h.signIn("alice");
     const start = restProjectRulesSchema.parse(await (await get(bob, at)).json());
     expect(start.project).toEqual({ source: "none", body: null, page: null });
-    expect(start.workspace.body).toBe("# Ours again");
+    // The workspace's half is the whole, with its parts apart, as the workspace's own answer is.
+    expect(start.workspace.body).toBe(rulesWith("# Ours again"));
+    expect(start.workspace).toMatchObject({ own: CONSOLE_RULES, added: { body: "# Ours again" } });
     // A member of the project may not write them.
     const refused = await as(bob, "PUT", page, { title: "Whatever", body: "# No" });
     expect(refused.status).toBe(403);

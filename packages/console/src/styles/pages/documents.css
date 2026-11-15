@@ -248,6 +248,11 @@
   font-size: var(--sc-text-sm);
 }
 
+/* What the organization adds stands off the console's rules above it (ADR-0120). */
+.sc-rules-added {
+  margin-top: var(--sc-space-6);
+}
+
 /* The ways to change the rules stand off the text, as a form's actions do. */
 .sc-rules-actions {
   display: flex;

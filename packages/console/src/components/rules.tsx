@@ -1,23 +1,24 @@
 import { type FormEvent, useState } from "react";
-import { fillRules, isReferenceRules, MAX_RULES_LENGTH, type RestRules } from "../api.js";
+import { fillRules, MAX_RULES_LENGTH, type RestRules } from "../api.js";
 import { useLanguage, useWords } from "../i18n/index.js";
 import { Writer } from "./documents.js";
 import { Markdown } from "./markdown.js";
 import { Button, Callout, Time } from "./ui.js";
 
-// The rules of the board (ADR-0023), as the settings pages show them: what holds, where it
-// comes from (the console's own, a page written, or none), who wrote the page and when, and
-// the ways to change them for whoever may. Each takes its data as props and nothing from the
-// network; the rules are Markdown rendered to elements, never HTML, with `{language}` filled
-// with the language the pages speak, as the command fills it with the person's.
+// The rules of the board (ADR-0023, ADR-0120), as the settings pages show them. At the
+// workspace: the console's rules as they hold, read and never edited, and below them what the
+// organization adds, with who wrote it and when, and the ways to change it for whoever may. At
+// a project: what it adds, or that it adds none. Each takes its data as props and nothing from
+// the network; the rules are Markdown rendered to elements, never HTML, with `{language}`
+// filled with the language the pages speak, as the command fills it with the person's.
 
 export interface RulesViewProps {
   readonly rules: RestRules;
   /** Whose rules: the workspace's, or a project's, which add to the workspace's. */
   readonly scope: "workspace" | "project";
-  /** Where the rules are written; left out, they are read here and not changed. */
+  /** Where what is added is written; left out, the rules are read here and not changed. */
   readonly editHref?: string | undefined;
-  /** Called to put the written rules away; left out, they stay. */
+  /** Called to put what is added away; left out, it stays. */
   readonly onArchive?: (() => void) | undefined;
   readonly busy?: boolean | undefined;
   /** Where a page of the project is read, by its path, for the links a project's rules make. */
@@ -30,6 +31,9 @@ export function RulesView(props: RulesViewProps) {
   const words = useWords();
   const language = useLanguage().tag;
   const { rules, scope } = props;
+  if (scope === "workspace" && rules.own !== undefined && props.folded !== true) {
+    return <WorkspaceRules {...props} own={rules.own} />;
+  }
   const page = rules.page;
   if (rules.source === "none" || rules.body === null) {
     return (
@@ -46,10 +50,13 @@ export function RulesView(props: RulesViewProps) {
     );
   }
   const text = <Markdown source={fillRules(rules.body, language)} docHref={props.docHref} />;
+  // A project's own are changed here. The workspace's come this way folded, on a project's
+  // page, or whole from a console of before, which says no parts: read, and changed elsewhere.
+  const changed = scope === "project";
   return (
     <div>
       {rules.source === "reference" ? (
-        <Callout tone="info">{words.rules.reference}</Callout>
+        <Callout tone="info">{words.rules.console}</Callout>
       ) : (
         page !== null && (
           <p className="sc-rules-facts">
@@ -66,16 +73,58 @@ export function RulesView(props: RulesViewProps) {
       ) : (
         text
       )}
-      {(props.editHref !== undefined || props.onArchive !== undefined) && (
+      {changed && (props.editHref !== undefined || props.onArchive !== undefined) && (
         <div className="sc-rules-actions">
           {props.editHref !== undefined && (
             <a className="sc-button sc-button-secondary" href={props.editHref}>
-              {rules.source === "reference" ? words.rules.writeOrganizations : words.common.edit}
+              {words.common.edit}
             </a>
           )}
-          {rules.source === "written" && props.onArchive !== undefined && (
+          {props.onArchive !== undefined && (
             <Button variant="ghost" onClick={props.onArchive} disabled={props.busy === true}>
-              {scope === "workspace" ? words.rules.useReference : words.common.remove}
+              {words.common.remove}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The workspace's rules where they are kept: the console's as they hold, then what the organization adds. */
+function WorkspaceRules(props: RulesViewProps & { readonly own: string }) {
+  const words = useWords();
+  const language = useLanguage().tag;
+  const added = props.rules.added ?? null;
+  return (
+    <div>
+      <Callout tone="info">{words.rules.console}</Callout>
+      <Markdown source={fillRules(props.own, language)} docHref={props.docHref} />
+      <div className="sc-rules-added">
+        <h3 className="sc-section-title">{words.rules.added}</h3>
+        {added === null ? (
+          <p className="sc-muted">{words.rules.nothingAdded}</p>
+        ) : (
+          <>
+            <p className="sc-rules-facts">
+              {words.docs.version(added.page.version)} · {words.docs.writtenBy}{" "}
+              <Writer by={added.page.updatedBy} agent={added.page.agent} />{" "}
+              <Time iso={added.page.updatedAt} />
+            </p>
+            <Markdown source={fillRules(added.body, language)} docHref={props.docHref} />
+          </>
+        )}
+      </div>
+      {(props.editHref !== undefined || (added !== null && props.onArchive !== undefined)) && (
+        <div className="sc-rules-actions">
+          {props.editHref !== undefined && (
+            <a className="sc-button sc-button-secondary" href={props.editHref}>
+              {added === null ? words.rules.add : words.common.edit}
+            </a>
+          )}
+          {added !== null && props.onArchive !== undefined && (
+            <Button variant="ghost" onClick={props.onArchive} disabled={props.busy === true}>
+              {words.common.remove}
             </Button>
           )}
         </div>
@@ -85,10 +134,10 @@ export function RulesView(props: RulesViewProps) {
 }
 
 export interface RulesFormProps {
-  /** The rules as they hold now: what the form starts from when a page is written. */
+  /** The rules as they hold now: what the form starts from where something is written. */
   readonly rules: RestRules;
   readonly scope: "workspace" | "project";
-  /** What the form starts from when a project adds none yet: the headings, and nothing an agent could mistake for a rule. */
+  /** What the form starts from where nothing is written yet: a project's headings; nothing at the workspace. */
   readonly template: string;
   readonly busy?: boolean | undefined;
   readonly error?: string | undefined;
@@ -97,25 +146,29 @@ export interface RulesFormProps {
     readonly baseVersion?: number | undefined;
   }) => void;
   readonly onCancel?: (() => void) | undefined;
-  /** Called to put the organization's page away, so that the console's own rules hold again; offered while one is written. */
-  readonly onReset?: (() => void) | undefined;
 }
 
 /**
- * The form the rules are written on: prefilled with what holds (the console's own, for a
- * workspace that wrote none), and saving nothing that would change nothing: the text as it
- * is, or the console's own rules where they hold already. Where the organization's are
- * written, the console's own saved as they stand put the page away, as the reset does.
+ * The form what is added to the rules is written on. At the workspace it holds what the
+ * organization adds and nothing of the console's rules, which are read above it: empty until
+ * something is added. At a project it starts from the project's page, or from the headings.
+ * It saves nothing that would change nothing.
  */
 export function RulesForm(props: RulesFormProps) {
   const words = useWords();
+  const language = useLanguage().tag;
   const { rules, scope } = props;
-  /** What holds now: the page written, or the console's own; nothing for a project that adds none. */
-  const current = rules.source === "none" ? undefined : (rules.body ?? undefined);
+  // A console of before says the whole and no parts, and takes the whole back.
+  const parts = scope === "workspace" && rules.own !== undefined;
+  /** What is written now: what the organization adds, or the page as it holds; nothing where nothing is. */
+  const current = parts
+    ? rules.added?.body
+    : rules.source === "none"
+      ? undefined
+      : (rules.body ?? undefined);
+  const page = parts ? (rules.added?.page ?? null) : rules.page;
   const [body, setBody] = useState(current ?? props.template);
-  const unchanged =
-    body.trim() === (current ?? "").trim() ||
-    (scope === "workspace" && rules.source === "reference" && isReferenceRules(body));
+  const unchanged = body.trim() === (current ?? "").trim();
   const ready = !unchanged && body.trim().length > 0;
 
   const submit = (event: FormEvent) => {
@@ -125,14 +178,22 @@ export function RulesForm(props: RulesFormProps) {
     }
     props.onSubmit({
       body,
-      ...(rules.page === null ? {} : { baseVersion: rules.page.version }),
+      ...(page === null ? {} : { baseVersion: page.version }),
     });
   };
 
   return (
     <form className="sc-form" onSubmit={submit}>
+      {parts && rules.own !== undefined && (
+        <details className="sc-rules-fold">
+          <summary>{words.rules.readConsole}</summary>
+          <Markdown source={fillRules(rules.own, language)} />
+        </details>
+      )}
       <label className="sc-field">
-        <span className="sc-field-label">{words.rules.form.body}</span>
+        <span className="sc-field-label">
+          {scope === "workspace" ? words.rules.added : words.rules.form.body}
+        </span>
         <textarea
           className="sc-input sc-textarea sc-doc-editor"
           value={body}
@@ -140,7 +201,11 @@ export function RulesForm(props: RulesFormProps) {
           rows={20}
           onChange={(event) => setBody(event.target.value)}
         />
-        <span className="sc-muted">{words.rules.form.hint(MAX_RULES_LENGTH)}</span>
+        <span className="sc-muted">
+          {scope === "workspace"
+            ? words.rules.form.hintAdded(MAX_RULES_LENGTH)
+            : words.rules.form.hint(MAX_RULES_LENGTH)}
+        </span>
       </label>
       {props.error !== undefined && (
         <p className="sc-form-error" role="alert">
@@ -154,11 +219,6 @@ export function RulesForm(props: RulesFormProps) {
         {props.onCancel !== undefined && (
           <Button variant="ghost" onClick={props.onCancel}>
             {words.common.cancel}
-          </Button>
-        )}
-        {props.onReset !== undefined && rules.source === "written" && (
-          <Button variant="ghost" onClick={props.onReset} disabled={props.busy === true}>
-            {words.rules.useReference}
           </Button>
         )}
       </div>

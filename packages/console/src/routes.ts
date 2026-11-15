@@ -41,7 +41,7 @@ export const REST_ROUTES = {
   work: "/api/v1/work",
   /** The decisions addressed to the asker (ADR-0042) across the projects they may see: the waiting first, then the record. */
   decisions: "/api/v1/decisions",
-  /** The rules of the board (ADR-0023): the console's own until an administrator writes the organization's. */
+  /** The rules of the board (ADR-0120): the console's, and what the organization adds to them. */
   rules: "/api/v1/rules",
   /** The plugins (ADR-0049): the ones a member may know of, and under each key the plugin's own routes. */
   plugins: "/api/v1/plugins",

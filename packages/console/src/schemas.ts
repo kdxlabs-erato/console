@@ -2671,16 +2671,25 @@ export const restRulesPluginSchema = z.object({
 export type RestRulesPlugin = z.infer<typeof restRulesPluginSchema>;
 
 /**
- * `GET /api/v1/rules`, and each half of a project's (ADR-0023): the rules that hold, and where
- * they come from. `reference`: the console's own, since the organization wrote none;
- * `written`: the page written, with its facts; `none`: a project that adds none.
+ * `GET /api/v1/rules`, and each half of a project's (ADR-0023, ADR-0120): the rules that hold,
+ * and what stands beside the console's. At the workspace, `reference`: the console's rules
+ * alone, since the organization adds nothing; `written`: something is added, on its page. In
+ * a project's own half, `written`: the page the project wrote; `none`: it adds none.
  */
 export const restRulesSchema = z.object({
   source: z.enum(RULES_SOURCES),
-  /** The rules as they hold, Markdown; `null` for a project that adds none. */
+  /**
+   * The rules as they hold, Markdown. At the workspace, whole: the console's, then what the
+   * organization adds under a heading of its own, which is what a command of before prints.
+   * `null` for a project that adds none.
+   */
   body: z.nullable(z.string()),
-  /** The page they are written on, or `null` for the console's own and for none. */
+  /** The page what is added is written on, or `null` where nothing is added. */
   page: z.nullable(restDocumentSummarySchema),
+  /** At the workspace, from 0.5.1: the console's rules by themselves, as they always hold. */
+  own: z.optional(z.string()),
+  /** At the workspace, from 0.5.1: what the organization adds, with its page; `null` where it adds nothing. */
+  added: z.optional(z.nullable(z.object({ body: z.string(), page: restDocumentSummarySchema }))),
   /** At the workspace: every plugin the asker may use, by key; left out in the halves of a project's answer. */
   plugins: z.optional(z.array(restRulesPluginSchema)),
 });
@@ -2695,7 +2704,10 @@ export const restProjectRulesSchema = z.object({
 });
 export type RestProjectRules = z.infer<typeof restProjectRulesSchema>;
 
-/** What `PUT /api/v1/rules` is sent: the rules as they are to be. */
+/**
+ * What `PUT /api/v1/rules` is sent: what the organization adds, as it is to be. A body that
+ * begins with the console's rules, the whole a client of before read, is taken for what follows them.
+ */
 export const restRulesInputSchema = z.object({
   body: paragraphs(MAX_RULES_LENGTH),
   /** The version the writer started from; the write is refused when the rules have moved on. */

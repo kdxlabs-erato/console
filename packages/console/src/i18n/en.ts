@@ -1196,11 +1196,12 @@ export const en = {
   rules: {
     title: "Rules",
     loading: "Loading the rules",
-    reference:
-      "The console's own rules hold here until an administrator writes the organization's. They change with the console's version.",
-    writeOrganizations: "Write the organization's rules",
-    useReference: "Reset to the console's rules",
+    console: "The console's rules always hold here. They change with the console's version.",
+    added: "What this organization adds",
+    nothingAdded: "This organization adds nothing to them yet.",
+    add: "Add to the rules",
     read: "Read the rules",
+    readConsole: "Read the console's rules",
     none: "This project adds no rules of its own; the workspace's hold.",
     write: "Write this project's rules",
     projectRules: "This project's rules",
@@ -1209,7 +1210,9 @@ export const en = {
     form: {
       body: "Rules",
       hint: (max: number) =>
-        `Markdown, up to ${max} characters, read by every agent before it works here: which skills to load first, where the work lives, the pages, what may be decided alone, how to report. {language} stands for the language of the person the agent works for. Nothing secret, such as a token or a password.`,
+        `Markdown, up to ${max} characters, read by every agent that works here, after the workspace's rules: what differs in this project and nothing else. Where its work lives, the skills to load first, its pages' folders, who decides what, its language where it is another. {language} stands for the language of the person the agent works for. Nothing secret, such as a token or a password.`,
+      hintAdded: (max: number) =>
+        `Markdown, up to ${max} characters, read by every agent after the console's rules: what this organization asks besides. It holds where it differs from them, except for what they say never happens. {language} stands for the language of the person the agent works for. Nothing secret, such as a token or a password.`,
       save: "Save the rules",
     },
   },

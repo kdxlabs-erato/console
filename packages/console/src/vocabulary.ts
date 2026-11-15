@@ -305,9 +305,10 @@ export const SKILLS_STATUSES = [
 export type SkillsStatus = (typeof SKILLS_STATUSES)[number];
 
 /**
- * Where the rules that hold on a board come from (ADR-0023): the console's own, since the
- * organization wrote none; a page the organization or the project wrote; or none, for a
- * project that adds nothing to the workspace's.
+ * What stands beside the console's rules (ADR-0023, ADR-0120), in the words the API has had
+ * from the start: `reference`, the console's rules alone, since the organization adds
+ * nothing; `written`, a page the organization or the project wrote, which adds to them; or
+ * `none`, for a project that adds nothing to the workspace's.
  */
 export const RULES_SOURCES = ["reference", "written", "none"] as const;
 

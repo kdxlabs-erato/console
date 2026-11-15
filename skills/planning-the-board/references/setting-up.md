@@ -47,7 +47,7 @@ An agent account is an agent that is a member of its own: it signs in as itself,
 
 ## The rules, for an owner or an administrator
 
-`console rules` reads what holds: the workspace's rules, the console's own until an administrator writes the organization's, and the project's own. `console rules write --file <path>` writes the project's, for an owner: what differs in the project and nothing else, in the shape of [the example](project-rules.md); with `--workspace`, the organization's, for an administrator, starting from the console's own as `console rules` prints them; `none` puts the written rules away, so that the console's own hold again. Written only when a person asked for exactly that, and never to loosen what they ask of agents: every agent reads them.
+`console rules` reads what holds: the console's rules, which always hold and which nobody edits, then what the organization adds to them, then what the project adds. An addition holds where it differs from what stands before it, and none takes back what the console's rules say never happens. `console rules write --file <path>` writes what the project adds, for an owner: what differs in the project and nothing else, in the shape of [the example](project-rules.md). With `--workspace` it writes what the organization adds, for an administrator: what it asks besides the console's rules, and nothing they say already. `none` puts what was added away. Written only when a person asked for exactly that, and never to loosen what they ask of agents: every agent reads them.
 
 ## The goals, for an owner
 

@@ -472,6 +472,16 @@ export function restRules(rules: RulesRecord): RestRules {
     source: rules.source,
     body: rules.body ?? null,
     page: rules.page === undefined ? null : restDocumentSummary(rules.page),
+    // At the workspace, the two parts of the whole apart (ADR-0120).
+    ...(rules.own === undefined ? {} : { own: rules.own }),
+    ...(rules.added === undefined
+      ? {}
+      : {
+          added:
+            rules.added === null
+              ? null
+              : { body: rules.added.body, page: restDocumentSummary(rules.added.page) },
+        }),
   };
 }
 

@@ -283,14 +283,16 @@ export {
   signInPath,
 } from "./routes.js";
 export {
+  ADDED_RULES_HEADING,
+  addedRulesOf,
+  CONSOLE_RULES,
   fillRules,
-  isReferenceRules,
   languageNameOf,
   PROJECT_RULES_TEMPLATE,
-  REFERENCE_RULES,
   RULES_LANGUAGE_PLACEHOLDER,
   RULES_PATH,
   RULES_TITLE,
+  rulesWith,
 } from "./rules.js";
 export {
   CONNECT_AS,

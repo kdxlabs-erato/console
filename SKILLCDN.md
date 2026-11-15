@@ -36,6 +36,6 @@ A page a skill links by a path from the root (`/docs/...`, `/skills/...`) is a f
 
 **Speak the person's language.** What is written for people, in chat, in a report, a question, a summary or a page, is in the language the person or the task uses; code, identifiers, commit messages and the skills themselves stay in English.
 
-**The board's rules come first.** A console's rules, the workspace's and the project's (`console rules`), say what its organization asks of agents, and hold over these skills' defaults where they differ, within what the specifications allow.
+**The board's rules come first.** A console's rules, with what its workspace and the project add to them (`console rules`), say what its organization asks of agents, and hold over these skills' defaults where they differ, within what the specifications allow.
 
 **The specifications win.** Where a skill and `console help`, the package's README, its types or a specification differ, the latter are right and the skill is behind: say so, and go by them.

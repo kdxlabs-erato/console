@@ -881,11 +881,11 @@ export interface ConsoleClient {
   pictureUrl(url: string): string;
   /** The categories tasks are sorted into (ADR-0019), by name. */
   categories(signal?: AbortSignal): Promise<RestCategories>;
-  /** The workspace's rules (ADR-0023): the console's own until an administrator writes the organization's. */
+  /** The workspace's rules (ADR-0120): the console's, which always hold, and what the organization adds to them. */
   rules(signal?: AbortSignal): Promise<RestRules>;
-  /** Writes the organization's rules; for an administrator. The console's own, sent as they are, write nothing. */
+  /** Writes what the organization adds to the console's rules; for an administrator. */
   writeRules(input: RestRulesInput): Promise<RestRules>;
-  /** Puts the organization's rules away, so that the console's own hold again; for an administrator. */
+  /** Puts what the organization adds away, so that the console's rules stand alone; for an administrator. */
   archiveRules(): Promise<RestRules>;
   /** The versions of the organization's rules, newest first; none while the console's own hold. */
   rulesVersions(signal?: AbortSignal): Promise<RestVersions>;

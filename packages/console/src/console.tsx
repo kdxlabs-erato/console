@@ -17,7 +17,6 @@ import {
   type FileUpload,
   OPEN_TASK_STATES,
   PROJECT_RULES_TEMPLATE,
-  REFERENCE_RULES,
   type RestAgent,
   type RestAgentProposal,
   type RestAnswerInput,
@@ -2094,7 +2093,7 @@ function WorkspaceSettingsPage(props: {
             <RulesForm
               rules={rules}
               scope="workspace"
-              template={REFERENCE_RULES}
+              template=""
               busy={busy}
               onSubmit={(input) =>
                 void act(async () => {
@@ -2110,12 +2109,6 @@ function WorkspaceSettingsPage(props: {
                 })
               }
               onCancel={() => navigation.back(PATHS.settings)}
-              onReset={() =>
-                void act(async () => {
-                  setRules(await data.actions.archiveRules());
-                  navigation.replace(PATHS.settings);
-                })
-              }
             />
           )}
         </section>

@@ -5248,23 +5248,72 @@ describe("the rules", () => {
     updatedAt: "2026-10-12T11:00:00.000Z",
   };
 
-  it("show the console's own rules as such, a written page with its facts, and a project that adds none", () => {
-    const reference = renderToStaticMarkup(
+  it("show the console's rules as they hold, what the organization adds below them, and a project that adds none (ADR-0120)", () => {
+    const own = "# Rules for agents <b>here</b>\n\nRead first.";
+    // Nothing added: the console's rules, read and not edited, and the way to add to them.
+    const alone = renderToStaticMarkup(
+      <RulesView
+        rules={{ source: "reference", body: own, page: null, own, added: null }}
+        scope="workspace"
+        editHref="/settings?rules"
+        onArchive={() => undefined}
+      />,
+    );
+    expect(alone).toContain("The console&#x27;s rules always hold");
+    expect(alone).toContain("Rules for agents &lt;b&gt;here&lt;/b&gt;");
+    expect(alone).not.toContain("<b>here</b>");
+    expect(alone).toContain("What this organization adds");
+    expect(alone).toContain("This organization adds nothing to them yet.");
+    expect(alone).toContain("Add to the rules");
+    // Nothing to put away while nothing is added, and nothing puts the console's rules back.
+    expect(alone).not.toContain(">Remove<");
+    expect(alone).not.toContain("Reset to the console");
+    // Something added: both, apart, the addition with its facts and the ways to change it.
+    const added = renderToStaticMarkup(
       <RulesView
         rules={{
-          source: "reference",
-          body: "# Rules for agents <b>here</b>\n\nRead first.",
-          page: null,
+          source: "written",
+          body: `${own}\n\n# What this organization adds\n\nAsk first.`,
+          page,
+          own,
+          added: { body: "Ask first.", page },
         }}
         scope="workspace"
         editHref="/settings?rules"
+        onArchive={() => undefined}
       />,
     );
-    expect(reference).toContain("The console&#x27;s own rules hold here");
-    expect(reference).toContain("Write the organization&#x27;s rules");
-    expect(reference).toContain("Rules for agents &lt;b&gt;here&lt;/b&gt;");
-    expect(reference).not.toContain("<b>here</b>");
-    const written = renderToStaticMarkup(
+    expect(added).toContain("Read first.");
+    expect(added).toContain("v2");
+    expect(added).toContain("bob");
+    expect(added).toContain("as Claude Code");
+    expect(added).toContain(">Edit<");
+    expect(added).toContain(">Remove<");
+    expect(added).toContain('class="sc-rules-actions"');
+    // Each part once: the whole is not shown beside its parts.
+    expect(added.split("Ask first.")).toHaveLength(2);
+    expect(added.split("Read first.")).toHaveLength(2);
+    // Folded under where it comes from, on a project's page: the whole, and {language} filled
+    // with the language the pages speak.
+    const folded = renderToStaticMarkup(
+      <RulesView
+        rules={{
+          source: "written",
+          body: "Write in {language}.\n\n# What this organization adds\n\nAsk first.",
+          page,
+          own: "Write in {language}.",
+          added: { body: "Ask first.", page },
+        }}
+        scope="workspace"
+        folded
+      />,
+    );
+    expect(folded).toContain('<details class="sc-rules-fold"><summary>Read the rules</summary>');
+    expect(folded).toContain("Write in English.");
+    expect(folded).toContain("Ask first.");
+    expect(folded).not.toContain("{language}");
+    // A console of before answers the whole and no parts: read as it is, and not changed from here.
+    const before = renderToStaticMarkup(
       <RulesView
         rules={{ source: "written", body: "Ask first.", page }}
         scope="workspace"
@@ -5272,24 +5321,8 @@ describe("the rules", () => {
         onArchive={() => undefined}
       />,
     );
-    expect(written).toContain("v2");
-    expect(written).toContain("bob");
-    expect(written).toContain("as Claude Code");
-    expect(written).toContain("Reset to the console&#x27;s rules");
-    expect(written).toContain(">Edit<");
-    expect(written).toContain("Ask first.");
-    expect(written).toContain('class="sc-rules-actions"');
-    // Folded under where it comes from, and {language} filled with the language the pages speak.
-    const folded = renderToStaticMarkup(
-      <RulesView
-        rules={{ source: "reference", body: "Write in {language}.", page: null }}
-        scope="workspace"
-        folded
-      />,
-    );
-    expect(folded).toContain('<details class="sc-rules-fold"><summary>Read the rules</summary>');
-    expect(folded).toContain("Write in English.");
-    expect(folded).not.toContain("{language}");
+    expect(before).toContain("Ask first.");
+    expect(before).not.toContain("sc-button");
     const project = renderToStaticMarkup(
       <RulesView
         rules={{ source: "written", body: "Ask first.", page }}
@@ -5313,17 +5346,38 @@ describe("the rules", () => {
     expect(readOnly).not.toContain("sc-button");
   });
 
-  it("start the form from what holds, and save nothing that would change nothing", () => {
-    const fromReference = renderToStaticMarkup(
+  it("write what the organization adds on a form that is empty until something is added, and save nothing that would change nothing", () => {
+    // The console's rules are read above the form, never in it.
+    const empty = renderToStaticMarkup(
       <RulesForm
-        rules={{ source: "reference", body: "# Theirs", page: null }}
+        rules={{ source: "reference", body: "# Theirs", page: null, own: "# Theirs", added: null }}
         scope="workspace"
         template=""
         onSubmit={() => undefined}
       />,
     );
-    expect(fromReference).toContain("# Theirs");
-    expect(fromReference).toContain("disabled");
+    expect(empty).toContain("<summary>Read the console&#x27;s rules</summary>");
+    expect(empty).toMatch(/<textarea[^>]*><\/textarea>/);
+    expect(empty).toContain("What this organization adds");
+    expect(empty).toContain("disabled");
+    // Something added: the form starts from it, and from nothing of the console's.
+    const adding = renderToStaticMarkup(
+      <RulesForm
+        rules={{
+          source: "written",
+          body: "# Theirs\n\n# What this organization adds\n\nAsk first.",
+          page,
+          own: "# Theirs",
+          added: { body: "Ask first.", page },
+        }}
+        scope="workspace"
+        template=""
+        onSubmit={() => undefined}
+      />,
+    );
+    expect(adding).toMatch(/<textarea[^>]*>Ask first\.<\/textarea>/);
+    expect(adding).not.toContain("Reset to the console");
+    // A project that adds none starts from the five things it may say.
     const fresh = renderToStaticMarkup(
       <RulesForm
         rules={{ source: "none", body: null, page: null }}
@@ -5335,18 +5389,7 @@ describe("the rules", () => {
     expect(fresh).toContain("# Rules of this project");
     expect(fresh).not.toContain("disabled");
     expect(fresh).toContain("Save the rules");
-    // The organization's written: the way back to the console's own is offered on the form too.
-    const written = renderToStaticMarkup(
-      <RulesForm
-        rules={{ source: "written", body: "# Ours", page }}
-        scope="workspace"
-        template=""
-        onSubmit={() => undefined}
-        onReset={() => undefined}
-      />,
-    );
-    expect(written).toContain("Reset to the console&#x27;s rules");
-    expect(fromReference).not.toContain("Reset to the console");
+    expect(fresh).not.toContain("Read the console");
   });
 });
 

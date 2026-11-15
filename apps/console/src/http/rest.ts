@@ -4143,10 +4143,10 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
   // project, written by whoever may work in it, a person as an agent. The path is one segment
   // of the URL, its slashes encoded.
 
-  // The rules of the board (ADR-0023): the workspace's, the console's own until an administrator
-  // writes the organization's, read by everyone of the workspace and kept by an administrator,
-  // signed in or through their agent; and a project's, read with the workspace's by whoever may
-  // see the project, written as the page `rules` by an owner.
+  // The rules of the board (ADR-0023, ADR-0120): the console's, which always hold, with what the
+  // organization adds to them, read by everyone of the workspace and written by an
+  // administrator, signed in or through their agent; and what a project adds, read with the
+  // workspace's by whoever may see the project, written as the page `rules` by an owner.
   const workspacePages = (person: PersonRecord) => ({
     workspaceId: person.workspaceId,
     projectId: null,
