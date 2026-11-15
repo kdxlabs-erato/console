@@ -1,6 +1,13 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ownRunnerModules } from "./modules.js";
 import {
+  KEPT_LOGS,
+  logKeeper,
+  MAX_LOG_BYTES,
   TASK_NAME,
   taskDefinition,
   taskNameOf,
@@ -10,7 +17,9 @@ import {
 import type { ServiceInput } from "./types.js";
 
 // The service that keeps a runner running on Windows: what it says to write and to run. Nothing
-// is written and nothing is run here, and whether the system takes the task is seen on a machine.
+// is written and nothing is run here, and whether the system takes the task is seen on a machine;
+// but for what keeps the log, which the system's own shell runs against a folder of the test's
+// own, on Windows alone, since no other system has that shell.
 
 const BACK = String.fromCodePoint(0x5c);
 const at = (...parts: readonly string[]): string => parts.join(BACK);
@@ -166,6 +175,16 @@ describe("the task-scheduler service", () => {
       "$ErrorActionPreference = 'Continue'",
       "[Console]::OutputEncoding = [Text.Encoding]::UTF8",
       `$log = '${LOG}'`,
+      // What keeps a line: the log put aside first where it is full, three of them kept.
+      "function Keep($line) { try { $now = [IO.FileInfo]$log",
+      "if ($now.Exists -and $now.Length -ge 4194304) { $last = $log + '.3'",
+      "if ([IO.File]::Exists($last)) { [IO.File]::Delete($last) }",
+      "for ($i = 2",
+      "$i -ge 1",
+      "$i--) { $from = $log + '.' + $i",
+      "if ([IO.File]::Exists($from)) { [IO.File]::Move($from, $log + '.' + ($i + 1)) } }",
+      "[IO.File]::Move($log, $log + '.1') } } catch { }",
+      "[IO.File]::AppendAllText($log, [string]$line + [Environment]::NewLine) }",
       `$runner = '${NODE}'`,
       `$words = @('${MAIN}', 'runner', '--url', 'https://console.acme.example', '--account', 'mira@acme.example')`,
       // A runner left by a task that was ended: the same program, started with the same words
@@ -176,15 +195,99 @@ describe("the task-scheduler service", () => {
       `$env:PATH = '${INPUT.path}'`,
       "$env:CONSOLE_RUNNER_KEEPER = [string]$PID",
       // In the desk or not at all.
-      `try { Set-Location -LiteralPath '${DESK}' -ErrorAction Stop } catch { [IO.File]::AppendAllText($log, [string]$_ + [Environment]::NewLine)`,
+      `try { Set-Location -LiteralPath '${DESK}' -ErrorAction Stop } catch { Keep $_`,
       "exit 1 }",
-      "while ($true) { & $runner @words 2>&1 | ForEach-Object { [IO.File]::AppendAllText($log, [string]$_ + [Environment]::NewLine) }",
+      "while ($true) { & $runner @words 2>&1 | ForEach-Object { Keep $_ }",
       "Start-Sleep -Seconds 10 }",
     ]);
-    // One word of a command line: no quote of that line is in it.
+    // One word of a command line: no quote of that line is in it, and no percent sign, which
+    // the system would read a variable's name between.
     expect(script).not.toContain('"');
+    expect(script).not.toContain("%");
     expect(taskScript({ ...INPUT, path: undefined }, LOG)).not.toContain("$env:PATH");
   });
+
+  it("bounds the log: four megabytes, and three put aside, in a function that holds no quote and no percent sign", () => {
+    expect(MAX_LOG_BYTES).toBe(4 * 1024 * 1024);
+    expect(KEPT_LOGS).toBe(3);
+    expect(taskScript(INPUT, LOG)).toContain(logKeeper());
+    for (const keeper of [logKeeper(), logKeeper(200, 2), logKeeper(1, 1)]) {
+      expect(keeper).not.toContain('"');
+      expect(keeper).not.toContain("%");
+      expect(keeper.startsWith("function Keep($line) { try {")).toBe(true);
+      // Whatever becomes of putting the log aside, the line is kept.
+      expect(
+        keeper.endsWith(
+          "} catch { }; [IO.File]::AppendAllText($log, [string]$line + [Environment]::NewLine) }",
+        ),
+      ).toBe(true);
+    }
+    expect(logKeeper(200, 2)).toContain("$now.Length -ge 200");
+    expect(logKeeper(200, 2)).toContain("$last = $log + '.2'");
+    expect(logKeeper(200, 2)).toContain("for ($i = 1;");
+  });
+
+  it.runIf(process.platform === "win32")(
+    "puts a full log aside and lets the oldest go, in the system's own shell: the last lines are kept, in order",
+    () => {
+      const folder = mkdtempSync(join(tmpdir(), "console-runner-log-"));
+      try {
+        const log = join(folder, "runner.log");
+        // Sixty lines of thirty bytes each, into a log that is full at two hundred, two put aside.
+        const script = [
+          `$log = '${log}'`,
+          logKeeper(200, 2),
+          "1..60 | ForEach-Object { Keep ('line ' + $_.ToString('00') + ' ' + ('x' * 20)) }",
+        ].join("; ");
+        const ran = spawnSync(
+          "powershell.exe",
+          ["-NoProfile", "-NonInteractive", "-Command", script],
+          { encoding: "utf8" },
+        );
+        expect(ran.status, ran.stderr).toBe(0);
+        expect(readdirSync(folder).sort()).toEqual(["runner.log", "runner.log.1", "runner.log.2"]);
+        const linesOf = (name: string) =>
+          readFileSync(join(folder, name), "utf8")
+            .split(/\r?\n/)
+            .filter((line) => line.length > 0);
+        // Never more than the bound and the line that filled it.
+        for (const name of ["runner.log", "runner.log.1", "runner.log.2"]) {
+          expect(statSync(join(folder, name)).size, name).toBeLessThanOrEqual(200 + 30);
+        }
+        // The oldest first: what was put aside before, then after, then the log; no line twice,
+        // none missing between the first kept and the last written.
+        const kept = [
+          ...linesOf("runner.log.2"),
+          ...linesOf("runner.log.1"),
+          ...linesOf("runner.log"),
+        ];
+        const numbers = kept.map((line) => Number(line.slice(5, 7)));
+        expect(numbers.at(-1)).toBe(60);
+        expect(numbers[0]).toBeGreaterThan(1);
+        expect(numbers).toEqual(
+          Array.from({ length: numbers.length }, (_, index) => (numbers[0] ?? 0) + index),
+        );
+        expect(kept.every((line) => /^line \d\d x{20}$/.test(line))).toBe(true);
+        // And the task's whole line, with that function in it, is a line the shell reads.
+        const whole = join(folder, "task.txt");
+        writeFileSync(whole, taskScript(INPUT, LOG), "utf8");
+        const parsed = spawnSync(
+          "powershell.exe",
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            `$errors = $null; [void][System.Management.Automation.Language.Parser]::ParseInput([IO.File]::ReadAllText('${whole}'), [ref]$null, [ref]$errors); if ($errors.Count -gt 0) { $errors | ForEach-Object { $_.Message }; exit 1 }`,
+          ],
+          { encoding: "utf8" },
+        );
+        expect(parsed.status, `${parsed.stdout}${parsed.stderr}`).toBe(0);
+      } finally {
+        rmSync(folder, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
 
   it("writes what a path or a login holds as words of the shell and as text of the definition", () => {
     const curled = String.fromCodePoint(0x2019);

@@ -68,6 +68,9 @@ export {
 export { SLACK_APP_TOKEN, slack, slackWakeOf } from "./runner/slack.js";
 export { SYSTEMD_UNIT, systemdUnit, systemdUser } from "./runner/systemd-user.js";
 export {
+  KEPT_LOGS,
+  logKeeper,
+  MAX_LOG_BYTES,
   TASK_NAME,
   taskDefinition,
   taskNameOf,

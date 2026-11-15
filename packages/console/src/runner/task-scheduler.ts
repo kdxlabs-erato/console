@@ -8,8 +8,9 @@ import { KEEPER_VARIABLE, type Service, type ServiceCommand, type ServiceInput }
 // The system starts a task once and in a window, gives it the account's environment and not the
 // one the machine was set up in, keeps none of its words, and ends it by ending the one process
 // it started: so what the task starts is a few lines of the system's own shell, in no window,
-// which start the runner with the setup's `PATH`, keep its lines, start it again when it ends
-// and tell it which process keeps it. Written from the system's own documentation, the Task
+// which start the runner with the setup's `PATH`, keep its lines in a log that is put aside
+// when it is full, start it again when it ends and tell it which process keeps it. Written from
+// the system's own documentation, the Task
 // Scheduler's schema and schtasks, and run on Windows 11; the module says what to write and what
 // to run, and whoever sets the machine up does it.
 
@@ -21,6 +22,14 @@ const RESTART_SECONDS = 10;
 
 /** The most a task's command line carries, with room left for the shell's own path. */
 const MAX_COMMAND = 30_000;
+
+/**
+ * How large the log is before it is put aside, in bytes, and how many logs put aside are kept:
+ * the runner's lines hold a few megabytes at most, on a machine that runs for years. The other
+ * services leave it to the system, whose journal keeps to a size of its own.
+ */
+export const MAX_LOG_BYTES = 4 * 1024 * 1024;
+export const KEPT_LOGS = 3;
 
 /** What a task's name, and so the name of an OS account in it, cannot hold. */
 const UNNAMEABLE = /[\\/:*?"<>|]/;
@@ -77,6 +86,25 @@ const word = (text: string): string => {
 };
 
 /**
+ * What keeps a line in the log, as a function of the shell's, `Keep`: the log is put aside
+ * first where it is full, as `<log>.1`, the ones put aside before each moved one on and the
+ * oldest let go, and the line is added and the log let go of, so that it is read while the
+ * runner runs. Whoever writes the log bounds it: a runner that cannot start writes lines too.
+ * A log that cannot be put aside, read by something that holds it say, is added to as it is,
+ * and put aside at a later line. The log is `$log`; no quote and no percent sign is written,
+ * as nothing of the task's line may hold one.
+ */
+export function logKeeper(maxBytes: number = MAX_LOG_BYTES, kept: number = KEPT_LOGS): string {
+  const aside = [
+    `$last = $log + '.${kept}'`,
+    "if ([IO.File]::Exists($last)) { [IO.File]::Delete($last) }",
+    `for ($i = ${kept - 1}; $i -ge 1; $i--) { $from = $log + '.' + $i; if ([IO.File]::Exists($from)) { [IO.File]::Move($from, $log + '.' + ($i + 1)) } }`,
+    "[IO.File]::Move($log, $log + '.1')",
+  ].join("; ");
+  return `function Keep($line) { try { $now = [IO.FileInfo]$log; if ($now.Exists -and $now.Length -ge ${maxBytes}) { ${aside} } } catch { }; [IO.File]::AppendAllText($log, [string]$line + [Environment]::NewLine) }`;
+}
+
+/**
  * What the task starts, in the system's own shell and on one line: the runner in the desk with
  * the `PATH` the machine was set up with, its lines added to the log as they come, and the
  * runner again ten seconds after it ends, for as long as the task runs. The system ends a task
@@ -86,13 +114,13 @@ const word = (text: string): string => {
  */
 export function taskScript(input: ServiceInput, log: string): string {
   const [runner = "", ...words] = input.program;
-  // A line is added to the log and the log is let go of, so that it is read while the runner runs.
-  const kept = "[IO.File]::AppendAllText($log, [string]$_ + [Environment]::NewLine)";
+  const kept = "Keep $_";
   return [
     // A line the runner writes of an error is a line, and what it writes is read as it wrote it.
     "$ErrorActionPreference = 'Continue'",
     "[Console]::OutputEncoding = [Text.Encoding]::UTF8",
     `$log = ${word(log)}`,
+    logKeeper(),
     `$runner = ${word(runner)}`,
     `$words = @(${words.map(word).join(", ")})`,
     // A runner left behind is the same program, started with the same words to their end as
