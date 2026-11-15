@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { DrizzleQueryError } from "drizzle-orm";
 import { DatabaseError } from "pg";
 import { describe, expect, it } from "vitest";
@@ -28,7 +29,8 @@ describe("the statement the database's owner runs", () => {
 });
 
 describe("what a statement that gave a role its password failed with", () => {
-  const password = "Sk3uUW0MehRnqlX8t0NBeOR_iZVxGxzE_uOy3J6ZcPI";
+  // Drawn as the console draws one, so that no literal shaped like a secret stands in the file.
+  const password = randomBytes(32).toString("base64url");
   const statement = `create role "plugin_tally" with login noinherit nocreatedb nocreaterole nosuperuser connection limit 4 password '${password}'`;
 
   /** The driver's error as node-postgres makes it, with the fields it may carry. */

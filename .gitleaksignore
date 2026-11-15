@@ -1,3 +1,5 @@
 # Findings of the secret scan that are not secrets, by fingerprint (commit:file:rule:line).
 # A test fixture shaped like a private key, in one commit of the history; later commits build the fixture from parts.
 4e331c8762f74f8ffa6504ed4a1bf59edd4cb127:apps/console/src/config/config.test.ts:private-key:291
+# A test's password drawn as a literal in one commit of the history; later commits draw it when the test runs.
+c6be3b3e1598c6920ee73d1675ea59f95e8a2563:apps/console/src/plugins/sql.test.ts:generic-api-key:31
