@@ -53,6 +53,7 @@ COPY --from=build --chown=node:node /repo/.github/workflows/ci.yml /repo/.github
 COPY --from=build --chown=node:node /repo/apps/console/README.md ./packs/skillcdn/console/apps/console/
 COPY --from=build --chown=node:node /repo/deploy/README.md /repo/deploy/Dockerfile /repo/deploy/compose.yaml /repo/deploy/compose.dev.yaml /repo/deploy/install.sh /repo/deploy/bundle.sh ./packs/skillcdn/console/deploy/
 COPY --from=build --chown=node:node /repo/examples/agent-desk/AGENTS.md ./packs/skillcdn/console/examples/agent-desk/
+COPY --from=build --chown=node:node /repo/examples/person-desk/AGENTS.md ./packs/skillcdn/console/examples/person-desk/
 COPY --from=build --chown=node:node /repo/packages/console/README.md ./packs/skillcdn/console/packages/console/
 COPY --from=build --chown=node:node /repo/packages/console/src/styles/README.md ./packs/skillcdn/console/packages/console/src/styles/
 # What the image is distributed under travels with it.
