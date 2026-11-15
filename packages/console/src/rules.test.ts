@@ -58,6 +58,9 @@ describe("the console's own rules", () => {
       "in a project several repositories share it names the repository, and is worked in a checkout of that one",
       "Work found on the way that the task does not cover is a task of its own",
       "or of the organization's where no project is named",
+      // The rule on work given in chat is for a project's work: a desk set up is no task.
+      "Work of a project given in chat",
+      "A job of no project, such as setting a desk up, has no task.",
     ]) {
       expect(REFERENCE_RULES).toContain(said);
     }
