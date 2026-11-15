@@ -84,7 +84,7 @@ const COMMON_REFUSALS = [
 
 /** How a command on a run finds its run, and what it says when it cannot: the command's own refusals. */
 const RUN_CHOICE = [
-  "run.none: no run of yours is open in the project; take a task first, or name a run with --run <id>",
+  "run.none: no run begun through this agent is open in the project. Where a run of yours begun through another agent, or before a new sign-in, is open there, the refusal names it: go on with it by --run <id>, and do not take its task again, which would end it. Where none is: take a task first",
   "run.ambiguous: several runs of yours are open in the project; say which with --run <id>",
 ];
 
@@ -673,7 +673,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
   runs: {
     usage: "runs [--task <number|id>] [--open] [--mine] [--limit <n>] [--offset <n>]",
     synopsis: "The runs, newest first, each with when its agent was last heard from.",
-    about: `The runs, newest first, each with when its agent was last heard from: --open keeps the ones not over, --mine those begun with this token. A page at a time: ${DEFAULT_PAGE_LIMIT} unless --limit says otherwise, from --offset on.`,
+    about: `The runs, newest first, each with when its agent was last heard from: --open keeps the ones not over, --mine those begun with this token, which is one agent's: a run of the same person begun through another agent, or before a new sign-in, is listed without --mine, and the listing says so. A page at a time: ${DEFAULT_PAGE_LIMIT} unless --limit says otherwise, from --offset on.`,
   },
   run: {
     usage: "run <id>",

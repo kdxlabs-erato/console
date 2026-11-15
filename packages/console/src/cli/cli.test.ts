@@ -1140,6 +1140,130 @@ describe("the console command", () => {
     expect(calls.at(-1)?.key).toBe(`POST ${IN}/runs/${RUN.id}/reports`);
   });
 
+  it("names the person's open runs begun through another of their agents, before any word of taking", async () => {
+    const OTHERS = `GET ${IN}/runs?open=true&limit=500`;
+    const waiting = {
+      ...RUN,
+      id: "0199c4d8-0000-7000-8000-000000000023",
+      agent: "Codex on the desk",
+      status: "waiting",
+      waitingFor: DECISION.id,
+    };
+    const second = { ...waiting, id: "0199c4d8-0000-7000-8000-000000000025", waitingFor: null };
+    const bobs = {
+      ...RUN,
+      id: "0199c4d8-0000-7000-8000-000000000024",
+      person: { ...PERSON, id: "0199c4d8-0000-7000-8000-000000000002", login: "bob" },
+      agent: "Bob's agent",
+    };
+    const one = fakeConsole({
+      [OPEN_RUNS]: { body: { more: false, items: [] } },
+      "GET /api/v1/me": { body: ME },
+      [OTHERS]: { body: { more: false, items: [waiting, bobs] } },
+    });
+    // Every command on a run says the same: the run is there, and --run goes on with it.
+    for (const args of [
+      ["report", "x"],
+      ["hand-in", "https://example.test/x"],
+      ["ask", "Which?", "--option", "a", "--option", "b"],
+      ["finish"],
+      ["fail"],
+    ]) {
+      const h = harness({ fetch: one.fetch, env: SIGNED_IN });
+      expect(await runCli(args, h.io), args.join(" ")).toBe(EXIT.failed);
+      expect(h.out()).toBe("");
+      const err = h.err();
+      expect(
+        err.startsWith(
+          `run.none: no run begun through this agent is open in this project; 1 of yours begun through another agent, or before a new sign-in, is open:\n  ${waiting.id}  waiting  Codex on the desk for alice  task #${TASK.number}  (0 reports, 0 artifacts, waiting for decision ${DECISION.id}, last heard `,
+        ),
+        args.join(" "),
+      ).toBe(true);
+      expect(
+        err.endsWith(
+          ")\nGo on with it: add --run <id> to the command. A run is its person's, whichever of their agents began it; taking its task again would end it and begin another.\n",
+        ),
+        args.join(" "),
+      ).toBe(true);
+      // Another person's run is not theirs to go on with, and taking is not what to do first.
+      expect(err).not.toContain(bobs.id);
+      expect(err).not.toContain("console take");
+    }
+    // Several: each is named, and one of them is chosen.
+    const two = fakeConsole({
+      [OPEN_RUNS]: { body: { more: false, items: [] } },
+      "GET /api/v1/me": { body: ME },
+      [OTHERS]: { body: { more: false, items: [waiting, second] } },
+    });
+    const several = harness({ fetch: two.fetch, env: SIGNED_IN });
+    expect(await runCli(["report", "x"], several.io)).toBe(EXIT.failed);
+    expect(several.err()).toContain(
+      "2 of yours begun through another agent, or before a new sign-in, are open:",
+    );
+    expect(several.err()).toContain(`  ${waiting.id}  waiting`);
+    expect(several.err()).toContain(`  ${second.id}  waiting`);
+    expect(several.err()).toContain("Go on with one of them: add --run <id> to the command.");
+    // None of the person's is open: the words of before, which do say to take a task.
+    const nobodys = fakeConsole({
+      [OPEN_RUNS]: { body: { more: false, items: [] } },
+      "GET /api/v1/me": { body: ME },
+      [OTHERS]: { body: { more: false, items: [bobs] } },
+    });
+    const none = harness({ fetch: nobodys.fetch, env: SIGNED_IN });
+    expect(await runCli(["report", "x"], none.io)).toBe(EXIT.failed);
+    expect(none.err()).toBe(
+      "run.none: no run of yours is open in this project. Take a task first: console take <number>; or name a run: --run <id>\n",
+    );
+    // A console that does not answer the looking is no other refusal: the words of before.
+    const mute = fakeConsole({ [OPEN_RUNS]: { body: { more: false, items: [] } } });
+    const m = harness({ fetch: mute.fetch, env: SIGNED_IN });
+    expect(await runCli(["report", "x"], m.io)).toBe(EXIT.failed);
+    expect(m.err()).toContain("run.none: no run of yours is open in this project.");
+  });
+
+  it("says whose the runs of --mine are: this agent's, with how the person's others are listed", async () => {
+    const MINE = `GET ${IN}/runs?mine=true&limit=50&offset=0`;
+    const OTHERS =
+      " A run of yours begun through another agent, or before a new sign-in, is listed without --mine, where each line says whom it is for and through which agent.\n";
+    const empty = fakeConsole({
+      [MINE]: { body: { more: false, items: [] } },
+      "GET /api/v1/me": { body: ME },
+    });
+    const none = harness({ fetch: empty.fetch, env: SIGNED_IN });
+    expect(await runCli(["runs", "--mine"], none.io)).toBe(EXIT.ok);
+    expect(none.out()).toBe(`No runs begun through this agent (Claude Code on laptop).${OTHERS}`);
+    const some = fakeConsole({
+      [MINE]: { body: { more: false, items: [RUN] } },
+      "GET /api/v1/me": { body: ME },
+    });
+    const listed = harness({ fetch: some.fetch, env: SIGNED_IN });
+    expect(await runCli(["runs", "--mine"], listed.io)).toBe(EXIT.ok);
+    expect(listed.out().startsWith(`${RUN.id}  running  Claude Code for alice`)).toBe(true);
+    expect(
+      listed
+        .out()
+        .endsWith(
+          `\nThese are the runs begun through this agent (Claude Code on laptop).${OTHERS}`,
+        ),
+    ).toBe(true);
+    // Signed in as the account itself there is one sign-in and no token: the runs are the
+    // account's, and nothing more is to be said. Nor in --json, nor without --mine.
+    const itself = fakeConsole({
+      [MINE]: { body: { more: false, items: [] } },
+      "GET /api/v1/me": { body: { ...ME, agent: null } },
+      [`GET ${IN}/runs?limit=50&offset=0`]: { body: { more: false, items: [] } },
+    });
+    const account = harness({ fetch: itself.fetch, env: SIGNED_IN });
+    expect(await runCli(["runs", "--mine"], account.io)).toBe(EXIT.ok);
+    expect(account.out()).toBe("No runs.\n");
+    const all = harness({ fetch: itself.fetch, env: SIGNED_IN });
+    expect(await runCli(["runs"], all.io)).toBe(EXIT.ok);
+    expect(all.out()).toBe("No runs.\n");
+    const json = harness({ fetch: empty.fetch, env: SIGNED_IN });
+    expect(await runCli(["runs", "--mine", "--json"], json.io)).toBe(EXIT.ok);
+    expect(JSON.parse(json.out())).toEqual({ more: false, items: [] });
+  });
+
   it("hands in a link as it is, and a file as its bytes, and says where the file is read", async () => {
     const handedIn = {
       ...RUN,

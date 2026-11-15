@@ -498,7 +498,23 @@ describe("the command line", () => {
     expect(notYours.code).toBe(EXIT.failed);
     expect(notYours.err).toContain("run.not_yours");
     const theirs = await console_(["runs", "--open", "--mine"], bobToken);
-    expect(theirs.out).toBe("No runs.\n");
+    expect(theirs.out).toBe(
+      "No runs begun through this agent (Bob's agent). A run of yours begun through another agent, or before a new sign-in, is listed without --mine, where each line says whom it is for and through which agent.\n",
+    );
+    // Alice signs a second agent in, or the first one in again: the run begun through the
+    // first is hers still. The command finds it, names it, and goes on with it by its id.
+    const again = await tokenFor(alice, "Codex on the desk");
+    const lost = await console_(["report", "Still at it."], again);
+    expect(lost.code).toBe(EXIT.failed);
+    expect(lost.err).toContain(
+      "run.none: no run begun through this agent is open in this project; 1 of yours begun through another agent, or before a new sign-in, is open:",
+    );
+    expect(lost.err).toContain(`  ${runId}  running  Codex for Alice  task #${task.number}`);
+    expect(lost.err).toContain("Go on with it: add --run <id> to the command.");
+    expect(lost.err).not.toContain("console take");
+    const found = await console_(["report", "Still at it.", "--run", runId], again);
+    expect(found.code, found.err).toBe(EXIT.ok);
+    expect(found.out).toContain(`Reported on run ${runId}`);
     const whoami = await console_(["whoami"], bobToken);
     expect(whoami.out).toBe(
       `bob (member) at Acme, ${SIGN_IN_URL}; project web (The web app), named by CONSOLE_PROJECT\nWhat this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command (console skills says where it is).\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.0 <0.2.0; this command works with a console from 0.5.0 on.\n`,

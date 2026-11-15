@@ -60,6 +60,7 @@ import {
   type RestPluginEnableInput,
   type RestPluginGrantInput,
   type RestPluginInvocation,
+  type RestRun,
   type RestSkillBrowse,
   type RestSkillCode,
   type RestSkillFile,
@@ -580,7 +581,11 @@ function answer(io: CliIo, session: Session, value: unknown, words: () => string
 }
 
 /** The run a command on a run means: the one named, else the one open run of this token in the project. */
-async function currentRun(project: ProjectClient, values: Values): Promise<string> {
+async function currentRun(
+  session: Session,
+  project: ProjectClient,
+  values: Values,
+): Promise<string> {
   const given = text(values, "run");
   if (given !== undefined) {
     return given;
@@ -591,6 +596,21 @@ async function currentRun(project: ProjectClient, values: Values): Promise<strin
     return only.id;
   }
   if (items.length === 0) {
+    // A run is its person's, and `mine` is this token's: a run begun through another of the
+    // person's agents, or before the command was signed in again, is open all the same, and
+    // goes on by its id. It is named before any word of taking, since taking its task again
+    // would end it, a run that waits for a decision included.
+    const theirs = await openRunsOfThePerson(session, project);
+    if (theirs.length > 0) {
+      const one = theirs.length === 1;
+      throw failed(
+        [
+          `run.none: no run begun through this agent is open in this project; ${theirs.length} of yours begun through another agent, or before a new sign-in, ${one ? "is" : "are"} open:`,
+          ...theirs.map((run) => `  ${formatRunLine(run)}`),
+          `Go on with ${one ? "it" : "one of them"}: add --run <id> to the command. A run is its person's, whichever of their agents began it; taking its task again would end it and begin another.`,
+        ].join("\n"),
+      );
+    }
     throw failed(
       "run.none: no run of yours is open in this project. Take a task first: console take <number>; or name a run: --run <id>",
     );
@@ -598,6 +618,30 @@ async function currentRun(project: ProjectClient, values: Values): Promise<strin
   throw failed(
     `run.ambiguous: several runs of yours are open in this project; say which with --run <id>:\n${items.map((run) => `  ${formatRunLine(run)}`).join("\n")}`,
   );
+}
+
+/**
+ * The open runs of the project that are for the person the command acts as, whichever of their
+ * agents began them: what a command on a run looks through when none was begun with its own
+ * token. A courtesy before a refusal: where the console does not answer it, there are none.
+ */
+async function openRunsOfThePerson(
+  session: Session,
+  project: ProjectClient,
+): Promise<readonly RestRun[]> {
+  try {
+    const [me, open] = await Promise.all([
+      session.client.me(),
+      project.runs({ open: true, limit: LIST_LIMIT }),
+    ]);
+    const person = me.person;
+    return person === null ? [] : open.items.filter((run) => run.person.id === person.id);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 /** A Markdown body: from `--file`, from standard input for `-`, or as given. */
@@ -3044,7 +3088,7 @@ const report: Command = async (args, io) => {
   }
   const session = await open(io, values);
   const project = await session.project();
-  const runId = await currentRun(project, values);
+  const runId = await currentRun(session, project, values);
   const run = await project.report(runId, { body });
   answer(
     io,
@@ -3090,7 +3134,7 @@ const handIn: Command = async (args, io) => {
   const label = text(values, "label");
   const session = await open(io, values);
   const project = await session.project();
-  const runId = await currentRun(project, values);
+  const runId = await currentRun(session, project, values);
   // A URL is handed in as a link, and the console says whether it takes it; anything else
   // names a file on this machine.
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(what)) {
@@ -3161,7 +3205,7 @@ const ask: Command = async (args, io) => {
   const files = await attachmentsOf(io, texts(values, "attach"));
   const session = await open(io, values);
   const project = await session.project();
-  const runId = await currentRun(project, values);
+  const runId = await currentRun(session, project, values);
   // Whom the decision is for (ADR-0042, ADR-0057): the person the agent works for, unless --to
   // names others of the project, each once; several, and any of them may answer.
   const deciderIds: string[] = [];
@@ -3694,7 +3738,7 @@ const ending =
     const summary = await bodyOf(io, values, text(values, "summary"));
     const session = await open(io, values);
     const project = await session.project();
-    const runId = await currentRun(project, values);
+    const runId = await currentRun(session, project, values);
     const run = await project.endRun(runId, {
       status,
       ...(summary === undefined ? {} : { summary }),
@@ -3719,7 +3763,7 @@ const abandon: Command = async (args, io) => {
   const summary = await bodyOf(io, values, text(values, "summary"));
   const session = await open(io, values);
   const project = await session.project();
-  const runId = positionals[0] ?? (await currentRun(project, values));
+  const runId = positionals[0] ?? (await currentRun(session, project, values));
   const run = await project.endRun(runId, {
     status: "abandoned",
     ...(summary === undefined ? {} : { summary }),
@@ -3744,19 +3788,46 @@ const runs: Command = async (args, io) => {
   const project = await session.project();
   const ref = text(values, "task");
   const taskId = ref === undefined ? undefined : (await project.task(ref)).id;
-  const found = await project.runs({
-    ...(taskId === undefined ? {} : { task: taskId }),
-    ...(on(values, "open") ? { open: true } : {}),
-    ...(on(values, "mine") ? { mine: true } : {}),
-    ...page,
+  const mine = on(values, "mine");
+  const [found, agent] = await Promise.all([
+    project.runs({
+      ...(taskId === undefined ? {} : { task: taskId }),
+      ...(on(values, "open") ? { open: true } : {}),
+      ...(mine ? { mine: true } : {}),
+      ...page,
+    }),
+    // With a token, --mine is the runs begun with that token, one agent's, and a person may
+    // have more: an empty listing would read as if they had none, so whose these are is said.
+    mine && !session.json ? tokenNameOf(session) : undefined,
+  ]);
+  const others =
+    "A run of yours begun through another agent, or before a new sign-in, is listed without --mine, where each line says whom it is for and through which agent.";
+  answer(io, session, found, () => {
+    if (found.items.length === 0) {
+      return agent === undefined
+        ? "No runs."
+        : `No runs begun through this agent (${agent}). ${others}`;
+    }
+    const listed =
+      found.items.map(formatRunLine).join("\n") + formatMore(found.more, page.limit, page.offset);
+    return agent === undefined
+      ? listed
+      : `${listed}\nThese are the runs begun through this agent (${agent}). ${others}`;
   });
-  answer(io, session, found, () =>
-    found.items.length === 0
-      ? "No runs."
-      : found.items.map(formatRunLine).join("\n") + formatMore(found.more, page.limit, page.offset),
-  );
   return EXIT.ok;
 };
+
+/** What the token the command acts with is called, or nothing where it acts on a session or cannot be asked. */
+async function tokenNameOf(session: Session): Promise<string | undefined> {
+  try {
+    return (await session.client.me()).agent ?? undefined;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return undefined;
+    }
+    throw error;
+  }
+}
 
 const run: Command = async (args, io) => {
   const { values, positionals } = parse(args, {});
