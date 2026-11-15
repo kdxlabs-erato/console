@@ -27,7 +27,7 @@ export const CONSOLE_RULES = [
   "",
   "## Before work",
   "",
-  "- A project's work has a task before it is done. Given work with no task, look for it on the board; where none is there, write one (`console task new` with `--state ready`, its category, and its goal where it has one) and tell the person its number, without asking whether to.",
+  "- A project's work has a task before it is done. Given work with no task, look for it on the board; where none is there, write it and take it in one command (`console task new` with `--take`, its category, and its goal where it has one) and tell the person its number, without asking whether to.",
   "- What a member does in their own desk for themselves is on no board unless they put it there: write no task for it, and do not ask whether to.",
   "- Act as the member the command is signed in as, and no further: what the console refuses them goes back to them, never around them.",
   "",

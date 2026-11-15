@@ -218,7 +218,7 @@ export function formatSkills(
   const own =
     ownSkills === undefined
       ? []
-      : ["", `The console's own skills, for working the board: ${ownSkills}`];
+      : ["", `The console's own skills, for working the board and keeping a desk: ${ownSkills}`];
   if (skills.status === "none" || skills.address === null) {
     return [noAddress(owner), ...own].join("\n");
   }

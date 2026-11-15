@@ -1038,7 +1038,7 @@ describe("the console command", () => {
     // Where a person connects an agent of its own, and where the console's own skills are.
     expect(out).toContain("a person makes at https://skillcdn.test/gh/acme/skills");
     expect(out).toContain(
-      "The console's own skills, for working the board: /usr/lib/node_modules/@skillcdn/console/skills/",
+      "The console's own skills, for working the board and keeping a desk: /usr/lib/node_modules/@skillcdn/console/skills/",
     );
     const none = fakeConsole({
       [`GET ${IN}/skills`]: {
@@ -7234,7 +7234,7 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
       "skills at /gh/acme/skills, served by https://skillcdn.test: ready",
     );
     expect(listed.out()).toContain(
-      "The console's own skills, for working the board: /usr/lib/node_modules/@skillcdn/console/skills/",
+      "The console's own skills, for working the board and keeping a desk: /usr/lib/node_modules/@skillcdn/console/skills/",
     );
     // A skill whole, a file and a search, each under the line.
     const loaded = harness({ fetch, env: pair });
@@ -8147,7 +8147,7 @@ describe("the plugins on the command line (ADR-0049, ADR-0053)", () => {
     const project = harness({ fetch, env: SIGNED_IN, skillsDir: "/usr/lib/skills/" });
     expect(await runCli(["skills"], project.io)).toBe(EXIT.ok);
     expect(project.out()).toContain(
-      "The console's own skills, for working the board: /usr/lib/skills/",
+      "The console's own skills, for working the board and keeping a desk: /usr/lib/skills/",
     );
     expect(project.out()).toContain(
       "The plugins of this console have skills of their own: console plugins lists the plugins, console plugin <key> skills the skills of one.",

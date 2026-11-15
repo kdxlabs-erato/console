@@ -74,7 +74,7 @@ describe("the console's rules", () => {
 
   it("name a command only where the command is what the rule is about, so that a rename is caught here", () => {
     for (const named of [
-      "`console task new` with `--state ready`",
+      "`console task new` with `--take`",
       "console skills --search <words> --limit 5",
       "console ask",
     ]) {
