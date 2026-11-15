@@ -92,21 +92,28 @@ const MAX_SUBAGENTS = 500;
 /** The product's tools that start a sub-agent, as it has called them: one whose input names a kind of sub-agent is one too. */
 const SUBAGENT_TOOLS: ReadonlySet<string> = new Set(["Agent", "Task"]);
 
+/** A word of a call's input, trimmed, or nothing where it holds none. */
+const wordOf = (input: unknown, name: string): string | undefined => {
+  const word = isObject(input) ? textOf(input[name])?.trim() : undefined;
+  return word === undefined || word.length === 0 ? undefined : word;
+};
+
 /**
- * What a call that starts a sub-agent calls it: the kind of sub-agent its input names, else
- * what its input says it is for; nothing for a call that starts none. Within the bound, mark
- * and all, cut after the secrets are out of it, as everything a driver shows a part of is.
+ * What a call that starts a sub-agent calls it: the kind of sub-agent its input names and what
+ * its input says it is for, the kind first (`Explore: Read src/ of acme/web`), so that two of
+ * one kind at once are told apart; the one of the two the input names alone; the tool where
+ * it names neither; nothing for a call that starts none. Within the bound, mark and all, cut
+ * after the secrets are out of it, as everything a driver shows a part of is.
  */
 function subagentOf(tool: string, input: unknown, cut: Cut): string | undefined {
-  const kind = isObject(input) ? textOf(input.subagent_type)?.trim() : undefined;
-  if (kind !== undefined && kind.length > 0) {
-    return cut(kind, MAX_SUBAGENT_LENGTH - 1);
-  }
-  if (!SUBAGENT_TOOLS.has(tool)) {
+  const kind = wordOf(input, "subagent_type");
+  if (kind === undefined && !SUBAGENT_TOOLS.has(tool)) {
     return undefined;
   }
-  const about = isObject(input) ? textOf(input.description)?.trim() : undefined;
-  return about !== undefined && about.length > 0 ? cut(about, MAX_SUBAGENT_LENGTH - 1) : tool;
+  const about = wordOf(input, "description");
+  const name =
+    kind !== undefined && about !== undefined ? `${kind}: ${about}` : (kind ?? about ?? tool);
+  return cut(name, MAX_SUBAGENT_LENGTH - 1);
 }
 
 /** The pictures and the text of what a tool returned: a string, or blocks of text and pictures. */

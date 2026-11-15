@@ -1512,25 +1512,35 @@ export const SESSION_SCRIPT: readonly {
   {
     kind: "thinking",
     text: "The sign-in form and the invitation form are the two others. A search for the step tells.",
-    data: { parent: "call-s", subagent: "Explore" },
+    data: { parent: "call-s", subagent: "Explore: Check the other forms" },
     after: 2,
   },
   {
     kind: "tool_call",
     text: '{"pattern":"step === 2","path":"src"}',
-    data: { tool: "Grep", id: "call-s1", parent: "call-s", subagent: "Explore" },
+    data: {
+      tool: "Grep",
+      id: "call-s1",
+      parent: "call-s",
+      subagent: "Explore: Check the other forms",
+    },
     after: 1,
   },
   {
     kind: "tool_result",
     text: "No matches found.",
-    data: { id: "call-s1", error: false, parent: "call-s", subagent: "Explore" },
+    data: {
+      id: "call-s1",
+      error: false,
+      parent: "call-s",
+      subagent: "Explore: Check the other forms",
+    },
     after: 1,
   },
   {
     kind: "assistant",
     text: "No other form names a second step: the sign-in form and the invitation form have one step each.",
-    data: { parent: "call-s", subagent: "Explore" },
+    data: { parent: "call-s", subagent: "Explore: Check the other forms" },
     after: 3,
   },
   {

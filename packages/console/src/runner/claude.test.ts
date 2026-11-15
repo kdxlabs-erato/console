@@ -561,17 +561,21 @@ describe("the claude driver", () => {
       ["assistant", "Two of them, side by side.", undefined],
       ["tool_call", expect.stringContaining("Find the routes"), { tool: "Agent", id: "toolu_a1" }],
       ["tool_call", expect.stringContaining("Read the spec"), { tool: "Task", id: "toolu_a2" }],
-      ["thinking", "Where are they?", { parent: "toolu_a1", subagent: "Explore" }],
-      ["assistant", "Looking in the routes.", { parent: "toolu_a1", subagent: "Explore" }],
+      ["thinking", "Where are they?", { parent: "toolu_a1", subagent: "Explore: Find the routes" }],
+      [
+        "assistant",
+        "Looking in the routes.",
+        { parent: "toolu_a1", subagent: "Explore: Find the routes" },
+      ],
       [
         "tool_call",
         "ls src",
-        { tool: "Bash", id: "toolu_s1", parent: "toolu_a1", subagent: "Explore" },
+        { tool: "Bash", id: "toolu_s1", parent: "toolu_a1", subagent: "Explore: Find the routes" },
       ],
       [
         "tool_result",
         "rest.ts",
-        { id: "toolu_s1", error: false, parent: "toolu_a1", subagent: "Explore" },
+        { id: "toolu_s1", error: false, parent: "toolu_a1", subagent: "Explore: Find the routes" },
       ],
       [
         "tool_call",
@@ -582,6 +586,90 @@ describe("the claude driver", () => {
       ["tool_result", "Found.", { id: "toolu_a1", error: false }],
       ["assistant", "Done with both.", undefined],
     ]);
+  });
+
+  it("tells two sub-agents of one kind apart by what each was started for", async () => {
+    // Two calls of one kind at once, as a run of the product under the runner made them.
+    const { session, says, exits } = started();
+    says({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_e1",
+            name: "Agent",
+            input: {
+              description: "Read src/ of acme/web",
+              subagent_type: "Explore",
+              prompt: "List what src/ holds.",
+            },
+          },
+          {
+            type: "tool_use",
+            id: "toolu_e2",
+            name: "Agent",
+            input: {
+              description: "Read test/ of acme/web",
+              subagent_type: "Explore",
+              prompt: "List what test/ holds.",
+            },
+          },
+          // A kind and what it is for of any length: the two within the bound, the kind first.
+          {
+            type: "tool_use",
+            id: "toolu_e3",
+            name: "Agent",
+            input: { subagent_type: "Explore", description: `Read ${"d".repeat(200)}` },
+          },
+          // A kind on a tool of another name, with no word of what it is for: the kind alone.
+          { type: "tool_use", id: "toolu_e4", name: "Spawn", input: { subagent_type: "Plan" } },
+        ],
+      },
+    });
+    for (const parent of ["toolu_e1", "toolu_e2", "toolu_e3", "toolu_e4"]) {
+      says({
+        type: "assistant",
+        message: { content: [{ type: "text", text: "A line." }] },
+        parent_tool_use_id: parent,
+      });
+    }
+    exits(0);
+    const events = (await collect(session.events)).filter((event) => event.type === "event");
+    expect(events.slice(4).map((event) => event.data?.subagent)).toEqual([
+      "Explore: Read src/ of acme/web",
+      "Explore: Read test/ of acme/web",
+      `Explore: Read ${"d".repeat(65)}${String.fromCodePoint(0x2026)}`,
+      "Plan",
+    ]);
+    // What it was started for is cut with the kind, after the secrets are out of the two: a
+    // value that crosses the bound is not shown in part.
+    const SECRET = "not-a-real-token-4f9a2c71";
+    const redact = redactorOf([SECRET]);
+    const cutting = started({ cut: (text, most, more) => cutShown(redact, text, most, more) });
+    cutting.says({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_e5",
+            name: "Agent",
+            input: { subagent_type: "Explore", description: `${"d".repeat(60)} ${SECRET}` },
+          },
+        ],
+      },
+    });
+    cutting.says({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "A line." }] },
+      parent_tool_use_id: "toolu_e5",
+    });
+    cutting.exits(0);
+    const cut = (await collect(cutting.session.events)).filter((event) => event.type === "event");
+    expect(cut[1]?.data?.subagent).toBe(
+      `${`Explore: ${"d".repeat(60)} ${WITHHELD}`.slice(0, 79)}${String.fromCodePoint(0x2026)}`,
+    );
   });
 
   it("reads who a line is of as data: a name of any length is bounded, and what is no id names nobody", async () => {
