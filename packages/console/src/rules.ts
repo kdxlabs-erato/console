@@ -36,7 +36,7 @@ export const CONSOLE_RULES = [
   "- The task says where the work lives. In a project several repositories share it names the repository, and is worked in a checkout of that one.",
   "- A repository's own agreement (AGENTS.md) says how a change is committed and pushed there. The board is not asked.",
   "- Work found on the way that the task does not cover is a new task, named in the report.",
-  "- Before a job is done by hand, look for a skill of the pack by search (`console skills --search <words> --limit 5`) and load the one the task names, else the one that fits, never another way. What is read of a private pack stays in the work.",
+  "- Before a job is done by hand, look for a skill of the pack by search (`console skills --search <words> --limit 5`) and load the one the task names, else the one that fits, never another way. A long skill comes in parts: read every part before acting on any, a plan included. What is read of a private pack stays in the work.",
   "",
   "## Asking",
   "",

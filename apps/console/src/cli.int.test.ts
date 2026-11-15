@@ -162,6 +162,10 @@ async function console_(
   return { code, out: out.join(""), err: err.join("") };
 }
 
+// What the console adds after the library's line where a part of a skill is not its last.
+const PART_ENDS =
+  "This part stops in the middle of the skill: its later steps, its checkpoints and its rules are in the parts that follow, and nothing above is complete without them. Run that command now, before a plan, an answer or any other step, and each next one, until a part ends without these lines.";
+
 describe("the command line", () => {
   it("connects with a code a person approves, and holds the token from then on", async () => {
     const out: string[] = [];
@@ -421,10 +425,14 @@ describe("the command line", () => {
       "# Welcome\n\nSee [the plan](plan).",
     ]);
     expect(written.code, written.err).toBe(EXIT.ok);
-    expect(written.out).toBe("Wrote guides/onboarding (Onboarding), version 1; refers to plan\n");
+    expect(written.out).toBe(
+      "Wrote guides/onboarding (Onboarding), version 1; refers to plan\npage: https://console.test/projects/web/docs/guides/onboarding\n",
+    );
     const again = await console_(["write", "guides/onboarding", "--body", "# Welcome back"]);
     expect(again.code, again.err).toBe(EXIT.ok);
-    expect(again.out).toBe("Wrote guides/onboarding (Onboarding), version 2\n");
+    expect(again.out).toBe(
+      "Wrote guides/onboarding (Onboarding), version 2\npage: https://console.test/projects/web/docs/guides/onboarding\n",
+    );
     const stale = await console_(["write", "guides/onboarding", "--body", "older", "--base", "1"]);
     expect(stale.code).toBe(EXIT.failed);
     expect(stale.err).toContain("document.conflict");
@@ -1222,12 +1230,14 @@ describe("the command line", () => {
           "review/SKILL.md",
           ...(cursor === undefined ? [] : ["--cursor", cursor]),
         ]);
-        expect(printed).toBe(
-          `${await command({ read: "skill", path: "review/SKILL.md", cursor })}\n`,
-        );
-        expect(printed.length).toBeLessThanOrEqual(28_001);
+        // What the skillcdn command prints, and after a part that is not the last, the
+        // console's own words on what the part lacks.
+        const theirs = await command({ read: "skill", path: "review/SKILL.md", cursor });
+        const continues = theirs.includes("The skill continues");
+        expect(printed).toBe(continues ? `${theirs}\n${PART_ENDS}\n` : `${theirs}\n`);
+        expect(printed.length).toBeLessThanOrEqual(28_001 + PART_ENDS.length + 1);
         parts.push(printed);
-        cursor = /console skill review\/SKILL\.md --cursor (\S+)\n$/.exec(printed)?.[1];
+        cursor = /console skill review\/SKILL\.md --cursor (\S+)\n/.exec(printed)?.[1];
         if (cursor === undefined) {
           break;
         }
@@ -1238,6 +1248,8 @@ describe("the command line", () => {
       expect(parts.join("")).toContain("Step 0190:");
       expect(parts.at(-1)).toContain("Check 0190:");
       expect(parts.at(-1)).not.toContain("The skill continues");
+      expect(parts.at(-1)).not.toContain("This part stops in the middle");
+      expect(parts[0]?.endsWith(`${PART_ENDS}\n`)).toBe(true);
       // A file, a page a host shows whole, ended at a line, and the page after it.
       const page = await through(["skill", "--file", "docs/guide.md"]);
       expect(page).toBe(`${await command({ read: "file", path: "docs/guide.md" })}\n`);

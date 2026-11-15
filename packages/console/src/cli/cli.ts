@@ -53,7 +53,7 @@ import {
 import { capabilityWords } from "../plugin/capabilities.js";
 import { PLUGIN_LIST_LIMIT } from "../plugin/limits.js";
 import { checkRecords, RECORDS_DIR, RECORDS_INDEX_FILE, type RecordsFiles } from "../records.js";
-import { decisionHref, myDecisionHref, taskHref } from "../router.js";
+import { decisionHref, docHref, myDecisionHref, taskHref } from "../router.js";
 import { fillRules, RULES_PATH, RULES_TITLE } from "../rules.js";
 import { DEFAULT_RUNNER_CONFIG, parseRunnerConfig } from "../runner/config.js";
 import {
@@ -2203,6 +2203,7 @@ async function readSkill(
   }
   // The skill, its rules first, as load_skill lays them out: whole, or the part that begins at
   // the cursor, ending with the command that reads the next, asked as this one was.
+  let continues = false;
   const loaded = await readThrough(
     io,
     session,
@@ -2211,12 +2212,27 @@ async function readSkill(
     { read: "skill", path: wanted.path, cursor },
     {
       words: toolWords,
-      nextPart: (next) => `${command} ${pathWord(given)} --cursor ${pathWord(next)}${again}`,
+      nextPart: (next) => {
+        continues = true;
+        return `${command} ${pathWord(given)} --cursor ${pathWord(next)}${again}`;
+      },
     },
   );
-  say(jsonOfRead(session, pack, loaded), () => loaded.text);
+  // A part that is not the last ends with the console's own words after the library's line: a
+  // fresh agent read one part of four, saw that the skill continued, and planned from that part,
+  // since "before using it" did not read as now to a session that meant only to plan.
+  say(jsonOfRead(session, pack, loaded), () =>
+    continues ? `${loaded.text}\n${PART_ENDS_HERE}` : loaded.text,
+  );
   return EXIT.ok;
 }
+
+/**
+ * What a part of a skill ends with where another follows: that the instructions stop here,
+ * what the rest holds, and that the command above is run now.
+ */
+const PART_ENDS_HERE =
+  "This part stops in the middle of the skill: its later steps, its checkpoints and its rules are in the parts that follow, and nothing above is complete without them. Run that command now, before a plan, an answer or any other step, and each next one, until a part ends without these lines.";
 
 const skill: Command = async (args, io) => {
   const { values, positionals } = parse(args, SKILL_OPTIONS);
@@ -4027,12 +4043,15 @@ const write: Command = async (args, io) => {
     body,
     ...(baseVersion === undefined ? {} : { baseVersion }),
   });
+  // The page's address, as a task's and a decision's: what an agent tells a person and hands in.
+  const key = await session.projectKey();
+  const page = key === undefined ? undefined : `${session.url}${docHref(key, written.path)}`;
   answer(
     io,
     session,
     written,
     () =>
-      `Wrote ${written.path} (${written.title}), version ${written.version}${written.links.length === 0 ? "" : `; refers to ${written.links.map((link) => link.path).join(", ")}`}`,
+      `Wrote ${written.path} (${written.title}), version ${written.version}${written.links.length === 0 ? "" : `; refers to ${written.links.map((link) => link.path).join(", ")}`}${page === undefined ? "" : `\n${pageLine(page)}`}`,
   );
   return EXIT.ok;
 };

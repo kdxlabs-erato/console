@@ -7166,6 +7166,10 @@ describe("the consoles the command is signed in to (ADR-0027)", () => {
   });
 });
 
+// What the console adds after the library's line where a part of a skill is not its last.
+const PART_ENDS =
+  "This part stops in the middle of the skill: its later steps, its checkpoints and its rules are in the parts that follow, and nothing above is complete without them. Run that command now, before a plan, an answer or any other step, and each next one, until a part ends without these lines.";
+
 describe("the pack of the project, through the console (ADR-0028)", () => {
   const AT = {
     address: "/gh/acme/skills",
@@ -8165,14 +8169,14 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     const part = first.out();
     // The first part: as many pages as fit, said to be incomplete at its head, and the command
     // that reads the next as its last line, with the skill as it was named.
-    expect(part.length).toBeLessThanOrEqual(28_000 + 1);
+    expect(part.length).toBeLessThanOrEqual(28_000 + 1 + PART_ENDS.length + 1);
     expect(part).toContain("Skill context is incomplete");
     expect(part).toContain("a".repeat(12_000));
     expect(part).toContain("b".repeat(12_000));
     expect(part).not.toContain("ccc");
     expect(
       part.endsWith(
-        "\n\nThe skill continues. Read the next part before using it: console skill review --cursor three\n",
+        `\n\nThe skill continues. Read the next part before using it: console skill review --cursor three\n${PART_ENDS}\n`,
       ),
     ).toBe(true);
     // The page that did not fit was asked for, to know it, and is asked again with its part.
@@ -8188,6 +8192,7 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     expect(second.out()).toContain("c".repeat(12_000));
     expect(second.out()).not.toContain("aaa");
     expect(second.out()).not.toContain("The skill continues");
+    expect(second.out()).not.toContain("This part stops in the middle");
     expect(second.out()).not.toContain("Skill context is incomplete");
     // The next part is asked as this one was: the project, the console and the account as given.
     const given = harness({ fetch, env: SIGNED_IN });
@@ -8196,7 +8201,7 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
       given
         .out()
         .endsWith(
-          "Read the next part before using it: console skill review/SKILL.md --cursor three --project web\n",
+          `Read the next part before using it: console skill review/SKILL.md --cursor three --project web\n${PART_ENDS}\n`,
         ),
     ).toBe(true);
     // --json is the console's answer with the skill whole in it, as the skillcdn command's is.
@@ -8236,7 +8241,9 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     expect(
       unbound
         .out()
-        .endsWith("Read the next part before using it: console skill review --cursor three\n"),
+        .endsWith(
+          `Read the next part before using it: console skill review --cursor three\n${PART_ENDS}\n`,
+        ),
     ).toBe(true);
     // A plugin's pack is read with the plugin's own commands, and its parts name them.
     const PLUGIN = "/api/v1/plugins/hello";
@@ -8264,7 +8271,7 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
       ofPlugin
         .out()
         .endsWith(
-          "Read the next part before using it: console plugin hello skill review --cursor three\n",
+          `Read the next part before using it: console plugin hello skill review --cursor three\n${PART_ENDS}\n`,
         ),
     ).toBe(true);
     const rest = harness({ fetch: plugin.fetch, env: SIGNED_IN });
@@ -8319,7 +8326,9 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     expect(
       first
         .out()
-        .endsWith("Read the next part before using it: console skill review --cursor two\n"),
+        .endsWith(
+          `Read the next part before using it: console skill review --cursor two\n${PART_ENDS}\n`,
+        ),
     ).toBe(true);
     const second = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["skill", "review", "--cursor", "two"], second.io)).toBe(EXIT.ok);
