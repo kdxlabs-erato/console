@@ -14,7 +14,7 @@ Adds to the workspace's rules, for the agents at work here.
 
 ## Skills to load first
 
-As `console skills` lists them, by the path of each. No connection that covers the address: stop and tell the person.
+As `console skills` lists them, by the path of each, read with `console skill <path>`. A pack that `console skills` says is not served to the console: stop and tell the person.
 
 - `engineering/skills/working-in-web/SKILL.md`, for any task in the repository.
 - `marketing/skills/release-notes/SKILL.md`, for a task in the category marketing.

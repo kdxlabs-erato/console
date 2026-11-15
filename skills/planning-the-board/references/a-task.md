@@ -1,10 +1,10 @@
 # An example of a task
 
-What a person, or their agent for them, writes on the board for an agent to take: the title says what is to be done and stands on its own; the flags carry the plan; the body is the work order, written from a scratch file of the run. An invented organization, Acme, and its web app, whose member `kim` is named by login. This is the full shape, for a person who gave the whole work order; a task given as a title alone keeps the same headings and says under "Ask" what was not said.
+What a person, or their agent for them, writes on the board for an agent to take: the title says what is to be done and stands on its own; the flags carry the plan, `--state ready` among them, since a task written without it is an idea; the body is the work order, written from a scratch file of the run. An invented organization, Acme, and its web app, whose member `kim` is named by login. This is the full shape, for a person who gave the whole work order; a task given as a title alone keeps the same headings and says under "Ask" what was not said.
 
 ~~~sh
 console task new "Refuse an empty file in the import parser" \
-  --file task.md --category engineering --goal <the goal's id> --due +3 --worker kim
+  --file task.md --state ready --category engineering --goal <the goal's id> --due +3 --worker kim
 ~~~
 
 `task.md`:
