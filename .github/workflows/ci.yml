@@ -30,6 +30,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
+          --init
           --health-cmd "pg_isready -U console -d console"
           --health-interval 5s
           --health-timeout 5s
@@ -71,6 +72,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
+          --init
           --health-cmd "pg_isready -U console -d console"
           --health-interval 5s
           --health-timeout 5s
@@ -137,6 +139,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
+          --init
           --health-cmd "pg_isready -U console -d console"
           --health-interval 5s
           --health-timeout 5s
