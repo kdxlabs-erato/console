@@ -1131,6 +1131,65 @@ describe("the acp driver", () => {
     await session.stop();
   });
 
+  it("cuts what it shows a part of with what it was handed to cut with: a call's input, what its command printed, a notice", async () => {
+    // What the runner hands a session takes the account's secrets out before it cuts.
+    const asked: { length: number; most: number; more: boolean }[] = [];
+    const long = "y".repeat(300_000);
+    const agent = agentThat({
+      prompt: (message, one) => {
+        one.says(
+          update("tool_call", {
+            toolCallId: "write-1",
+            title: "Write",
+            kind: "edit",
+            rawInput: { text: "x".repeat(9000), more: [1, 2], and: "more", than: "three" },
+          }),
+          // What the command printed, a piece at a time, more than is kept of it.
+          update("tool_call_update", {
+            toolCallId: "write-1",
+            _meta: { terminal_output_delta: { terminal_id: "t", data: long } },
+          }),
+          update("tool_call_update", {
+            toolCallId: "write-1",
+            _meta: { terminal_output_delta: { terminal_id: "t", data: long } },
+          }),
+          update("tool_call_update", { toolCallId: "write-1", status: "completed" }),
+          // And one that printed a little: whole, and said so.
+          update("tool_call", { toolCallId: "ls-1", title: "ls", kind: "execute" }),
+          update("tool_call_update", {
+            toolCallId: "ls-1",
+            _meta: { terminal_output: { terminal_id: "u", data: "README.md" } },
+          }),
+          update("tool_call_update", { toolCallId: "ls-1", status: "completed" }),
+          { id: message.id, result: { stopReason: "end_turn" } },
+        );
+      },
+    });
+    const session = driverFor(agent).start({
+      ...OPTIONS,
+      cut: (words, most, more) => {
+        asked.push({ length: words.length, most, more: more === true });
+        return words.length > most ? `[cut to ${most}]` : words;
+      },
+    });
+    await session.send(message("Write it."));
+    const events = await until(session, [], isType("turn_completed"));
+    const blocks = events.flatMap((event) => (event.type === "event" ? [event] : []));
+    expect(blocks.find((event) => event.kind === "tool_call")?.text).toContain("[cut to 4000]");
+    expect(
+      blocks.filter((event) => event.kind === "tool_result").map((event) => event.text),
+    ).toEqual(["[cut to 200000]", "README.md"]);
+    // The input was handed over whole. What was printed was kept a little beyond what is shown
+    // and no further, and said to be the beginning of more; the short one is whole.
+    expect(asked).toEqual([
+      { length: expect.any(Number), most: 4000, more: false },
+      { length: 200_000 + 64 * 1024, most: 200_000, more: true },
+      { length: 9, most: 200_000, more: false },
+    ]);
+    expect(asked[0]?.length).toBeGreaterThan(9000);
+    await session.stop();
+  });
+
   it("begins a new conversation where the agent cannot go on with the one it had, and says why; an agent that is signed out is said as that", async () => {
     const resuming = {
       ...INITIALIZED,

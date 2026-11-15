@@ -588,6 +588,47 @@ describe("the codex driver", () => {
     expect((long as { text: string }).text.length).toBeLessThan(4100);
   });
 
+  it("cuts what it shows of a call with what it was handed to cut with, and never by itself first", async () => {
+    // What the runner hands a session takes the account's secrets out before it cuts: the
+    // driver hands it a command, a tool's arguments and what a tool answered whole.
+    const asked: { length: number; most: number }[] = [];
+    const { session, turn, said } = started({
+      cut: (text, most) => {
+        asked.push({ length: text.length, most });
+        return text.length > most ? `[cut to ${most} of ${text.length}]` : text;
+      },
+    });
+    await session.send(message("Go."));
+    const first = await turn(0);
+    first.says(
+      ...BEGAN,
+      {
+        type: "item.completed",
+        item: { type: "command_execution", command: "x".repeat(1_000_000), exit_code: 0 },
+      },
+      {
+        type: "item.completed",
+        item: {
+          id: "m1",
+          type: "mcp_tool_call",
+          server: "board",
+          tool: "search",
+          arguments: { query: "q".repeat(9000) },
+          result: { content: [{ type: "text", text: "r".repeat(9000) }] },
+          status: "completed",
+        },
+      },
+      COMPLETED,
+    );
+    first.exits(0);
+    const events = await said(7);
+    const texts = events.flatMap((event) => (event.type === "event" ? [event.text] : []));
+    expect(texts).toContain("[cut to 4000 of 1000000]");
+    expect(texts.filter((text) => text.startsWith("[cut to 4000 of 90"))).toHaveLength(2);
+    expect(asked.every((one) => one.most === 4000)).toBe(true);
+    expect(asked.map((one) => one.length)).toContain(1_000_000);
+  });
+
   it("keeps a message that arrives while a turn runs for the turn after, and says the agent done when nothing waits", async () => {
     const { session, turn, turns, said, taken } = started();
     await session.send(message("Run the tests."));
