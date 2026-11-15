@@ -2,13 +2,15 @@ import type { RestWorkspace } from "../schemas.js";
 import { describeService, serviceNamesOf } from "../services.js";
 import { SERVICE_ROLES } from "../vocabulary.js";
 import { DEFAULT_RUNNER_CONFIG, type RunnerConfig } from "./config.js";
+import { RECORDS_README } from "./records-readme.js";
 
 // The desk (ADR-0088): an agent account's own repository, where who it is, how it works and
 // whatever should outlive its machine live, in a shape every agent product reads. The package
 // carries the template and `console agent setup` writes it when the desk does not exist yet;
 // `examples/agent-desk` in the console's repository is what it writes for an invented account,
-// and a test holds the two equal. The template is the necessary minimum: five files, and
-// nothing that prescribes what a product already does for itself.
+// and a test holds the two equal. The template is the necessary minimum: five files and the
+// format of the desk's records (ADR-0117), and nothing that prescribes what a product already
+// does for itself.
 
 export interface DeskInput {
   /** The account: what it is called, its handle, and what it does where a title says. */
@@ -166,8 +168,9 @@ Thumbs.db
 
 /**
  * The files of a new desk, by their path in it: `README.md` for people, `AGENTS.md` for every
- * product, `CLAUDE.md` pointing one product to it, `runner.json`, and `.gitignore`. Text, with a
- * line ending each; what the persona says is written as text and makes no markup.
+ * product, `CLAUDE.md` pointing one product to it, `runner.json`, `.gitignore`, and
+ * `records/README.md`, the format of what the desk keeps (ADR-0117). Text, with a line ending
+ * each; what the persona says is written as text and makes no markup.
  */
 export function deskFiles(input: DeskInput): ReadonlyMap<string, string> {
   return new Map([
@@ -176,6 +179,7 @@ export function deskFiles(input: DeskInput): ReadonlyMap<string, string> {
     ["CLAUDE.md", "@AGENTS.md\n"],
     ["runner.json", `${JSON.stringify(input.runner ?? DEFAULT_RUNNER_CONFIG, null, 2)}\n`],
     [".gitignore", GITIGNORE],
+    ["records/README.md", RECORDS_README],
   ]);
 }
 
@@ -192,7 +196,8 @@ export const DESK_SECTIONS = [
 ] as const;
 
 // A person's desk (ADR-0115): the same place for a person, whose agent begins there instead of
-// in a folder that sends it nowhere. Four files, written by `console desk`: no `runner.json`,
+// in a folder that sends it nowhere. The agent account's files, written by `console desk`,
+// without `runner.json`,
 // since nothing keeps a person's session going, and no word of a secret store, since the console
 // keeps none for a person. `examples/person-desk` is what the template writes for an invented
 // person, and a test holds the two equal.
@@ -325,8 +330,9 @@ Thumbs.db
 
 /**
  * The files of a person's new desk, by their path in it: `README.md` for people, `AGENTS.md`
- * for every product, `CLAUDE.md` pointing one product to it, and `.gitignore`. Text, with a
- * line ending each; a name is written as text and makes no markup.
+ * for every product, `CLAUDE.md` pointing one product to it, `.gitignore`, and
+ * `records/README.md`, the format of what the desk keeps (ADR-0117). Text, with a line ending
+ * each; a name is written as text and makes no markup.
  */
 export function personDeskFiles(input: PersonDeskInput): ReadonlyMap<string, string> {
   return new Map([
@@ -334,6 +340,7 @@ export function personDeskFiles(input: PersonDeskInput): ReadonlyMap<string, str
     ["AGENTS.md", personAgents(input)],
     ["CLAUDE.md", "@AGENTS.md\n"],
     [".gitignore", PERSON_GITIGNORE],
+    ["records/README.md", RECORDS_README],
   ]);
 }
 

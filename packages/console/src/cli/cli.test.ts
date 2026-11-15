@@ -4104,15 +4104,17 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
     expect(out).not.toContain("Next, say which project");
     // The desk, from the template, in the OS account's home.
     expect(at.written.filter((file) => file.path.startsWith("/Users/mira/desk/"))).toEqual(
-      ["README.md", "AGENTS.md", "CLAUDE.md", "runner.json", ".gitignore"].map((name) => ({
-        path: `/Users/mira/desk/${name}`,
-        mode: 0o644,
-      })),
+      ["README.md", "AGENTS.md", "CLAUDE.md", "runner.json", ".gitignore", "records/README.md"].map(
+        (name) => ({
+          path: `/Users/mira/desk/${name}`,
+          mode: 0o644,
+        }),
+      ),
     );
     expect(at.files.get("/Users/mira/desk/AGENTS.md")).toContain("@mira");
     expect(at.files.get("/Users/mira/desk/AGENTS.md")).toContain("acme-mira");
     expect(out).toContain(
-      "A new desk is written at /Users/mira/desk (README.md, AGENTS.md, CLAUDE.md, runner.json, .gitignore).",
+      "A new desk is written at /Users/mira/desk (README.md, AGENTS.md, CLAUDE.md, runner.json, .gitignore, records/README.md).",
     );
     // The service: the runner as this command was started, in the desk, at this console and as
     // this account; loaded with no administrator's rights, and nothing else is run.
@@ -4214,7 +4216,7 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
     expect(await runCli([...LINE, "--desk", "/srv/desks/mira"], filled.io)).toBe(EXIT.ok);
     expect(half.files.get("/srv/desks/mira/README.md")).toBe("# My own words\n");
     expect(filled.out()).toContain(
-      "A new desk is written at /srv/desks/mira (AGENTS.md, CLAUDE.md, runner.json, .gitignore).",
+      "A new desk is written at /srv/desks/mira (AGENTS.md, CLAUDE.md, runner.json, .gitignore, records/README.md).",
     );
     expect(half.files.get(UNIT)).toContain("<string>/srv/desks/mira</string>");
   });
@@ -4666,7 +4668,7 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
 
 describe("a person's desk on the command line (ADR-0115)", () => {
   const ALICE = { ...ME, person: { ...PERSON, login: "alice@acme.example", name: "Alice Kim" } };
-  const FILES = ["README.md", "AGENTS.md", "CLAUDE.md", ".gitignore"];
+  const FILES = ["README.md", "AGENTS.md", "CLAUDE.md", ".gitignore", "records/README.md"];
   const SENTENCE =
     'Set this desk up as a repository of mine, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup"';
   /** The shell of a dashboard as a package would carry it: the two words the command fills in, and a folder. */
@@ -4733,7 +4735,7 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     expect([...at.files.keys()].some((path) => path.endsWith("runner.json"))).toBe(false);
     expect(run.out()).toBe(
       [
-        "A new desk is written at /work/alice-desk (README.md, AGENTS.md, CLAUDE.md, .gitignore), for alice@acme.example. It is yours from now on: to edit, and to make a repository of.",
+        "A new desk is written at /work/alice-desk (README.md, AGENTS.md, CLAUDE.md, .gitignore, records/README.md), for alice@acme.example. It is yours from now on: to edit, and to make a repository of.",
         "Next, open your agent in that folder and say:",
         "",
         SENTENCE,
@@ -4799,10 +4801,12 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     expect(await runCli(["desk"], run.io)).toBe(EXIT.ok);
     expect(half.files.get("/work/alice-desk/AGENTS.md")).toBe("# My own words\n");
     expect(half.written.map((file) => file.path)).toEqual(
-      ["README.md", "CLAUDE.md", ".gitignore"].map((name) => `/work/alice-desk/${name}`),
+      ["README.md", "CLAUDE.md", ".gitignore", "records/README.md"].map(
+        (name) => `/work/alice-desk/${name}`,
+      ),
     );
     expect(run.out()).toContain(
-      "The desk at /work/alice-desk gains README.md, CLAUDE.md, .gitignore; AGENTS.md was there and is left as it is.",
+      "The desk at /work/alice-desk gains README.md, CLAUDE.md, .gitignore, records/README.md; AGENTS.md was there and is left as it is.",
     );
     // A second run finds everything there, changes nothing, and still says what comes next.
     const again = harness({
@@ -4887,7 +4891,7 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     expect(at.written.every((file) => file.mode === 0o644)).toBe(true);
     expect(run.out()).toBe(
       [
-        "A new desk is written at /work/alice-desk (README.md, AGENTS.md, CLAUDE.md, .gitignore), for alice@acme.example. It is yours from now on: to edit, and to make a repository of.",
+        "A new desk is written at /work/alice-desk (README.md, AGENTS.md, CLAUDE.md, .gitignore, records/README.md), for alice@acme.example. It is yours from now on: to edit, and to make a repository of.",
         "The shell of its dashboard is written in /work/alice-desk/web (README.md, package.json, index.html, src/main.tsx): a console of your own on @skillcdn/console 0.5.1, which shows your work across your projects and is served from this machine by console serve once it is built; its README.md says how.",
         "Next, open your agent in that folder and say:",
         "",

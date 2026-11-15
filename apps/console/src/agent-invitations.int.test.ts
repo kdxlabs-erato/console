@@ -357,7 +357,7 @@ describe("the invitation that leads a machine to an agent account (ADR-0088)", (
       logins: [{ url: SIGN_IN_URL, account: "carol", self: true }],
     });
     expect([...own.files.keys()].sort()).toEqual(
-      [".gitignore", "AGENTS.md", "CLAUDE.md", "README.md", "runner.json"].map(
+      [".gitignore", "AGENTS.md", "CLAUDE.md", "README.md", "records/README.md", "runner.json"].map(
         (name) => `/home/mira/desk/${name}`,
       ),
     );

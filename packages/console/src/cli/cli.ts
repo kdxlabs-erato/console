@@ -5146,7 +5146,8 @@ const deskCheck = async (args: readonly string[], io: CliIo): Promise<number> =>
   return EXIT.ok;
 };
 
-// A person's desk (ADR-0115): the four fixed files, each only where no file of that name is
+// A person's desk (ADR-0115): its fixed files, the format of its records among them
+// (ADR-0117), each only where no file of that name is
 // there, in `<handle>-desk` here or the directory named; with --web, the shell of the dashboard
 // in `web/`, where that holds nothing yet. The command writes and stops: making the desk a
 // repository and bringing the dashboard up is a skill's, of the organization's pack, and the
