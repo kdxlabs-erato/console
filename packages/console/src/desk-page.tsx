@@ -24,30 +24,34 @@ import {
   readOpenRuns,
   withHistory,
 } from "./desk.js";
+import type { RecordsReader } from "./desk-records.js";
+import { DeskRecords } from "./desk-records-page.js";
 import { DEFAULT_LANGUAGES, useLanguage, useWords } from "./i18n/index.js";
 import { customPageHref, decisionHref, type Navigation, taskHref } from "./router.js";
 import { errorWords } from "./use-action.js";
 
-// The page of a desk's dashboard (ADR-0116): one page of a console of a person's own, with
-// three views of that person's own work. It reads through the client when a view is looked at
-// and keeps nothing: what stands now from the plate and the open runs, the figures and the
-// archive from a bounded page of each project's closed tasks and ended runs. The address says
-// which view, and the words the archive is found by (ADR-0010).
+// The page of a desk (ADR-0116, ADR-0117): one page of a console of a member's own, the
+// member's own extension of the console's pages. It comes with the records' view, what the
+// member made and what became of it, read from the desk's own files; beside it stand three
+// views of the member's work on the board, read through the client when one is looked at: what
+// stands now from the plate and the open runs, the figures and the archive from a bounded page
+// of each project's closed tasks and ended runs. The address says which view, and what it
+// shows (ADR-0010).
 
-/** What the address of a desk's page says: its view, and the words its archive is found by. */
+/** What the address of a desk's page says: its view, the records' where it names none, and the words the board's archive is found by. */
 export function deskViewOf(search: string): { readonly view: DeskView; readonly words: string } {
   const params = new URLSearchParams(search);
   const named = params.get("view");
   return {
-    view: DESK_VIEWS.find((view) => view === named) ?? "now",
+    view: DESK_VIEWS.find((view) => view === named) ?? "records",
     words: (params.get("q") ?? "").trim(),
   };
 }
 
-/** Where a view of a desk's page is, from the page's own address; the archive with the words it is found by. */
+/** Where a view of a desk's page is, from the page's own address; the board's archive with the words it is found by. */
 export function deskHref(base: string, view: DeskView, words = ""): string {
   const params = new URLSearchParams();
-  if (view !== "now") {
+  if (view !== "records") {
     params.set("view", view);
   }
   if (view === "archive" && words.length > 0) {
@@ -66,6 +70,8 @@ export interface DeskPageProps {
   /** The page's own address, without a query. */
   readonly href: string;
   readonly navigation: Navigation;
+  /** What reads the desk's records; the page's own `fetch` at `/records` where left out. */
+  readonly records?: RecordsReader | undefined;
 }
 
 /** What stands now, as one visit read it. */
@@ -151,7 +157,7 @@ export function DeskPage(props: DeskPageProps) {
   // the first page of each project, for the figures everything, for the archive what the
   // words find.
   const wanted = view === "archive" ? query : "";
-  const reads = view !== "now";
+  const reads = view === "figures" || view === "archive";
   useEffect(() => {
     if (!reads || personId === undefined) {
       return;
@@ -223,8 +229,17 @@ export function DeskPage(props: DeskPageProps) {
         <p className="sc-page-lead">{words.lead}</p>
       </div>
       <DeskViews view={view} viewHref={(one) => deskHref(href, one)} />
-      {problem !== undefined && <Callout tone="danger">{problem}</Callout>}
-      {view === "now" ? (
+      {problem !== undefined && view !== "records" && <Callout tone="danger">{problem}</Callout>}
+      {view === "records" ? (
+        <DeskRecords
+          search={search}
+          href={href}
+          navigation={navigation}
+          reader={props.records}
+          weekStart={weekStart}
+          taskHref={taskHref}
+        />
+      ) : view === "now" ? (
         standing === undefined ? (
           problem === undefined && loading
         ) : standing.work.tasks.length === 0 &&
@@ -289,10 +304,13 @@ export function DeskPage(props: DeskPageProps) {
 export const DESK_PAGE_KEY = "desk";
 
 /**
- * A desk's dashboard as a page of a console of one's own: `createConsole({ pages: [deskPage()] })`
- * adds it as a tab among the workspace's, at `/pages/<key>`.
+ * A desk's page for a console of one's own: `createConsole({ pages: [deskPage()] })` adds it as
+ * a tab among the workspace's, at `/pages/<key>`. `records` says what reads the desk's records,
+ * where that is not the page's own `fetch` at `/records`.
  */
-export function deskPage(options: { readonly key?: string | undefined } = {}): CustomPage {
+export function deskPage(
+  options: { readonly key?: string | undefined; readonly records?: RecordsReader | undefined } = {},
+): CustomPage {
   const key = options.key ?? DESK_PAGE_KEY;
   return {
     key,
@@ -307,6 +325,7 @@ export function deskPage(options: { readonly key?: string | undefined } = {}): C
         search={context.search}
         href={customPageHref(key)}
         navigation={context.navigation}
+        records={options.records}
       />
     ),
   };

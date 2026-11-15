@@ -949,11 +949,11 @@ export const en = {
     inProject: (project: string) => `in ${project}`,
   },
 
-  /** A desk's dashboard (ADR-0116): a person's own work in a console of their own. */
+  /** The pages of a desk (ADR-0116, ADR-0117): a member's own, beside the console's, in a console of their own. */
   desk: {
     tab: "Desk",
     title: "My desk",
-    lead: "Your own work across your projects, read from the console as you look.",
+    lead: "What you made and what became of it, and your work on the board.",
     loading: "Loading your desk",
     couldNotLoad: "Your desk could not be read from the console.",
     /** Where a person may see more projects than a visit reads. */
@@ -961,9 +961,78 @@ export const en = {
       `Read from ${read} of your ${of} projects, by name.`,
     views: {
       aria: "Views of the desk",
-      now: "Now",
-      figures: "Figures",
-      archive: "Archive",
+      records: "Records",
+      now: "On the board",
+      figures: "Board figures",
+      archive: "Board archive",
+    },
+    /** What a desk keeps (ADR-0117): what its member made and what became of it. */
+    records: {
+      loading: "Reading your records",
+      none: {
+        title: "No records here yet",
+        body: "A record is what you made and what became of it: a collection of items, each with its files, where it was used and how it did. Records are files under records/ in your desk, which an agent working there writes as the README beside them says; the first one shows up here.",
+      },
+      noCollections: "The records name no collection yet.",
+      collections: "Collections",
+      crumb: "Records",
+      items: (count: number) => (count === 1 ? "1 item" : `${count} items`),
+      lastMade: "last made",
+      noSuchCollection: {
+        title: "No such collection",
+        body: "The records hold no collection of this name.",
+      },
+      noSuchItem: {
+        title: "No such item",
+        body: "The collection holds no item of this name.",
+      },
+      showItems: "Items",
+      showResults: "Results",
+      narrow: "Status",
+      everyStatus: "Every status",
+      shown: (shown: number, of: number) => `${shown} of ${of}`,
+      noItems: "Nothing is recorded here yet.",
+      noneOfStatus: "No item has this status.",
+      madeOn: "Made on",
+      status: "Status",
+      about: "About it",
+      note: "Note",
+      links: "Links",
+      task: "Task",
+      taskOf: (project: string, number: number) => `#${number} in ${project}`,
+      files: "Files",
+      download: "Download",
+      open: "Open",
+      reading: "Asking for the file",
+      notFetched: "Kept with git LFS and not fetched on this machine.",
+      refused: "The server would not give this file.",
+      unreadable: "This file could not be read.",
+      uses: "Where it was used",
+      noUses: "No use is recorded.",
+      results: "Results",
+      inAll: "In all",
+      byWeek: "By week",
+      byDay: "By day",
+      best: "What did best",
+      bestBy: "By",
+      noMetrics: "This collection keeps no figures.",
+      noRows: "No figures are recorded yet.",
+      noValue: "none",
+      seconds: (amount: string) => `${amount} s`,
+      percent: (amount: string) => `${amount}%`,
+      problems: {
+        title: "Some records could not be read",
+        unreadable: (file: string) => `records/${file} could not be read.`,
+        tooLarge: (file: string) => `records/${file} is larger than the pages read.`,
+        notJson: (file: string) => `records/${file} is not JSON.`,
+        notAsFormat: (file: string, at: string) =>
+          at === ""
+            ? `records/${file} is not as the format says.`
+            : `records/${file} is not as the format says, at ${at}.`,
+        left: (count: number) =>
+          count === 1 ? "1 entry is left out." : `${count} entries are left out.`,
+        check: "console desk check, run in the desk, says each thing that is wrong.",
+      },
     },
     now: {
       empty: {
@@ -1002,7 +1071,7 @@ export const en = {
     command: {
       title: "A desk of your own",
       gives:
-        "Makes a folder named after you where your agent starts: its instructions, a place for your projects, and with --web a dashboard of your own work. It says what to tell your agent next.",
+        "Makes a folder desk, a repository of your own that your agent starts in: its instructions, a place for your projects, records of what you made, and with --web pages of your own beside the console's. It says what to tell your agent next.",
     },
   },
 

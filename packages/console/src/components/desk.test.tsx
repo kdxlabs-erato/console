@@ -115,22 +115,51 @@ describe("a desk's views", () => {
       <DeskViews view="figures" viewHref={(view) => deskHref("/pages/desk", view)} />,
     );
     expect(html).toContain('class="sc-subtabs sc-desk-views"');
-    expect(html).toContain('<a class="sc-tab" href="/pages/desk">Now</a>');
+    // The records the desk keeps first, at the page's own address; then the board's views,
+    // each named for the board, so that its figures are not taken for a collection's results.
+    expect(
+      [...html.matchAll(/<a class="sc-tab[^"]*" href="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map(
+        (match) => [match[1], match[2]],
+      ),
+    ).toEqual([
+      ["/pages/desk", "Records"],
+      ["/pages/desk?view=now", "On the board"],
+      ["/pages/desk?view=figures", "Board figures"],
+      ["/pages/desk?view=archive", "Board archive"],
+    ]);
     expect(html).toContain(
-      '<a class="sc-tab sc-tab-current" href="/pages/desk?view=figures" aria-current="page">Figures</a>',
+      '<a class="sc-tab sc-tab-current" href="/pages/desk?view=figures" aria-current="page">Board figures</a>',
     );
-    expect(html).toContain('href="/pages/desk?view=archive"');
+    const korean = renderToStaticMarkup(
+      <LanguageContext.Provider value={KOREAN}>
+        <DeskViews view="records" viewHref={(view) => deskHref("/pages/desk", view)} />
+      </LanguageContext.Provider>,
+    );
+    expect([...korean.matchAll(/>([^<]+)<\/a>/g)].map((match) => match[1])).toEqual([
+      "기록",
+      "보드 현황",
+      "보드 통계",
+      "보드 아카이브",
+    ]);
   });
 
-  it("are read from the address, and the archive's words with them", () => {
-    expect(deskViewOf("")).toEqual({ view: "now", words: "" });
+  it("are read from the address, and the board's archive's words with them", () => {
+    // The page's own address is the records' view, and so is what names a collection of them.
+    expect(deskViewOf("")).toEqual({ view: "records", words: "" });
+    expect(deskViewOf("?collection=ad-creatives&item=hook-1")).toEqual({
+      view: "records",
+      words: "",
+    });
+    expect(deskViewOf("?view=now")).toEqual({ view: "now", words: "" });
     expect(deskViewOf("?view=figures")).toEqual({ view: "figures", words: "" });
     expect(deskViewOf("?view=archive&q=%20the+parser ")).toEqual({
       view: "archive",
       words: "the parser",
     });
     // A view the desk has not is the first; the words are the archive's alone.
-    expect(deskViewOf("?view=nonsense")).toEqual({ view: "now", words: "" });
+    expect(deskViewOf("?view=nonsense")).toEqual({ view: "records", words: "" });
+    expect(deskHref("/pages/desk", "records")).toBe("/pages/desk");
+    expect(deskHref("/pages/desk", "now")).toBe("/pages/desk?view=now");
     expect(deskHref("/pages/desk", "archive", "the parser")).toBe(
       "/pages/desk?view=archive&q=the+parser",
     );

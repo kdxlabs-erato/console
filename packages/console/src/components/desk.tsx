@@ -25,13 +25,17 @@ import {
   Time,
 } from "./ui.js";
 
-// The views of a desk's dashboard (ADR-0116): what stands now, the figures and the archive of
-// one person's own work across their projects. Each takes its data as props and nothing from
-// the network, and is built from the console's parts alone: rows, facts, panes, badges. What
+// The board's views of a desk's page (ADR-0116): what stands on the board now, the board's
+// figures and the board's archive of one member's own work across their projects, beside the
+// records' views (`desk-records.tsx`). Each takes its data as props and nothing from the
+// network, and is built from the console's parts alone: rows, facts, panes, badges. What
 // people wrote is shown as text, never as HTML.
 
-/** The views of a desk, in the order its tabs stand. */
-export const DESK_VIEWS = ["now", "figures", "archive"] as const;
+/**
+ * The views of a desk's page, in the order its tabs stand: the records the desk keeps, then the
+ * member's work on the board, what stands there now, its figures and its archive.
+ */
+export const DESK_VIEWS = ["records", "now", "figures", "archive"] as const;
 export type DeskView = (typeof DESK_VIEWS)[number];
 
 /** The tabs of a desk: one per view, the current one marked. */

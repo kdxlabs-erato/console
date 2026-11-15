@@ -2,12 +2,12 @@ import type { RestRun, RestTaskBrief, RestWorkBrief, RunStatus, TaskState } from
 import type { ProjectClient } from "./client.js";
 import { addDays, dayOf, weekOf } from "./dates.js";
 
-// A desk's dashboard (ADR-0116): what a person's own console shows of their own work, across
-// the projects they may see. Three views: what stands now, the figures, and the archive. Nothing
-// of the board is kept anywhere: every view is read from the console when it is looked at, a
-// project at a time through the routes there are, and what one visit reads is bounded here.
-// This module is the reading and the counting, with no React in it; the views are
-// `components/desk.tsx` and the page that composes them is `desk-page.tsx`.
+// The board's side of a desk's page (ADR-0116): what a member's own console shows of their own
+// work on the board, across the projects they may see. Three views: what stands now, the
+// figures, and the archive. Each is read from the console when it is looked at, a project at a
+// time through the routes there are, and what one visit reads is bounded here. This module is
+// the reading and the counting, with no React in it; the views are `components/desk.tsx` and
+// the page that composes them, with the desk's records before them, is `desk-page.tsx`.
 
 /** How many of a person's projects one visit reads: the rest are named as not read. */
 export const DESK_PROJECTS = 12;

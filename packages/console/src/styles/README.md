@@ -83,7 +83,7 @@ A part is a file under `parts/` and a row here, with the classes that are its ow
 | `crumbs` | `sc-crumb*`, `sc-doc-crumbs*` | | The way down to where the page is, each step a link. |
 | `links` | `sc-link*` | | Links as a list, or one with what it leads to. |
 | `filters` | `sc-filters*` | `BoardFilters` | What narrows a page: a row of choices with the count of what is left. |
-| `frame` | `sc-plugin-frame*` | `PluginFrame` | Where a plugin's page or widget is shown: the box, and the frame in it. |
+| `frame` | `sc-plugin-frame*` | `PluginFrame` | Where a plugin's page or widget is shown, or a document a page shows in a frame: the box, and the frame in it. |
 
 Some classes are named after the first page that had them (`sc-task-row` is any row, `sc-column-count` any count). Their names stay until a change renames them everywhere at once.
 
