@@ -579,6 +579,19 @@ Goal: what the messenger needs to connect several workspaces of a chat service t
 
 - [x] A secret setting that keeps one value per key ([ADR-0111](adr/0111-a-secret-setting-may-keep-one-value-per-key.md)): `keyed: { max }` in the manifest; sealed under the key the same answer names, or one the plugin names, withheld as `no_key` or `too_many` where it cannot be; put into a request by its key; `ctx.secrets.keys`, `forget` and `move`, the last keeping the one value of before through an upgrade; kept in a table of its own; each key on the settings page and in `console plugin <key> settings`, set and removed one at a time by an administrator, and named in the feed; the test kit takes values by key. Tested against a real database and host, the service answered from the test: sealing, the bound, a key the answer does not hold, placing, the refusals, an administrator's keys, forgetting, moving, nothing of a value in an event, an answer or a log line, and the purge.
 
+## Milestone 49, the console under an agent's hand (2026-11-15)
+
+Goal: an agent that begins anywhere a member works, in a checkout, in a folder not yet bound or in a desk, is told enough to work the board without a mistake: the right console and the right project, the organization's skills, a board whose states say where the work stands, and a desk to begin from.
+
+- [x] A binding that names its console, and a `whoami` that asks the console ([ADR-0112](adr/0112-a-binding-names-its-console-and-whoami-asks-the-console-for-the-project.md)): `console use` writes the address every time and an account only when asked; `whoami` names the project as the console has it and what named its key, and is refused with `project.not_found` where the console does not have it.
+- [x] The organization's pack where no project is named ([ADR-0113](adr/0113-the-organizations-pack-is-read-where-no-project-is-named-by-every-member.md)): `/api/v1/workspace/skills` and the reads under it, for every member; `console skills` and `console skill` read it in a desk and in a folder not yet bound.
+- [x] The end of a run leaves no task at work behind it ([ADR-0114](adr/0114-the-end-of-a-run-leaves-no-task-at-work-behind-it.md)): failed goes up for review, abandoned gives the task back, migration `0061`; a task the console itself gave back wakes no agent account.
+- [x] The console's own rules say `--state ready`, the repository of a shared project, work found on the way, and the organization's pack with no project.
+- [x] working-the-board 1.32 and planning-the-board 1.6 brought to the command, each thing said once: a review's verdict through an agent, the right project at the right console, a desk that names no project.
+- [x] A person's desk ([ADR-0115](adr/0115-a-person-has-a-desk-too-written-by-the-command-and-set-up-by-a-skill-of-the-organizations-pack.md)): the template of four files beside the agent account's, `examples/person-desk` held equal to it, and `console desk [<directory>] [--web]`, which writes it for whoever the command is signed in as and ends with the sentence for their agent; refused for an agent account and under a directory that works in a project.
+- [x] An agent account's `AGENTS.md` says that its desk is bound to no project and what a subagent is handed; a desk that is there keeps its own.
+- [x] A desk's dashboard ([ADR-0116](adr/0116-a-desks-dashboard-is-a-page-of-a-console-of-ones-own-read-as-it-is-looked-at.md)): `deskPage()`, a page of a console of one's own with what stands now, the figures and the archive of a person's own work, built from the parts and read as it is looked at; the shell `template/desk-web` in the package; the command that makes a desk shown on the Agents page. Built once by hand from the packed package and served by `console serve`; not seen against a console with more than a page of closed work in a project.
+
 ## After milestone 16
 
 Nothing is chosen yet; the list below is where the next milestone comes from.
