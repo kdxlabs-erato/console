@@ -1,6 +1,8 @@
 # AGENTS.md
 
-The working agreement for this repository. It applies to AI agents and humans alike, whichever agent you are: Codex reads this file directly, Claude Code reads it through `CLAUDE.md`. Keep it short and true: when a rule here turns out to be wrong or stale, fix it in the same change.
+The working agreement for this repository. It applies to AI agents and humans alike, whichever agent you are: Codex reads this file directly, Claude Code reads it through `CLAUDE.md`.
+
+A workspace with rules of its own keeps them in its `README.md`, under "Rules" (`apps/console`, `packages/console`); `deploy/README.md` is the contract for whoever operates the image, and holds what there is to know of `.github/` too; the pages have theirs in `packages/console/src/styles/README.md`. Read them before editing there. Keep this file and those sections short and true: when a rule turns out to be wrong or stale, fix it in the same change.
 
 ## Project
 
@@ -41,7 +43,7 @@ packages/
   console/    @skillcdn/console: the API client and schemas, the components, the composition of the default console   on npm
 examples/     plugin-hello, the plugin `console-plugin init` writes, built and tested as a workspace, held equal to the package's template; agent-desk, the desk an agent account is set up with, and person-desk, the desk `console desk` writes for a person, each held equal to the package's template too
 deploy/       the contract for whoever operates the image, compose for local development and for the smallest install, the scripts that install it and bundle it for a network without internet
-docs/         architecture, roadmap, specs, ADRs; served with the skills
+docs/         architecture, roadmap, specs, ADRs, and README.md, their map; served with the skills
 skills/       the console's skills in the SkillCDN Format, for an agent working the board, planning it, building a console or a plugin, deploying one, running an agent account, or keeping a desk; SKILLCDN.md at the root is their manifest
 scripts/      checks that are part of `pnpm check`, and what packing needs
 ```
@@ -76,7 +78,7 @@ Packages compile to `dist/` and consume each other's compiled output. Going thro
 
 **Bound to a console?** Before the first step, run `console whoami`: when it names a project, or `.skillcdn-console.json` is in this checkout, work the task through that SkillCDN console (its answer says how).
 
-**Before you start.** Read this file and the workspace's `README.md`. Check [docs/roadmap.md](docs/roadmap.md) for the current milestone, [docs/architecture.md](docs/architecture.md) for the design and its open questions, and [docs/adr/](docs/adr/) before questioning a past decision. If a product decision is missing, do not guess: add it to the open questions or ask.
+**Before you start.** Read this file and the workspace's `README.md`, its Rules first. Check [docs/roadmap.md](docs/roadmap.md) for the current milestone, [docs/architecture.md](docs/architecture.md) for the design and its open questions, and [docs/adr/](docs/adr/) before questioning a past decision. If a product decision is missing, do not guess: add it to the open questions or ask.
 
 **While working.** Stay inside the task's scope: no drive-by reformatting, renames or dependency bumps. Prefer the boring solution; add an abstraction when the second use appears, not before. Build what the roadmap's current milestone asks for, in the order it asks, so that every push leaves something that runs.
 
@@ -115,6 +117,7 @@ Documentation is part of the change, not a follow-up. A future session starts wi
 | Build, image or CI | `deploy/README.md` |
 | A workspace's public surface or usage | that workspace's `README.md` |
 | A milestone item is started, finished or dropped | `docs/roadmap.md` |
+| A document is added or retired (a spec, a workspace's README) | its row in `docs/README.md`, the map of the documents |
 | You learned a durable gotcha the hard way | "Gotchas" in the nearest `AGENTS.md` or workspace `README.md` |
 
 One topic, one file. Link to where something is documented instead of restating it. Keep docs lean: current facts and decisions, not history or essays. Git history is the changelog. Anything the team needs must live in the repo, not in chat or an agent's private memory; business reasoning, comparisons with other products and operations details belong in private notes, never here (rules 8 and 9).
@@ -155,6 +158,10 @@ One topic, one file. Link to where something is documented instead of restating 
 - Hot files (`pnpm-lock.yaml`, the catalog, `docs/roadmap.md`, this file) conflict easily: keep edits minimal and rebase before pushing.
 - When two people both add migrations, whoever pushes second rebases and regenerates their migration.
 - Do not "fix" another task's work in passing. Open an issue or leave a `TODO(#issue)`.
+
+## Skills
+
+The skills this repository is worked with are the pack of its console project, read through the console with nothing to connect: `console skills --search <words> --limit 5` finds one, and `console skill <path>` loads it. The console's own skills are the files under `skills/`, which the command carries. A skill never overrides this file: where they differ, this file wins. Without a console, work goes on by this file alone.
 
 ## Gotchas
 
