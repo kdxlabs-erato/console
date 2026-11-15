@@ -65,8 +65,26 @@ export const CONSOLE_RULES = [
   "",
 ].join("\n");
 
+/** What stands in the rules for the language of the person the agent works for. */
+export const RULES_LANGUAGE_PLACEHOLDER = "{language}";
+
 /** The heading what an organization adds stands under, where the rules are read whole. */
 export const ADDED_RULES_HEADING = "# What this organization adds";
+
+/**
+ * The console's rules as a text that carries them whole is known by: read, not as they are
+ * kept. Where the language stands, any words of that line, since they come back as they were
+ * shown, `{language}` filled for whoever read them; and a line ends as a file keeps it, with a
+ * carriage return or without. One wildcard a line, so that the search stays linear in a text
+ * an agent may send.
+ */
+const WHOLE_RULES = new RegExp(
+  CONSOLE_RULES.trim()
+    .split(RULES_LANGUAGE_PLACEHOLDER)
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\n/g, "\\r?\\n"))
+    .join("[^\\r\\n]+?"),
+  "g",
+);
 
 /**
  * The rules as they hold at a workspace, whole: the console's, then what the organization adds
@@ -79,20 +97,31 @@ export function rulesWith(added: string | undefined): string {
 }
 
 /**
- * What a text sent as the workspace's rules adds: the text itself; or, where it is the rules
- * read whole, as a command or a page of before sends them back, what stands after the
- * console's own and the heading. Nothing where it is the console's rules alone.
+ * What a text sent as the workspace's rules adds: the text itself; or, where it carries the
+ * rules read whole, as a command or a page of before sends them back and as a person copies
+ * them from what `console rules` printed, what stands before the console's own and after
+ * them, without the heading. Nothing where it is the console's rules alone. Only the whole is
+ * the console's: a text that quotes a sentence of the rules, or a part, is kept as it is.
  */
 export function addedRulesOf(body: string): string {
   const text = body.trim();
-  const own = CONSOLE_RULES.trim();
-  if (!text.startsWith(own)) {
+  const added: string[] = [];
+  let from = 0;
+  for (const whole of text.matchAll(WHOLE_RULES)) {
+    added.push(text.slice(from, whole.index));
+    from = whole.index + whole[0].length;
+  }
+  if (from === 0) {
     return text;
   }
-  const rest = text.slice(own.length).trim();
-  return rest.startsWith(ADDED_RULES_HEADING)
-    ? rest.slice(ADDED_RULES_HEADING.length).trim()
-    : rest;
+  added.push(text.slice(from));
+  return added
+    .map((part) => part.trim())
+    .map((part) =>
+      part.startsWith(ADDED_RULES_HEADING) ? part.slice(ADDED_RULES_HEADING.length).trim() : part,
+    )
+    .filter((part) => part.length > 0)
+    .join("\n\n");
 }
 
 /**
@@ -118,9 +147,6 @@ export const PROJECT_RULES_TEMPLATE = [
   "## Language on the board",
   "",
 ].join("\n");
-
-/** What stands in the rules for the language of the person the agent works for. */
-export const RULES_LANGUAGE_PLACEHOLDER = "{language}";
 
 /** What the rules say for a person with no language yet: the task's, as the people of the board wrote it. */
 const TASKS_LANGUAGE = "the language the task is written in";

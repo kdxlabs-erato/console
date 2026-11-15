@@ -148,6 +148,54 @@ describe("the console's rules", () => {
     expect(addedRulesOf(changed)).toBe(changed.trim());
   });
 
+  it("know the console's rules where the whole comes back as it was read: {language} filled, and the line ends a file keeps", () => {
+    // As `console rules` prints them, for a person who reads in English, in Korean or in no
+    // language yet: a command of before sends back what it printed, and so does a person.
+    for (const language of ["en", "ko", null]) {
+      const printed = fillRules(rulesWith("Ask first."), language);
+      expect(printed).not.toContain(RULES_LANGUAGE_PLACEHOLDER);
+      expect(addedRulesOf(printed)).toBe("Ask first.");
+      // The console's rules alone, read so, still add nothing.
+      expect(addedRulesOf(fillRules(CONSOLE_RULES, language))).toBe("");
+    }
+    // Whatever words stand where the language did: the rules are known by the rest of them.
+    expect(addedRulesOf(rulesWith("Ask first.").replace("{language}", "plain words"))).toBe(
+      "Ask first.",
+    );
+    // Saved on the way by an editor that ends a line with a carriage return and a line feed.
+    const crlf = (text: string): string => text.split("\n").join("\r\n");
+    expect(addedRulesOf(crlf(fillRules(rulesWith("Ask first."), "ko")))).toBe("Ask first.");
+    expect(addedRulesOf(crlf(CONSOLE_RULES))).toBe("");
+    expect(addedRulesOf(crlf(`${CONSOLE_RULES}\nOne more.`))).toBe("One more.");
+    // What was added stands before the whole, after it, or both: the whole is cut, and the
+    // heading with it where it follows.
+    const whole = fillRules(CONSOLE_RULES, "en").trim();
+    expect(addedRulesOf(`Ask first.\n\n${whole}\n`)).toBe("Ask first.");
+    expect(addedRulesOf(`Ask first.\n\n${whole}\n\nAnd tell us after.\n`)).toBe(
+      "Ask first.\n\nAnd tell us after.",
+    );
+    expect(
+      addedRulesOf(`Ask first.\n\n${whole}\n\n${ADDED_RULES_HEADING}\n\nAnd tell us after.\n`),
+    ).toBe("Ask first.\n\nAnd tell us after.");
+    // A whole sent twice is cut twice: none of it is kept as an addition.
+    expect(addedRulesOf(`${whole}\n\nAsk first.\n\n${crlf(whole)}\n`)).toBe("Ask first.");
+  });
+
+  it("keep an addition that quotes the console's rules, a sentence or a part of them: only the whole is the console's", () => {
+    const sentence =
+      "No token is looked for, read, printed or sent, and nothing secret goes into a report, a page or these rules.";
+    expect(CONSOLE_RULES).toContain(sentence);
+    const quoting = `As the console's rules say: "${sentence}" Here that goes for a customer's name too.`;
+    expect(addedRulesOf(quoting)).toBe(quoting);
+    // Up to the last part and no further: not the whole, so nothing is cut.
+    const most = CONSOLE_RULES.slice(0, CONSOLE_RULES.indexOf("## What never happens"));
+    expect(addedRulesOf(`${most}\nOurs ends here.`)).toBe(`${most}\nOurs ends here.`.trim());
+    // The head line alone, which a text of the organization's own may well begin with.
+    expect(addedRulesOf("# Rules for agents on this board\n\nAsk first.")).toBe(
+      "# Rules for agents on this board\n\nAsk first.",
+    );
+  });
+
   it("say the language of the person where they are read, and the task's when they chose none", () => {
     expect(CONSOLE_RULES).toContain(RULES_LANGUAGE_PLACEHOLDER);
     expect(languageNameOf("ko")).toBe("Korean");

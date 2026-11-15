@@ -8,6 +8,7 @@ import {
   CONSOLE_RULES,
   connectPath,
   DEFAULT_TOKEN_DAYS,
+  fillRules,
   MAX_FILE_BYTES,
   MAX_FILES_PER_COMMENT,
   MAX_FILES_PER_DECISION,
@@ -3923,9 +3924,14 @@ describe("the rules", () => {
       ).json(),
     );
     expect(after.items.at(-1)).toMatchObject({ kind: "document.archived", projectId: null });
-    // Added once more, for what follows: the page comes back again.
-    const once = await rulesOf(await as(admin, "PUT", RULES, { body: "# Ours again" }, named));
+    // Added once more, for what follows, as a command of 0.5.0 sends the whole back: as it
+    // printed it for a person who reads Korean, from a file that ends its lines with a carriage
+    // return. The page comes back again, with what was added alone on it.
+    const printed = fillRules(rulesWith("# Ours again"), "ko").split("\n").join("\r\n");
+    expect(printed).not.toContain(CONSOLE_RULES.trim());
+    const once = await rulesOf(await as(admin, "PUT", RULES, { body: printed }, named));
     expect(once.page).toMatchObject({ version: 4, archivedAt: null });
+    expect(once.added?.body).toBe("# Ours again");
     // Kept short.
     const long = await as(admin, "PUT", RULES, { body: "x".repeat(MAX_RULES_LENGTH + 1) }, named);
     expect(long.status).toBe(400);

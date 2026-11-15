@@ -2759,7 +2759,8 @@ export type RestProjectRules = z.infer<typeof restProjectRulesSchema>;
 
 /**
  * What `PUT /api/v1/rules` is sent: what the organization adds, as it is to be. A body that
- * begins with the console's rules, the whole a client of before read, is taken for what follows them.
+ * carries the console's rules whole, as a client of before read them, is taken for what stands
+ * before and after them.
  */
 export const restRulesInputSchema = z.object({
   body: paragraphs(MAX_RULES_LENGTH),

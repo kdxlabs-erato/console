@@ -68,10 +68,10 @@ export async function readRules(database: Database, scope: DocumentScope): Promi
 
 /**
  * Writes what a scope adds to the rules as a version of its page, bringing the page back when
- * it was put away. At the workspace a text that begins with the console's rules, the whole as
- * a command or a page of before read it and sends it back, is written as what follows them:
- * a copy of the console's rules would stop following the console's version. With nothing
- * following, nothing is added: what was added is put away.
+ * it was put away. At the workspace a text that carries the console's rules whole, as a command
+ * or a page of before read them and sends them back, is written as what stands before and
+ * after them: a copy of the console's rules would stop following the console's version. With
+ * nothing beside them, nothing is added: what was added is put away.
  */
 export async function writeRules(
   database: Database,
