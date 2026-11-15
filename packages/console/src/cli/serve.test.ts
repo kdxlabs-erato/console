@@ -523,11 +523,60 @@ describe("a desk's records, served beside the build (ADR-0117)", () => {
     expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
   });
 
-  it("serves no directory that is not there, and none that is a file", async () => {
-    await expect(loadRecordsRoot(join(desk, "nowhere"))).rejects.toBeInstanceOf(RecordsRootError);
-    await expect(loadRecordsRoot(join(desk, "secret.json"))).rejects.toThrow(
-      "is not a directory that is there",
+  it("serves a directory that is not there yet as one that holds nothing, and what comes to be kept in it with no restart", async () => {
+    // A desk keeps nothing until its member asks (ADR-0122): its pages are served all the same.
+    const later = join(desk, "later");
+    const kept = await loadRecordsRoot(later);
+    expect(await kept.there()).toBe(false);
+    const handler = createServeHandler({
+      upstream: `${UPSTREAM}/`,
+      token: TOKEN,
+      fetch: fakeConsole().fetch,
+      port: PORT,
+      web,
+      records: kept,
+    });
+    const ask = () => handler(new Request(`${AT}/records/index.json`, { headers: fromPage }));
+    const none = await ask();
+    expect(none.status).toBe(404);
+    expect(await none.json()).toMatchObject({ error: { code: "records.not_found" } });
+    // The first thing the desk keeps is served as soon as it is there: the directory is looked
+    // for at each request.
+    mkdirSync(later);
+    writeFileSync(join(later, "index.json"), '{"collections":[]}');
+    expect(await kept.there()).toBe(true);
+    const first = await ask();
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({ collections: [] });
+    // And nothing again once it is gone.
+    rmSync(later, { recursive: true, force: true });
+    expect(await kept.there()).toBe(false);
+    expect((await ask()).status).toBe(404);
+  });
+
+  it("serves no path that is there and is not a directory", async () => {
+    await expect(loadRecordsRoot(join(desk, "secret.json"))).rejects.toBeInstanceOf(
+      RecordsRootError,
     );
+    await expect(loadRecordsRoot(join(desk, "secret.json"))).rejects.toThrow(
+      "is there and is not a directory",
+    );
+  });
+
+  it("answers nothing from a directory that turned into a file while it was served", async () => {
+    const turned = join(desk, "turned");
+    mkdirSync(turned);
+    writeFileSync(join(turned, "index.json"), "{}");
+    const kept = await loadRecordsRoot(turned);
+    rmSync(turned, { recursive: true, force: true });
+    writeFileSync(turned, "a file now");
+    try {
+      expect(await kept.there()).toBe(false);
+      const answer = await kept.respond(new Request(`${AT}/records/index.json`));
+      expect(answer.status).toBe(404);
+    } finally {
+      rmSync(turned, { force: true });
+    }
   });
 
   it("answers a part of a video over the loopback, as a browser's player asks for it", async () => {

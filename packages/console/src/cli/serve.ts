@@ -201,6 +201,8 @@ export class RecordsRootError extends Error {
 }
 
 export interface RecordsRoot {
+  /** Whether the directory is there now: a desk keeps nothing until its member asks (ADR-0122). */
+  there(): Promise<boolean>;
   /** The file a request under `/records/` asks for, or the refusal that says why not. */
   respond(request: Request): Promise<Response>;
 }
@@ -252,17 +254,38 @@ function rangeOf(
  * a file system reads as more than a name; a link that leads out of the directory leads
  * nowhere; a folder is not listed. A file that is a git LFS pointer is refused by name, since
  * what would be shown is not the file.
+ *
+ * A directory that is not there yet is no error (ADR-0122): a desk has its `records/` once it
+ * keeps something, and its pages are served before that. Such a directory holds nothing, and
+ * is looked for again at each request, so that the first thing kept is served with no restart.
+ * What is there and is no directory is refused before anything is served.
  */
 export async function loadRecordsRoot(directory: string): Promise<RecordsRoot> {
-  let root: string;
-  try {
-    root = await realpath(directory);
-    if (!(await stat(root)).isDirectory()) {
-      throw new Error("not a directory");
+  /** The directory as it is now, links followed; nothing where it is not there yet. */
+  const rootNow = async (): Promise<string | undefined> => {
+    let root: string;
+    try {
+      root = await realpath(directory);
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return undefined;
+      }
+      throw new RecordsRootError(`${directory} cannot be read`, { cause: error });
     }
-  } catch (error) {
-    throw new RecordsRootError(`${directory} is not a directory that is there`, { cause: error });
-  }
+    if (!(await stat(root)).isDirectory()) {
+      throw new RecordsRootError(`${directory} is there and is not a directory`);
+    }
+    return root;
+  };
+  // Said before anything is served: a file where the records are to be is a mistake to say now.
+  await rootNow();
+  /** The directory at the moment of a request: nothing where it is not one then, whatever it was. */
+  const rootThen = (): Promise<string | undefined> => rootNow().catch(() => undefined);
   const headers = {
     "cache-control": "no-store",
     "x-content-type-options": "nosniff",
@@ -271,7 +294,7 @@ export async function loadRecordsRoot(directory: string): Promise<RecordsRoot> {
   const notFound = (): Response =>
     json(404, "records.not_found", "No file of the records is at this path.");
 
-  const fileAt = async (pathname: string): Promise<string | undefined> => {
+  const fileAt = async (root: string, pathname: string): Promise<string | undefined> => {
     const parts: string[] = [];
     for (const raw of pathname.slice(RECORDS_PREFIX.length + 1).split("/")) {
       let part: string;
@@ -308,7 +331,11 @@ export async function loadRecordsRoot(directory: string): Promise<RecordsRoot> {
       return refused;
     }
     const { pathname } = new URL(request.url);
-    const file = pathname.startsWith(`${RECORDS_PREFIX}/`) ? await fileAt(pathname) : undefined;
+    const root = await rootThen();
+    const file =
+      root !== undefined && pathname.startsWith(`${RECORDS_PREFIX}/`)
+        ? await fileAt(root, pathname)
+        : undefined;
     if (file === undefined) {
       return notFound();
     }
@@ -370,7 +397,7 @@ export async function loadRecordsRoot(directory: string): Promise<RecordsRoot> {
       },
     );
   };
-  return { respond };
+  return { there: async () => (await rootThen()) !== undefined, respond };
 }
 
 /**

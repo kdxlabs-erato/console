@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -905,11 +905,11 @@ describe("the console command", () => {
     expect(await runCli(["serve", "--port", "x"], nowhere.io)).toBe(EXIT.usage);
   });
 
-  it("serves the records of a desk beside the API with --records, and none from a directory that is not there (ADR-0117)", async () => {
+  it("serves the records of a desk beside the API with --records, a directory that is not there yet as one that holds nothing, and none from what is no directory (ADR-0117, ADR-0122)", async () => {
     const { fetch } = fakeConsole({ "GET /api/v1/me": { body: ME } });
     const desk = mkdtempSync(join(tmpdir(), "console-cli-records-"));
-    try {
-      writeFileSync(join(desk, "index.json"), '{"collections":[]}');
+    /** A serve that is run and held: its handler once it listens, and the way to stop it. */
+    const held = () => {
       let close: () => void = () => undefined;
       let ready: (handler: ServeHandler) => void = () => undefined;
       const handler = new Promise<ServeHandler>((resolve) => {
@@ -925,37 +925,68 @@ describe("the console command", () => {
           close: async () => close(),
         };
       };
-      const h = harness({ fetch, env: SIGNED_IN, listen });
-      const running = runCli(["serve", "--port", "4100", "--records", desk], h.io);
-      const serve = await handler;
-      const index = await serve(
+      return { handler, listen, stop: () => close() };
+    };
+    const ask = (serve: ServeHandler): Promise<Response> =>
+      serve(
         new Request("http://127.0.0.1:4100/records/index.json", {
           headers: { "sec-fetch-site": "same-origin" },
         }),
       );
+    try {
+      writeFileSync(join(desk, "index.json"), '{"collections":[]}');
+      const there = held();
+      const h = harness({ fetch, env: SIGNED_IN, listen: there.listen });
+      const running = runCli(["serve", "--port", "4100", "--records", desk], h.io);
+      const index = await ask(await there.handler);
       expect(index.status).toBe(200);
       expect(await index.json()).toEqual({ collections: [] });
-      close();
+      there.stop();
       expect(await running).toBe(EXIT.ok);
       expect(h.out()).toContain(
         `The records in ${desk} are at http://127.0.0.1:4100/records/, read as they are when they are asked for. Stop with Ctrl+C.`,
       );
-      // A directory that is not there is said before anything listens.
+
+      // A directory that is not there yet is no error: a desk keeps nothing until its member
+      // asks, and its pages are served all the same (ADR-0122). Nothing is under /records/
+      // until the directory is there, the line says so, and what comes to be kept is served
+      // with no restart.
+      const later = join(desk, "records");
+      const yet = held();
+      const waiting = harness({ fetch, env: SIGNED_IN, listen: yet.listen });
+      const served = runCli(["serve", "--port", "4100", "--records", later], waiting.io);
+      const serve = await yet.handler;
+      const none = await ask(serve);
+      expect(none.status).toBe(404);
+      expect(await none.json()).toMatchObject({ error: { code: "records.not_found" } });
+      mkdirSync(later);
+      writeFileSync(join(later, "index.json"), '{"collections":[{"key":"first"}]}');
+      const first = await ask(serve);
+      expect(first.status).toBe(200);
+      expect(await first.json()).toEqual({ collections: [{ key: "first" }] });
+      yet.stop();
+      expect(await served).toBe(EXIT.ok);
+      expect(waiting.out()).toContain(
+        `Nothing is kept in ${later} yet: what comes to be kept there is at http://127.0.0.1:4100/records/ from then on, with no restart. Stop with Ctrl+C.`,
+      );
+      expect(waiting.err()).toBe("");
+
+      // What is there and is no directory is said before anything listens.
       let listened = false;
-      const none = harness({
+      const file = harness({
         fetch,
         env: SIGNED_IN,
         listen: async (...args) => {
           listened = true;
-          return listen(...args);
+          return held().listen(...args);
         },
       });
-      expect(await runCli(["serve", "--records", join(desk, "nowhere")], none.io)).toBe(
+      expect(await runCli(["serve", "--records", join(desk, "index.json")], file.io)).toBe(
         EXIT.failed,
       );
-      expect(none.err()).toContain("No records to serve:");
-      expect(none.err()).toContain("is not a directory that is there");
-      expect(none.err()).toContain("console serve <dir> --records <desk>/records");
+      expect(file.err()).toContain("No records to serve:");
+      expect(file.err()).toContain("is there and is not a directory");
+      expect(file.err()).toContain("console serve <dir> --records <desk>/records");
       expect(listened).toBe(false);
     } finally {
       rmSync(desk, { recursive: true, force: true });

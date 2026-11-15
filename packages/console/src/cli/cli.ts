@@ -4178,10 +4178,14 @@ const serve: Command = async (args, io) => {
       }),
     port,
   );
+  // A desk has its records/ once it keeps something (ADR-0122): until then the line says that
+  // nothing is kept there, and that what comes to be is served with no restart.
   const served =
-    kept === undefined
+    kept === undefined || records === undefined
       ? ""
-      : ` The records in ${kept} are at ${listening.url}records/, read as they are when they are asked for.`;
+      : (await records.there())
+        ? ` The records in ${kept} are at ${listening.url}records/, read as they are when they are asked for.`
+        : ` Nothing is kept in ${kept} yet: what comes to be kept there is at ${listening.url}records/ from then on, with no restart.`;
   io.stdout(
     web === undefined
       ? `Serving the API of ${me.workspace.name} (${session.url}) at ${listening.url}api/ as ${person.login}, for a development server to send its /api/ requests to.${served} Stop with Ctrl+C.\n`
