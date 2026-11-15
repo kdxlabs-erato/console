@@ -116,6 +116,8 @@ export async function seedPreviewBoard(options: {
   readonly admin: string;
   readonly member: string;
   readonly now: Date;
+  /** Told before the first thing is made: from then on, a failure leaves half of the work behind. */
+  readonly onMaking?: (() => void) | undefined;
 }): Promise<boolean> {
   const { harness, origin, admin, member, now } = options;
   const call = async (path: string, method: string, body?: unknown, cookie = admin) => {
@@ -134,6 +136,7 @@ export async function seedPreviewBoard(options: {
   if (projects.some((project) => project.key === PREVIEW_BOARD_KEY)) {
     return false;
   }
+  options.onMaking?.();
   const people = (await call(REST_ROUTES.people, "GET")).items as readonly {
     readonly id: string;
     readonly login: string;

@@ -1,9 +1,17 @@
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import webConfig from "../../web/vite.config.js";
 import { FIXTURE_PATH } from "./browser-console.js";
-import { CONSOLE_PATHS, ownPage, PARTS_PATH } from "./live-pages.js";
+import {
+  CONSOLE_PATHS,
+  FRAME_STYLESHEET_PATH,
+  frameStylesheet,
+  ownPage,
+  PARTS_PATH,
+} from "./live-pages.js";
 
 describe("the pages served in front of a console", () => {
   it("sends on what the web app's own development server sends to an api, under the same names", () => {
@@ -54,5 +62,30 @@ describe("the pages served in front of a console", () => {
     // The build reads the console's page alone, unless the configuration names more to read.
     const named = [webConfig.build?.rolldownOptions?.input, webConfig.build?.rollupOptions?.input];
     expect(JSON.stringify(named)).not.toContain("parts");
+  });
+
+  it("gives a plugin's frame the stylesheet as the sources have it, every file the manifest names joined", async () => {
+    const styles = fileURLToPath(
+      new URL("../../../../packages/console/src/styles", import.meta.url),
+    );
+    const css = await frameStylesheet(styles);
+    // What the package's build joins, read now: a part changed in its file is in it at once.
+    const built = await readFile(
+      createRequire(import.meta.url).resolve("@skillcdn/console/console.css"),
+      "utf8",
+    );
+    const rules = (text: string): string =>
+      text
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    expect(css).not.toContain("@import");
+    expect(css).toContain("/* parts/button.css */");
+    expect(css).toContain("/* pages/plugins.css */");
+    expect(rules(css)).toBe(rules(built));
+    // The address is one the console answers, so that the frame asks for it as it always does.
+    expect(CONSOLE_PATHS.some((prefix) => FRAME_STYLESHEET_PATH.startsWith(`${prefix}/`))).toBe(
+      true,
+    );
   });
 });

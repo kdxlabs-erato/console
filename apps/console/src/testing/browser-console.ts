@@ -140,8 +140,11 @@ export interface BrowserConsole {
    * the browser, and ends on the front page. Without a person, a page that offers each of them.
    */
   signInUrl(person?: string): string;
-  /** Stops listening, stops the plugins and drops the database. */
-  close(): Promise<void>;
+  /**
+   * Stops listening, stops the plugins and drops the database, or leaves it where it is kept
+   * (`keep`); discarded, a kept one is dropped too.
+   */
+  close(options?: { readonly discard?: boolean | undefined }): Promise<void>;
 }
 
 async function freePort(): Promise<number> {
@@ -384,13 +387,13 @@ export async function startBrowserConsole(options: BrowserConsoleOptions): Promi
         person === undefined
           ? `${publicUrl}${fixture}/sign-in`
           : `${publicUrl}${fixture}/sign-in/${encodeURIComponent(person)}`,
-      async close() {
+      async close(closing = {}) {
         await server.close(2_000);
         await dispatcher.close();
         await scheduler.close();
         await plugins.stop();
         await harness.close();
-        await testDatabase.drop();
+        await testDatabase.drop(closing);
         await rm(root, { recursive: true, force: true });
       },
     };

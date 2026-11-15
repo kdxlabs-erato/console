@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { createServer as createListener } from "node:http";
 import { fileURLToPath } from "node:url";
 import { createServer, normalizePath, type Plugin } from "vite";
@@ -9,7 +10,8 @@ import { oneOriginRedirect } from "./preview-plugins.js";
 // package read from its sources and the pages changing as those do, and sends what the console
 // answers itself, the API with the event stream and the plugins' frames, signing in, the probes
 // and the fixture's sign-in, on to the console listening behind it, which knows that address as
-// its own (`pagesAt`). The web app's own configuration stays what a custom console copies: what
+// its own (`pagesAt`); but for the stylesheet a plugin's frame reads, answered here from the
+// sources as the pages' own is. The web app's own configuration stays what a custom console copies: what
 // is of this repository alone, the package's sources beside the app and the page that shows
 // every part by itself (`/parts`), is said here. Not compiled.
 
@@ -51,6 +53,55 @@ export function ownPage(url: string): string | undefined {
   }
   return `${PARTS_PATH}.html${at < 0 ? "" : url.slice(at)}`;
 }
+
+/** Where a plugin's frame reads the console's stylesheet (docs/specs/plugins.md, "The frame"). */
+export const FRAME_STYLESHEET_PATH = "/api/v1/plugin-runtime/console.css";
+
+/**
+ * The console's stylesheet as its sources have it now: the manifest's imports, each replaced by
+ * the file it names, as the package's build joins them (ADR-0106). The console behind the pages
+ * answers the one that was built when it started; a frame is given this one, so that a rule
+ * changed in a part shows in a plugin's page when the page is opened again, with no restart.
+ */
+export async function frameStylesheet(stylesDir: string): Promise<string> {
+  const manifest = await readFile(`${stylesDir}/console.css`, "utf8");
+  const names = [...manifest.matchAll(/^@import "\.\/([\w/-]+\.css)";$/gm)].map(
+    (match) => match[1] ?? "",
+  );
+  const files = await Promise.all(
+    names.map(async (name) => `/* ${name} */\n${await readFile(`${stylesDir}/${name}`, "utf8")}`),
+  );
+  return files.join("\n");
+}
+
+/** Answers a frame's stylesheet from the sources, with the headers the console answers it under but for how long it is kept. */
+const frameStyles: Plugin = {
+  name: "console:frame-styles",
+  configureServer(server) {
+    server.middlewares.use((request, response, next) => {
+      const url = request.url ?? "/";
+      const at = url.indexOf("?");
+      if (request.method !== "GET" || (at < 0 ? url : url.slice(0, at)) !== FRAME_STYLESHEET_PATH) {
+        next();
+        return;
+      }
+      frameStylesheet(`${PACKAGE_SOURCE}/styles`).then(
+        (css) => {
+          response.writeHead(200, {
+            "content-type": "text/css; charset=utf-8",
+            "cache-control": "no-store",
+            "cross-origin-resource-policy": "cross-origin",
+            "access-control-allow-origin": "*",
+            "x-content-type-options": "nosniff",
+          });
+          response.end(css);
+        },
+        // The sources could not be read as they stand: the console's built one is better than none.
+        () => next(),
+      );
+    });
+  },
+};
 
 export interface LivePagesOptions {
   /** The port a browser opens, on the loopback. */
@@ -113,7 +164,7 @@ export async function startLivePages(options: LivePagesOptions): Promise<LivePag
     configFile: WEB_CONFIG,
     clearScreen: false,
     logLevel: "warn",
-    plugins: [oneOrigin(origin), ownPages],
+    plugins: [oneOrigin(origin), ownPages, frameStyles],
     // The package from its sources, so that a component or a rule of the stylesheet changed
     // there shows in the page at once; a build reads what the package built, as whoever
     // installs it does.

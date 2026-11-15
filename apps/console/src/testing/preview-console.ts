@@ -62,6 +62,10 @@ try {
   started = stop(reasonOf(error));
 }
 let pages: LivePages | undefined;
+// Whether the work was being made when something failed: the board's project is the first thing
+// made and the one thing looked for on a kept database, so that half of the work would stand
+// for all of it at the next start, and nothing would make the rest.
+let making = false;
 try {
   await seedPreviewBoard({
     harness: started.harness,
@@ -69,19 +73,28 @@ try {
     admin: await started.harness.signIn(BROWSER_ADMIN),
     member: await started.harness.signIn("bob"),
     now: new Date(),
+    onMaking: () => {
+      making = true;
+    },
   });
+  making = false;
   if (wanted.live) {
     pages = await startLivePages({ port, console: started.origin });
   }
 } catch (error) {
-  await started.close().catch(() => undefined);
-  stop(reasonOf(error));
+  const halfMade = making && wanted.keep;
+  await started.close({ discard: halfMade }).catch(() => undefined);
+  stop(
+    halfMade
+      ? `${reasonOf(error)}\nThe work was half made: the database console_preview was dropped, and the next start makes it whole.`
+      : reasonOf(error),
+  );
 }
 const lines = [
   `The console, with the example plugin enabled and the fixtures leave and gate installed: ${started.publicUrl}`,
   ...(wanted.live
     ? [
-        "  The pages are served from their sources and change as those do: a component, a rule of the stylesheet. What the server answers, and what a plugin's frame is styled with, is as it was built: start again after changing those.",
+        "  The pages are served from their sources and change as those do: a component, a rule of the stylesheet. A plugin's frame reads the stylesheet from its sources too, when it is loaded: open the page again to see a rule changed there. What the server answers is as it was built: start again after changing that.",
       ]
     : []),
   ...(wanted.publicUrl === undefined

@@ -11,8 +11,12 @@ export const DEV_DATABASE_URL = "postgres://console:console-dev-only@127.0.0.1:5
 export interface TestDatabase {
   readonly database: Database;
   readonly connectionString: string;
-  /** Closes the pool and drops the database; leaves the database where it was made to be kept. */
-  drop(): Promise<void>;
+  /**
+   * Closes the pool and drops the database; leaves the database where it was made to be kept,
+   * unless it is discarded: one that holds half of what was to be made in it is no start for
+   * the next run.
+   */
+  drop(options?: { readonly discard?: boolean | undefined }): Promise<void>;
 }
 
 export interface TestDatabaseOptions {
@@ -60,9 +64,9 @@ export async function createTestDatabase(
   return {
     database,
     connectionString,
-    drop: async () => {
+    drop: async ({ discard = false } = {}) => {
       await database.close();
-      if (options.keep === true) {
+      if (options.keep === true && !discard) {
         return;
       }
       const cleanup = new Client({ connectionString: adminUrl });
