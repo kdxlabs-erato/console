@@ -173,9 +173,17 @@ const made = new WeakMap<Database, Set<string>>();
 
 /**
  * Makes the partitions of the months named where they are not there: of the events, of the
- * pictures, and of the bytes the database's own store keeps. Under a lock, since two processes
- * begin a month at the same moment. A month whose table is there and detached is left as its
- * operator left it.
+ * pictures, and of the bytes the database's own store keeps. Each is made as a table of its own,
+ * shaped as its parent, and attached to it, which takes SHARE UPDATE EXCLUSIVE on the parent: no
+ * read or write of the transcript stands in its way, nor what any role holds through the
+ * catalog's functions that take a table's number and ask for no right. `create table ...
+ * partition of` would take ACCESS EXCLUSIVE, which such a function holds off until its caller's
+ * transaction ends (`pg_get_partition_constraintdef` of a partition keeps the parent), a plugin's
+ * role among the callers, and which queues every read and write of the transcript behind it while
+ * it waits. The new table is empty and nobody else can know it yet: the attach's check of its rows
+ * reads none and waits on nobody. Under a lock, since two processes begin a month at the same
+ * moment: the second finds the tables there. A month whose table is there and detached is left as
+ * its operator left it.
  */
 export async function ensureMonths(database: Database, months: readonly string[]): Promise<void> {
   const seen = made.get(database) ?? new Set<string>();
@@ -189,18 +197,32 @@ export async function ensureMonths(database: Database, months: readonly string[]
       throw new Error("a partition of the transcript is named by a month");
     }
   }
+  const wanted = missing.flatMap((month) =>
+    MONTHLY_TABLES.map((table) => ({ month, table, name: `${table}_${month.replace("-", "_")}` })),
+  );
   await drizzleOf(database).transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(${MONTHS_LOCK_KEY})`);
-    for (const month of missing) {
-      const suffix = month.replace("-", "_");
-      for (const table of MONTHLY_TABLES) {
-        // The names are a constant and a month checked above, never input.
-        await tx.execute(
-          sql.raw(
-            `create table if not exists "transcript"."${table}_${suffix}" partition of "transcript"."${table}" for values in ('${month}')`,
-          ),
-        );
+    const there = await tx.execute<{ name: string }>(sql`
+      select c.relname as name from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'transcript' and c.relname in (${sql.join(
+        wanted.map(({ name }) => sql`${name}`),
+        sql`, `,
+      )})`);
+    const found = new Set(there.rows.map((row) => row.name));
+    for (const { month, table, name } of wanted) {
+      if (found.has(name)) {
+        continue;
       }
+      // The names are a constant and a month checked above, never input.
+      await tx.execute(
+        sql.raw(`create table "transcript"."${name}" (like "transcript"."${table}" including all)`),
+      );
+      await tx.execute(
+        sql.raw(
+          `alter table "transcript"."${table}" attach partition "transcript"."${name}" for values in ('${month}')`,
+        ),
+      );
     }
   });
   for (const month of missing) {
