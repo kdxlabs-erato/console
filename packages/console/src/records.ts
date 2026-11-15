@@ -576,6 +576,14 @@ export async function checkRecords(files: RecordsFiles): Promise<RecordsCheck> {
             `${here} status ${item.status} is not one of the collection's${statuses.length === 0 ? ", which names none" : `: ${statuses.join(", ")}`}`,
           );
         }
+        // Which state each item is in is what a collection with statuses keeps: one without is
+        // noted, since the record still reads and only the member knows the state.
+        if (item.status === undefined && statuses.length > 0) {
+          note(
+            at(RECORDS_ITEMS_FILE),
+            `${here} carries no status, where the collection names some: ${[...new Set(statuses)].join(", ")}`,
+          );
+        }
         for (const [name, value] of Object.entries(item.fields ?? {})) {
           const kind = fields.get(name);
           const wrong =

@@ -506,6 +506,34 @@ describe("the check of a desk's records (ADR-0117)", () => {
     expect(many.notes.at(-1)).toEqual({ file: "records", problem: "and 100 more notes" });
   });
 
+  it("notes an item with no status where the collection names some, since which it is in is what the member keeps", async () => {
+    const found = await checkRecords(
+      desk({
+        ...WHOLE,
+        "ad-creatives/items.json": [
+          ITEMS[0],
+          { id: "c-002", title: "Evening commute, 15 seconds", madeOn: "2026-11-05" },
+        ],
+      }),
+    );
+    expect(found.problems).toEqual([]);
+    expect(found.notes).toEqual([
+      {
+        file: "records/ad-creatives/items.json",
+        problem: "[1] (c-002) carries no status, where the collection names some: used, unused",
+      },
+    ]);
+    // A collection that names none asks for none.
+    const bare = await checkRecords(
+      desk({
+        "index.json": { collections: [{ key: "documents", title: "Documents" }] },
+        "documents/collection.json": { title: "Documents" },
+        "documents/items.json": [{ id: "d1", title: "The plan", madeOn: "2026-11-15" }],
+      }),
+    );
+    expect(bare.notes).toEqual([]);
+  });
+
   it("reads no JSON file over its bound, and stops saying problems where there are too many to read", async () => {
     let read = 0;
     const files = desk({ ...WHOLE, "ad-creatives/items.json": MAX_RECORD_FILE_BYTES + 1 });

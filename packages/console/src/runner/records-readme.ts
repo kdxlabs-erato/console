@@ -74,7 +74,7 @@ ${FENCE}json
 }
 ${FENCE}
 
-A field's \`kind\` is ${words(RECORD_FIELD_KINDS)}. A metric's \`unit\` is ${words(RECORD_METRIC_UNITS)}. A ratio is the total of \`of\` for each of \`per\`, shown \`as\` ${words(RECORD_RATIO_FORMS)}.
+A field's \`kind\` is ${words(RECORD_FIELD_KINDS)}. A metric's \`unit\` is ${words(RECORD_METRIC_UNITS)}. Each state an item can be in is a status, the one it begins in too. A rate of two metrics, such as clicks per impression, is a ratio: the total of \`of\` for each of \`per\`, shown \`as\` ${words(RECORD_RATIO_FORMS)}; a rate that is no ratio is shown nowhere.
 
 \`ad-creatives/items.json\`, a list. \`id\`, \`title\` and \`madeOn\` are needed; an \`id\` is letters, digits and hyphens, and never changes:
 
@@ -95,7 +95,7 @@ ${FENCE}json
 ]
 ${FENCE}
 
-\`status\` is one of the collection's. \`preview\` is a picture (${RECORD_PREVIEW_KINDS.map((kind) => kind.slice(1)).join(", ")}). \`task\` is a task of the board, where the item is tied to one.
+\`status\` is one of the collection's, and where the collection has statuses every item carries one. \`preview\` is a picture (${RECORD_PREVIEW_KINDS.map((kind) => kind.slice(1)).join(", ")}). \`task\` is a task of the board, where the item is tied to one.
 
 \`ad-creatives/uses.json\`, a list: where an item was used, and when.
 

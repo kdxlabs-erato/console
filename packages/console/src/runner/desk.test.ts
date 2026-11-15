@@ -434,6 +434,17 @@ describe("the format of the records, as a desk's own file says it (ADR-0117)", (
       "Which kinds this desk keeps is said in the desk's `AGENTS.md`.",
     );
     expect(RECORDS_README).toContain("A secret: a token, a key, a password.");
+    // What fresh agents left out with the example before them: a status on every item, a status
+    // for every state, and a ratio for a rate.
+    expect(RECORDS_README).toContain(
+      "`status` is one of the collection's, and where the collection has statuses every item carries one.",
+    );
+    expect(RECORDS_README).toContain(
+      "Each state an item can be in is a status, the one it begins in too.",
+    );
+    expect(RECORDS_README).toContain(
+      "A rate of two metrics, such as clicks per impression, is a ratio: the total of `of` for each of `per`, shown `as` `percent` or `number`; a rate that is no ratio is shown nowhere.",
+    );
     // The fewest words: a file an agent reads whole before its first record.
     expect(RECORDS_README.length).toBeLessThan(4200);
     expect(RECORDS_README.endsWith("\n")).toBe(true);

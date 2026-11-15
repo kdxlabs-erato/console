@@ -44,7 +44,7 @@ A key is lowercase letters, digits and hyphens. A day is written `2026-11-15`. A
 }
 ```
 
-A field's `kind` is `text`, `number`, `day` or `link`. A metric's `unit` is `count`, `currency`, `percent` or `seconds`. A ratio is the total of `of` for each of `per`, shown `as` `percent` or `number`.
+A field's `kind` is `text`, `number`, `day` or `link`. A metric's `unit` is `count`, `currency`, `percent` or `seconds`. Each state an item can be in is a status, the one it begins in too. A rate of two metrics, such as clicks per impression, is a ratio: the total of `of` for each of `per`, shown `as` `percent` or `number`; a rate that is no ratio is shown nowhere.
 
 `ad-creatives/items.json`, a list. `id`, `title` and `madeOn` are needed; an `id` is letters, digits and hyphens, and never changes:
 
@@ -65,7 +65,7 @@ A field's `kind` is `text`, `number`, `day` or `link`. A metric's `unit` is `cou
 ]
 ```
 
-`status` is one of the collection's. `preview` is a picture (png, jpg, jpeg, webp, gif, avif, svg). `task` is a task of the board, where the item is tied to one.
+`status` is one of the collection's, and where the collection has statuses every item carries one. `preview` is a picture (png, jpg, jpeg, webp, gif, avif, svg). `task` is a task of the board, where the item is tied to one.
 
 `ad-creatives/uses.json`, a list: where an item was used, and when.
 

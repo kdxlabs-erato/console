@@ -31,10 +31,10 @@ A key is lowercase letters, digits and hyphens, beginning with a letter or a dig
 |---|---|
 | `title` | What the collection is called |
 | `description` | A few words on what it keeps (optional) |
-| `statuses` | `[ { "key", "label" } ]`: the words an item's `status` may be, such as used and not used. Left out, an item has none |
+| `statuses` | `[ { "key", "label" } ]`: the words an item's `status` may be, one for each state an item can be in, such as used and not used. Left out, an item has none |
 | `fields` | `[ { "key", "label", "kind" } ]`: what every item says beside its title; `kind` is `text`, `number`, `day` or `link` |
 | `metrics` | `[ { "key", "label", "unit", "currency" } ]`: the figures an item is measured in, by day; `unit` is `count`, `currency`, `percent` or `seconds`, and `currency`, three capital letters such as `KRW`, says which where it is one (optional) |
-| `ratios` | `[ { "key", "label", "of", "per", "as" } ]`: a figure worked out from the totals of two metrics, `of` for each `per`, such as clicks per impression; `as` is `percent` or `number` |
+| `ratios` | `[ { "key", "label", "of", "per", "as" } ]`: a figure worked out from the totals of two metrics, `of` for each `per`, such as clicks per impression; `as` is `percent` or `number`. A rate is shown only where it is a ratio |
 
 ## An item, a use, a row of figures
 
@@ -45,7 +45,7 @@ An item, an entry of `items.json`:
 | `id` | Letters, digits and hyphens: what the uses and the figures name the item by. Never changed |
 | `title` | What it is called |
 | `madeOn` | The day it was made |
-| `status` | One of the collection's statuses (optional) |
+| `status` | One of the collection's statuses. Where the collection names any, every item carries one: the schema reads an item without, and the check notes it |
 | `preview` | A picture of it, by its path under the collection's `files/`: `png`, `jpg`, `jpeg`, `webp`, `gif`, `avif` or `svg` (optional) |
 | `files` | `[ { "label", "path" } ]`: the files themselves, each by its path under the collection's `files/` (optional) |
 | `links` | `[ { "label", "url" } ]`: where it is elsewhere (optional) |
@@ -93,7 +93,7 @@ The names of the bounds are the package's (`MAX_RECORD_ITEMS` and the rest), and
 - a preview or a file that is not there; a use or a row of figures of an item that is not there; a figure for what is no metric;
 - a JSON file over its bound, which is not read.
 
-A file an item names that is a git LFS pointer is said as a note, `note: …`, and is no problem; so is a use or a row of figures dated before its item was made, which is most often a day written wrong and now and then a thing used before it was recorded: only the member knows. With any problem the command ends in 1; with none it says how many collections read and what each keeps, and where `records/index.json` is not there, that the desk has no records yet, which is no failure. At most 20 problems of one file and 200 in all are said. `--json` answers `{ "directory", "found", "problems": [ { "file", "problem" } ], "notes", "collections": [ { "key", "items", "uses", "metricRows" } ] }`.
+A file an item names that is a git LFS pointer is said as a note, `note: …`, and is no problem; so is a use or a row of figures dated before its item was made, which is most often a day written wrong and now and then a thing used before it was recorded: only the member knows; and so is an item that carries no status where its collection names some. With any problem the command ends in 1; with none it says how many collections read and what each keeps, and where `records/index.json` is not there, that the desk has no records yet, which is no failure. At most 20 problems of one file and 200 in all are said. `--json` answers `{ "directory", "found", "problems": [ { "file", "problem" } ], "notes", "collections": [ { "key", "items", "uses", "metricRows" } ] }`.
 
 ## Serving
 
