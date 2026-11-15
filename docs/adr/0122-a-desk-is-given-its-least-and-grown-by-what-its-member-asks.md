@@ -1,0 +1,28 @@
+# ADR-0122: A desk is given its least, and grown by what its member asks
+
+- Status: Accepted
+- Date: 2026-11-15
+- Amends [ADR-0115](0115-a-person-has-a-desk-too-written-by-the-command-and-set-up-by-a-skill-of-the-organizations-pack.md), points 3 and 6 (what the command writes, and what it says last); [ADR-0116](0116-a-desks-dashboard-is-a-page-of-a-console-of-ones-own-read-as-it-is-looked-at.md) (what the shell of a desk's pages mounts); [ADR-0117](0117-a-desk-keeps-records-of-what-its-member-made-as-files-the-desks-pages-read.md), points 2 and 4 (the form of the records is a block one may take, and no file of every desk); and [ADR-0121](0121-the-agents-page-says-what-to-tell-an-agent-for-a-desk-from-the-commands-install-on.md), points 2 and 4 (what the Agents page names). What those decisions built stays in the package.
+
+## Context
+
+A desk came with a form: `records/README.md` in every desk said how collections of things made are kept, with their uses and their figures, and the shell of its pages opened on four views of them and of the board. Fresh agents followed it well, and that is the trouble. What is handed to everyone reads as what the thing is for: a member who opens a desk and finds a form for collections and four views takes a desk for a place that keeps collections and shows those views, and an agent begun there fills the form in. A desk is a member's own repository, open: what it keeps and what it shows is whatever its member asks for, and most of that is nothing the console could have named beforehand.
+
+What the console can give everyone is the structure, taught well, and the parts to build with.
+
+## Decision
+
+1. **The structure is the one thing every desk is given.** A repository of the member's own with its instructions, `AGENTS.md`, and three places, each there once it is used: `records/`, what the member keeps, as files in the shape that fits it; `web/`, the member's pages, a console of their own built from the package; `work/`, checkouts of projects' repositories. `AGENTS.md` says what the desk now keeps and shows, a line each, in the member's words.
+2. **The command writes the least.** `console desk` writes for a person `AGENTS.md`, `CLAUDE.md`, `README.md` and `.gitignore`, and `console agent setup` those and `runner.json` for an agent account. `records/README.md` is written into no desk, and no file names a kind of thing to keep: the "This desk" part of both `AGENTS.md` says the structure and where the skill of point 4 is, and nothing else.
+3. **The shell of a desk's pages is one page of the member's own, with nothing on it yet.** `console desk --web` writes it, into the desk of a person or of an agent account alike, and it mounts no ready page: the member says what they want to see, and the page is built to that from the package's parts. The ready page, `deskPage()`, and the views it composes stay exported, and are mounted only where a member asks for exactly them.
+4. **The console takes it from the install on, with a skill of its own.** `console desk` ends by saying what is next, in order, in lines an agent follows without the page that sent it there: the desk is set up as a repository of the member's, by the skill for that in the organization's pack; then the member is asked what they want to keep and to see, and the desk is shaped to it, by `keeping-a-desk`, a skill the command ships, named with its place there and in `console help desk`. The skill teaches the structure and how a desk grows, with few examples: what is asked, how the shape of what is kept is chosen and written down, how a page is added and what it is given, what is checked before it is called done, and what stays true of every desk.
+5. **What was built stays, as blocks one may take.** The form for collections, a set of things made with where each was used and how it did, is a page of that skill, `collections.md`, read when a member wants exactly that; its schemas and `console desk check` read a desk's collections where it keeps some, and what else lies under `records/` is the desk's own and is neither checked nor a problem. `console serve --records` serves whatever a desk keeps there.
+6. **The organization's console says little of it.** The Agents page gives a title, one line, and the block to copy, which ends in `console desk`: no `--web`, nothing of what the agent will do, nothing of a login that is there already. What follows is the command's to say.
+
+## Consequences
+
+- A new desk says nothing of what it is for but that it is its member's; the first thing kept or shown there is the first thing the member asked for, and `AGENTS.md` grows by a line with it.
+- A member who wants collections, or the ready page, has them by asking: nothing of either is removed from the package, and a desk written before this decision keeps its `records/README.md` and its pages as they are.
+- The skill is one more thing an agent reads, once, when a desk is first shaped; a session that only records into a shape the desk already keeps reads `AGENTS.md` and what it points to, and not the skill.
+- `console desk check` no longer says that a folder under `records/` is missing from the index: only a folder that holds a collection's own file and is not listed is one.
+- Rejected: the form in every desk, which reads as what a desk is for; a flag for each block on `console desk`, since the command would grow a flag for every shape a desk may take, and a shape is a conversation with the member, not an argument; a list of kinds in `AGENTS.md` with "none yet", which names an expectation where there is none; taking the form and the ready page out of the package, which would throw away what a member may well want.
