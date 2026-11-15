@@ -24,7 +24,7 @@ Every desk is these four, and nothing of the last three is there until it is use
 |---|---|---|
 | `AGENTS.md` | The instructions of whichever agent works in the desk; under "This desk", what the desk keeps and shows, a line each, in the member's words | `console desk` first, then the member and their agent |
 | `records/` | What the member keeps: plain files in the shape that fits the thing, JSON an agent writes and the files themselves | The agent, as the member asks |
-| `web/` | The member's pages: a console of their own, built from `@skillcdn/console` and served from their machine | `console desk . --web` writes its shell, one empty page |
+| `web/` | The member's pages: a console of their own, built from `@skillcdn/console` and served from their machine | `console desk . --web` writes its shell, one empty page, for a person and an agent account alike |
 | `work/` | Checkouts of projects' repositories, each under its own agreement; the desk ignores it | `git clone` |
 
 A session begun in a desk works from `AGENTS.md` and what it points to. This skill is read when something is to be kept or shown that the desk does not keep or show yet, and not for one more entry in a shape the desk already has.
@@ -70,14 +70,31 @@ Choose the shape from what the member wants to find again, not from a form:
 
 ### Phase 4: Show
 
-Only where the member asked to see something.
+Only where the member asked to see something. Paths below are under the desk's `web/`, and `<package>/` is `node_modules/@skillcdn/console/` there, whose `README.md` is [the package's](/packages/console/README.md).
 
-1. **The shell.** `console desk . --web`, in the desk, writes `web/` where it holds nothing: one empty page of the member's own, `web/src/main.tsx`, on the version of the package the command is. Then, in `web/`, `npm install` and `npm run build`; `web/README.md` says how it is built, served and stopped.
-2. **A page** is one entry of the `pages` handed to `createConsole` in `web/src/main.tsx`: a key, which is its address, a label, which is its tab, and a function that renders it. What that function is given, and every component and type by name, is the package's to say: `web/node_modules/@skillcdn/console/README.md`, "Pages of your own" ([in the console's repository](/packages/console/README.md)).
+1. **The shell.** `console desk . --web`, run in the desk, writes `web/` where it holds nothing: one empty page of the member's own, on the version of the package the command is. `src/main.tsx` mounts `page` from `src/page.tsx` beside it; the page's key is `mine`, its address `/pages/mine`, and `/` opens on it. Then `npm install` and `npm run build`, which says nothing of its own where it went well and leaves `dist/index.html`; `README.md` says how the pages are built, served and stopped.
+2. **A page** is one entry of the `pages` handed to `createConsole` in `src/main.tsx`: a key, which is its address (`/pages/<key>`), a label, which is its tab, and a function that renders it. What the member asks to see first goes on the empty page; another page is another entry. What the function is given: `<package>/README.md`, "Pages of your own".
 3. **What a page reads.** The desk's own files, with `fetch` at `/records/<path>`, each read when it is asked for; and the board, as the member, through the client the page is given. Nothing of another origin, and no token. `console serve dist --records ../records` serves both: JSON, pictures, video, sound and PDF are shown in place, anything else is a download ([records.md](/docs/specs/records.md#serving)).
-4. **What a page is built from:** the console's parts, and for figures its charts, a figure with its label, bars, a chart over time, a share of a whole, a table of figures. The catalogue names each part with the component that renders it: `web/node_modules/@skillcdn/console/src/styles/README.md` ([in the repository](/packages/console/src/styles/README.md)). A page places parts and writes no colour, border or type of its own, so that it looks as the console does, in both themes.
-5. **What is ready,** for a member who wants exactly that: `deskPage()`, the collections of [collections.md](collections.md) with their items, uses and figures, and the member's own work on the board, added as one more entry of `pages`. What else the package has ready is in its README, beside "Pages of your own".
-6. **Build, serve, look.** `npm run build`, then `npm run serve` and `http://127.0.0.1:11197/`: the page shows what is kept, and `/api/v1/me` there names the member. The server is the agent's own to stop once it has looked, by ending the process it started, unless the member wants it left up: say which was done, and how it is started again.
+4. **What a page is built from:** the console's parts, each named with the component that renders it in `<package>/src/styles/README.md`, "The catalogue" ([in the repository](/packages/console/src/styles/README.md)). A page places parts and writes no colour, border or type of its own, so that it looks as the console does, in both themes. For figures there are the charts, each exported from `@skillcdn/console`, with their props in `<package>/README.md`, "Charts":
+   - `Stat`, and `Stats` for a row of them: a figure with its label and, where given, its change and a sparkline.
+   - `BarList`: a ranking or a comparison, each a label, a bar and a value.
+   - `Chart`: columns or lines over time (`kind: "columns" | "line"`), one to a few series.
+   - `Sparkline`: one figure over time, as a small line.
+   - `ShareBar`: the parts of a whole in one bar, with its legend.
+   - `Legend`: the series by their colours.
+   - `FigureTable`: rows by columns, the numbers aligned.
+5. **What is ready,** for a member who wants exactly that, in `<package>/README.md`, "A desk's pages". Each shows the collections of [collections.md](collections.md) or the member's own work on the board:
+   - `deskPage()`: all of the below as one page, one more entry of `pages`, at `/pages/desk` (`DESK_PAGE_KEY`).
+   - `DeskRecords`: the collections, read from `/records/` and shown whole, composed of the next four.
+   - `DeskCollections`: the collections, each with its items counted by status.
+   - `DeskCollectionView`: a collection's items, narrowed by status.
+   - `DeskItemView`: an item with its preview, its files, where it was used and how it did by day.
+   - `DeskCollectionResults`: each metric in all and by week, the ratios, and the items that did best.
+   - `DeskStanding`: the decisions that wait, the open runs and the open tasks.
+   - `DeskFiguresView`: what was done by week and how the runs ended, by project and by category.
+   - `DeskArchive`: the closed tasks and the ended runs, found by words.
+   - `readDeskRecords`: reads the collections for a page of one's own, every file bounded and parsed.
+6. **Build, serve, look.** `npm run build`, which went well where it ended in 0 and `dist/index.html` is there, not by what it printed; then `npm run serve` and `http://127.0.0.1:11197/`: the page shows what is kept, and `/api/v1/me` there names the member. The server is the agent's own to stop once it has looked, by ending the process it started, unless the member wants it left up: say which was done, and how it is started again.
 
 Where a page shows what someone else wrote, the hard rules of [building-a-console](/skills/building-a-console/SKILL.md) hold for it.
 
@@ -89,8 +106,8 @@ Where a page shows what someone else wrote, the hard rules of [building-a-consol
 
 - Every JSON file written is read back, and parses.
 - Collections: `console desk check`, which says each problem with its file and signs in nowhere.
-- Pages: `npm run build` passes.
-- Nothing secret is staged: `git status`, read in a step of its own before the commit. `web/node_modules` and `web/dist` are ignored; the lockfile of `web/` is committed.
+- Pages: `npm run build` ends in 0 and `web/dist/index.html` is there, written by it.
+- Nothing secret is staged: `git status`, read in a step of its own before the commit. `web/node_modules` and `web/dist` are ignored, by a line added to the desk's `.gitignore` where it has none for them; the lockfile of `web/` is committed.
 - Commit and push, without asking: the desk is the member's own, and its `AGENTS.md` says so.
 
 Then tell the member, in one message: what is kept and where, with one entry; the page's address, and how it is started and stopped; what was left out.

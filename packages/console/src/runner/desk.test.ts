@@ -152,9 +152,11 @@ describe("the desk's template", () => {
       "An act that destroys something or cannot be undone waits for a decision.",
     );
     // The skill of the board is for the board's tasks: a job that is none needs none of it.
+    // Its place is asked of whoami, two lines, and not of the help read whole.
     expect(instructions).toContain(
-      "I read it before the first task of the board, and a job that is no task of a project needs none of it.",
+      "the skill working-the-board, which `console whoami` names with its place: I read it before the first task of the board, and a job that is no task of a project needs none of it.",
     );
+    expect(instructions).not.toContain("`console help` names");
     // A brief names the task, and nothing is read twice for a subagent.
     expect(instructions).toContain(
       "The brief names the task and does not restate it, and what the subagent reads for itself, the task, the rules, the skill, I do not read for it.",
@@ -294,8 +296,10 @@ describe("a person's desk", () => {
     // The board, the plate, and where the rest is said: nothing of it is said again.
     expect(instructions).toContain("The console is my board, and `console work` is my plate.");
     expect(instructions).toContain(
-      "the skill working-the-board, which `console help` names with its place: read it before the first task of the board; a job that is no task of a project needs none of it.",
+      "the skill working-the-board, which `console whoami` names with its place: read it before the first task of the board; a job that is no task of a project needs none of it.",
     );
+    // Its place is asked of whoami, two lines, and not of the help read whole.
+    expect(instructions).not.toContain("`console help` names");
     // What is done in the desk is the person's own, and on no board unless they put it there.
     expect(instructions).toContain(
       "What is done in this desk is my own and is on no board unless I put it there: setting it up, a record or a page is no task. Work that should be done on the board is put there by whoever needs it.",
