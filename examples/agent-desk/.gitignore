@@ -14,8 +14,9 @@ work/
 id_rsa*
 id_ed25519*
 
-# Dependencies, logs, and what an operating system or an editor leaves behind.
+# Dependencies, what the desk's pages build, logs, and what an operating system or an editor leaves behind.
 node_modules/
+web/dist/
 *.log
 .DS_Store
 Thumbs.db

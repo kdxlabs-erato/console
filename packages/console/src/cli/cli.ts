@@ -5372,7 +5372,8 @@ const deskCheck = async (args: readonly string[], io: CliIo): Promise<number> =>
 // writes and stops, and its last lines say what is next, in order, for an agent to go on with:
 // making the desk a repository is a skill's, of the organization's pack, and shaping it to what
 // the person asks to keep and to see is the skill keeping-a-desk's, which the command ships.
-// An agent account's desk is setup's.
+// An agent account's desk is setup's: for one, the command writes the shell alone, with --web,
+// into the desk it names.
 const desk: Command = async (args, io) => {
   if (args[0] === "check") {
     return deskCheck(args.slice(1), io);
@@ -5387,9 +5388,13 @@ const desk: Command = async (args, io) => {
   if (person === null) {
     throw failed("The console does not know this token. Sign in again: console login");
   }
-  if (person.kind === "agent") {
+  // An agent account's desk is setup's, and none of its own files is written here (ADR-0115).
+  // The shell of its pages is the one thing this command writes for it, into the desk it names
+  // (ADR-0122): a desk's pages are its member's, whichever kind of member that is.
+  const ofAgent = person.kind === "agent";
+  if (ofAgent && !on(values, "web")) {
     throw failed(
-      `${whoOf(person)} is an agent account: its desk is settled by console agent setup, on its own machine, and nothing is written here. In that desk, console agent setup --refresh derives it again.`,
+      `${whoOf(person)} is an agent account: its desk is settled by console agent setup, on its own machine, and nothing is written here. In that desk, console agent setup --refresh derives it again, and console desk . --web writes the shell of its pages.`,
     );
   }
   const machine = io.machine;
@@ -5406,6 +5411,11 @@ const desk: Command = async (args, io) => {
     );
   }
   const dir = machine.path(named ?? DESK_FOLDER);
+  if (ofAgent && !(await machine.exists(machine.path(dir, "AGENTS.md")))) {
+    throw failed(
+      `${dir} holds no AGENTS.md, so it is no desk, and nothing is written. An agent account's desk is settled by console agent setup; in it: console desk . --web`,
+    );
+  }
   const input = {
     person: { name: person.name ?? person.login, login: person.login },
     console: { url: session.url, workspace: me.workspace.name },
@@ -5421,19 +5431,19 @@ const desk: Command = async (args, io) => {
     const template = await io.deskWebTemplate?.();
     if (template === undefined || template.size === 0) {
       throw failed(
-        "This command's package carries no shell of a desk's pages (template/desk-web): nothing is written. Without --web, the desk alone is written.",
+        `This command's package carries no shell of a desk's pages (template/desk-web): nothing is written.${ofAgent ? "" : " Without --web, the desk alone is written."}`,
       );
     }
     if (io.version === undefined) {
       throw failed(
-        "This command does not know its version, so it cannot say which package the desk's pages are built on: nothing is written. Without --web, the desk alone is written.",
+        `This command does not know its version, so it cannot say which package the desk's pages are built on: nothing is written.${ofAgent ? "" : " Without --web, the desk alone is written."}`,
       );
     }
     shell = deskWebFiles(template, io.version, deskWebTitleOf(input.person));
   }
   const written: string[] = [];
   const kept: string[] = [];
-  for (const [path, body] of personDeskFiles(input)) {
+  for (const [path, body] of ofAgent ? [] : personDeskFiles(input)) {
     const file = machine.path(dir, path);
     if (await machine.exists(file)) {
       kept.push(path);
@@ -5442,13 +5452,15 @@ const desk: Command = async (args, io) => {
       written.push(path);
     }
   }
-  const lines = [
-    written.length === 0
-      ? `The desk at ${dir} is there already, and is left as it is.`
-      : kept.length === 0
-        ? `A new desk is written at ${dir} (${written.join(", ")}), for ${person.login}. It is yours from now on: to edit, and to make a repository of.`
-        : `The desk at ${dir} gains ${written.join(", ")}; ${kept.join(", ")} ${kept.length === 1 ? "was there and is left as it is" : "were there and are left as they are"}.`,
-  ];
+  const lines = ofAgent
+    ? []
+    : [
+        written.length === 0
+          ? `The desk at ${dir} is there already, and is left as it is.`
+          : kept.length === 0
+            ? `A new desk is written at ${dir} (${written.join(", ")}), for ${person.login}. It is yours from now on: to edit, and to make a repository of.`
+            : `The desk at ${dir} gains ${written.join(", ")}; ${kept.join(", ")} ${kept.length === 1 ? "was there and is left as it is" : "were there and are left as they are"}.`,
+      ];
   const shellNames = (shell ?? []).map(([path]) => path);
   for (const [path, body] of shell ?? []) {
     await machine.write(machine.path(webDir, ...path.split("/")), body, 0o644);
@@ -5463,14 +5475,18 @@ const desk: Command = async (args, io) => {
   const web = on(values, "web")
     ? { directory: webDir, written: shellNames, version: shell === undefined ? null : io.version }
     : null;
-  const next = deskNext(web !== null, io.skillsDir);
+  // An agent account that asked for the shell is shaping its desk already: nothing is next.
+  const next: string[] = ofAgent ? [] : deskNext(web !== null, io.skillsDir);
   answer(io, session, { directory: dir, written, kept, web, next }, () =>
-    [
-      ...lines,
-      "Next, in that folder, say these to your agent in order; an agent that ran this command goes on with them there:",
-      "",
-      ...next.map((line, index) => `${index + 1}. ${line}`),
-    ].join("\n"),
+    (next.length === 0
+      ? lines
+      : [
+          ...lines,
+          "Next, in that folder, say these to your agent in order; an agent that ran this command goes on with them there:",
+          "",
+          ...next.map((line, index) => `${index + 1}. ${line}`),
+        ]
+    ).join("\n"),
   );
   return EXIT.ok;
 };

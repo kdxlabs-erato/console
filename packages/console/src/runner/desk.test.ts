@@ -241,7 +241,16 @@ describe("the desk's template", () => {
 
   it("keeps out of the repository what must never be in it", () => {
     const ignored = (deskFiles(MIRA).get(".gitignore") ?? "").split("\n");
-    for (const line of ["work/", ".env", ".env.*", "*.pem", "*.key", "node_modules/"]) {
+    // What its pages build is ignored too, where it has pages (ADR-0122).
+    for (const line of [
+      "work/",
+      ".env",
+      ".env.*",
+      "*.pem",
+      "*.key",
+      "node_modules/",
+      "web/dist/",
+    ]) {
       expect(ignored, line).toContain(line);
     }
     // Nothing of a product's own memory or settings is prescribed as kept.

@@ -179,7 +179,7 @@ The desk is the agent account's own repository ([ADR-0088](../adr/0088-an-agent-
 | `AGENTS.md` | The base instructions, read as they are by every product, in eight sections: who I am; where I work; asking; this desk; secrets; projects; care; safety |
 | `CLAUDE.md` | One line, `@AGENTS.md`: the one product-specific file |
 | `runner.json` | The runner's configuration, below |
-| `.gitignore` | `work/`, the products' own state, anything shaped like a secret, dependencies, logs, and what an operating system or an editor leaves behind |
+| `.gitignore` | `work/`, the products' own state, anything shaped like a secret, dependencies, what the desk's pages build, logs, and what an operating system or an editor leaves behind |
 
 Nothing is written under the desk's three places, each of which is there once it is used: `records/`, what the agent keeps, in the shape that fits it; `web/`, its pages; `work/`, the checkouts of the projects it works on. How a desk is shaped to what its member asks to keep and to see is the skill `keeping-a-desk`, one of the console's own, which `console help desk` names with its place; the form for a set of things made, with their uses and their figures, is a page of that skill, taken where it is asked for ([records.md](records.md)).
 

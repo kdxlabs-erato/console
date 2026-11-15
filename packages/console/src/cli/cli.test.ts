@@ -5354,7 +5354,7 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     );
   });
 
-  it("writes nothing for an agent account, whose desk is setup's", async () => {
+  it("writes none of a desk's own files for an agent account, whose desk is setup's, and the shell of its pages into the desk it names (ADR-0122)", async () => {
     const mira = {
       ...ME,
       person: { ...PERSON, login: "acme-mira", name: "Mira", kind: "agent", handle: "mira" },
@@ -5365,10 +5365,111 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     const run = harness({ fetch: consoleFor(mira).fetch, store: signedIn(), machine: at.machine });
     expect(await runCli(["desk"], run.io)).toBe(EXIT.failed);
     expect(run.err()).toContain(
-      "@mira (acme-mira, member) is an agent account: its desk is settled by console agent setup, on its own machine, and nothing is written here.",
+      "@mira (acme-mira, member) is an agent account: its desk is settled by console agent setup, on its own machine, and nothing is written here. In that desk, console agent setup --refresh derives it again, and console desk . --web writes the shell of its pages.",
     );
     expect(at.written).toEqual([]);
     expect(run.out()).toBe("");
+
+    // In its desk, with --web: the shell alone, titled by the account's name, and nothing of
+    // the desk's own files, which are setup's and the agent's.
+    const KEPT = {
+      "/home/mira/desk/AGENTS.md": "# My own words\n",
+      "/home/mira/desk/runner.json": "{}\n",
+    };
+    const desk = fakeFiles("/home/mira/desk", KEPT);
+    const web = harness({
+      fetch: consoleFor(mira).fetch,
+      store: signedIn(),
+      machine: desk.machine,
+      version: "0.5.1",
+      deskWebTemplate: async () => SHELL,
+      skillsDir: SKILLS,
+    });
+    expect(await runCli(["desk", ".", "--web"], web.io)).toBe(EXIT.ok);
+    expect(desk.written.map((file) => file.path)).toEqual(
+      ["README.md", "package.json", "index.html", "src/main.tsx"].map(
+        (name) => `/home/mira/desk/web/${name}`,
+      ),
+    );
+    expect(desk.files.get("/home/mira/desk/web/index.html")).toBe(
+      `<title>Mira${String.fromCodePoint(0x2019)}s desk</title>\n`,
+    );
+    expect(desk.files.get("/home/mira/desk/AGENTS.md")).toBe("# My own words\n");
+    expect(desk.files.has("/home/mira/desk/README.md")).toBe(false);
+    // Nothing is next: an agent account that asked for the shell is shaping its desk already.
+    expect(web.out()).toBe(
+      "The shell of its pages is written in /home/mira/desk/web (README.md, package.json, index.html, src/main.tsx), on @skillcdn/console 0.5.1: one empty page of your own until you say what you want to see, served from this machine by console serve once it is built; its README.md says how.\n",
+    );
+    const json = harness({
+      fetch: consoleFor(mira).fetch,
+      store: signedIn(),
+      machine: fakeFiles("/home/mira/desk", KEPT).machine,
+      version: "0.5.1",
+      deskWebTemplate: async () => SHELL,
+    });
+    expect(await runCli(["desk", ".", "--web", "--json"], json.io)).toBe(EXIT.ok);
+    expect(JSON.parse(json.out())).toEqual({
+      directory: "/home/mira/desk",
+      written: [],
+      kept: [],
+      web: {
+        directory: "/home/mira/desk/web",
+        written: ["README.md", "package.json", "index.html", "src/main.tsx"],
+        version: "0.5.1",
+      },
+      next: [],
+    });
+    // A web/ that holds something is the agent's, and is left as it is.
+    const held = fakeFiles("/home/mira/desk", {
+      ...KEPT,
+      "/home/mira/desk/web/package.json": "{}\n",
+    });
+    const again = harness({
+      fetch: consoleFor(mira).fetch,
+      store: signedIn(),
+      machine: held.machine,
+      version: "0.5.1",
+      deskWebTemplate: async () => SHELL,
+    });
+    expect(await runCli(["desk", ".", "--web"], again.io)).toBe(EXIT.ok);
+    expect(held.written).toEqual([]);
+    expect(again.out()).toBe(
+      "/home/mira/desk/web holds something already, and is left as it is.\n",
+    );
+
+    // A directory that is no desk gets nothing: not the folder a person's desk is made in by
+    // default, and not a directory named.
+    for (const line of [
+      ["desk", "--web"],
+      ["desk", "/srv/elsewhere", "--web"],
+    ]) {
+      const none = fakeFiles("/home/mira/desk", KEPT);
+      const refused = harness({
+        fetch: consoleFor(mira).fetch,
+        store: signedIn(),
+        machine: none.machine,
+        version: "0.5.1",
+        deskWebTemplate: async () => SHELL,
+      });
+      expect(await runCli(line, refused.io)).toBe(EXIT.failed);
+      expect(refused.err()).toContain(
+        "holds no AGENTS.md, so it is no desk, and nothing is written. An agent account's desk is settled by console agent setup; in it: console desk . --web",
+      );
+      expect(none.written).toEqual([]);
+      expect(refused.out()).toBe("");
+    }
+    // A package with no shell says so, and nothing of a desk that would be written without it.
+    const bare = harness({
+      fetch: consoleFor(mira).fetch,
+      store: signedIn(),
+      machine: fakeFiles("/home/mira/desk", KEPT).machine,
+      version: "0.5.1",
+    });
+    expect(await runCli(["desk", ".", "--web"], bare.io)).toBe(EXIT.failed);
+    expect(bare.err()).toContain(
+      "carries no shell of a desk's pages (template/desk-web): nothing is written.",
+    );
+    expect(bare.err()).not.toContain("the desk alone is written");
   });
 
   it("makes no desk inside a directory that works in a project, which the desk would work in too", async () => {
@@ -5517,7 +5618,9 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     expect(await runCli(["help", "desk"], own.io)).toBe(EXIT.ok);
     expect(own.out()).toContain("console desk [<directory>] [--web]");
     expect(own.out()).toContain("A desk is bound to no project");
-    expect(own.out()).toContain("An agent account's desk is settled by console agent setup.");
+    expect(own.out()).toContain(
+      "An agent account's desk is settled by console agent setup; in that desk, desk . --web writes the shell of its pages and nothing else.",
+    );
     // What it writes is the least, and what a desk keeps is its member's to say (ADR-0122).
     expect(own.out()).toContain(
       "It writes the least: README.md; AGENTS.md, the instructions of an agent that works for you there; CLAUDE.md, which points a product to them; and .gitignore.",
