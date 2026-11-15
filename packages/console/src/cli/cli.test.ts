@@ -4998,6 +4998,177 @@ describe("a person's desk on the command line (ADR-0115)", () => {
   });
 });
 
+describe("the check of a desk's records on the command line (ADR-0117)", () => {
+  /** The records of a desk in memory, as the command is handed them: JSON as what it holds, any other file as its bytes. */
+  function recordsOf(files: Readonly<Record<string, unknown>>, pointers: readonly string[] = []) {
+    const text = (value: unknown): string =>
+      typeof value === "string" ? value : JSON.stringify(value);
+    const asked: string[] = [];
+    const recordsAt: NonNullable<CliIo["recordsAt"]> = (directory) => {
+      asked.push(directory);
+      return {
+        directory: directory === "." ? "/work/alice-desk" : directory,
+        files: {
+          read: async (path) =>
+            path in files && typeof files[path] !== "number" ? text(files[path]) : undefined,
+          size: async (path) =>
+            !(path in files)
+              ? undefined
+              : typeof files[path] === "number"
+                ? (files[path] as number)
+                : text(files[path]).length,
+          pointer: async (path) => pointers.includes(path),
+        },
+      };
+    };
+    return { recordsAt, asked };
+  }
+  const RECORDS = {
+    "index.json": { collections: [{ key: "ad-creatives", title: "Ad creatives" }] },
+    "ad-creatives/collection.json": {
+      title: "Ad creatives",
+      statuses: [{ key: "used", label: "Used" }],
+      metrics: [{ key: "clicks", label: "Clicks", unit: "count" }],
+    },
+    "ad-creatives/items.json": [
+      {
+        id: "c-001",
+        title: "Morning commute",
+        madeOn: "2026-11-03",
+        status: "used",
+        files: [{ label: "The video", path: "files/c-001.mp4" }],
+      },
+    ],
+    "ad-creatives/uses.json": [{ item: "c-001", on: "2026-11-06", where: "Feed" }],
+    "ad-creatives/metrics.json": [{ item: "c-001", on: "2026-11-06", values: { clicks: 36 } }],
+    "ad-creatives/files/c-001.mp4": 480_000_000,
+  };
+  /** A console that must not be asked: the check reads files and nothing else. */
+  const silent: CliIo["fetch"] = async () => {
+    throw new Error("the check asks nothing of a console");
+  };
+
+  it("says that records read right, with how much each collection keeps, and asks nothing of a console", async () => {
+    const at = recordsOf(RECORDS);
+    const run = harness({ fetch: silent, recordsAt: at.recordsAt });
+    expect(await runCli(["desk", "check"], run.io)).toBe(EXIT.ok);
+    expect(at.asked).toEqual(["."]);
+    expect(run.out()).toBe(
+      [
+        "The records in /work/alice-desk read right: 1 collection.",
+        "  ad-creatives: 1 item, 1 use, 1 row of figures",
+        "",
+      ].join("\n"),
+    );
+    expect(run.err()).toBe("");
+    // Another desk is named, and at most one.
+    const there = recordsOf(RECORDS);
+    const named = harness({ fetch: silent, recordsAt: there.recordsAt });
+    expect(await runCli(["desk", "check", "/srv/desks/alice"], named.io)).toBe(EXIT.ok);
+    expect(there.asked).toEqual(["/srv/desks/alice"]);
+    expect(named.out()).toContain("The records in /srv/desks/alice read right");
+    const two = harness({ fetch: silent, recordsAt: there.recordsAt });
+    expect(await runCli(["desk", "check", "one", "two"], two.io)).toBe(EXIT.usage);
+    expect(two.err()).toContain("Say at most one directory: console desk check [<directory>]");
+  });
+
+  it("says that there are no records yet where the desk has no index, and that is no failure", async () => {
+    const run = harness({
+      fetch: silent,
+      recordsAt: recordsOf({ "README.md": "# The records of this desk\n" }).recordsAt,
+    });
+    expect(await runCli(["desk", "check"], run.io)).toBe(EXIT.ok);
+    expect(run.out()).toBe(
+      "No records yet in /work/alice-desk: records/index.json is not there. records/README.md says how the first is written.\n",
+    );
+  });
+
+  it("says each problem with its file and ends in 1, with what still reads", async () => {
+    const run = harness({
+      fetch: silent,
+      recordsAt: recordsOf({
+        ...RECORDS,
+        "ad-creatives/items.json": [
+          { id: "c-001", title: "Morning commute", madeOn: "3 November", status: "paused" },
+        ],
+        "ad-creatives/uses.json": "[ not json",
+      }).recordsAt,
+    });
+    expect(await runCli(["desk", "check"], run.io)).toBe(EXIT.failed);
+    expect(run.out()).toBe(
+      [
+        "records/ad-creatives/items.json: [0].madeOn is a day, written as 2026-11-15",
+        "records/ad-creatives/uses.json: is not JSON",
+        "",
+      ].join("\n"),
+    );
+    expect(run.err()).toContain(
+      "2 problems in the records of /work/alice-desk. Mend the files and run this again.",
+    );
+    // One file wrong, and the collection that still reads is said with it.
+    const partly = harness({
+      fetch: silent,
+      recordsAt: recordsOf({
+        ...RECORDS,
+        "ad-creatives/uses.json": [{ item: "c-404", on: "2026-11-06", where: "Feed" }],
+      }).recordsAt,
+    });
+    expect(await runCli(["desk", "check"], partly.io)).toBe(EXIT.failed);
+    expect(partly.out()).toBe(
+      [
+        "records/ad-creatives/uses.json: [0] names the item c-404, which is not there",
+        "What reads:",
+        "  ad-creatives: 1 item, 1 use, 1 row of figures",
+        "",
+      ].join("\n"),
+    );
+    expect(partly.err()).toContain("1 problem in the records of /work/alice-desk.");
+  });
+
+  it("notes a file that git LFS has not fetched here, which is nothing wrong with the record", async () => {
+    const run = harness({
+      fetch: silent,
+      recordsAt: recordsOf({ ...RECORDS, "ad-creatives/files/c-001.mp4": 133 }, [
+        "ad-creatives/files/c-001.mp4",
+      ]).recordsAt,
+    });
+    expect(await runCli(["desk", "check"], run.io)).toBe(EXIT.ok);
+    expect(run.out()).toBe(
+      [
+        "note: records/ad-creatives/items.json: [0] (c-001) file files/c-001.mp4 is a git LFS pointer, not fetched on this machine: git lfs pull fetches it",
+        "The records in /work/alice-desk read right: 1 collection.",
+        "  ad-creatives: 1 item, 1 use, 1 row of figures",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("answers what it found as JSON with --json, and still ends in 1 where there is a problem", async () => {
+    const run = harness({ fetch: silent, recordsAt: recordsOf(RECORDS).recordsAt });
+    expect(await runCli(["desk", "check", "--json"], run.io)).toBe(EXIT.ok);
+    expect(JSON.parse(run.out())).toEqual({
+      directory: "/work/alice-desk",
+      found: true,
+      problems: [],
+      notes: [],
+      collections: [{ key: "ad-creatives", items: 1, uses: 1, metricRows: 1 }],
+    });
+    const wrong = harness({
+      fetch: silent,
+      recordsAt: recordsOf({ ...RECORDS, "index.json": "nothing" }).recordsAt,
+    });
+    expect(await runCli(["desk", "check", "--json"], wrong.io)).toBe(EXIT.failed);
+    expect(JSON.parse(wrong.out())).toMatchObject({
+      found: true,
+      problems: [{ file: "records/index.json", problem: "is not JSON" }],
+    });
+    // Where the command has no files to read, it says so.
+    const nowhere = harness({ fetch: silent });
+    expect(await runCli(["desk", "check"], nowhere.io)).toBe(EXIT.failed);
+    expect(nowhere.err()).toContain("A desk's records cannot be read from here.");
+  });
+});
+
 describe("the versions of the command and the console (ADR-0025)", () => {
   const SAYS = { version: "0.1.18", clientRange: ">=0.1.18 <0.2.0" };
   const GLOBAL: Install = {

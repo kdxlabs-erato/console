@@ -42,6 +42,7 @@ import {
 } from "../limits.js";
 import { capabilityWords } from "../plugin/capabilities.js";
 import { PLUGIN_LIST_LIMIT } from "../plugin/limits.js";
+import { checkRecords, RECORDS_DIR, RECORDS_INDEX_FILE, type RecordsFiles } from "../records.js";
 import { fillRules, RULES_PATH, RULES_TITLE } from "../rules.js";
 import { DEFAULT_RUNNER_CONFIG, parseRunnerConfig } from "../runner/config.js";
 import {
@@ -288,6 +289,14 @@ export interface CliIo {
    * the package carries none. Left out, `desk --web` has no dashboard to write.
    */
   readonly deskWebTemplate?: (() => Promise<ReadonlyMap<string, string> | undefined>) | undefined;
+  /**
+   * The records of a desk on this machine (ADR-0117), for `desk check`: the desk's directory in
+   * full, and the files of its `records/` as the format's check reads them. Left out, the
+   * command checks none.
+   */
+  readonly recordsAt?:
+    | ((directory: string) => { readonly directory: string; readonly files: RecordsFiles })
+    | undefined;
 }
 
 /** The command stops with an exit code and a word on stderr. */
@@ -5084,12 +5093,68 @@ function deskWebFiles(
     ]);
 }
 
+/** A count with its word, the word in the plural where the count is not one. */
+const counted = (count: number, one: string, many = `${one}s`): string =>
+  `${count} ${count === 1 ? one : many}`;
+
+// The check of a desk's records (ADR-0117): every file under `records/` read as the format's
+// schemas read it, and each problem said with its file. It asks nothing of the console and
+// needs no sign-in: an agent that wrote a record runs it before it commits, and nobody needs
+// the dashboard to know that the records are right.
+const deskCheck = async (args: readonly string[], io: CliIo): Promise<number> => {
+  const { values, positionals } = parse(args, {});
+  if (positionals.length > 1) {
+    throw misuse("Say at most one directory: console desk check [<directory>]");
+  }
+  const at = io.recordsAt?.(positionals[0] ?? ".");
+  if (at === undefined) {
+    throw failed("A desk's records cannot be read from here.");
+  }
+  const found = await checkRecords(at.files);
+  if (on(values, "json")) {
+    io.stdout(`${JSON.stringify({ directory: at.directory, ...found }, null, 2)}\n`);
+  } else if (!found.found) {
+    io.stdout(
+      `No records yet in ${at.directory}: ${RECORDS_DIR}/${RECORDS_INDEX_FILE} is not there. ${RECORDS_DIR}/README.md says how the first is written.\n`,
+    );
+  } else {
+    const kept = found.collections.map(
+      (one) =>
+        `  ${one.key}: ${counted(one.items, "item")}, ${counted(one.uses, "use")}, ${counted(one.metricRows, "row of figures", "rows of figures")}`,
+    );
+    io.stdout(
+      [
+        ...found.problems.map((one) => `${one.file}: ${one.problem}`),
+        ...found.notes.map((one) => `note: ${one.file}: ${one.problem}`),
+        ...(found.problems.length === 0
+          ? [
+              `The records in ${at.directory} read right: ${counted(found.collections.length, "collection")}.`,
+            ]
+          : found.collections.length === 0
+            ? []
+            : ["What reads:"]),
+        ...kept,
+        "",
+      ].join("\n"),
+    );
+  }
+  if (found.problems.length > 0) {
+    throw failed(
+      `${counted(found.problems.length, "problem")} in the records of ${at.directory}. Mend the files and run this again.`,
+    );
+  }
+  return EXIT.ok;
+};
+
 // A person's desk (ADR-0115): the four fixed files, each only where no file of that name is
 // there, in `<handle>-desk` here or the directory named; with --web, the shell of the dashboard
 // in `web/`, where that holds nothing yet. The command writes and stops: making the desk a
 // repository and bringing the dashboard up is a skill's, of the organization's pack, and the
 // last line is the sentence that asks an agent for it. An agent account's desk is setup's.
 const desk: Command = async (args, io) => {
+  if (args[0] === "check") {
+    return deskCheck(args.slice(1), io);
+  }
   const { values, positionals } = parse(args, { web: { type: "boolean" } });
   if (positionals.length > 1) {
     throw misuse(DESK_USAGE);

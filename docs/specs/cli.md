@@ -154,6 +154,7 @@ A table a group, each row a command: what it asks the console, and what it says.
 |---|---|---|
 | `serve [<dir>] [--port <n>]` | `GET /api/v1/me` once; then every request of the pages under `/api/`, carried with the token | where it serves and as whom; then nothing until stopped ([a console of one's own](#a-console-of-ones-own)) |
 | `desk [<directory>] [--web]` | `GET /api/v1/me` once | for a person: which of the four files of their desk it wrote and which were there, with `--web` the shell of their dashboard written in `web/`, and last the sentence to say to an agent begun in that folder ([a desk of one's own](#a-desk-of-ones-own)). Needs no project; refused for an agent account, and under a directory that works in a project |
+| `desk check [<directory>]` | nothing | each problem of the records of the desk in the directory, the current one unless another is named, with its file and what is wrong; or that they read right, with what each collection keeps; or that the desk has no records yet ([records.md](records.md#the-check), [ADR-0117](../adr/0117-a-desk-keeps-records-of-what-its-member-made-as-files-the-desks-pages-read.md)). Ends in 1 with any problem. Needs no sign-in and no project |
 | `help [<command>]` | nothing | the usage, written for an agent that meets the command for the first time |
 | `--version` (also `version`, `-v`) | nothing | which version of the command this is, and where it is installed |
 ## The documents

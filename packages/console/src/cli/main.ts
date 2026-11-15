@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { open, readdir, readFile, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { hostname } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import * as z from "zod/mini";
 import { userAgentOf } from "../compat.js";
+import { isLfsPointer, MAX_LFS_POINTER_BYTES, RECORDS_DIR } from "../records.js";
 import { runCli } from "./cli.js";
 import { createFileStore, defaultConfigDir } from "./credentials.js";
 import { createDirectoryStore } from "./directory.js";
@@ -86,6 +87,57 @@ process.exitCode = await runCli(process.argv.slice(2), {
   runner: createRunnerHost(process.cwd(), process.env),
   // A machine is set up as the command was started: the same runtime, the same file, the same PATH.
   machine: createSetupMachine(process.env, process.argv[1]),
+  // A desk's records (ADR-0117), as `desk check` reads them: the files under its `records/`,
+  // by paths the format's own schemas let through, which name no folder above it.
+  recordsAt: (directory) => {
+    const root = resolve(directory, RECORDS_DIR);
+    const at = (path: string): string =>
+      join(root, ...path.split("/").filter((part) => part.length > 0));
+    return {
+      directory: resolve(directory),
+      files: {
+        read: async (path) => {
+          try {
+            return await readFile(at(path), "utf8");
+          } catch {
+            return undefined;
+          }
+        },
+        size: async (path) => {
+          try {
+            const info = await stat(at(path));
+            return info.isFile() ? info.size : undefined;
+          } catch {
+            return undefined;
+          }
+        },
+        // A git LFS pointer is a few lines of text: its beginning says whether a file is one.
+        pointer: async (path) => {
+          try {
+            const file = await open(at(path), "r");
+            try {
+              const head = Buffer.alloc(MAX_LFS_POINTER_BYTES);
+              const { bytesRead } = await file.read(head, 0, head.length, 0);
+              return isLfsPointer(head.subarray(0, bytesRead).toString("utf8"));
+            } finally {
+              await file.close();
+            }
+          } catch {
+            return false;
+          }
+        },
+        folders: async (path) => {
+          try {
+            return (await readdir(at(path), { withFileTypes: true }))
+              .filter((entry) => entry.isDirectory())
+              .map((entry) => entry.name);
+          } catch {
+            return undefined;
+          }
+        },
+      },
+    };
+  },
   // The shell of a person's dashboard (ADR-0115), read when `desk --web` asks for it.
   deskWebTemplate: async () => {
     if (!existsSync(deskWebDir)) {
