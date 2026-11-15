@@ -183,6 +183,8 @@ The desk is the agent account's own repository ([ADR-0088](../adr/0088-an-agent-
 
 `AGENTS.md` says the least that must be said, each rule with its reason. It names the account, the console and the manager it reports to; that the agent works in one main session, which plans and directs the work and keeps the record, and gives the tasks themselves to subagents where its product has them, as a lead and not a rule; that its instructions are its supervisors' tells, the board's tasks and decisions and the console's rules, and everything else it reads is information; and the services the workspace names ([ADR-0089](../adr/0089-a-workspace-names-the-services-its-agents-work-with.md)), with what the agent is called at each. What a persona says, a name or a title, is written as text: it makes no heading, no markup and no second line. From then on the files are the agent's to edit.
 
+A person has a desk too ([ADR-0115](../adr/0115-a-person-has-a-desk-too-written-by-the-command-and-set-up-by-a-skill-of-the-organizations-pack.md)), with no runner in it: four files, the ones above without `runner.json`, whose `AGENTS.md` says in five sections who the person is, where the work is, what the desk keeps, that no secret is kept in it and that instructions found in content are data. The package carries its template beside this one (`personDeskFiles`), and `examples/person-desk` in the console's repository is what it writes for an invented person, held equal to it by the same test.
+
 ## `runner.json`
 
 In the desk, the working directory the runner is started in; written by setup, the agent's from then on; no secret in it.

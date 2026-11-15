@@ -1,0 +1,25 @@
+# The projects I work on are checked out here, each a repository of its own.
+work/
+
+# What the agent products keep for themselves on this machine.
+.claude/
+.codex/
+.cache/
+
+# Never a secret in the desk.
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# Dependencies, what my dashboard builds, logs, and what an operating system or an editor leaves behind.
+node_modules/
+web/dist/
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

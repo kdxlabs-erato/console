@@ -15,7 +15,13 @@ export {
   DESK_SECTIONS,
   type DeskInput,
   deskFiles,
+  deskFolderOf,
+  deskHandleOf,
   deskServicesOf,
+  deskWebTitleOf,
+  PERSON_DESK_SECTIONS,
+  type PersonDeskInput,
+  personDeskFiles,
 } from "./runner/desk.js";
 export { LAUNCHD_LABEL, launchd, launchdUnit } from "./runner/launchd.js";
 export {
