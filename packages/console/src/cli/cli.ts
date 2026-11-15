@@ -117,6 +117,7 @@ import {
   type Credentials,
   CredentialsError,
   EMPTY_CREDENTIALS,
+  fitsFile,
   keepsNothing,
   lasts,
   loginsAt,
@@ -520,6 +521,21 @@ async function loadCredentials(io: CliIo): Promise<Credentials | undefined> {
     }
     throw error;
   }
+}
+
+/**
+ * What is about to be kept, where the credentials file would read it back; else the command
+ * stops, and nothing is written. What a console answered comes to rest in that file, and
+ * anything at an address may answer to nobody: kept beyond the file's own bounds, it would have
+ * every later command stop on a file it cannot read, at every console.
+ */
+function fitting(next: Credentials, url: string): Credentials {
+  if (!fitsFile(next)) {
+    throw failed(
+      `${url} answered what the command cannot keep: a code, a token or a name beyond the bounds a console's have. Nothing was kept. Check that the address is the console's, and sign in again.`,
+    );
+  }
+  return next;
 }
 
 /** The console a directory is bound to, as an origin, when it names one. */
@@ -1051,12 +1067,6 @@ async function keep(
     );
   }
   const credentials = (await loadCredentials(io)) ?? EMPTY_CREDENTIALS;
-  const replaced = loginsAt(credentials, url).find((login) => login.account === person.login);
-  if (replaced !== undefined && replaced.token !== token) {
-    await clientOf(io, url, replaced.token)
-      .giveUpToken()
-      .catch(() => undefined);
-  }
   const next = withLogin(
     credentials,
     {
@@ -1071,8 +1081,16 @@ async function keep(
     { default: asDefault },
   );
   // A login kept at a console ends the connection that waited there (ADR-0129): its secret
-  // is spent, and is kept no longer.
-  const kept = await io.store.save(withoutPending(next, url, io.now()));
+  // is spent, and is kept no longer. Asked whether it can be kept before the token it replaces
+  // is given up, so that none is given up for one that never was.
+  const keeping = fitting(withoutPending(next, url, io.now()), url);
+  const replaced = loginsAt(credentials, url).find((login) => login.account === person.login);
+  if (replaced !== undefined && replaced.token !== token) {
+    await clientOf(io, url, replaced.token)
+      .giveUpToken()
+      .catch(() => undefined);
+  }
+  const kept = await io.store.save(keeping);
   const standing = next.default === url ? ", the default console here" : "";
   // Last, what holds where, never a next step: the line once said to bind this directory
   // next, and a folder that is no checkout of a project's repository, a desk or a home
@@ -1185,7 +1203,10 @@ const login: Command = async (args, io) => {
       // said, the secret stays in the process as it always did.
       if (!attended || waitGiven !== undefined) {
         await io.store.save(
-          withPending((await loadCredentials(io)) ?? EMPTY_CREDENTIALS, waiting, io.now()),
+          fitting(
+            withPending((await loadCredentials(io)) ?? EMPTY_CREDENTIALS, waiting, io.now()),
+            url,
+          ),
         );
       }
     }
@@ -1441,7 +1462,9 @@ async function rememberZone(io: CliIo, session: Session, zone: string | undefine
   if (kept === undefined || kept.timeZone === zone) {
     return;
   }
-  await io.store.save(withLogin(session.credentials, { ...kept, timeZone: zone }));
+  await io.store.save(
+    fitting(withLogin(session.credentials, { ...kept, timeZone: zone }), session.url),
+  );
 }
 
 const whoami: Command = async (args, io) => {

@@ -907,6 +907,65 @@ describe("the console command", () => {
       expect(await runCli(["login", "--url", ORIGIN, "--token-stdin"], t.io)).toBe(EXIT.ok);
       expect(byHand.kept()?.pending).toBeUndefined();
     });
+
+    it("keeps nothing a console answered that the credentials file would not read back, and says so", async () => {
+      // What anything at the address may answer to nobody, and the file's own shape refuses:
+      // kept, it would have every later command stop on a file it cannot read, at every console.
+      const elsewhere = one("https://other.test", "cns_t_other");
+      for (const hostile of [
+        { interval: 601 },
+        { code: "" },
+        { url: `${ORIGIN}/connect/${"A".repeat(2049)}` },
+        { secret: "s".repeat(1025) },
+        { expiresAt: `2026-10-09T10:00:00.${"0".repeat(30)}Z` },
+      ]) {
+        const { fetch } = fakeConsole({
+          "POST /api/v1/connect": { status: 201, body: { ...CONNECTION, ...hostile } },
+        });
+        const memory = memoryStore(elsewhere);
+        const h = harness({ fetch, store: memory.store, terminal: false, ...clock() });
+        expect(await runCli(["login", "--url", ORIGIN], h.io)).toBe(EXIT.failed);
+        // The login that was there is as it was, and no code is said of a connection the next
+        // call could not go on with.
+        expect(memory.kept()).toEqual(elsewhere);
+        expect(h.out()).toBe("");
+        expect(h.err()).not.toBe("");
+      }
+
+      // The same of what the console hands over once a person approved: a token longer than the
+      // file reads is not kept, in words, and the connection that waited is as it was.
+      const long = fakeConsole({
+        "POST /api/v1/connect/claim": {
+          body: { status: "connected", token: TOKEN, secret: "t".repeat(1025) },
+        },
+        "GET /api/v1/me": { body: ME },
+        "DELETE /api/v1/me/token": { status: 204 },
+      });
+      const before = { ...one(ORIGIN, "cns_t_before"), pending: [PENDING] };
+      const waiting = memoryStore(before);
+      const l = harness({ fetch: long.fetch, store: waiting.store, terminal: false, ...clock() });
+      expect(await runCli(["login", "--url", ORIGIN], l.io)).toBe(EXIT.failed);
+      expect(l.err()).toBe(
+        "https://console.test answered what the command cannot keep: a code, a token or a name beyond the bounds a console's have. Nothing was kept. Check that the address is the console's, and sign in again.\n",
+      );
+      expect(waiting.kept()).toEqual(before);
+      // The token the login would have replaced is not given up for one that was never kept.
+      expect(long.calls.map((call) => call.key)).not.toContain("DELETE /api/v1/me/token");
+      // And of who the console says the token is: a login longer than an account's is.
+      const named = fakeConsole({
+        "GET /api/v1/me": { body: { ...ME, person: { ...PERSON, login: "a".repeat(255) } } },
+      });
+      const byHand = memoryStore(elsewhere);
+      const n = harness({
+        fetch: named.fetch,
+        store: byHand.store,
+        readStdin: async () => "cns_t_new\n",
+        ...clock(),
+      });
+      expect(await runCli(["login", "--url", ORIGIN, "--token-stdin"], n.io)).toBe(EXIT.failed);
+      expect(n.err()).toContain("answered what the command cannot keep");
+      expect(byHand.kept()).toEqual(elsewhere);
+    });
   });
 
   it("signs in as the account itself with --self: a session of the command's, kept as a token is, and said to be one (ADR-0084)", async () => {

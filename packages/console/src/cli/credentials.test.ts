@@ -2,11 +2,14 @@ import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { MAX_SECRET_LENGTH, MAX_URL_LENGTH } from "../limits.js";
+import { restConnectionSchema } from "../schemas.js";
 import {
   type Credentials,
   CredentialsError,
   createFileStore,
   defaultConfigDir,
+  fitsFile,
   keepsNothing,
   type Login,
   lasts,
@@ -257,6 +260,51 @@ describe("the credentials the command keeps", () => {
     }
   });
 
+  it("read back whatever a console may answer to begin a connection, which is bounded no wider", () => {
+    // The widest answer the REST shape takes: kept as the connection that waits, it fits.
+    const widest = {
+      code: "C".repeat(64),
+      url: `https://${"a".repeat(MAX_URL_LENGTH - "https://".length)}`,
+      secret: "s".repeat(MAX_SECRET_LENGTH),
+      expiresAt: `2026-10-09T10:00:00.${"0".repeat(19)}Z`,
+      interval: 600,
+    };
+    expect(widest.url).toHaveLength(2048);
+    expect(widest.expiresAt).toHaveLength(40);
+    const answered = restConnectionSchema.parse(widest);
+    expect(
+      fitsFile({
+        default: undefined,
+        logins: [],
+        pending: [
+          {
+            url: A,
+            secret: answered.secret,
+            code: answered.code,
+            page: answered.url,
+            expiresAt: answered.expiresAt,
+            interval: answered.interval,
+          },
+        ],
+      }),
+    ).toBe(true);
+    // One past a bound, and the answer is refused as no console's before the command has it.
+    for (const beyond of [
+      { code: "C".repeat(65) },
+      { code: "" },
+      { url: `${widest.url}a` },
+      { url: "" },
+      { secret: "s".repeat(MAX_SECRET_LENGTH + 1) },
+      { secret: "" },
+      { expiresAt: `2026-10-09T10:00:00.${"0".repeat(20)}Z` },
+      { interval: 601 },
+      { interval: 0 },
+      { interval: 1.5 },
+    ]) {
+      expect(restConnectionSchema.safeParse({ ...widest, ...beyond }).success).toBe(false);
+    }
+  });
+
   it("name the directory the file lives in", () => {
     expect(defaultConfigDir({ XDG_CONFIG_HOME: "/xdg" })).toBe(join("/xdg", "skillcdn-console"));
     expect(defaultConfigDir({})).toContain(join(".config", "skillcdn-console"));
@@ -349,5 +397,44 @@ describe("the credentials file", () => {
     await expect(store.load()).rejects.toMatchObject({ code: "credentials.malformed" });
     await writeFile(path, `{"version":2,"logins":[],"pad":"${"x".repeat(70 * 1024)}"}`);
     await expect(store.load()).rejects.toMatchObject({ code: "credentials.too_large" });
+  });
+
+  it("is never written in a shape it would not read back", async () => {
+    const dir = await directory();
+    const store = createFileStore(dir);
+    const path = await store.save(kept);
+    const written = await readFile(path, "utf8");
+    const waits: PendingConnection = {
+      url: B,
+      secret: "cns_c_secret",
+      code: "ABCD-EFGH",
+      page: `${B}/connect/ABCD-EFGH`,
+      expiresAt: "2026-10-09T10:00:00.000Z",
+      interval: 5,
+    };
+    // What a console answered, beyond the bounds the file reads: a wait, a code, a page, a
+    // secret and an end of a connection, and a token, an account and a zone of a login.
+    const beyond: Credentials[] = [
+      { ...kept, pending: [{ ...waits, interval: 601 }] },
+      { ...kept, pending: [{ ...waits, interval: 0.5 }] },
+      { ...kept, pending: [{ ...waits, code: "" }] },
+      { ...kept, pending: [{ ...waits, page: `${B}/${"x".repeat(2049)}` }] },
+      { ...kept, pending: [{ ...waits, secret: "x".repeat(1025) }] },
+      { ...kept, pending: [{ ...waits, expiresAt: "x".repeat(41) }] },
+      { ...kept, logins: [login(A, "alice", "x".repeat(1025))] },
+      { ...kept, logins: [login(A, "", "cns_t_a")] },
+      { ...kept, logins: [{ ...login(A, "alice", "cns_t_a"), timeZone: "x".repeat(65) }] },
+    ];
+    for (const unfit of beyond) {
+      expect(fitsFile(unfit)).toBe(false);
+      await expect(store.save(unfit)).rejects.toMatchObject({ code: "credentials.unfit" });
+      // Nothing was written: the file is as it was, with nothing beside it, and still reads.
+      expect(await readFile(path, "utf8")).toBe(written);
+      expect(await readdir(dir)).toEqual(["credentials.json"]);
+      expect(await store.load()).toEqual(kept);
+    }
+    expect(fitsFile(kept)).toBe(true);
+    expect(fitsFile({ ...kept, pending: [waits] })).toBe(true);
+    expect(fitsFile({ default: undefined, logins: [] })).toBe(true);
   });
 });

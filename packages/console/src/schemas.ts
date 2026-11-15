@@ -2395,14 +2395,18 @@ export type RestConnectInput = z.infer<typeof restConnectInputSchema>;
 /**
  * What `POST /api/v1/connect` answers (ADR-0011): the code a person approves, the address of the
  * console's own page for it, and the secret the command claims the token with, shown nowhere.
+ * Bounded, each no wider than the command's credentials file reads back (`cli/credentials.ts`),
+ * since the route answers nobody and the command keeps the answer while it waits (ADR-0129):
+ * a console answers a code of nine characters and a wait of a few seconds.
  */
 export const restConnectionSchema = z.object({
-  code: z.string(),
-  url: z.string(),
-  secret: z.string(),
-  expiresAt: instant,
-  /** How many seconds the command waits between claims. */
-  interval: z.int().check(z.positive()),
+  code: z.string().check(z.minLength(1), z.maxLength(64)),
+  url: z.string().check(z.minLength(1), z.maxLength(MAX_URL_LENGTH)),
+  /** As long as the claim takes one. */
+  secret: z.string().check(z.minLength(1), z.maxLength(MAX_SECRET_LENGTH)),
+  expiresAt: z.iso.datetime().check(z.maxLength(40)),
+  /** How many seconds the command waits between claims: ten minutes at most. */
+  interval: z.int().check(z.positive(), z.lte(600)),
 });
 export type RestConnection = z.infer<typeof restConnectionSchema>;
 

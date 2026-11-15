@@ -87,14 +87,16 @@ export interface CredentialStore {
 }
 
 export class CredentialsError extends Error {
-  readonly code: "credentials.malformed" | "credentials.too_large";
+  readonly code: "credentials.malformed" | "credentials.too_large" | "credentials.unfit";
   readonly path: string;
 
   constructor(code: CredentialsError["code"], path: string) {
     super(
       code === "credentials.too_large"
         ? `The credentials file ${path} is larger than the command reads.`
-        : `The credentials file ${path} could not be read as one.`,
+        : code === "credentials.unfit"
+          ? "What was to be kept is not what the command reads back, so nothing was written."
+          : `The credentials file ${path} could not be read as one.`,
     );
     this.name = "CredentialsError";
     this.code = code;
@@ -134,6 +136,51 @@ const firstFileSchema = z.object({
   url: z.string().check(z.minLength(1)),
   token: z.string().check(z.minLength(1)),
 });
+
+/** The file as it is written: what `save` writes, and `load` reads back with `fileSchema`. */
+function fileOf(credentials: Credentials) {
+  return {
+    version: 2,
+    default: credentials.default,
+    logins: credentials.logins.map((login) => ({
+      url: login.url,
+      account: login.account,
+      token: login.token,
+      agent: login.agent,
+      since: login.since,
+      // What a login is read back with: whether the command is the account itself, and the
+      // zone the workspace keeps its times in.
+      ...(login.self === true ? { self: true } : {}),
+      ...(login.timeZone === undefined ? {} : { timeZone: login.timeZone }),
+    })),
+    // The connections that wait for a person (ADR-0129), each with its secret, in this file
+    // and under its mode as a token is.
+    ...(credentials.pending === undefined || credentials.pending.length === 0
+      ? {}
+      : {
+          pending: credentials.pending.map((waiting) => ({
+            url: waiting.url,
+            secret: waiting.secret,
+            code: waiting.code,
+            page: waiting.page,
+            expiresAt: waiting.expiresAt,
+            interval: waiting.interval,
+            ...(waiting.self === true ? { self: true } : {}),
+            ...(waiting.default === true ? { default: true } : {}),
+          })),
+        }),
+  };
+}
+
+/**
+ * Whether what is to be kept reads back as the file's own shape. What a console answers comes
+ * to rest here, a code, a token, a name, and anything at an address may answer to nobody: a
+ * file written beyond its own bounds is one the command stops on from then on, at every
+ * console. So it is asked before anything is written, and what does not fit is not kept.
+ */
+export function fitsFile(credentials: Credentials): boolean {
+  return fileSchema.safeParse(fileOf(credentials)).success;
+}
 
 /** What a file says, in the current shape; one in the first shape reads as one login, the default. Nothing for anything else. */
 export function parseCredentials(json: unknown): Credentials | undefined {
@@ -426,38 +473,12 @@ export function createFileStore(directory: string): CredentialStore {
       return parsed;
     },
     async save(credentials) {
+      // Never written in a shape `load` refuses: the file would stop every command after this.
+      if (!fitsFile(credentials)) {
+        throw new CredentialsError("credentials.unfit", path);
+      }
       await mkdir(directory, { recursive: true, mode: 0o700 });
-      const file = {
-        version: 2,
-        default: credentials.default,
-        logins: credentials.logins.map((login) => ({
-          url: login.url,
-          account: login.account,
-          token: login.token,
-          agent: login.agent,
-          since: login.since,
-          // What a login is read back with: whether the command is the account itself, and the
-          // zone the workspace keeps its times in.
-          ...(login.self === true ? { self: true } : {}),
-          ...(login.timeZone === undefined ? {} : { timeZone: login.timeZone }),
-        })),
-        // The connections that wait for a person (ADR-0129), each with its secret, in this file
-        // and under its mode as a token is.
-        ...(credentials.pending === undefined || credentials.pending.length === 0
-          ? {}
-          : {
-              pending: credentials.pending.map((waiting) => ({
-                url: waiting.url,
-                secret: waiting.secret,
-                code: waiting.code,
-                page: waiting.page,
-                expiresAt: waiting.expiresAt,
-                interval: waiting.interval,
-                ...(waiting.self === true ? { self: true } : {}),
-                ...(waiting.default === true ? { default: true } : {}),
-              })),
-            }),
-      };
+      const file = fileOf(credentials);
       // Written beside the file and moved over it in one step, so that a command that stops
       // half-way leaves the file as it was, whole.
       const draft = `${path}.${process.pid}.tmp`;
