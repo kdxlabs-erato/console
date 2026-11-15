@@ -569,6 +569,71 @@ describe("the board's wakes (ADR-0085)", () => {
     ]);
   });
 
+  it("says in the log that the feed has stood unsettled for long, once, and no longer when it settles", async () => {
+    await wakes.sweep();
+    const handle = drizzleOf(testDatabase.database);
+    const first = await task(alice, { title: "Under way for long", state: "ready" });
+    const second = await task(alice, { title: "Committed meanwhile", state: "ready" });
+    const [row] = await handle
+      .select({ workspaceId: tasks.workspaceId, projectId: tasks.projectId })
+      .from(tasks)
+      .where(eq(tasks.id, first.id));
+    if (row === undefined) {
+      throw new Error("the task is not there");
+    }
+    const lines: { level?: number; msg?: string; seconds?: number }[] = [];
+    const watching = new BoardWakes({
+      database: testDatabase.database,
+      workspaceId: async () => (await handle.select().from(workspaces).limit(1))[0]?.id ?? "",
+      clock: { now: () => now },
+      logger: createLogger({
+        level: "warn",
+        role: "worker",
+        destination: { write: (line: string) => lines.push(JSON.parse(line)) },
+      }),
+      // Any time at all is long here: the job is asked twice within the same second.
+      unsettledWarningMs: 0,
+    });
+    let numbered: () => void = () => {};
+    let commit: () => void = () => {};
+    const wasNumbered = new Promise<void>((resolve) => {
+      numbered = resolve;
+    });
+    const mayCommit = new Promise<void>((resolve) => {
+      commit = resolve;
+    });
+    const slow = handle.transaction(async (tx) => {
+      await recordEvent(tx, {
+        workspaceId: row.workspaceId,
+        projectId: row.projectId,
+        kind: "task.commented",
+        actor: { id: bobId },
+        taskId: first.id,
+        data: { number: first.number, title: first.title, excerpt: "Slow to commit", files: 0 },
+        now,
+      });
+      numbered();
+      await mayCommit;
+    });
+    try {
+      await wasNumbered;
+      expect((await comment(bob, second.id, "Quick to commit")).status).toBe(201);
+      // Events are committed and the feed cannot settle: said once, however often the job comes round.
+      await watching.sweep();
+      await watching.sweep();
+      expect(lines.map((line) => line.msg)).toEqual([
+        "the feed has not settled: its writers overlap without a gap, or one of them is stuck",
+      ]);
+      expect(lines[0]?.seconds).toBe(0);
+    } finally {
+      commit();
+      await slow;
+    }
+    await watching.sweep();
+    expect(lines).toHaveLength(1);
+    await watching.close();
+  });
+
   it("passes over an event whose wakes fail every time, after its tries, and says so in the log", async () => {
     await wakes.sweep();
     const before = (await record("mira")).length;

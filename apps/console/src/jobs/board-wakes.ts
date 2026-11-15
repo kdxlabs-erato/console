@@ -11,7 +11,7 @@ import {
   secretsEnding,
   takeWakeCursor,
 } from "../db/queries/board-wakes.js";
-import { settledEnd } from "../db/queries/event-order.js";
+import { settledEnd, unsettledFor } from "../db/queries/event-order.js";
 import { type EventRecord, listAllEventsAfter } from "../db/queries/events.js";
 import { readWorkspaceSettings } from "../db/queries/workspaces.js";
 import type { Logger } from "../logger.js";
@@ -38,6 +38,13 @@ export const SECRET_WARNING_DAYS = 30;
  * always does.
  */
 export const WAKE_TRIES = 12;
+/**
+ * For how long the feed may stand unsettled before the job says so in the log, and how long it
+ * waits before it says so again: a writer that is stuck is ended by the server within thirty
+ * seconds, so longer than that is writers that overlap without a gap, or something worse.
+ */
+export const UNSETTLED_WARNING_MS = 30_000;
+const UNSETTLED_WARNING_EVERY_MS = 60_000;
 
 /** The day it is in a time zone, as the board writes a day; in UTC where the zone is none or unknown. */
 export function dayIn(zone: string | null | undefined, now: Date): string {
@@ -79,6 +86,9 @@ export class BoardWakes {
   readonly #clock: Clock;
   readonly #logger: Logger;
   readonly #tries: number;
+  readonly #unsettledWarningMs: number;
+  /** When the job last said that the feed stands unsettled, on this process's own clock. */
+  #warnedOfUnsettled: number | undefined;
   /** The event the last failed pass stopped at, and how many passes in a row have: kept by this process. */
   #stuck: { readonly event: number; readonly tries: number } | undefined;
   #timer: ReturnType<typeof setInterval> | undefined;
@@ -91,12 +101,15 @@ export class BoardWakes {
     readonly logger: Logger;
     /** How many passes in a row may fail at one event before it is passed over; `WAKE_TRIES` when left out. */
     readonly tries?: number | undefined;
+    /** For how long the feed may stand unsettled before the job says so; `UNSETTLED_WARNING_MS` when left out. */
+    readonly unsettledWarningMs?: number | undefined;
   }) {
     this.#database = options.database;
     this.#workspaceId = options.workspaceId;
     this.#clock = options.clock;
     this.#logger = options.logger;
     this.#tries = options.tries ?? WAKE_TRIES;
+    this.#unsettledWarningMs = options.unsettledWarningMs ?? UNSETTLED_WARNING_MS;
   }
 
   /** One pass. Resolves when it is done, or given up on: a failed pass is the next one's work. */
@@ -127,6 +140,7 @@ export class BoardWakes {
       // never held by the pass. Nothing where this process never saw the feed settle and a
       // writer is under way: the events are the next pass's, and the schedule is still this one's.
       const through = await settledEnd(database, "console");
+      this.#sayUnsettled();
       const read = await drizzleOf(database).transaction(async (tx) => {
         const now = this.#clock.now();
         const taken = await takeWakeCursor(tx, workspaceId, now);
@@ -215,6 +229,29 @@ export class BoardWakes {
       }
     }
     return sent;
+  }
+
+  /**
+   * Says in the log that the feed has stood unsettled for long: events are committed and no
+   * moment comes at which no writer is under way, so the wakes, the hooks and the pages read no
+   * further (ADR-0125). Nothing is lost, and it ends with the writers; said so that it does not
+   * last unseen, once a minute at most.
+   */
+  #sayUnsettled(): void {
+    const unsettled = unsettledFor(this.#database, "console");
+    const now = performance.now();
+    if (
+      unsettled <= this.#unsettledWarningMs ||
+      (this.#warnedOfUnsettled !== undefined &&
+        now - this.#warnedOfUnsettled < UNSETTLED_WARNING_EVERY_MS)
+    ) {
+      return;
+    }
+    this.#warnedOfUnsettled = now;
+    this.#logger.warn(
+      { seconds: Math.round(unsettled / 1000) },
+      "the feed has not settled: its writers overlap without a gap, or one of them is stuck",
+    );
   }
 
   /**

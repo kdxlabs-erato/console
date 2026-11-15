@@ -53,6 +53,8 @@ interface Settling {
   next: Promise<void> | undefined;
   /** The last look begun, never rejecting: what the next waits for. */
   last: Promise<void>;
+  /** When the lock was first refused since it was last given, on this process's own clock; nothing while the stream is settled. */
+  refusedSince: number | undefined;
 }
 
 const settling = new WeakMap<Database, Record<EventStream, Settling>>();
@@ -61,8 +63,18 @@ function settlingOf(database: Database, stream: EventStream): Settling {
   let streams = settling.get(database);
   if (streams === undefined) {
     streams = {
-      console: { end: undefined, next: undefined, last: Promise.resolve() },
-      plugin: { end: undefined, next: undefined, last: Promise.resolve() },
+      console: {
+        end: undefined,
+        next: undefined,
+        last: Promise.resolve(),
+        refusedSince: undefined,
+      },
+      plugin: {
+        end: undefined,
+        next: undefined,
+        last: Promise.resolve(),
+        refusedSince: undefined,
+      },
     };
     settling.set(database, streams);
   }
@@ -112,8 +124,10 @@ async function look(database: Database, stream: EventStream, state: Settling): P
     }
     if (await noWriterUnderWay(database, stream)) {
       state.end = Math.max(state.end ?? 0, highest);
+      state.refusedSince = undefined;
       return;
     }
+    state.refusedSince ??= performance.now();
     if (performance.now() >= until) {
       return;
     }
@@ -142,4 +156,16 @@ export function settledEnd(database: Database, stream: EventStream): Promise<num
     state.last = next.catch(() => undefined);
   }
   return state.next.then(() => state.end);
+}
+
+/**
+ * For how long this process has been refused a stream's lock while events were committed beyond
+ * its settled end, in milliseconds; 0 while the stream is settled. The end moves only at a
+ * moment no writer is under way: writers that follow each other without one, or a writer that
+ * is stuck, hold it where it is for as long as they last, and whoever reads the stream by
+ * number with it. What a job says in the log when it lasts.
+ */
+export function unsettledFor(database: Database, stream: EventStream): number {
+  const since = settlingOf(database, stream).refusedSince;
+  return since === undefined ? 0 : performance.now() - since;
 }
