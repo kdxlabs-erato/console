@@ -1501,6 +1501,44 @@ export const SESSION_SCRIPT: readonly {
     after: 2,
   },
   { kind: "tool_result", text: " 12 passed", data: { id: "call-6", error: false }, after: 19 },
+  // A task given to a sub-agent: what it thought, called and said names the call that started
+  // it (ADR-0131), and the page shows each as a step under the sub-agent's name.
+  {
+    kind: "tool_call",
+    text: '{"subagent_type":"Explore","description":"Check the other forms","prompt":"Look whether any other form still names a second step."}',
+    data: { tool: "Agent", id: "call-s" },
+    after: 2,
+  },
+  {
+    kind: "thinking",
+    text: "The sign-in form and the invitation form are the two others. A search for the step tells.",
+    data: { parent: "call-s", subagent: "Explore" },
+    after: 2,
+  },
+  {
+    kind: "tool_call",
+    text: '{"pattern":"step === 2","path":"src"}',
+    data: { tool: "Grep", id: "call-s1", parent: "call-s", subagent: "Explore" },
+    after: 1,
+  },
+  {
+    kind: "tool_result",
+    text: "No matches found.",
+    data: { id: "call-s1", error: false, parent: "call-s", subagent: "Explore" },
+    after: 1,
+  },
+  {
+    kind: "assistant",
+    text: "No other form names a second step: the sign-in form and the invitation form have one step each.",
+    data: { parent: "call-s", subagent: "Explore" },
+    after: 3,
+  },
+  {
+    kind: "tool_result",
+    text: "No other form names a second step.",
+    data: { id: "call-s", error: false },
+    after: 1,
+  },
   {
     kind: "tool_call",
     text: '{"url":"https://preview.acme.example/sign-up","width":390}',
