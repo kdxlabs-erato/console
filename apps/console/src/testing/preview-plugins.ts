@@ -194,3 +194,34 @@ export function keptSignInFailure(person: string, cause: unknown): Error {
     { cause },
   );
 }
+
+/**
+ * What becomes of the database when making the work failed, and what is said: `made` where this
+ * run made the board's project, the first of the work, before it failed, with how many projects
+ * the console listed when the run began. A database that is not kept goes whatever happened. A
+ * kept one is dropped only where this run began the work on it and made a part of it: it held no
+ * project, so that the half left is this run's own, and the next start, which looks for the
+ * board's project alone, would take it for the whole. One that held a project when the run began
+ * holds what this run did not make, the person's own or that of a run from another checkout,
+ * which keeps the one name on the same server; it is left as it is, and how to start over is said.
+ * Where nothing was made, nothing is half made, and the next start makes the work.
+ */
+export function afterFailedSeed(
+  keep: boolean,
+  made: { readonly projectsBefore: number } | undefined,
+  reason: string,
+): { readonly discard: boolean; readonly message: string } {
+  if (!keep || made === undefined) {
+    return { discard: false, message: reason };
+  }
+  if (made.projectsBefore === 0) {
+    return {
+      discard: true,
+      message: `${reason}\nThe work was half made on the database ${PREVIEW_DATABASE}, which held no project before this run: it was dropped, and the next start makes the work whole.`,
+    };
+  }
+  return {
+    discard: false,
+    message: `${reason}\nThe work was half made on the database ${PREVIEW_DATABASE}, which held ${made.projectsBefore === 1 ? "a project" : `${made.projectsBefore} projects`} before this run and is kept as it is: the next start finds the board's project there and makes nothing more. For the work whole, drop it (drop database ${PREVIEW_DATABASE} with (force)), or start without --keep.`,
+  };
+}

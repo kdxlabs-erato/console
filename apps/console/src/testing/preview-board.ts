@@ -116,8 +116,13 @@ export async function seedPreviewBoard(options: {
   readonly admin: string;
   readonly member: string;
   readonly now: Date;
-  /** Told before the first thing is made: from then on, a failure leaves half of the work behind. */
-  readonly onMaking?: (() => void) | undefined;
+  /**
+   * Told once the first thing of the work is made, the board's project, with how many projects
+   * the console listed when the work began: from then on, a failure leaves half of the work
+   * behind, and it is this run's own only where there were none. A failure before it has made
+   * nothing, a refusal of the project among it, as another run that made it first is answered.
+   */
+  readonly onMade?: ((begun: { readonly projectsBefore: number }) => void) | undefined;
 }): Promise<boolean> {
   const { harness, origin, admin, member, now } = options;
   const call = async (path: string, method: string, body?: unknown, cookie = admin) => {
@@ -136,7 +141,6 @@ export async function seedPreviewBoard(options: {
   if (projects.some((project) => project.key === PREVIEW_BOARD_KEY)) {
     return false;
   }
-  options.onMaking?.();
   const people = (await call(REST_ROUTES.people, "GET")).items as readonly {
     readonly id: string;
     readonly login: string;
@@ -155,6 +159,7 @@ export async function seedPreviewBoard(options: {
     visibility: "workspace",
     color: "teal",
   });
+  options.onMade?.({ projectsBefore: projects.length });
   const goals = new Map<string, string>();
   for (const goal of GOALS) {
     const made = await call(projectPath(PREVIEW_BOARD_KEY, "goals"), "POST", {

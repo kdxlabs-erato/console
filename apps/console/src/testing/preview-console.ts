@@ -2,7 +2,12 @@ import process from "node:process";
 import { BROWSER_ADMIN, startBrowserConsole } from "./browser-console.js";
 import { type LivePages, startLivePages } from "./live-pages.js";
 import { PREVIEW_BOARD_KEY, seedPreviewBoard } from "./preview-board.js";
-import { builtPluginAt, type PreviewArguments, parsePreviewArguments } from "./preview-plugins.js";
+import {
+  afterFailedSeed,
+  builtPluginAt,
+  type PreviewArguments,
+  parsePreviewArguments,
+} from "./preview-plugins.js";
 
 // The console on this machine for a person to look at the plugins' pages: the default UI, the
 // example plugin enabled, the fixtures leave and gate installed for the settings pages to have
@@ -62,10 +67,13 @@ try {
   started = stop(reasonOf(error));
 }
 let pages: LivePages | undefined;
-// Whether the work was being made when something failed: the board's project is the first thing
-// made and the one thing looked for on a kept database, so that half of the work would stand
-// for all of it at the next start, and nothing would make the rest.
-let making = false;
+// What this run had made of the work when something failed: the board's project is the first
+// thing made and the one thing looked for on a kept database, so that half of the work would
+// stand for all of it at the next start, and nothing would make the rest. Whether the kept
+// database goes for it is `afterFailedSeed`'s: only where this run began the work on it. Typed
+// by assertion, since it is set from a callback, which the narrowing does not see.
+let made = undefined as { readonly projectsBefore: number } | undefined;
+let whole = false;
 try {
   await seedPreviewBoard({
     harness: started.harness,
@@ -73,22 +81,18 @@ try {
     admin: await started.harness.signIn(BROWSER_ADMIN),
     member: await started.harness.signIn("bob"),
     now: new Date(),
-    onMaking: () => {
-      making = true;
+    onMade: (begun) => {
+      made = begun;
     },
   });
-  making = false;
+  whole = true;
   if (wanted.live) {
     pages = await startLivePages({ port, console: started.origin });
   }
 } catch (error) {
-  const halfMade = making && wanted.keep;
-  await started.close({ discard: halfMade }).catch(() => undefined);
-  stop(
-    halfMade
-      ? `${reasonOf(error)}\nThe work was half made: the database console_preview was dropped, and the next start makes it whole.`
-      : reasonOf(error),
-  );
+  const after = afterFailedSeed(wanted.keep, whole ? undefined : made, reasonOf(error));
+  await started.close({ discard: after.discard }).catch(() => undefined);
+  stop(after.message);
 }
 const lines = [
   `The console, with the example plugin enabled and the fixtures leave and gate installed: ${started.publicUrl}`,

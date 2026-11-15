@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  afterFailedSeed,
   builtPluginAt,
   keptSignInFailure,
   oneOriginRedirect,
@@ -35,6 +36,35 @@ describe("what dev:plugins is told", () => {
     expect(failure.message).toContain("took bob out, which the People page undoes");
     expect(failure.message).toContain(`drop database ${PREVIEW_DATABASE} with (force)`);
     expect(failure.message).toContain("without --keep");
+  });
+
+  it("drops a kept database on a failure only where the run began the work on it and made a part", () => {
+    const reason = "POST /api/v1/projects/ledger/tasks answered 500: the database went away";
+    // Begun on a database with no project, and the board's project made: the half is this run's.
+    const own = afterFailedSeed(true, { projectsBefore: 0 }, reason);
+    expect(own.discard).toBe(true);
+    expect(own.message).toBe(
+      `${reason}\nThe work was half made on the database ${PREVIEW_DATABASE}, which held no project before this run: it was dropped, and the next start makes the work whole.`,
+    );
+    // A database that held a project when the run began is not this run's to drop, whoever made
+    // what is in it: the person, or a run from another checkout under the same name.
+    for (const projectsBefore of [1, 4]) {
+      const kept = afterFailedSeed(true, { projectsBefore }, reason);
+      expect(kept.discard).toBe(false);
+      expect(kept.message).toContain(
+        `held ${projectsBefore === 1 ? "a project" : "4 projects"} before this run and is kept as it is`,
+      );
+      expect(kept.message).toContain(`drop database ${PREVIEW_DATABASE} with (force)`);
+      expect(kept.message).toContain("without --keep");
+    }
+    // Nothing made, a refusal of the board's project among it: nothing is half made, and the
+    // database is kept as it was, with the reason alone.
+    expect(afterFailedSeed(true, undefined, reason)).toEqual({ discard: false, message: reason });
+    // A database that is not kept goes anyway, and is not dropped twice.
+    expect(afterFailedSeed(false, { projectsBefore: 0 }, reason)).toEqual({
+      discard: false,
+      message: reason,
+    });
   });
 
   it("takes a port once and a plugin's directory as often as given, and refuses the rest", () => {

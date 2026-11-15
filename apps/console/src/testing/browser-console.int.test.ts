@@ -234,6 +234,9 @@ describe("the preview console", () => {
     const member = await started.harness.signIn("bob");
     /** The day the work is made on, by this test's own clock. */
     const SEEDED = new Date("2026-11-14T09:00:00Z");
+    // When the work is begun, and on what: told once the board's project is made, with the
+    // projects listed before it, which decide whether a kept database may go on a failure.
+    const told: { readonly projectsBefore: number }[] = [];
     const seed = () =>
       seedPreviewBoard({
         harness: started.harness,
@@ -241,8 +244,15 @@ describe("the preview console", () => {
         admin,
         member,
         now: SEEDED,
+        onMade: (begun) => told.push(begun),
       });
+    const before = (
+      (await (
+        await started.harness.request(REST_ROUTES.projects, { headers: { cookie: admin } })
+      ).json()) as { readonly items: readonly unknown[] }
+    ).items.length;
     expect(await seed()).toBe(true);
+    expect(told).toEqual([{ projectsBefore: before }]);
     const project = restProjectSchema.parse(
       await (
         await started.harness.request(projectPath(PREVIEW_BOARD_KEY), {
@@ -275,6 +285,7 @@ describe("the preview console", () => {
     expect(me.home?.layouts[8]?.[0]?.size).toBe("wide");
     // Made once: a database kept from an earlier run keeps what was there, a page arranged since too.
     expect(await seed()).toBe(false);
+    expect(told).toHaveLength(1);
 
     // The rest of the work, by what the pages read: how many of each there are.
     const read = async (path: string, cookie = admin) =>
