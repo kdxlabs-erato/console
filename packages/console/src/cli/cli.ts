@@ -5164,7 +5164,7 @@ const DESK_USAGE = "Say at most one directory: console desk [<directory>] [--web
 
 /** The sentence a person says to their agent in a new desk: the last line `desk` prints (ADR-0115). */
 function deskSentence(web: boolean): string {
-  return `Set this desk up as a repository of mine${web ? " and bring its pages up" : ""}, with the skill for it in the organization's pack where it has one: console skills --search "desk setup"`;
+  return `Set this desk up as a repository of mine${web ? " and bring its pages up" : ""}, with the skill for it in the organization's pack where it has one: console skills --search "desk setup" --limit 5`;
 }
 
 /** The files of the shell of a desk's pages as they are written: the two words the template leaves filled in. */

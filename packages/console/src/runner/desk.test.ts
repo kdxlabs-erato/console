@@ -127,6 +127,11 @@ describe("the desk's template", () => {
     // What lets a session, and a subagent it starts, begin a task at once (ADR-0115): what the
     // subagent is handed, whose the run is, and that the desk names no project.
     expect(instructions).toContain("A subagent knows nothing of my session.");
+    // Each subagent keeps its scratch in a folder of its own under work/: two of them told to
+    // keep out of one another's way wrote two levels above the desk.
+    expect(instructions).toContain(
+      "the checkout it works in, a folder of its own under `work/` for its scratch, and that it reads the skill working-the-board before anything else.",
+    );
     expect(instructions).toContain(
       "names the run that `console take` printed on every command after (`--run <id>`)",
     );
@@ -171,7 +176,7 @@ describe("the desk's template", () => {
     expect(instructions).not.toContain("copied");
     // The organization's pack is looked in before a job is done by hand.
     expect(instructions).toContain(
-      "Before I do a job by hand, I look for a skill for it in the organization's pack: `console skills --search <words>`.",
+      "Before I do a job by hand, I look for a skill for it in the organization's pack: `console skills --search <words> --limit 5`.",
     );
     // The services as the workspace names them, with what the agent is called at each.
     expect(instructions).toContain(
@@ -296,7 +301,15 @@ describe("a person's desk", () => {
     );
     expect(instructions).toContain("read its `AGENTS.md` before the first change there");
     // What no repository holds yet starts from the organization's pack.
-    expect(instructions).toContain("`console skills --search <words>` finds the skill for it");
+    // A search names a limit: a hit is most of a kilobyte, and the first is nearly always it.
+    expect(instructions).toContain(
+      "`console skills --search <words> --limit 5` finds the skill for it",
+    );
+    // What changes in the desk is committed and pushed, and that is not asked.
+    expect(instructions).toContain(
+      "- What changes in this desk is committed and pushed when it is done, without asking: the repository is my own.",
+    );
+    expect(instructions).not.toContain("written here and committed");
     // What the desk keeps (ADR-0117): the kinds are the person's to name, in this file. Nothing
     // ties a record to the board, and nothing keeps the board out of a desk.
     expect(instructions).toContain(

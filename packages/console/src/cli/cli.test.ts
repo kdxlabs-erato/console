@@ -4879,7 +4879,7 @@ describe("a person's desk on the command line (ADR-0115)", () => {
   const ALICE = { ...ME, person: { ...PERSON, login: "alice@acme.example", name: "Alice Kim" } };
   const FILES = ["README.md", "AGENTS.md", "CLAUDE.md", ".gitignore", "records/README.md"];
   const SENTENCE =
-    'Set this desk up as a repository of mine, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup"';
+    'Set this desk up as a repository of mine, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup" --limit 5';
   /** The shell of a desk's pages as a package would carry it: the two words the command fills in, and a folder. */
   const SHELL = new Map([
     ["README.md", "# __TITLE__\n\nBuilt on @skillcdn/console __VERSION__.\n"],
@@ -5119,7 +5119,7 @@ describe("a person's desk on the command line (ADR-0115)", () => {
         "The shell of its pages is written in /work/desk/web (README.md, package.json, index.html, src/main.tsx): your own extension of the console's pages, on @skillcdn/console 0.5.1, served from this machine by console serve once it is built; its README.md says how.",
         "Next, open your agent in that folder and say:",
         "",
-        'Set this desk up as a repository of mine and bring its pages up, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup"',
+        'Set this desk up as a repository of mine and bring its pages up, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup" --limit 5',
         "",
       ].join("\n"),
     );
@@ -5157,7 +5157,7 @@ describe("a person's desk on the command line (ADR-0115)", () => {
         written: ["README.md", "package.json", "index.html", "src/main.tsx"],
         version: "0.5.1",
       },
-      say: 'Set this desk up as a repository of mine and bring its pages up, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup"',
+      say: 'Set this desk up as a repository of mine and bring its pages up, with the skill for it in the organization\'s pack where it has one: console skills --search "desk setup" --limit 5',
     });
   });
 

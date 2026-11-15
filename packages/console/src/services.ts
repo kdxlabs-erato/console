@@ -88,7 +88,7 @@ const called = (account: string | undefined, otherwise: string): string =>
 
 /** What a desk's item says last: the organization's pack may hold the skill for setting a desk up. */
 const DESK_BY_THE_PACK =
-  'Where the organization\'s pack has a skill for setting a desk up, go by it: console skills --search "desk setup".';
+  'Where the organization\'s pack has a skill for setting a desk up, go by it: console skills --search "desk setup" --limit 5.';
 
 /** What a service the account signs in to the console through says last: the sign-in is needed once, at the setup. */
 const SIGN_IN_AT_HAND =

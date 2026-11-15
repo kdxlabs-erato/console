@@ -170,7 +170,7 @@ describe("the onboarding task of an agent account", () => {
   it("names the organization's pack where the desk is made, for the skill that sets one up", () => {
     const { body } = onboardingOf({ handle: "mira", workspace: WORKSPACE });
     expect(body).toContain(
-      '- **Make your desk there and push it.** Make the repository `acme-mira/desk`, private, and push the desk to it. Where the organization\'s pack has a skill for setting a desk up, go by it: console skills --search "desk setup".',
+      '- **Make your desk there and push it.** Make the repository `acme-mira/desk`, private, and push the desk to it. Where the organization\'s pack has a skill for setting a desk up, go by it: console skills --search "desk setup" --limit 5.',
     );
   });
 });
