@@ -395,7 +395,7 @@ describe("the command line", () => {
     expect(unbound.out).toContain("; no project named here\n");
     const who = await console_(["whoami"]);
     expect(who.out).toBe(
-      `Alice (member) at Acme, ${SIGN_IN_URL}; project web (The web app), named by CONSOLE_PROJECT\nWhat this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command (console skills says where it is).\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.0 <0.2.0; this command works with a console from 0.5.0 on.\n`,
+      `Alice (member) at Acme, ${SIGN_IN_URL}; project web (The web app), named by CONSOLE_PROJECT\nBefore the first task, read console rules and the skill working-the-board (console skills says where it is); for one command's flags, console help <command>.\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.0 <0.2.0; this command works with a console from 0.5.0 on.\n`,
     );
   });
 
@@ -628,7 +628,7 @@ describe("the command line", () => {
     expect(found.out).toContain(`Reported on run ${runId}`);
     const whoami = await console_(["whoami"], bobToken);
     expect(whoami.out).toBe(
-      `bob (member) at Acme, ${SIGN_IN_URL}; project web (The web app), named by CONSOLE_PROJECT\nWhat this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command (console skills says where it is).\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.0 <0.2.0; this command works with a console from 0.5.0 on.\n`,
+      `bob (member) at Acme, ${SIGN_IN_URL}; project web (The web app), named by CONSOLE_PROJECT\nBefore the first task, read console rules and the skill working-the-board (console skills says where it is); for one command's flags, console help <command>.\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.0 <0.2.0; this command works with a console from 0.5.0 on.\n`,
     );
   });
 

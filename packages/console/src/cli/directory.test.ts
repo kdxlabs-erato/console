@@ -18,7 +18,7 @@ const THE_PAGE = fileURLToPath(
 describe("the sentence a checkout's agreement carries", () => {
   it("says to run whoami before the first step, and is what the skill's page quotes", async () => {
     expect(THE_SENTENCE).toBe(
-      "**Bound to a console?** Before the first step, run `console whoami`: when it names a project, or `.skillcdn-console.json` is in this checkout, work the task through that SkillCDN console (`console help` says how).",
+      "**Bound to a console?** Before the first step, run `console whoami`: when it names a project, or `.skillcdn-console.json` is in this checkout, work the task through that SkillCDN console (its answer says how).",
     );
     // A pack says it with "the checkout" for "this checkout": the words it changes are there, once.
     expect(THE_SENTENCE.split("this checkout")).toHaveLength(2);

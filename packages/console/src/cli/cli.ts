@@ -1292,11 +1292,16 @@ const whoami: Command = async (args, io) => {
     () =>
       [
         `${whoOf(person)} at ${me.workspace.name}, ${session.url}${projectWords}${me.session?.kind === "command" ? "; signed in as the account itself" : ""}`,
-        // The pack's rules send an agent here first; from here the rules and the skill are the next
-        // steps. In a directory that names no project too: an agent account's desk names none,
-        // the command's help sends an agent here for where the skill is, and the workspace has
-        // rules whatever the project.
-        `What this organization asks of agents: console rules. How the board is worked: the skill working-the-board, shipped with this command${io.skillsDir === undefined ? " (console skills says where it is)." : `: ${ownSkillPath(io.skillsDir)}`}`,
+        // The sentence of a checkout's agreement sends an agent here first and says that this
+        // answer says how: so it says what is read before the first task, the rules and the
+        // skill, and that one command's flags are read from that command's help, since an agent
+        // that has the skill was reading the whole help beside it. In a directory that names
+        // no project too: an agent account's desk names none, the command's help sends an
+        // agent here for where the skill is, and the workspace has rules whatever the project.
+        // The skill's path stands last, with nothing after it, to be copied as it is.
+        io.skillsDir === undefined
+          ? "Before the first task, read console rules and the skill working-the-board (console skills says where it is); for one command's flags, console help <command>."
+          : `Before the first task, read console rules and the skill working-the-board; for one command's flags, console help <command>. The skill: ${ownSkillPath(io.skillsDir)}`,
         `This command is ${io.version ?? "of a version it does not know"}${io.install === undefined ? "" : `, ${describeInstall(io.install)}`}; ${consoleWords}.`,
         ...(verdict === "behind"
           ? [`A newer command exists. Update it: ${updateWords(io, me.console?.version)}`]
