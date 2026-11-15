@@ -22,6 +22,7 @@
     "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('web/dist',{recursive:true,force:true})\""
   },
   "devDependencies": {
+    "@skillcdn/cli": "^0.5.2",
     "@types/node": "catalog:",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",

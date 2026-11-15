@@ -1,3 +1,12 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  type Pack as CommandPack,
+  PackError as CommandPackError,
+  type PackRead,
+  readPack,
+} from "@skillcdn/cli";
 import {
   connectPath,
   projectPath,
@@ -10,10 +19,13 @@ import {
   restTokensSchema,
 } from "@skillcdn/console/api";
 import { type CliIo, EXIT, runCli } from "@skillcdn/console/cli";
+import { parseAddress, type ToolWords } from "@skillcdn/core";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createDirectorySource } from "./adapters/directory-packs.js";
 import { createSkillCdnSource } from "./adapters/skillcdn.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "./db/testing.js";
+import { PackError } from "./ports/skill-source.js";
 import { createFixtureProvider } from "./testing/fixture-provider.js";
 import { createHarness, type Harness, SIGN_IN_URL } from "./testing/harness.js";
 
@@ -1047,7 +1059,10 @@ describe("the command line", () => {
         "",
       ].join("\r\n"),
     );
+    // Every read begins with what the address serves, as the skillcdn command's reads do
+    // (ADR-0124), and then the two pages of the tables.
     expect(asked).toEqual([
+      "the pack's token /api/v1/mounts/gh/acme/manual",
       "the pack's token /api/v1/rows/gh/acme/manual?path=docs%2Fannex&limit=5000",
       "the pack's token /api/v1/rows/gh/acme/manual?path=docs%2Fannex&cursor=codes-2&limit=5000",
     ]);
@@ -1069,5 +1084,195 @@ describe("the command line", () => {
     expect(JSON.stringify([before, rows, code, outlined, served.logs]).includes("scdn_repo")).toBe(
       false,
     );
+  });
+
+  it("prints a pack as the skillcdn command prints it: one directory read by that command's reads and through the console (ADR-0124)", async () => {
+    // An invented pack on this machine: a skill that includes two files and is longer than a
+    // host shows whole, a document longer than a page, and a table and a code block.
+    const root = await mkdtemp(join(tmpdir(), "console-pack-"));
+    const directory = join(root, "acme", "manual");
+    const lines = (count: number, word: string): string =>
+      Array.from(
+        { length: count },
+        (_, at) =>
+          `${word} ${String(at + 1).padStart(4, "0")}: what is done at this step, in a sentence of its own.`,
+      ).join("\n");
+    await mkdir(join(directory, "review"), { recursive: true });
+    await mkdir(join(directory, "docs"), { recursive: true });
+    await writeFile(
+      join(directory, "SKILLCDN.md"),
+      "---\nname: Manual\ndescription: The manual of an invented machine.\ndocuments:\n  - docs\n---\nBe kind.\n",
+    );
+    await writeFile(
+      join(directory, "review", "SKILL.md"),
+      `---\nname: review\ndescription: Reviews a change.\nskillcdn:\n  include:\n    - steps.md\n    - checks.md\n---\n# Reviewing\n\n${lines(110, "Rule")}\n\nSee [the guide](guide.md).\n`,
+    );
+    await writeFile(join(directory, "review", "steps.md"), `# Steps\n\n${lines(190, "Step")}\n`);
+    await writeFile(join(directory, "review", "checks.md"), `# Checks\n\n${lines(190, "Check")}\n`);
+    await writeFile(join(directory, "review", "guide.md"), "# Guide\n\nHow to review.\n");
+    await writeFile(
+      join(directory, "docs", "README.md"),
+      "# Documentation\n\nWhat the manual holds.\n",
+    );
+    await writeFile(
+      join(directory, "docs", "guide.md"),
+      `# Guide\n\n## Starting\n\n${lines(220, "Start")}\n\n## Stopping\n\n${lines(220, "Stop")}\n`,
+    );
+    await writeFile(
+      join(directory, "docs", "codes.md"),
+      "# Codes\n\n| Code | Meaning |\n| --- | --- |\n| A1 | Starts |\n| B1 | Stops, at once |\n\n```sh\nmachine --start\n```\n",
+    );
+    const parsed = parseAddress("/local/acme/manual");
+    if (!parsed.ok) {
+      throw new Error(parsed.error.message);
+    }
+    // One source for both, so that both read one index of the directory.
+    const source = createDirectorySource({
+      root,
+      clock: { now: () => new Date("2026-11-15T00:00:00Z") },
+      logger: pino({ level: "silent" }),
+    });
+    const opened = source.open(parsed.value);
+    if (opened === undefined) {
+      throw new Error("the directory is not served");
+    }
+    // The pack as the skillcdn command reads one: the same reads, with its refusals as its own.
+    const asCommand = async <T>(read: Promise<T>): Promise<T> =>
+      read.catch((error: unknown) => {
+        if (error instanceof PackError) {
+          throw new CommandPackError(error.status, error.code, error.message);
+        }
+        throw error;
+      });
+    const ready = <T extends { readonly status: string }>(answer: T) => {
+      if (answer.status !== "ready") {
+        throw new Error("the index of a directory is always ready");
+      }
+      return answer as Extract<T, { readonly status: "ready" }>;
+    };
+    const direct: CommandPack = {
+      address: parsed.value,
+      source: { kind: "directory", root: directory },
+      mount: () => asCommand(opened.mount()),
+      browse: (query) => asCommand(opened.browse(query)),
+      find: (query) => asCommand(opened.find(query)),
+      skill: (path, cursor) => asCommand(opened.skill(path, cursor)),
+      file: (query) => asCommand(opened.file(query)),
+      rows: async (query) => ready(await asCommand(opened.rows(query))),
+      code: async (query) => ready(await asCommand(opened.code(query))),
+    };
+    // In the console's words for the reads, which is all that differs between the two commands.
+    const words: ToolWords = {
+      browse: "console skills <folder>",
+      search: "console skills --search",
+      load: "console skill",
+      read: "console skill --file",
+    };
+    const command = async (read: PackRead): Promise<string> =>
+      (await readPack(direct, read, { words })).text;
+    const served = createHarness(testDatabase, {
+      providers: [createFixtureProvider()],
+      skills: {
+        address: "/local/acme/manual",
+        source: { open: () => undefined },
+        directory: source,
+      },
+    });
+    try {
+      const owner = await served.signIn("alice");
+      await served.project(owner, {
+        key: "handbook",
+        name: "The handbook",
+        visibility: "workspace",
+      });
+      const agent = await tokenFor(bob, "Codex reading the manual on this machine");
+      const through = async (args: readonly string[]) => {
+        const ran = await console_(args, agent, { harness: served, project: "handbook" });
+        expect(ran.err, args.join(" ")).toBe("");
+        expect(ran.code, args.join(" ")).toBe(EXIT.ok);
+        return ran.out;
+      };
+      const LOADING =
+        "A skill is loaded, its rules first, with console skill <the path of its SKILL.md>, a long one in parts; --file reads a file of the pack as it is, without the rules.";
+      // The listing: the pack's own words between the console's lines.
+      expect(await through(["skills"])).toBe(
+        [
+          "skills at /local/acme/manual, read from the console's machine: ready",
+          "",
+          await command({ read: "skills" }),
+          LOADING,
+          "The plugins of this console have skills of their own: console plugins lists the plugins, console plugin <key> skills the skills of one.",
+          "",
+        ].join("\n"),
+      );
+      // A folder, and what words find.
+      expect(await through(["skills", "docs"])).toBe(
+        `${await command({ read: "browse", path: "docs" })}\n`,
+      );
+      expect(await through(["skills", "--search", "review"])).toBe(
+        `${await command({ read: "find", words: "review" })}\n${LOADING}\n`,
+      );
+      // The skill, in parts: each within what a host shows whole, ending with the command that
+      // reads the next, until the last.
+      const parts: string[] = [];
+      let cursor: string | undefined;
+      for (let part = 0; part < 8; part += 1) {
+        const printed = await through([
+          "skill",
+          "review/SKILL.md",
+          ...(cursor === undefined ? [] : ["--cursor", cursor]),
+        ]);
+        expect(printed).toBe(
+          `${await command({ read: "skill", path: "review/SKILL.md", cursor })}\n`,
+        );
+        expect(printed.length).toBeLessThanOrEqual(28_001);
+        parts.push(printed);
+        cursor = /console skill review\/SKILL\.md --cursor (\S+)\n$/.exec(printed)?.[1];
+        if (cursor === undefined) {
+          break;
+        }
+      }
+      expect(parts.length).toBeGreaterThan(1);
+      expect(parts[0]).toContain("Skill context is incomplete");
+      expect(parts[0]).toContain("Rule 0001:");
+      expect(parts.join("")).toContain("Step 0190:");
+      expect(parts.at(-1)).toContain("Check 0190:");
+      expect(parts.at(-1)).not.toContain("The skill continues");
+      // A file, a page a host shows whole, ended at a line, and the page after it.
+      const page = await through(["skill", "--file", "docs/guide.md"]);
+      expect(page).toBe(`${await command({ read: "file", path: "docs/guide.md" })}\n`);
+      const next = /with offset (\d+)\./.exec(page)?.[1];
+      expect(next).toBeDefined();
+      expect(await through(["skill", "--file", "docs/guide.md", "--offset", next ?? "0"])).toBe(
+        `${await command({ read: "file", path: "docs/guide.md", offset: next })}\n`,
+      );
+      // The tables and the code blocks, as data.
+      expect(await through(["skills", "--rows", "docs"])).toBe(
+        await command({ read: "rows", path: "docs" }),
+      );
+      expect(await through(["skills", "--rows", "docs", "--format", "json"])).toBe(
+        `${await command({ read: "rows", path: "docs", format: "json" })}\n`,
+      );
+      expect(await through(["skills", "--code", "docs"])).toBe(
+        await command({ read: "code", path: "docs" }),
+      );
+      // A skill that is not there: that command's refusal, in its words.
+      const missing = await console_(["skill", "nothing"], agent, {
+        harness: served,
+        project: "handbook",
+      });
+      expect(missing.code).toBe(EXIT.failed);
+      expect(missing.out).toBe("");
+      const refusal = await command({ read: "skill", path: "nothing/SKILL.md" }).catch(
+        (error: unknown) => error,
+      );
+      expect(refusal).toBeInstanceOf(CommandPackError);
+      expect(missing.err).toBe(
+        `skill.not_found: ${refusal instanceof Error ? refusal.message : ""}\n`,
+      );
+    } finally {
+      await served.close();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

@@ -1,65 +1,48 @@
 import {
-  type BrowseResult,
-  browseResultOf,
-  catalogStateOf,
-  type DirectoryResult,
-  directoryResultOf,
-  type FileResult,
-  type FindItem,
-  type FindResult,
-  fileResultOf,
-  findResultOf,
+  type BrowseQuery,
+  type CodePage,
+  type DataQuery,
+  type FileQuery,
+  type FindQuery,
+  type Pack,
+  PackError,
+  type RowsPage,
+} from "@skillcdn/cli";
+import {
   isReadmePath,
-  joinSkillPages,
-  type MountSummary,
-  mountSummaryOf,
   parseAddress,
   parseRepoPath,
   parseSkillUri,
+  type RestBrowse,
+  type RestFile,
+  type RestFind,
   type RestMount,
-  type RestSkill,
-  renderBrowseResult,
-  renderDirectoryResult,
-  renderFileResult,
-  renderFindResult,
-  renderInstructions,
-  renderSkillResult,
-  rowsCsv,
-  type SkillResult,
-  skillOutcome,
-  skillResultOf,
+  type RestSkill as RestSkillPage,
   type ToolWords,
 } from "@skillcdn/core";
-import type {
-  RestSkillBrowse,
-  RestSkillCode,
-  RestSkillFile,
-  RestSkillFind,
-  RestSkillLoad,
-  RestSkillRows,
-  RestSkills,
-} from "../schemas.js";
+import type { PackClient } from "../client.js";
+import type { RestSkills } from "../schemas.js";
 import type { SkillsStatus } from "../vocabulary.js";
 
-// The pack of the project, as the command prints it (ADR-0028, ADR-0031): the console answers
-// what the pack's REST API answered, in the shapes of @skillcdn/core, and the command renders
-// it with the functions a deployment's own tools render for a model, naming the reads as its
-// own commands, so that an agent reads here what it would read over MCP, or with the skillcdn
-// command. Each read goes as that command's does (ADR-0118): a skill whole, the pages it came
-// in joined; a folder and a file a page at a time, the page saying where the next begins; the
-// tables and the code blocks whole, as data. What a pack refuses is said as that command says
-// it, by the pack's own code and words, and ends the command as refused.
+// The pack of the project, as the command prints it (ADR-0028, ADR-0031, ADR-0124): the console
+// answers what the pack's REST API answered, in the shapes of @skillcdn/core, and the command
+// hands those answers, as a pack, to the reads the skillcdn command itself prints with
+// (`readPack` of @skillcdn/cli), naming the reads as its own commands. So an agent reads here
+// what it would read over MCP, or with the skillcdn command, and a change of that command's text
+// comes with its next version. What is here is the console's own: the pack made of the console's
+// answers, the lines around a listing, and the words of a pack the console could not read,
+// which is a project's or the organization's and whose token is the console's to hold.
 
-/** How the results name the four reads, so that an agent is told the command and not a tool. */
-export const CONSOLE_WORDS: ToolWords = {
-  browse: "console skills <folder>",
-  search: "console skills --search",
-  load: "console skill",
-  read: "console skill --file",
-};
+/** How the results name the four reads of a pack read with `skills` and `skill`, so that an agent is told the command and not a tool. */
+export const packWords = (skills: string, skill: string): ToolWords => ({
+  browse: `${skills} <folder>`,
+  search: `${skills} --search`,
+  load: skill,
+  read: `${skill} --file`,
+});
 
-/** Where the reads of a pack are rendered at: what the listing said the address serves. */
-export type PackSummary = MountSummary;
+/** The words of the project's pack, and the organization's: `console skills` and `console skill`. */
+export const CONSOLE_WORDS: ToolWords = packWords("console skills", "console skill");
 
 export const NO_ADDRESS = "No skills address: neither this project nor the console names one.";
 
@@ -102,10 +85,14 @@ const ORGANIZATION_WORDS: Readonly<Record<"not_found" | "token_invalid", string>
     "The SkillCDN token the workspace holds no longer works at the deployment: an administrator sets a new one (console workspace pack-token --connect).",
 };
 
-type Envelope = Pick<RestSkills, "address" | "source" | "page" | "status" | "refusal">;
+/** What every answer of the console about a pack says first: where it is, and how the read went. */
+export type PackEnvelope = Pick<RestSkills, "address" | "source" | "page" | "status" | "refusal">;
+
+/** One answer of the console to a read of a pack: the envelope, and the pack's own answer in it. */
+export type PackAnswer = PackEnvelope & { readonly read: unknown };
 
 /** The first line of an answer about the pack: what was read, where the pack is, and how it went. */
-function head(what: string, answer: Envelope): string {
+function head(what: string, answer: PackEnvelope): string {
   const where =
     answer.source === null ? "read from the console's machine" : `served by ${answer.source}`;
   return `${what} at ${answer.address}, ${where}: ${answer.status}`;
@@ -118,23 +105,29 @@ function head(what: string, answer: Envelope): string {
  * Every other refusal is of the pack as a whole: nothing is served to the console at the
  * address, the token is no good there, the index is not there to read, or it was not reached.
  */
-const ofOneRead = (answer: Envelope): boolean =>
+const ofOneRead = (answer: PackEnvelope): boolean =>
   answer.refusal !== null &&
   (answer.status === "not_found" || answer.status === "failed") &&
   !/^(mount|auth|index)\./.test(answer.refusal.code);
 
 /**
- * A read that did not happen, as the command says it on standard error. Of the pack as a
- * whole: where it is and how it stands, the words of that standing, and the pack's own
- * refusal when it gave one. Of one read: the pack's code and words, as the skillcdn command
- * prints them.
+ * A read the console could not make, of the pack as a whole, as the command says it on standard
+ * error: that no address is named; or where the pack is and how it stands, the words of that
+ * standing with whose token is missing, and the pack's own refusal when it gave one. `what` is
+ * the read in a word: `skills`, `folder`, `search`, `skill`, `file`, `tables`, `code blocks`.
  */
-function refused(what: string, answer: Envelope, owner: PackOwner = "project"): string {
-  if (answer.refusal !== null && ofOneRead(answer)) {
-    return `${answer.refusal.code}: ${answer.refusal.message}`;
+export function refusalWords(
+  what: string,
+  answer: PackEnvelope,
+  owner: PackOwner = "project",
+): string {
+  if (answer.status === "none" || answer.address === null) {
+    return noAddress(owner);
   }
   const lines = [head(what, answer)];
-  if (answer.status !== "none" && answer.status !== "ready") {
+  if (answer.status === "ready") {
+    lines.push("Nothing was read.");
+  } else {
     lines.push(
       owner === "organization" &&
         (answer.status === "not_found" || answer.status === "token_invalid")
@@ -148,97 +141,251 @@ function refused(what: string, answer: Envelope, owner: PackOwner = "project"): 
   return lines.join("\n");
 }
 
-/** What the listing said the address serves, for the reads to be rendered at; nothing when it did not answer. */
-export function summaryOf(listing: RestSkills): PackSummary | undefined {
-  return listing.mount === null ? undefined : mountSummaryOf(listing.mount);
+/**
+ * A read of the pack as a whole that the console could not make: thrown by the pack made of the
+ * console's answers, for the command to say in the console's words ({@link refusalWords}). A
+ * refusal of one read, in the pack's own code and words, is a `PackError` instead, as the
+ * skillcdn command's own pack throws one.
+ */
+export class PackRefusal extends Error {
+  /** The read in a word, as the first line of the refusal names it. */
+  readonly what: string;
+  /** What the console answered. */
+  readonly answer: PackAnswer;
+
+  constructor(what: string, answer: PackAnswer) {
+    super(`${what}: ${answer.status}`);
+    this.name = "PackRefusal";
+    this.what = what;
+    this.answer = answer;
+  }
 }
 
-/** Every skill and document the address serves, as one listing: what `search_repo` without words answers. */
-function listingOf(mount: RestMount, summary: PackSummary): FindResult | undefined {
-  if (mount.index.status !== "ready") {
-    return undefined;
-  }
+type Ready<T> = Extract<T, { readonly status: "ready" }>;
+
+/**
+ * Every skill and document the address serves, as a search without words answers them, made
+ * from what the pack says of itself in the one answer the console already has (ADR-0118, point
+ * 5): the console's API takes no search without words, and a listing asked page by page through
+ * a console that may be far would be several requests for the answer one gives. A folder's
+ * README is marked as its overview by the rule @skillcdn/core exports.
+ */
+function listingOf(mount: RestMount): Ready<RestFind> {
   const { index } = mount;
-  const items: FindItem[] = [];
+  if (index.status !== "ready") {
+    throw new PackError(503, `index.${index.status}`, "The pack is not ready to read.");
+  }
+  const items: Ready<RestFind>["items"] = [];
   for (const skill of index.skills) {
-    const directory = parseRepoPath(skill.directory);
-    if (!directory.ok) {
-      continue;
-    }
-    const path = parseRepoPath(
-      skill.path ?? (skill.directory === "" ? "SKILL.md" : `${skill.directory}/SKILL.md`),
-    );
     items.push({
       kind: "skill",
-      ...(path.ok ? { path: path.value } : {}),
+      path: skill.path ?? (skill.directory === "" ? "SKILL.md" : `${skill.directory}/SKILL.md`),
       name: skill.name,
-      directory: directory.value,
+      directory: skill.directory,
       description: skill.description,
+      translations: skill.translations,
       files: [],
       moreFiles: 0,
-      // For people, and not rendered for a model.
-      translations: {},
     });
   }
   for (const document of index.documents) {
     const path = parseRepoPath(document.path);
-    if (path.ok) {
-      items.push({
-        kind: "document",
-        path: path.value,
-        title: document.title ?? undefined,
-        summary: document.summary ?? undefined,
-        skillDirectory: undefined,
-        // The README of a folder is its map, and is listed as one, as the pack's own listing has it.
-        ...(isReadmePath(path.value) ? { overview: true } : {}),
-      });
-    }
+    items.push({
+      kind: "document",
+      path: document.path,
+      title: document.title,
+      summary: document.summary,
+      skillDirectory: null,
+      ...(path.ok && isReadmePath(path.value) ? { overview: true } : {}),
+    });
   }
-  const state = catalogStateOf(mount);
   return {
-    mount: summary,
-    query: undefined,
+    status: "ready",
+    query: null,
+    commit: mount.commit,
     items,
+    diagnostics: index.diagnostics,
     // The counts stand in the instructions above; without totals here, nothing suggests a cursor.
-    totals: undefined,
-    diagnostics: state.status === "ready" ? state.catalog.diagnostics : [],
+    totals: null,
+    nextCursor: null,
+  };
+}
+
+/** A path as a word of a command line: as it is, or quoted where a shell would split it. */
+export const pathWord = (path: string): string =>
+  /^[\w./@+:=~-]+$/.test(path) ? path : JSON.stringify(path);
+
+/**
+ * A document's outline with the reads of its tables and its code blocks named as commands
+ * (ADR-0100): where the console said an address of its own for one, the command that reads it,
+ * `command` being the one the pack is read with, so that an agent is told what to run.
+ */
+function withDataCommands(read: Ready<RestBrowse>, command: string): Ready<RestBrowse> {
+  const outline = read.outline;
+  if (outline?.data === undefined) {
+    return read;
+  }
+  const path = pathWord(outline.path);
+  return {
+    ...read,
+    outline: {
+      ...outline,
+      data: {
+        ...(outline.data.rows === undefined ? {} : { rows: `${command} --rows ${path}` }),
+        ...(outline.data.code === undefined ? {} : { code: `${command} --code ${path}` }),
+      },
+    },
   };
 }
 
 /**
- * The pack: where it is and how it answered; what a client is told on connect, as the
- * deployment tells one; every skill and document; where a person connects an agent of its own;
- * and where the console's own skills are on this machine.
+ * How many pages of a skill, of tables or of code blocks one command follows before it stops:
+ * far above what a pack holds, and the end of a read that would otherwise go round a console
+ * that names the same cursor again.
+ */
+const MAX_PAGES = 64;
+
+/** A pack made of the console's answers, which says what the console answered last. */
+export interface ConsolePack extends Pack {
+  /** The console's answer to the last read made of the pack: what `--json` prints around the pack's own answer, and what a refusal is said from. */
+  answered(): PackAnswer | undefined;
+}
+
+/**
+ * The pack `reader` reads, as the reads of the skillcdn command take one (ADR-0124): each read
+ * asked of the console, and the pack's own answer taken out of the console's. `listing` is the
+ * console's answer about the pack as a whole, which the command asks first; nothing is made of
+ * one that does not answer a pack, and the command says that as it stands. `url` is the console's
+ * origin, where a pack with no deployment of its own is read. With `dataCommand`, the outline of
+ * a document names the commands that read its tables and its code blocks, `dataCommand` being
+ * the one the pack is read with; without it, the console's addresses stay, as `--json` has them.
+ */
+export function consolePack(
+  reader: PackClient,
+  listing: RestSkills,
+  options: { readonly url: string; readonly dataCommand?: string | undefined },
+): ConsolePack | undefined {
+  const { mount } = listing;
+  const address = listing.address === null ? undefined : parseAddress(listing.address);
+  if (listing.status !== "ready" || mount === null || address === undefined || !address.ok) {
+    return undefined;
+  }
+  let last: PackAnswer | undefined;
+  let pages = 0;
+  /** One more page of a read the command joins, within what one command follows. */
+  const another = (what: string, path: string | undefined): void => {
+    pages += 1;
+    if (pages > MAX_PAGES) {
+      throw new PackError(
+        0,
+        "invalid_response",
+        `The ${what} under ${path ?? "the pack"} are more than the command reads at once (${MAX_PAGES} pages): name a folder or a file under it.`,
+      );
+    }
+  };
+  /** The pack's own answer in the console's: a refusal of the one read as the pack's, any other as the console's. */
+  const taken = <R>(what: string, answer: PackEnvelope & { readonly read: R | null }): R => {
+    last = answer;
+    if (answer.status === "ready" && answer.read !== null) {
+      return answer.read;
+    }
+    if (answer.refusal !== null && ofOneRead(answer)) {
+      throw new PackError(
+        answer.status === "failed" ? 415 : 404,
+        answer.refusal.code,
+        answer.refusal.message,
+        {
+          directories: answer.refusal.directories,
+          sourceUrl: answer.refusal.sourceUrl ?? undefined,
+        },
+      );
+    }
+    throw new PackRefusal(what, answer);
+  };
+  /** The same, of a read the pack answers with its own standing: ready, or the console says how it stands. */
+  const ready = <R extends { readonly status: string }>(
+    what: string,
+    answer: PackEnvelope & { readonly read: R | null },
+  ): Ready<R> => {
+    const read = taken(what, answer);
+    if (read.status !== "ready") {
+      throw new PackRefusal(what, answer);
+    }
+    return read as Ready<R>;
+  };
+  return {
+    address: address.value,
+    source: { kind: "deployment", url: listing.source ?? options.url },
+    answered: () => last,
+    mount: async () => mount,
+    browse: async (query: BrowseQuery): Promise<RestBrowse> => {
+      const read = ready("folder", await reader.skillBrowse(query));
+      return options.dataCommand === undefined ? read : withDataCommands(read, options.dataCommand);
+    },
+    find: async (query: FindQuery): Promise<RestFind> =>
+      query.query === undefined
+        ? listingOf(mount)
+        : ready(
+            "search",
+            await reader.skillFind(query.query, {
+              path: query.path,
+              cursor: query.cursor,
+              limit: query.limit,
+            }),
+          ),
+    skill: async (path: string, cursor?: string): Promise<RestSkillPage> => {
+      pages += 1;
+      if (pages > MAX_PAGES) {
+        throw new PackError(
+          0,
+          "invalid_response",
+          "The pack answers more pages of a skill than one read takes.",
+        );
+      }
+      return ready("skill", await reader.skill(path, cursor));
+    },
+    file: async (query: FileQuery): Promise<RestFile> =>
+      taken(
+        "file",
+        await reader.skillFile(query.path, { offset: query.offset, limit: query.limit }),
+      ),
+    rows: async (query: DataQuery): Promise<RowsPage> => {
+      another("tables", query.path);
+      return ready("tables", await reader.skillRows(query));
+    },
+    code: async (query: DataQuery): Promise<CodePage> => {
+      another("code blocks", query.path);
+      return ready("code blocks", await reader.skillCode(query));
+    },
+  };
+}
+
+/**
+ * The listing of a pack as the command prints it. Where the pack answered, `text` is what the
+ * skillcdn command prints for it, what a client is told on connect and then every skill and
+ * document, between the lines of the console's own: where the pack is and how it answered,
+ * where a person connects an agent of their own, and where the console's own skills are on this
+ * machine. Where it did not, why, with that last line still.
  */
 export function formatSkills(
   skills: RestSkills,
+  text: string | undefined,
   ownSkills?: string,
   owner: PackOwner = "project",
+  words: ToolWords = CONSOLE_WORDS,
 ): string {
   const own =
     ownSkills === undefined
       ? []
       : ["", `The console's own skills, for working the board and keeping a desk: ${ownSkills}`];
-  if (skills.status === "none" || skills.address === null) {
-    return [noAddress(owner), ...own].join("\n");
+  if (text === undefined || skills.status !== "ready") {
+    return [refusalWords("skills", skills, owner), ...own].join("\n");
   }
-  const summary = summaryOf(skills);
-  if (skills.status !== "ready" || skills.mount === null || summary === undefined) {
-    return [refused("skills", skills, owner), ...own].join("\n");
-  }
-  const lines = [
-    head("skills", skills),
-    "",
-    renderInstructions(catalogStateOf(skills.mount), CONSOLE_WORDS),
-  ];
-  const listing = listingOf(skills.mount, summary);
-  if (listing !== undefined) {
-    lines.push("", renderFindResult(listing, CONSOLE_WORDS));
-  }
+  const lines = [head("skills", skills), "", text];
   if (skills.page !== null) {
     lines.push(
       "",
-      `A host with a SkillCDN connection of its own loads a skill by its URI, which a person makes at ${skills.page}; through the console, ${CONSOLE_WORDS.load} takes the URI too. --json adds the page of each skill, for a person.`,
+      `A host with a SkillCDN connection of its own loads a skill by its URI, which a person makes at ${skills.page}; through the console, ${words.load} takes the URI too. --json adds the page of each skill, for a person.`,
     );
   }
   lines.push(...own);
@@ -289,258 +436,6 @@ export function skillPathIn(
   return { path: uri.path };
 }
 
-/** The pages of a skill, as the console answered them, as the one skill they were cut from. */
-export function joinSkill(
-  pages: readonly RestSkillLoad[],
-  summary: PackSummary,
-): SkillResult | undefined {
-  return joinSkillPages(
-    pages.flatMap((page) =>
-      page.read?.status === "ready" ? (skillResultOf(page.read, summary) ?? []) : [],
-    ),
-  );
-}
-
-/** The skill whole, as the REST API answers one, for `--json`. */
-export function bodyOfSkill(skill: SkillResult): RestSkill {
-  const outcome = skillOutcome({ status: "ready", lookup: { kind: "found", skill } });
-  if ("failure" in outcome) {
-    throw new Error("a skill that was found has a body");
-  }
-  return outcome.body;
-}
-
-/** How many skills a refusal names as available: what the skillcdn command names. */
-const AVAILABLE_SKILLS = 20;
-
-/** One skill as `load_skill` lays it out for a model: the rules, the body, the included files, its files and references. */
-export function formatSkillLoad(
-  loaded: RestSkillLoad,
-  whole: SkillResult | undefined,
-  owner: PackOwner = "project",
-  /** The path that was read, the command it was read with and the skills the listing names, for what is said where no skill is there. */
-  asked?: {
-    readonly path: string;
-    readonly command: string;
-    readonly available: readonly string[];
-  },
-): string {
-  if (loaded.status === "none" || loaded.address === null) {
-    return noAddress(owner);
-  }
-  if (loaded.status !== "ready") {
-    if (asked !== undefined && loaded.refusal?.code === "skill.not_found") {
-      // As the skillcdn command says it: the path as given, the two reads that find the exact
-      // one, and the paths there are. The listing is the command's plural (console skills).
-      const listing = `${asked.command}s`;
-      const available =
-        asked.available.length === 0
-          ? ""
-          : ` Available: ${asked.available.slice(0, AVAILABLE_SKILLS).join(", ")}.`;
-      return `skill.not_found: No skill at ${JSON.stringify(asked.path)}. Use ${listing} <folder> or ${listing} --search for its exact SKILL.md path.${available}`;
-    }
-    return refused("skill", loaded, owner);
-  }
-  if (whole === undefined) {
-    return `${head("skill", loaded)}\nNothing was read.`;
-  }
-  return renderSkillResult(whole, CONSOLE_WORDS);
-}
-
-/** One page of a folder, or of a file's outline, as the console answered it; nothing when the pack did not. */
-export function folderOf(page: RestSkillBrowse, summary: PackSummary): BrowseResult | undefined {
-  return page.read?.status === "ready" ? browseResultOf(page.read, summary) : undefined;
-}
-
-/** A path as a word of a command line: as it is, or quoted where a shell would split it. */
-const pathWord = (path: string): string =>
-  /^[\w./@+-]+$/.test(path) ? path : JSON.stringify(path);
-
-/**
- * A document's outline with the reads of its tables and its code blocks named as commands
- * (ADR-0100): where the console said an address of its own for one, the command that reads it,
- * `command` being the one the pack is read with, so that an agent is told what to run.
- */
-function withDataCommands(whole: BrowseResult, command: string): BrowseResult {
-  const outline = whole.outline;
-  if (outline?.data === undefined) {
-    return whole;
-  }
-  const path = pathWord(outline.path);
-  return {
-    ...whole,
-    outline: {
-      ...outline,
-      data: {
-        ...(outline.data.rows === undefined ? {} : { rows: `${command} --rows ${path}` }),
-        ...(outline.data.code === undefined ? {} : { code: `${command} --code ${path}` }),
-      },
-    },
-  };
-}
-
-/** What a folder holds, as `browse_repo` lays it out for a model; `command` is the one the pack is read with. */
-export function formatSkillBrowse(
-  browsed: RestSkillBrowse,
-  whole: BrowseResult | undefined,
-  command = "console skills",
-  owner: PackOwner = "project",
-): string {
-  if (browsed.status === "none" || browsed.address === null) {
-    return noAddress(owner);
-  }
-  if (browsed.status !== "ready") {
-    return refused("folder", browsed, owner);
-  }
-  if (whole === undefined) {
-    return `${head("folder", browsed)}\nNothing was read.`;
-  }
-  return renderBrowseResult(withDataCommands(whole, command), CONSOLE_WORDS);
-}
-
-type ReadyRows = Extract<NonNullable<RestSkillRows["read"]>, { readonly status: "ready" }>;
-type ReadyCode = Extract<NonNullable<RestSkillCode["read"]>, { readonly status: "ready" }>;
-
-/** The pages of a read of tables, as the console answered them, as the one answer they were cut from: every table in reading order. */
-export function joinRows(pages: readonly RestSkillRows[]): ReadyRows | undefined {
-  const reads = pages.flatMap((page) => (page.read?.status === "ready" ? [page.read] : []));
-  const first = reads[0];
-  const last = reads[reads.length - 1];
-  if (first === undefined || last === undefined) {
-    return undefined;
-  }
-  return {
-    ...first,
-    tables: reads.flatMap((read) => read.tables),
-    rowCount: reads.reduce((sum, read) => sum + read.rowCount, 0),
-    nextCursor: last.nextCursor,
-  };
-}
-
-/** The pages of a read of code blocks, as the one answer they were cut from: every block in reading order. */
-export function joinCode(pages: readonly RestSkillCode[]): ReadyCode | undefined {
-  const reads = pages.flatMap((page) => (page.read?.status === "ready" ? [page.read] : []));
-  const first = reads[0];
-  const last = reads[reads.length - 1];
-  if (first === undefined || last === undefined) {
-    return undefined;
-  }
-  return {
-    ...first,
-    blocks: reads.flatMap((read) => read.blocks),
-    nextCursor: last.nextCursor,
-  };
-}
-
-/** Why a read of tables or of code blocks did not happen, for the command to fail with; nothing when it did. */
-export function dataRefusal(
-  what: "tables" | "code blocks",
-  read: RestSkillRows | RestSkillCode,
-  owner: PackOwner = "project",
-): string | undefined {
-  if (read.status === "none" || read.address === null) {
-    return noAddress(owner);
-  }
-  return read.status === "ready" ? undefined : refused(what, read, owner);
-}
-
-const counted = (count: number, one: string, many = `${one}s`): string =>
-  `${count} ${count === 1 ? one : many}`;
-
-/** The tables as one CSV: a header of `path`, `heading` and every column name, then a line per row (`rowsCsv` of `@skillcdn/core`). */
-export const csvOfRows = (whole: ReadyRows): string => rowsCsv(whole.tables);
-
-/**
- * The tables as an array of rows, each with its file, the section it stands in and its cells by
- * column name, in the order of the columns: what `skillcdn rows --format json` prints. A name
- * a table has twice keeps its first cell.
- */
-export function jsonOfRows(whole: ReadyRows): string {
-  const rows = whole.tables.flatMap((table) =>
-    table.rows.map((row) => {
-      const cells: Record<string, string> = {};
-      table.columns.forEach((column, at) => {
-        if (!Object.hasOwn(cells, column)) {
-          cells[column] = row[at] ?? "";
-        }
-      });
-      return { path: table.path, heading: table.heading.join(" > "), cells };
-    }),
-  );
-  return JSON.stringify(rows, null, 2);
-}
-
-/** What a read of tables held, in the words the skillcdn command says it was written in. */
-export const describeRows = (whole: ReadyRows): string =>
-  `${counted(whole.rowCount, "row")} of ${counted(whole.tables.length, "table")}`;
-
-/**
- * The code blocks as written, each under a line that names its file, the section it stands in
- * and what it says it is written in, a blank line between two: as `skillcdn code` prints them.
- */
-export function textOfCode(blocks: ReadyCode["blocks"]): string {
-  return blocks
-    .map(
-      (block) =>
-        `--- ${block.path}${block.heading.length === 0 ? "" : ` > ${block.heading.join(" > ")}`}${block.language.length === 0 ? "" : ` (${block.language})`} ---\n${block.text}\n`,
-    )
-    .join("\n");
-}
-
-/** What a read of code blocks held, in the words the skillcdn command says it was written in. */
-export const describeCode = (blocks: ReadyCode["blocks"]): string =>
-  counted(blocks.length, "code block");
-
-/** What words found, as `search_repo` lays it out for a model, one page of it. */
-export function formatSkillFind(
-  found: RestSkillFind,
-  summary: PackSummary | undefined,
-  owner: PackOwner = "project",
-): string {
-  if (found.status === "none" || found.address === null) {
-    return noAddress(owner);
-  }
-  if (found.status !== "ready" || found.read?.status !== "ready" || summary === undefined) {
-    return refused("search", found, owner);
-  }
-  return renderFindResult(findResultOf(found.read, summary), CONSOLE_WORDS);
-}
-
-/**
- * One page of a file as the console answered it, or the folder the path named; nothing when
- * the pack did not answer. The length asked for travels with the result, as the skillcdn
- * command passes it, so that a range that came whole says where the file continues.
- */
-export function fileOf(
-  page: RestSkillFile,
-  summary: PackSummary,
-  requested: number | undefined,
-): FileResult | DirectoryResult | undefined {
-  const read = page.read;
-  if (read === null) {
-    return undefined;
-  }
-  if (read.kind === "directory") {
-    return directoryResultOf(read, summary);
-  }
-  const file = fileResultOf(read, summary);
-  return file === undefined ? undefined : { ...file, requestedLength: requested };
-}
-
-/** A page of a file as `read_repo_file` lays it out for a model; or what the folder holds. */
-export function formatSkillFile(
-  read: RestSkillFile,
-  whole: FileResult | DirectoryResult | undefined,
-  owner: PackOwner = "project",
-): string {
-  if (read.status === "none" || read.address === null) {
-    return noAddress(owner);
-  }
-  if (read.status !== "ready") {
-    return refused("file", read, owner);
-  }
-  if (whole === undefined) {
-    return `${head("file", read)}\nNothing was read.`;
-  }
-  return "entries" in whole ? renderDirectoryResult(whole) : renderFileResult(whole, CONSOLE_WORDS);
-}
+/** Whether a read of data held nothing, by what the read says it holds: no table, or no code block. */
+export const holdsNothing = (holds: string | undefined): boolean =>
+  holds !== undefined && /(^| )0 (tables|code blocks)$/.test(holds);

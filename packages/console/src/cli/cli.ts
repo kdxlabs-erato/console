@@ -2,11 +2,19 @@ import { basename, extname, isAbsolute } from "node:path";
 import { parseArgs } from "node:util";
 import { deflateSync } from "node:zlib";
 import {
+  PackError,
+  type PackRead,
+  ReadMisuse,
+  type ReadOutput,
+  readNumber,
+  readPack,
+  wroteLine,
+} from "@skillcdn/cli";
+import {
   BROWSE_MAX_LIMIT,
-  DATA_CODE_MAX_LIMIT,
-  DATA_ROWS_MAX_LIMIT,
   FIND_MAX_LIMIT,
   READ_FILE_MAX_LIMIT,
+  type ToolWords,
 } from "@skillcdn/core";
 import { avatarScanlines, MAX_AVATAR_PIXELS, pngFile } from "../avatar.js";
 import {
@@ -15,6 +23,7 @@ import {
   createClient,
   type FetchLike,
   type FileUpload,
+  type PackClient,
   type PluginClient,
   type ProjectClient,
 } from "../client.js";
@@ -70,10 +79,6 @@ import {
   type RestPluginInvocation,
   type RestRules,
   type RestRun,
-  type RestSkillCode,
-  type RestSkillLoad,
-  type RestSkillRows,
-  type RestSkills,
   type RestTask,
   type RestTaskPatch,
 } from "../schemas.js";
@@ -176,28 +181,17 @@ import { COMMAND_HELP, helpFor, ownSkillPath, usage } from "./help.js";
 import { describeInstall, type Install, updateCommandFor } from "./install.js";
 import type { NoticeStore } from "./notices.js";
 import {
-  bodyOfSkill,
-  csvOfRows,
-  dataRefusal,
-  describeCode,
-  describeRows,
-  fileOf,
-  folderOf,
-  formatSkillBrowse,
-  formatSkillFile,
-  formatSkillFind,
-  formatSkillLoad,
+  type ConsolePack,
+  consolePack,
   formatSkills,
-  joinCode,
-  joinRows,
-  joinSkill,
-  jsonOfRows,
+  holdsNothing,
   ORGANIZATION_PACK_LINE,
   type PackOwner,
-  type PackSummary,
+  PackRefusal,
+  packWords,
+  pathWord,
+  refusalWords,
   skillPathIn,
-  summaryOf,
-  textOfCode,
 } from "./pack.js";
 import { type RunnerHost, workPath } from "./runner-host.js";
 import {
@@ -1499,22 +1493,8 @@ const categories: Command = async (args, io) => {
   return EXIT.ok;
 };
 
-/** How many pages of a skill, or of a read as data, the command follows before it stops: far above what one holds. */
-const MAX_SKILL_PAGES = 64;
-
-/** The pack of the project as the console lists it, and what its reads are rendered at; none when the pack did not answer. */
-async function packOf(
-  reader: PackReader,
-): Promise<{ readonly listing: RestSkills; readonly summary: PackSummary | undefined }> {
-  const listing = await reader.skills();
-  return { listing, summary: summaryOf(listing) };
-}
-
-/** What reads a pack: a project's client, or a plugin's, whose skills are a pack of their own. */
-type PackReader = Pick<
-  ProjectClient,
-  "skills" | "skill" | "skillFile" | "skillBrowse" | "skillFind" | "skillRows" | "skillCode"
->;
+/** What reads a pack: a project's client, a plugin's, whose skills are a pack of their own, or the console's for the organization's. */
+type PackReader = PackClient;
 
 const SKILLS_OPTIONS: OptionSpec = {
   search: { type: "string" },
@@ -1548,7 +1528,7 @@ function refusedRead(
   return failed(owner === "organization" ? `${ORGANIZATION_PACK_LINE}\n${words}` : words);
 }
 
-/** A whole number a flag carries, within its bounds, in the skillcdn command's words; nothing when it is not given. */
+/** A whole number a flag carries, within its bounds; nothing when it is not given. */
 function countOf(
   given: string | undefined,
   name: string,
@@ -1571,141 +1551,136 @@ function countOf(
 }
 
 /**
+ * A number a read of a pack takes, checked as the skillcdn command checks it and said in its
+ * words, before anything is asked of the console.
+ */
+function checkedNumber(given: string | undefined, name: string, most: number): void {
+  try {
+    readNumber(given, name, most);
+  } catch (error) {
+    throw error instanceof ReadMisuse ? misuse(error.message) : error;
+  }
+}
+
+/**
+ * The flags that say where a pack is read, as they were given, for the command that reads the
+ * next part of a skill (ADR-0124): it is asked as this part was.
+ */
+function whereGiven(values: Readonly<Record<string, unknown>>): string {
+  return ["project", "url", "account"]
+    .map((name) => {
+      const value = values[name];
+      return typeof value === "string" ? ` --${name} ${pathWord(value)}` : "";
+    })
+    .join("");
+}
+
+/**
+ * One read of a pack as the skillcdn command makes it (ADR-0124): `readPack` of @skillcdn/cli
+ * over the pack made of the console's answers, in the words of the command the pack is read
+ * with. What the pack refused ends the command as refused (ADR-0118): of one read, in the
+ * pack's own code and words, as that command prints them; of the pack as a whole, in the
+ * console's. A read not asked right is a command not understood. With `data`, nothing is
+ * printed for a refusal even with `--json`: what a program takes is never one.
+ */
+async function readThrough(
+  io: CliIo,
+  session: Session,
+  owner: PackOwner,
+  pack: ConsolePack,
+  read: PackRead,
+  options: {
+    readonly words: ToolWords;
+    readonly nextPart?: ((cursor: string) => string) | undefined;
+    readonly data?: boolean | undefined;
+  },
+): Promise<ReadOutput> {
+  try {
+    return await readPack(pack, read, {
+      words: options.words,
+      json: session.json,
+      nextPart: options.nextPart,
+    });
+  } catch (error) {
+    if (error instanceof ReadMisuse) {
+      throw misuse(error.message);
+    }
+    const refusal =
+      error instanceof PackRefusal
+        ? { answer: error.answer, words: refusalWords(error.what, error.answer, owner) }
+        : error instanceof PackError
+          ? { answer: pack.answered(), words: `${error.code}: ${error.message}` }
+          : undefined;
+    if (refusal === undefined) {
+      throw error;
+    }
+    throw options.data === true || refusal.answer === undefined
+      ? failed(refusal.words)
+      : refusedRead(io, session, owner, refusal.answer, refusal.words);
+  }
+}
+
+/**
+ * What `--json` prints for a read: the console's answer, with the pack's own in it as the
+ * skillcdn command's `--json` prints it, the pages of a skill or of a read of data joined.
+ */
+function jsonOfRead(session: Session, pack: ConsolePack, output: ReadOutput): unknown {
+  return session.json ? { ...pack.answered(), read: JSON.parse(output.text) } : undefined;
+}
+
+/**
  * The tables, or the code blocks, of a document or of every document under a folder, as data
- * (ADR-0100): every page the console answers, joined, and printed as the skillcdn command
- * prints them, one CSV or an array of rows, the blocks as written, or written to a file with
- * `--out`. What a program takes is never a refusal: a read the pack refused fails with why, and
- * so does one that did not reach its end.
+ * (ADR-0100): read and printed as the skillcdn command prints them, one CSV or an array of rows,
+ * the blocks as written, or written to a file with `--out`. What a program takes is never a
+ * refusal: a read the pack refused fails with why.
  */
 async function readData(
   io: CliIo,
   session: Session,
-  reader: PackReader,
+  pack: ConsolePack,
   asked: {
-    readonly what: "rows" | "code";
-    readonly path: string | undefined;
-    readonly heading: string | undefined;
+    readonly read: Extract<PackRead, { readonly read: "rows" | "code" }>;
     readonly out: string | undefined;
     readonly owner: PackOwner;
-    /** How the tables are printed: one CSV, or an array of rows. */
-    readonly format: "csv" | "json";
-    /** The blocks kept: those whose text matches, where a pattern is given. */
-    readonly grep: RegExp | undefined;
+    readonly words: ToolWords;
   },
 ): Promise<number> {
-  const where = asked.path ?? "the pack";
-  /** The text and a line end, nothing for nothing; or the file, and how much was written. */
-  const deliver = async (body: unknown, words: string, written: string, name: string) => {
-    const made = session.json ? JSON.stringify(body, null, 2) : words;
-    const whole = made.endsWith("\n") || made.length === 0 ? made : `${made}\n`;
-    if (asked.out === undefined) {
-      io.stdout(whole);
-      return EXIT.ok;
-    }
-    let saved: string;
-    try {
-      saved = await io.writeBytes(asked.out, new TextEncoder().encode(whole), name);
-    } catch {
-      throw failed(`The file could not be written at ${asked.out}.`);
-    }
-    io.stdout(`Wrote ${written} to ${saved}.\n`);
+  const { read } = asked;
+  const output = await readThrough(io, session, asked.owner, pack, read, {
+    words: asked.words,
+    data: true,
+  });
+  // Nothing is printed for nothing, which a program takes as it is; a line beside it says so.
+  if (holdsNothing(output.holds) && asked.out === undefined && !session.json) {
+    io.stderr(
+      `No ${read.read === "rows" ? "tables" : "code blocks"} in ${read.path ?? "the pack"}${read.heading === undefined ? "" : " under that heading"}.\n`,
+    );
+  }
+  const made = session.json
+    ? JSON.stringify(jsonOfRead(session, pack, output), null, 2)
+    : output.text;
+  const whole = made.endsWith("\n") || made.length === 0 ? made : `${made}\n`;
+  if (asked.out === undefined) {
+    io.stdout(whole);
     return EXIT.ok;
-  };
-  /** Nothing is printed for nothing, which a program takes as it is; a line beside it says so. */
-  const nothing = (what: string): void => {
-    if (asked.out === undefined && !session.json) {
-      io.stderr(
-        `No ${what} in ${where}${asked.heading === undefined ? "" : " under that heading"}.\n`,
-      );
-    }
-  };
-  if (asked.what === "rows") {
-    const pages: RestSkillRows[] = [];
-    let next: string | undefined;
-    for (let n = 0; n < MAX_SKILL_PAGES; n += 1) {
-      const page = await reader.skillRows({
-        path: asked.path,
-        heading: asked.heading,
-        cursor: next,
-        limit: DATA_ROWS_MAX_LIMIT,
-      });
-      const refusal = dataRefusal("tables", page, asked.owner);
-      if (refusal !== undefined) {
-        throw failed(refusal);
-      }
-      pages.push(page);
-      next = page.read?.status === "ready" ? (page.read.nextCursor ?? undefined) : undefined;
-      if (next === undefined) {
-        break;
-      }
-    }
-    const whole = joinRows(pages);
-    const last = pages[pages.length - 1];
-    if (whole === undefined || last === undefined) {
-      throw failed("The tables could not be read.");
-    }
-    if (next !== undefined) {
-      throw failed(
-        `The tables under ${where} are more than the command reads at once (${describeRows(whole)} so far): name a folder or a file under it.`,
-      );
-    }
-    if (whole.tables.length === 0) {
-      nothing("tables");
-    }
-    return deliver(
-      { ...last, read: whole },
-      asked.format === "json" ? jsonOfRows(whole) : csvOfRows(whole),
-      describeRows(whole),
-      asked.format === "json" ? "rows.json" : "rows.csv",
-    );
   }
-  const pages: RestSkillCode[] = [];
-  let next: string | undefined;
-  for (let n = 0; n < MAX_SKILL_PAGES; n += 1) {
-    const page = await reader.skillCode({
-      path: asked.path,
-      heading: asked.heading,
-      cursor: next,
-      limit: DATA_CODE_MAX_LIMIT,
-    });
-    const refusal = dataRefusal("code blocks", page, asked.owner);
-    if (refusal !== undefined) {
-      throw failed(refusal);
-    }
-    pages.push(page);
-    next = page.read?.status === "ready" ? (page.read.nextCursor ?? undefined) : undefined;
-    if (next === undefined) {
-      break;
-    }
+  const name =
+    read.read === "code" ? "code.txt" : read.format === "json" ? "rows.json" : "rows.csv";
+  let saved: string;
+  try {
+    saved = await io.writeBytes(asked.out, new TextEncoder().encode(whole), name);
+  } catch {
+    throw failed(`The file could not be written at ${asked.out}.`);
   }
-  const all = joinCode(pages);
-  const last = pages[pages.length - 1];
-  if (all === undefined || last === undefined) {
-    throw failed("The code blocks could not be read.");
-  }
-  if (next !== undefined) {
-    throw failed(
-      `The code blocks under ${where} are more than the command reads at once (${describeCode(all.blocks)} so far): name a folder or a file under it.`,
-    );
-  }
-  const pattern = asked.grep;
-  const kept =
-    pattern === undefined ? all.blocks : all.blocks.filter((block) => pattern.test(block.text));
-  if (kept.length === 0) {
-    nothing("code blocks");
-  }
-  return deliver(
-    { ...last, read: { ...all, blocks: kept } },
-    textOfCode(kept),
-    describeCode(kept),
-    "code.txt",
-  );
+  io.stdout(`${wroteLine(output.holds ?? "", saved)}\n`);
+  return EXIT.ok;
 }
 
 const SKILL_OPTIONS: OptionSpec = {
   file: { type: "string" },
   offset: { type: "string" },
   limit: { type: "string" },
+  cursor: { type: "string" },
 };
 
 /** The line `console skills` ends with: where the plugins' own skills are. */
@@ -1715,7 +1690,8 @@ const PLUGIN_SKILLS_LINE =
 /**
  * The pack as the words say: whole, a page of a folder or of a file's outline, or what words
  * find; for the project's pack as `console skills`, and for a plugin's as
- * `console plugin <key> skills`. Each as the skillcdn command reads it (ADR-0118).
+ * `console plugin <key> skills`. Each as the skillcdn command reads it, through its own reads
+ * (ADR-0124).
  */
 async function readSkills(
   io: CliIo,
@@ -1737,9 +1713,12 @@ async function readSkills(
   const owner = extras.owner ?? "project";
   const say = (value: unknown, words: () => string): void =>
     answerPack(io, session, owner, value, words);
+  // The reads by the names of this pack's own commands: a plugin's are not the project's.
+  const skillCommand = extras.command.replace(/skills$/, "skill");
+  const toolWords = packWords(extras.command, skillCommand);
   // How a skill is loaded, said after a listing and after what a search found: the pack's own
   // words there name how a section is read, and a skill read as a file comes without its rules.
-  const loading = `A skill is loaded whole, its rules first, with ${extras.command.replace(/skills$/, "skill")} <the path of its SKILL.md>; --file reads a file of the pack as it is, without the rules.`;
+  const loading = `A skill is loaded, its rules first, with ${skillCommand} <the path of its SKILL.md>, a long one in parts; --file reads a file of the pack as it is, without the rules.`;
   if (positionals.length > 1) {
     throw misuse(`Say one folder: ${extras.command} [<folder>] [--search <words>]`);
   }
@@ -1775,9 +1754,6 @@ async function readSkills(
       `--format goes with --rows: ${extras.command} --rows [<folder|file>] [--format csv|json]`,
     );
   }
-  if (format !== undefined && format !== "csv" && format !== "json") {
-    throw misuse("--format takes csv or json.");
-  }
   if (grep !== undefined && !code) {
     throw misuse(
       `--grep goes with --code: ${extras.command} --code [<folder|file>] [--grep <pattern>]`,
@@ -1803,48 +1779,47 @@ async function readSkills(
     );
   }
   // A page of what words find, or of what a folder holds: the bounds of each, as the pack has them.
-  const atMost = countOf(limit, "limit", {
-    least: 1,
-    most: words === undefined ? BROWSE_MAX_LIMIT : FIND_MAX_LIMIT,
+  checkedNumber(limit, "limit", words === undefined ? BROWSE_MAX_LIMIT : FIND_MAX_LIMIT);
+  const listing = await reader.skills();
+  // With --json the console's own addresses stay in a document's outline; in words, the
+  // commands that read its tables and its code blocks.
+  const pack = consolePack(reader, listing, {
+    url: session.url,
+    dataCommand: session.json ? undefined : extras.command,
   });
-  let pattern: RegExp | undefined;
-  if (grep !== undefined) {
-    try {
-      pattern = new RegExp(grep, "u");
-    } catch (error) {
-      throw misuse(
-        `--grep takes a regular expression: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-  // As data: the read answers for itself how the pack stands, and fails where it does not.
+  // As data: a read the pack refused fails with why, and nothing is printed.
   if (rows || code) {
-    return readData(io, session, reader, {
-      what: rows ? "rows" : "code",
-      path: folder,
-      heading,
+    if (pack === undefined) {
+      throw failed(refusalWords(rows ? "tables" : "code blocks", listing, owner));
+    }
+    return readData(io, session, pack, {
+      read: rows
+        ? { read: "rows", path: folder, heading, format }
+        : { read: "code", path: folder, heading, grep },
       out,
       owner,
-      format: format === "json" ? "json" : "csv",
-      grep: pattern,
+      words: toolWords,
     });
   }
-  const { listing, summary } = await packOf(reader);
   // A pack that does not answer: said as that, which a folder or a search would meet too.
-  if (summary === undefined) {
+  if (pack === undefined) {
     throw refusedRead(
       io,
       session,
       owner,
       listing,
-      [formatSkills(listing, extras.own, owner), extras.afterwards]
+      [formatSkills(listing, undefined, extras.own, owner, toolWords), extras.afterwards]
         .filter((part): part is string => part !== undefined)
         .join("\n"),
     );
   }
   if (words === undefined && given === undefined) {
+    // --json is the console's listing as it answered it; the words are the pack's own, read once more from that answer.
+    const told = session.json
+      ? undefined
+      : await readThrough(io, session, owner, pack, { read: "skills" }, { words: toolWords });
     say(listing, () =>
-      [formatSkills(listing, extras.own, owner), loading, extras.afterwards]
+      [formatSkills(listing, told?.text, extras.own, owner, toolWords), loading, extras.afterwards]
         .filter((part): part is string => part !== undefined)
         .join("\n"),
     );
@@ -1852,27 +1827,28 @@ async function readSkills(
   }
   if (words !== undefined) {
     // One page of what the words find; more is said, and asked for with --cursor.
-    const found = await reader.skillFind(words, { path: folder, limit: atMost, cursor });
-    if (found.status !== "ready" || found.read?.status !== "ready") {
-      throw refusedRead(io, session, owner, found, formatSkillFind(found, summary, owner));
-    }
-    say(found, () => `${formatSkillFind(found, summary, owner)}\n${loading}`);
+    const found = await readThrough(
+      io,
+      session,
+      owner,
+      pack,
+      { read: "find", words, path: folder, cursor, limit },
+      { words: toolWords },
+    );
+    say(jsonOfRead(session, pack, found), () => `${found.text}\n${loading}`);
     return EXIT.ok;
   }
   // One page of the folder, or of a file's outline, as the skillcdn command browses: a page
   // that ends before the folder does names the cursor that continues it.
-  const browsed = await reader.skillBrowse({ path: folder, cursor, limit: atMost });
-  const page = folderOf(browsed, summary);
-  if (browsed.status !== "ready" || page === undefined) {
-    throw refusedRead(
-      io,
-      session,
-      owner,
-      browsed,
-      formatSkillBrowse(browsed, undefined, extras.command, owner),
-    );
-  }
-  say(browsed, () => formatSkillBrowse(browsed, page, extras.command, owner));
+  const browsed = await readThrough(
+    io,
+    session,
+    owner,
+    pack,
+    { read: "browse", path: folder, cursor, limit },
+    { words: toolWords },
+  );
+  say(jsonOfRead(session, pack, browsed), () => browsed.text);
   return EXIT.ok;
 }
 
@@ -1938,9 +1914,11 @@ const skills: Command = async (args, io) => {
 };
 
 /**
- * One skill of the pack whole, or a page of a file of it; for the project's pack as
- * `console skill`, and for a plugin's as `console plugin <key> skill`. Each as the skillcdn
- * command reads it (ADR-0118): a skill joined from the pages it came in, a file a page at a time.
+ * One skill of the pack, or a page of a file of it; for the project's pack as `console skill`,
+ * and for a plugin's as `console plugin <key> skill`. Each as the skillcdn command reads it,
+ * through its own reads (ADR-0124): a skill whole where a host shows it whole, else in parts,
+ * each ending with the command that reads the next; a file a page at a time. `again` is what
+ * that command says after the cursor: where the pack is read, as it was said for this part.
  */
 async function readSkill(
   io: CliIo,
@@ -1950,10 +1928,13 @@ async function readSkill(
   positionals: readonly string[],
   command: string,
   owner: PackOwner = "project",
+  again = "",
 ): Promise<number> {
   const say = (value: unknown, words: () => string): void =>
     answerPack(io, session, owner, value, words);
+  const toolWords = packWords(`${command}s`, command);
   const file = text(values, "file");
+  const cursor = text(values, "cursor");
   // A file is read by its own path from the repository's root; a skill's path beside it would be
   // ignored, which reads as if it mattered, so the two together are not understood.
   if (file !== undefined && positionals.length > 0) {
@@ -1970,67 +1951,61 @@ async function readSkill(
       `--offset and --limit go with --file: ${command} --file <path> [--offset <n>] [--limit <n>]`,
     );
   }
-  const offset = countOf(text(values, "offset"), "offset", { least: 0 });
-  const limit = countOf(text(values, "limit"), "limit", { least: 1, most: READ_FILE_MAX_LIMIT });
-  const { listing, summary } = await packOf(reader);
-  if (summary === undefined) {
-    throw refusedRead(io, session, owner, listing, formatSkills(listing, io.skillsDir, owner));
+  // The next part of a skill is asked for by the cursor its part ended with; a file reads on from an offset.
+  if (file !== undefined && cursor !== undefined) {
+    throw misuse(
+      `--cursor reads the next part of a skill; a file reads on from --offset: ${command} --file <path> [--offset <n>] [--limit <n>]`,
+    );
   }
-  if (file !== undefined) {
-    // A page of the file, as the skillcdn command reads one: from --offset, as long as the pack
-    // gives where --limit says nothing, and where the next begins when the file goes on.
-    const page = await reader.skillFile(file, { offset, limit });
-    const read = fileOf(page, summary, limit);
-    if (page.status !== "ready" || read === undefined) {
-      throw refusedRead(io, session, owner, page, formatSkillFile(page, undefined, owner));
-    }
-    say(page, () => formatSkillFile(page, read, owner));
-    return EXIT.ok;
-  }
-  const wanted = skillPathIn(
-    theOne(
-      positionals,
-      `Say which skill: ${command} <path of its SKILL.md>, or ${command} --file <path> for a file of the pack`,
-    ),
-    listing.address,
-  );
-  if ("error" in wanted) {
-    throw misuse(wanted.error);
-  }
-  // The skill whole: its pages until complete, the rules first, as load_skill lays them out.
-  const pages: RestSkillLoad[] = [];
-  let cursor: string | undefined;
-  let last: RestSkillLoad | undefined;
-  for (let n = 0; n < MAX_SKILL_PAGES; n += 1) {
-    last = await reader.skill(wanted.path, cursor);
-    if (last.read?.status !== "ready") {
-      break;
-    }
-    pages.push(last);
-    cursor = last.read.skill.nextCursor ?? undefined;
-    if (last.read.skill.complete === true || cursor === undefined) {
-      break;
-    }
-  }
-  if (last === undefined) {
-    throw failed("The skill could not be read.");
-  }
-  const loaded = last;
-  const whole = joinSkill(pages, summary);
-  if (loaded.status !== "ready" || whole === undefined) {
+  checkedNumber(text(values, "offset"), "offset", Number.MAX_SAFE_INTEGER);
+  checkedNumber(text(values, "limit"), "limit", READ_FILE_MAX_LIMIT);
+  const listing = await reader.skills();
+  const pack = consolePack(reader, listing, { url: session.url });
+  if (pack === undefined) {
     throw refusedRead(
       io,
       session,
       owner,
-      loaded,
-      formatSkillLoad(loaded, undefined, owner, {
-        path: wanted.path,
-        command,
-        available: listing.items.map((item) => item.path),
-      }),
+      listing,
+      formatSkills(listing, undefined, io.skillsDir, owner, toolWords),
     );
   }
-  say({ ...loaded, read: bodyOfSkill(whole) }, () => formatSkillLoad(loaded, whole, owner));
+  if (file !== undefined) {
+    // A page of the file, as the skillcdn command reads one: from --offset, as long as a host
+    // shows whole where --limit says nothing, and where the next begins when the file goes on.
+    const page = await readThrough(
+      io,
+      session,
+      owner,
+      pack,
+      { read: "file", path: file, offset: text(values, "offset"), limit: text(values, "limit") },
+      { words: toolWords },
+    );
+    say(jsonOfRead(session, pack, page), () => page.text);
+    return EXIT.ok;
+  }
+  const given = theOne(
+    positionals,
+    `Say which skill: ${command} <path of its SKILL.md>, or ${command} --file <path> for a file of the pack`,
+  );
+  const wanted = skillPathIn(given, listing.address);
+  if ("error" in wanted) {
+    throw misuse(wanted.error);
+  }
+  // The skill, its rules first, as load_skill lays them out: whole, or the part that begins at
+  // the cursor, ending with the command that reads the next, asked as this one was.
+  const loaded = await readThrough(
+    io,
+    session,
+    owner,
+    pack,
+    { read: "skill", path: wanted.path, cursor },
+    {
+      words: toolWords,
+      nextPart: (next) => `${command} ${pathWord(given)} --cursor ${pathWord(next)}${again}`,
+    },
+  );
+  say(jsonOfRead(session, pack, loaded), () => loaded.text);
   return EXIT.ok;
 }
 
@@ -2039,7 +2014,7 @@ const skill: Command = async (args, io) => {
   const session = await open(io, values);
   const { reader, owner } = await packNamed(session);
   return readingPack(owner, () =>
-    readSkill(io, session, reader, values, positionals, "console skill", owner),
+    readSkill(io, session, reader, values, positionals, "console skill", owner, whereGiven(values)),
   );
 };
 
@@ -2167,6 +2142,8 @@ const plugin: Command = async (args, io) => {
         parsed.values,
         parsed.positionals,
         `console plugin ${key} skill`,
+        "project",
+        whereGiven(values),
       );
     }
     case "enable":

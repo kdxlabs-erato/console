@@ -6713,10 +6713,10 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
       [`GET ${IN}/skills`]: { body: LISTING },
       [`GET ${IN}/skills/one?path=review%2FSKILL.md`]: { body: PAGE_ONE },
       [`GET ${IN}/skills/one?path=review%2FSKILL.md&cursor=two`]: { body: PAGE_TWO },
-      [`GET ${IN}/skills/file?path=review%2Fguide.md`]: {
+      [`GET ${IN}/skills/file?path=review%2Fguide.md&limit=24000`]: {
         body: file("review/guide.md", "How to ", 0, 7, 14),
       },
-      [`GET ${IN}/skills/file?path=review%2Fguide.md&offset=7`]: {
+      [`GET ${IN}/skills/file?path=review%2Fguide.md&offset=7&limit=24000`]: {
         body: file("review/guide.md", "review.", 7, null, 14),
       },
     });
@@ -6742,14 +6742,15 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
       `GET ${IN}/skills/one?path=review%2FSKILL.md`,
       `GET ${IN}/skills/one?path=review%2FSKILL.md&cursor=two`,
     ]);
-    // A file is read a page at a time, as the skillcdn command reads one (ADR-0118): the page
-    // the pack gives, and where the next begins, which --offset then reads.
+    // A file is read a page at a time, as the skillcdn command reads one (ADR-0118, ADR-0124):
+    // a page a host shows whole unless --limit says otherwise, and where the next begins, which
+    // --offset then reads.
     const read = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["skill", "--file", "review/guide.md"], read.io)).toBe(EXIT.ok);
     expect(read.out()).toContain("File: review/guide.md (characters 0 to 7 of 14)");
     expect(read.out()).toContain("More follows: call console skill --file with offset 7.");
     expect(read.out()).toContain("--- content ---\nHow to \n");
-    expect(calls.at(-1)?.key).toBe(`GET ${IN}/skills/file?path=review%2Fguide.md`);
+    expect(calls.at(-1)?.key).toBe(`GET ${IN}/skills/file?path=review%2Fguide.md&limit=24000`);
     const rest = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["skill", "--file", "review/guide.md", "--offset", "7"], rest.io)).toBe(
       EXIT.ok,
@@ -6757,7 +6758,9 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     expect(rest.out()).toContain("File: review/guide.md (characters 7 to 14 of 14)");
     expect(rest.out()).toContain("--- content ---\nreview.");
     expect(rest.out()).not.toContain("More follows");
-    expect(calls.at(-1)?.key).toBe(`GET ${IN}/skills/file?path=review%2Fguide.md&offset=7`);
+    expect(calls.at(-1)?.key).toBe(
+      `GET ${IN}/skills/file?path=review%2Fguide.md&offset=7&limit=24000`,
+    );
     // The URI console skills lists beside the path is taken too; one of another pack is not.
     const byUri = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["skill", "skill://gh/acme/skills/review/SKILL.md"], byUri.io)).toBe(
@@ -6847,7 +6850,7 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     };
     const { fetch, calls } = fakeConsole({
       [`GET ${IN}/skills`]: { body: LISTING },
-      [`GET ${IN}/skills/file?path=README.md`]: {
+      [`GET ${IN}/skills/file?path=README.md&limit=24000`]: {
         body: file("README.md", "The pack.", 0, null, 9),
       },
       [`GET ${IN}/skills/browse?path=docs`]: {
@@ -7119,7 +7122,7 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
 
   it("loads a skill by its folder too, says so where no skill is at a path, and names the load after a search and a listing", async () => {
     const LOAD =
-      "A skill is loaded whole, its rules first, with console skill <the path of its SKILL.md>; --file reads a file of the pack as it is, without the rules.";
+      "A skill is loaded, its rules first, with console skill <the path of its SKILL.md>, a long one in parts; --file reads a file of the pack as it is, without the rules.";
     const nothing = (code: string, message: string) => ({
       ...AT,
       status: "not_found",
@@ -7136,7 +7139,7 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
       [`GET ${IN}/skills/one?path=docs%2Fguide.md%2FSKILL.md`]: {
         body: nothing("skill.not_found", "No skill at that SKILL.md path."),
       },
-      [`GET ${IN}/skills/file?path=review%2Fnothing.md`]: {
+      [`GET ${IN}/skills/file?path=review%2Fnothing.md&limit=24000`]: {
         body: nothing("file.not_found", "No file at that path in this pack."),
       },
       [`GET ${IN}/skills/one?path=hidden%2FSKILL.md`]: {
@@ -7221,7 +7224,7 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     // What a program takes carries no such line.
     const json = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["skills", "--search", "review", "--json"], json.io)).toBe(EXIT.ok);
-    expect(json.out()).not.toContain("A skill is loaded whole");
+    expect(json.out()).not.toContain("A skill is loaded");
   });
 
   it("reads the organization's pack where no project is named, and says whose pack it is (ADR-0113)", async () => {
@@ -7233,7 +7236,7 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
       [`GET ${ORG}`]: { body: LISTING },
       [`GET ${ORG}/one?path=review%2FSKILL.md`]: { body: PAGE_ONE },
       [`GET ${ORG}/one?path=review%2FSKILL.md&cursor=two`]: { body: PAGE_TWO },
-      [`GET ${ORG}/file?path=review%2Fguide.md`]: {
+      [`GET ${ORG}/file?path=review%2Fguide.md&limit=24000`]: {
         body: file("review/guide.md", "How to review.", 0, null, 14),
       },
       [`GET ${ORG}/find?query=review&limit=5`]: {
@@ -7309,9 +7312,10 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
       `GET ${ORG}/one?path=review%2FSKILL.md`,
       `GET ${ORG}/one?path=review%2FSKILL.md&cursor=two`,
       `GET ${ORG}`,
-      `GET ${ORG}/file?path=review%2Fguide.md`,
+      `GET ${ORG}/file?path=review%2Fguide.md&limit=24000`,
       `GET ${ORG}`,
       `GET ${ORG}/find?query=review&limit=5`,
+      `GET ${ORG}`,
       `GET ${ORG}/rows?path=docs%2Fcodes.md&limit=5000`,
       `GET ${ORG}`,
     ]);
@@ -7575,7 +7579,7 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     expect(endless.code).toBe(EXIT.failed);
     expect(endless.out).toBe("");
     expect(endless.err).toContain(
-      "The tables under endless are more than the command reads at once (64 rows of 64 tables so far)",
+      "invalid_response: The tables under endless are more than the command reads at once (64 pages): name a folder or a file under it.",
     );
     // A document's outline names the two reads as commands; --json keeps what the console said.
     const outlined = await run(["skills", "docs/annex/codes-1.md"]);
@@ -7603,6 +7607,207 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     ]) {
       expect((await run(args)).code, args.join(" ")).toBe(EXIT.usage);
     }
+  });
+
+  /** A page of a long skill: `length` characters of one letter, and the cursor of the next page, or the end. */
+  const longPage = (letter: string, length: number, nextCursor: string | null) => ({
+    ...AT,
+    read: {
+      status: "ready",
+      commit: COMMIT,
+      skill: {
+        ...SKILL,
+        ruleChain:
+          letter === "a" ? [{ path: "SKILLCDN.md", body: "Be kind.", truncated: false }] : [],
+        rules: { path: "SKILLCDN.md", body: "Be kind.", truncated: false },
+        body: `${letter.repeat(length)}\n`,
+        complete: nextCursor === null,
+        nextCursor,
+      },
+    },
+  });
+
+  it("prints a long skill in parts a host shows whole, each ending with the command that reads the next (ADR-0124)", async () => {
+    // Three pages of twelve thousand characters each: two fit in what a host shows whole, the
+    // third does not.
+    const page = (letter: string, nextCursor: string | null) =>
+      longPage(letter, 12_000, nextCursor);
+    const ONE = "/skills/one?path=review%2FSKILL.md";
+    const table = (root: string) => ({
+      [`GET ${root}${ONE}`]: { body: page("a", "two") },
+      [`GET ${root}${ONE}&cursor=two`]: { body: page("b", "three") },
+      [`GET ${root}${ONE}&cursor=three`]: { body: page("c", null) },
+    });
+    const { fetch, calls } = fakeConsole({ [`GET ${IN}/skills`]: { body: LISTING }, ...table(IN) });
+    const first = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "review"], first.io)).toBe(EXIT.ok);
+    const part = first.out();
+    // The first part: as many pages as fit, said to be incomplete at its head, and the command
+    // that reads the next as its last line, with the skill as it was named.
+    expect(part.length).toBeLessThanOrEqual(28_000 + 1);
+    expect(part).toContain("Skill context is incomplete");
+    expect(part).toContain("a".repeat(12_000));
+    expect(part).toContain("b".repeat(12_000));
+    expect(part).not.toContain("ccc");
+    expect(
+      part.endsWith(
+        "\n\nThe skill continues. Read the next part before using it: console skill review --cursor three\n",
+      ),
+    ).toBe(true);
+    // The page that did not fit was asked for, to know it, and is asked again with its part.
+    expect(calls.map((call) => call.key)).toEqual([
+      `GET ${IN}/skills`,
+      `GET ${IN}${ONE}`,
+      `GET ${IN}${ONE}&cursor=two`,
+      `GET ${IN}${ONE}&cursor=three`,
+    ]);
+    // The next part, from the cursor: the rest, and nothing more to read.
+    const second = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "review", "--cursor", "three"], second.io)).toBe(EXIT.ok);
+    expect(second.out()).toContain("c".repeat(12_000));
+    expect(second.out()).not.toContain("aaa");
+    expect(second.out()).not.toContain("The skill continues");
+    expect(second.out()).not.toContain("Skill context is incomplete");
+    // The next part is asked as this one was: the project, the console and the account as given.
+    const given = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "review/SKILL.md", "--project", "web"], given.io)).toBe(EXIT.ok);
+    expect(
+      given
+        .out()
+        .endsWith(
+          "Read the next part before using it: console skill review/SKILL.md --cursor three --project web\n",
+        ),
+    ).toBe(true);
+    // --json is the console's answer with the skill whole in it, as the skillcdn command's is.
+    const json = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "review", "--json"], json.io)).toBe(EXIT.ok);
+    const whole = JSON.parse(json.out()) as {
+      status: string;
+      read: { skill: { body: string; complete: boolean } };
+    };
+    expect(whole.status).toBe("ready");
+    expect(whole.read.skill.body).toBe(
+      `${"a".repeat(12_000)}\n${"b".repeat(12_000)}\n${"c".repeat(12_000)}\n`,
+    );
+    expect(whole.read.skill.complete).toBe(true);
+    // A cursor goes with a skill; a file reads on from an offset.
+    const mixed = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "--file", "review/guide.md", "--cursor", "two"], mixed.io)).toBe(
+      EXIT.usage,
+    );
+    expect(mixed.err()).toContain("--cursor reads the next part of a skill");
+    // The organization's pack: the part under its line, and the next asked the same way.
+    const ORG = "/api/v1/workspace/skills";
+    const organization = fakeConsole({
+      [`GET ${ORG}`]: { body: LISTING },
+      [`GET ${ORG}/one?path=review%2FSKILL.md`]: { body: page("a", "two") },
+      [`GET ${ORG}/one?path=review%2FSKILL.md&cursor=two`]: { body: page("b", "three") },
+      [`GET ${ORG}/one?path=review%2FSKILL.md&cursor=three`]: { body: page("c", null) },
+    });
+    const unbound = harness({
+      fetch: organization.fetch,
+      env: { CONSOLE_URL: ORIGIN, CONSOLE_TOKEN: "cns_t_secret" },
+    });
+    expect(await runCli(["skill", "review"], unbound.io)).toBe(EXIT.ok);
+    expect(
+      unbound.out().startsWith("The organization's pack, since no project is named here"),
+    ).toBe(true);
+    expect(
+      unbound
+        .out()
+        .endsWith("Read the next part before using it: console skill review --cursor three\n"),
+    ).toBe(true);
+    // A plugin's pack is read with the plugin's own commands, and its parts name them.
+    const PLUGIN = "/api/v1/plugins/hello";
+    const plugin = fakeConsole({
+      [`GET ${PLUGIN}/skills`]: { body: LISTING },
+      ...table(PLUGIN),
+      [`GET ${PLUGIN}/skills/one?path=nothing%2FSKILL.md`]: {
+        body: {
+          ...AT,
+          status: "not_found",
+          refusal: {
+            code: "skill.not_found",
+            message: "No skill at that SKILL.md path.",
+            sourceUrl: null,
+            directories: [],
+          },
+          read: null,
+        },
+      },
+    });
+    const ofPlugin = harness({ fetch: plugin.fetch, env: SIGNED_IN });
+    expect(await runCli(["plugin", "hello", "skill", "review"], ofPlugin.io)).toBe(EXIT.ok);
+    expect(ofPlugin.out()).toContain("readable with console plugin hello skill --file");
+    expect(
+      ofPlugin
+        .out()
+        .endsWith(
+          "Read the next part before using it: console plugin hello skill review --cursor three\n",
+        ),
+    ).toBe(true);
+    const rest = harness({ fetch: plugin.fetch, env: SIGNED_IN });
+    expect(await runCli(["plugin", "hello", "skill", "review", "--cursor", "three"], rest.io)).toBe(
+      EXIT.ok,
+    );
+    expect(rest.out()).toContain("c".repeat(12_000));
+    const missing = harness({ fetch: plugin.fetch, env: SIGNED_IN });
+    expect(await runCli(["plugin", "hello", "skill", "nothing"], missing.io)).toBe(EXIT.failed);
+    expect(missing.err()).toBe(
+      'skill.not_found: No skill at "nothing/SKILL.md". Use console plugin hello skills <folder> or console plugin hello skills --search for its exact SKILL.md path. Available: review/SKILL.md.\n',
+    );
+  });
+
+  it("reads a pack through a console of 0.5.0, whose routes are the ones before the parts (ADR-0124)", async () => {
+    // What a console of 0.5.0 answers: the listing, a page of a skill by its cursor, a page of
+    // a file, a search with words. It takes no search without words (`request.invalid`), has no
+    // route for the organization's pack, and knows nothing of parts: the command asks it for
+    // nothing it does not have.
+    const page = (letter: string, nextCursor: string | null) =>
+      longPage(letter, 15_000, nextCursor);
+    const { fetch, calls } = fakeConsole(
+      {
+        [`GET ${IN}/skills`]: { body: LISTING },
+        [`GET ${IN}/skills/one?path=review%2FSKILL.md`]: { body: page("a", "two") },
+        [`GET ${IN}/skills/one?path=review%2FSKILL.md&cursor=two`]: { body: page("b", null) },
+        [`GET ${IN}/skills/file?path=review%2Fguide.md&limit=24000`]: {
+          body: file("review/guide.md", "How to review.", 0, null, 14),
+        },
+        [`GET ${IN}/skills/find`]: {
+          status: 400,
+          body: { error: { code: "request.invalid", message: "query: Required" } },
+        },
+        [`GET ${IN}/skills/find?limit=25`]: {
+          status: 400,
+          body: { error: { code: "request.invalid", message: "query: Required" } },
+        },
+      },
+      { version: "0.5.0", clientRange: ">=0.5.0 <0.6.0" },
+    );
+    // The listing is made from the one answer the console gives: no search without words.
+    const listed = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skills"], listed.io)).toBe(EXIT.ok);
+    expect(listed.out()).toContain("review/SKILL.md: Reviews a change.");
+    expect(listed.out()).toContain("docs/guide.md");
+    expect(calls.map((call) => call.key)).toEqual([`GET ${IN}/skills`]);
+    // A long skill comes in two parts, by the cursor that console's route already takes.
+    const first = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "review"], first.io)).toBe(EXIT.ok);
+    expect(first.out()).toContain("a".repeat(15_000));
+    expect(first.out()).not.toContain("bbb");
+    expect(
+      first
+        .out()
+        .endsWith("Read the next part before using it: console skill review --cursor two\n"),
+    ).toBe(true);
+    const second = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "review", "--cursor", "two"], second.io)).toBe(EXIT.ok);
+    expect(second.out()).toContain("b".repeat(15_000));
+    expect(second.out()).not.toContain("The skill continues");
+    const read = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "--file", "review/guide.md"], read.io)).toBe(EXIT.ok);
+    expect(read.out()).toContain("--- content ---\nHow to review.");
+    expect(calls.some((call) => call.key.includes("/skills/find"))).toBe(false);
   });
 
   it("connects the pack with a code a person approves at SkillCDN, printing the page and the code and waiting", async () => {
