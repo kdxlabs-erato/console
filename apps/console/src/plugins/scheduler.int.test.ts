@@ -1,10 +1,12 @@
 import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
+import { and, eq } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDatabase } from "../db/client.js";
+import { createDatabase, drizzleOf } from "../db/client.js";
 import { readJobs } from "../db/queries/plugin-board.js";
 import { ensureWorkspace, type WorkspaceRecord } from "../db/queries/workspaces.js";
+import { pluginJobs } from "../db/schema.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "../db/testing.js";
 import { failsRepeatedly, PluginScheduler, type Scheduling } from "./scheduler.js";
 
@@ -155,5 +157,81 @@ describe("the scheduler", () => {
     const again = await next();
     expect(again).toMatchObject({ lastOutcome: "failed", failedSince: again.lastRunAt });
     expect(failsRepeatedly(again)).toBe(false);
+  });
+
+  it("begins a run of failures at its first failure, whatever a worker of the version before left in the row (ADR-0128)", async () => {
+    // While a deployment moves to this version, a worker of the one before still runs jobs: it
+    // writes a run that went well as it always did, and knows nothing of `failed_since`, which
+    // stays as the run of failures before it left it. The job's next failure is the first of a
+    // new run, not one more of the run that ended: one failure, and no problem of its plugin.
+    const outcomes = [false, false, false];
+    const jobs: Scheduling = {
+      jobTargets: async () => [
+        { key: "rolling", boardProjectId: undefined, jobs: { sync: { every: "PT5M", at: null } } },
+      ],
+      runJob: async () =>
+        outcomes.shift() === true
+          ? { ok: true, value: null }
+          : { ok: false, error: { code: "plugin.failed", message: "it failed" } },
+      recordFailure: async () => {},
+    };
+    let at = new Date("2026-11-12T02:00:00.000Z");
+    const scheduler = new PluginScheduler({
+      database: testDatabase.database,
+      workspace: async () => workspace,
+      plugins: jobs,
+      clock: { now: () => at },
+      logger: pino({ level: "silent" }),
+    });
+    const job = async () => {
+      const row = (await readJobs(testDatabase.database, workspace.id, "rolling")).find(
+        (candidate) => candidate.name === "sync",
+      );
+      if (row === undefined) {
+        throw new Error("the job has no row");
+      }
+      return row;
+    };
+    const next = async () => {
+      at = new Date(at.getTime() + 5 * 60_000);
+      await scheduler.tick();
+      return job();
+    };
+    await scheduler.tick();
+    const firstFailure = new Date(at.getTime() + 5 * 60_000);
+    await next();
+    const failing = await next();
+    expect(failing.failedSince).toEqual(firstFailure);
+    expect(failsRepeatedly(failing)).toBe(true);
+
+    // The worker of before runs it, and it goes well: the row as that version writes it, the
+    // last run, its outcome and the next time, and not a word of since when it failed.
+    at = new Date(at.getTime() + 5 * 60_000);
+    const wentWell = at;
+    await drizzleOf(testDatabase.database)
+      .update(pluginJobs)
+      .set({
+        lastRunAt: wentWell,
+        lastOutcome: "ok",
+        nextAt: new Date(wentWell.getTime() + 5 * 60_000),
+        updatedAt: wentWell,
+      })
+      .where(
+        and(
+          eq(pluginJobs.workspaceId, workspace.id),
+          eq(pluginJobs.pluginKey, "rolling"),
+          eq(pluginJobs.name, "sync"),
+        ),
+      );
+    expect(await job()).toMatchObject({ lastOutcome: "ok", failedSince: firstFailure });
+    expect(failsRepeatedly(await job())).toBe(false);
+
+    // Hours later it fails once, under this version.
+    at = new Date(wentWell.getTime() + 6 * 60 * 60_000);
+    const once = await next();
+    expect(once.lastOutcome).toBe("failed");
+    expect(once.failedSince).toEqual(once.lastRunAt);
+    expect(once.failedSince?.getTime()).toBeGreaterThan(wentWell.getTime());
+    expect(failsRepeatedly(once)).toBe(false);
   });
 });

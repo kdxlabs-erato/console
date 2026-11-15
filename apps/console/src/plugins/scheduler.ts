@@ -294,7 +294,10 @@ export class PluginScheduler {
         nextAt,
         failedEventAt: eventDue ? ranAt : row.failedEventAt,
         // The first failure after it went well is where the run of failures began (ADR-0128).
-        failedSince: row.failedSince ?? ranAt,
+        // What the row keeps of it counts only while the run before this one failed too: a
+        // worker of the version before writes a run that went well and leaves the column as it
+        // was, and one failure after that is no run of failures begun before the good run.
+        failedSince: row.lastOutcome === "failed" ? (row.failedSince ?? ranAt) : ranAt,
       });
     });
   }
