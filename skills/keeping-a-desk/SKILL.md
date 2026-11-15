@@ -5,7 +5,7 @@ license: MIT
 compatibility: A shell with git and the console command (npm install -g @skillcdn/console, Node.js 24 or newer), and an agent that reads and writes files. For pages, npm; a browser the agent can drive is optional. The agent never sees a token.
 metadata:
   author: skillcdn
-  version: "1.2"
+  version: "1.3"
 skillcdn:
   translations:
     ko:

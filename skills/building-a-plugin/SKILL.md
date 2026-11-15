@@ -5,7 +5,7 @@ license: MIT
 compatibility: A shell with Node.js 24 or newer, npm and git, and an agent that reads and writes files. For running the plugin on a local console, Docker for the database and a checkout of the console's repository, where signing in needs a GitHub OAuth app of the person's own, as the console's README says. The console command is optional, for running the plugin's commands as an agent would. No key of the agent's own is needed, and it never sees a token.
 metadata:
   author: skillcdn
-  version: "1.8"
+  version: "1.9"
 skillcdn:
   translations:
     ko:
