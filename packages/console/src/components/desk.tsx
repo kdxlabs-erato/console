@@ -10,6 +10,7 @@ import {
   standingOf,
 } from "../desk.js";
 import { useLanguage, useWords } from "../i18n/index.js";
+import { BarList, Chart } from "./charts.js";
 import { ShowMore, usePaged } from "./paged.js";
 import { ProjectMark } from "./projects.js";
 import { RunStatusBadge } from "./runs.js";
@@ -28,8 +29,8 @@ import {
 // The board's views of a desk's page (ADR-0116): what stands on the board now, the board's
 // figures and the board's archive of one member's own work across their projects, beside the
 // records' views (`desk-records.tsx`). Each takes its data as props and nothing from the
-// network, and is built from the console's parts alone: rows, facts, panes, badges. What
-// people wrote is shown as text, never as HTML.
+// network, and is built from the console's parts alone: rows, panes, badges, and the charts
+// for the figures (ADR-0123). What people wrote is shown as text, never as HTML.
 
 /**
  * The views of a desk's page, in the order its tabs stand: the records the desk keeps, then the
@@ -74,6 +75,17 @@ export function weekLabel(start: string, end: string, language?: string): string
   return typeof format.formatRange === "function"
     ? format.formatRange(from, to)
     : `${format.format(from)} - ${format.format(to)}`;
+}
+
+/**
+ * A week as a point of a chart names it: by its first day, short enough to stand under a
+ * column. The table beside the chart, or the heading over it, says that the points are weeks.
+ */
+export function weekStartLabel(start: string, language?: string): string {
+  const from = dateOf(start);
+  return Number.isNaN(from.getTime())
+    ? start
+    : new Intl.DateTimeFormat(language, { month: "short", day: "numeric" }).format(from);
 }
 
 /** A project as a row says it: its mark and its name. */
@@ -222,7 +234,10 @@ export interface DeskFiguresViewProps {
   readonly partial?: { readonly tasks: number; readonly runs: number } | undefined;
 }
 
-/** The figures: what was done by week, how the runs ended, and both by project and by category. */
+/**
+ * The figures: what was done by week, as columns; how the runs ended, and what was done by
+ * project and by category, each as bars with its figure in words beside it.
+ */
 export function DeskFiguresView(props: DeskFiguresViewProps) {
   const words = useWords();
   const figures = words.desk.figures;
@@ -235,27 +250,29 @@ export function DeskFiguresView(props: DeskFiguresViewProps) {
         <h2 className="sc-section-title">
           {figures.weeks} <span className="sc-column-count">{done}</span>
         </h2>
-        <dl className="sc-facts">
-          {weeks.map((week) => (
-            <div key={week.start}>
-              <dt>{weekLabel(week.start, week.end, tag)}</dt>
-              <dd>{figures.done(week.done)}</dd>
-            </div>
-          ))}
-        </dl>
+        <Chart
+          title={figures.weeks}
+          language={tag}
+          points={weeks.map((week) => weekStartLabel(week.start, tag))}
+          series={[{ name: words.vocabulary.state.done, values: weeks.map((week) => week.done) }]}
+        />
       </section>
       <section className="sc-task-section" aria-label={figures.runs}>
         <h2 className="sc-section-title">
           {figures.runs} <span className="sc-column-count">{ended}</span>
         </h2>
-        <dl className="sc-facts">
-          {DESK_ENDINGS.map((ending) => (
-            <div key={ending}>
-              <dt>{words.vocabulary.runStatus[ending]}</dt>
-              <dd>{figures.runsCount(runs[ending])}</dd>
-            </div>
-          ))}
-        </dl>
+        {/* The endings are told apart by their names: a colour each would say good and bad
+            where the tones already do. */}
+        <BarList
+          label={figures.runs}
+          language={tag}
+          rows={DESK_ENDINGS.map((ending) => ({
+            id: ending,
+            label: words.vocabulary.runStatus[ending],
+            value: runs[ending],
+            words: figures.runsCount(runs[ending]),
+          }))}
+        />
       </section>
       <div className="sc-desk-pair">
         <section className="sc-panel" aria-label={figures.byProject}>
@@ -263,18 +280,16 @@ export function DeskFiguresView(props: DeskFiguresViewProps) {
           {byProject.length === 0 ? (
             <p className="sc-muted">{figures.none}</p>
           ) : (
-            <dl className="sc-facts sc-facts-plain">
-              {byProject.map((row) => (
-                <div key={row.project.key}>
-                  <dt>
-                    <ProjectName project={row.project} />
-                  </dt>
-                  <dd>
-                    {figures.done(row.done)} · {figures.runsCount(row.runs)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+            <BarList
+              label={figures.byProject}
+              language={tag}
+              rows={byProject.map((row) => ({
+                id: row.project.key,
+                label: <ProjectName project={row.project} />,
+                value: row.done,
+                words: `${figures.done(row.done)} · ${figures.runsCount(row.runs)}`,
+              }))}
+            />
           )}
         </section>
         <section className="sc-panel" aria-label={figures.byCategory}>
@@ -282,20 +297,21 @@ export function DeskFiguresView(props: DeskFiguresViewProps) {
           {byCategory.length === 0 ? (
             <p className="sc-muted">{figures.none}</p>
           ) : (
-            <dl className="sc-facts sc-facts-plain">
-              {byCategory.map((row) => (
-                <div key={row.category?.key ?? ""}>
-                  <dt>
-                    {row.category === null ? (
-                      figures.noCategory
-                    ) : (
-                      <CategoryBadge category={row.category} />
-                    )}
-                  </dt>
-                  <dd>{figures.done(row.done)}</dd>
-                </div>
-              ))}
-            </dl>
+            <BarList
+              label={figures.byCategory}
+              language={tag}
+              rows={byCategory.map((row) => ({
+                id: row.category?.key ?? "",
+                label:
+                  row.category === null ? (
+                    figures.noCategory
+                  ) : (
+                    <CategoryBadge category={row.category} />
+                  ),
+                value: row.done,
+                words: figures.done(row.done),
+              }))}
+            />
           )}
         </section>
       </div>

@@ -15,14 +15,15 @@ import {
 } from "../desk-records.js";
 import { type Messages, useLanguage, useWords } from "../i18n/index.js";
 import type { RecordsCollection, RecordsItem, RecordsMetricRow, RecordsUse } from "../records.js";
-import { weekLabel } from "./desk.js";
+import { BarList, Chart, FigureTable, Stat, Stats } from "./charts.js";
+import { weekLabel, weekStartLabel } from "./desk.js";
 import { ShowMore, usePaged } from "./paged.js";
 import { Badge, Callout, Day, EmptyState } from "./ui.js";
 
 // The records' views of a desk's pages (ADR-0117): the collections a desk keeps, one collection
 // with its items, one item with its files, where it was used and how it did, and a collection's
 // results. Each takes what was read as props and nothing from the network, and is built from
-// the console's parts alone. Everything a record says was written by an agent and is shown as
+// the console's parts alone, the figures from the charts (ADR-0123). Everything a record says was written by an agent and is shown as
 // text; a link is followed only where it is https and opens apart; a file is shown by the kind
 // the server says it is, and nothing an agent wrote is ever a page.
 
@@ -478,27 +479,28 @@ export function DeskItemView(props: DeskItemViewProps) {
                 <p className="sc-muted">{words.noRows}</p>
               ) : (
                 <>
-                  <Figures metrics={results.metrics} ratios={results.ratios} />
+                  <Figures
+                    label={words.results}
+                    metrics={results.metrics}
+                    ratios={results.ratios}
+                  />
                   <section className="sc-panel" aria-label={words.byDay}>
                     <h4 className="sc-eyebrow">{words.byDay}</h4>
-                    <dl className="sc-facts sc-facts-plain">
-                      {days.shown.map((row) => (
-                        <div key={row.on}>
-                          <dt>
-                            <Day day={row.on} />
-                          </dt>
-                          <dd>
-                            {metrics
-                              .filter((metric) => row.values[metric.key] !== undefined)
-                              .map(
-                                (metric) =>
-                                  `${metric.label} ${metricWords({ unit: metric.unit, total: row.values[metric.key] }, tag, words)}`,
-                              )
-                              .join(" · ")}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
+                    <FigureTable
+                      caption={words.byDay}
+                      language={tag}
+                      columns={[words.day, ...metrics.map((metric) => metric.label)]}
+                      rows={days.shown.map((row) => ({
+                        id: row.on,
+                        label: <Day day={row.on} />,
+                        values: metrics.map((metric) => {
+                          const total = row.values[metric.key];
+                          return total === undefined
+                            ? undefined
+                            : metricWords({ unit: metric.unit, total }, tag, words);
+                        }),
+                      }))}
+                    />
                     <ShowMore rest={days.rest} onMore={days.more} />
                   </section>
                 </>
@@ -553,28 +555,38 @@ export function DeskItemView(props: DeskItemViewProps) {
   );
 }
 
-/** The figures of some rows: each metric's total and each ratio, a name over a number. */
+/**
+ * The figures of some rows: each metric's total and each ratio, a number under its name, and
+ * where the rows are counted by week, the run each metric came by.
+ */
 function Figures(props: {
+  /** What the figures are of, for a reader who cannot see the heading over them. */
+  readonly label: string;
   readonly metrics: readonly MetricFigure[];
   readonly ratios: readonly RatioFigure[];
+  /** Each metric's total by week, the latest last, by the metric's key. */
+  readonly trends?: Readonly<Record<string, readonly (number | undefined)[]>> | undefined;
 }) {
   const words = useWords().desk.records;
   const { tag } = useLanguage();
   return (
-    <dl className="sc-facts">
+    <Stats label={props.label}>
       {props.metrics.map((metric) => (
-        <div key={metric.key}>
-          <dt>{metric.label}</dt>
-          <dd>{metricWords(metric, tag, words)}</dd>
-        </div>
+        <Stat
+          key={metric.key}
+          label={metric.label}
+          value={metricWords(metric, tag, words)}
+          trend={props.trends?.[metric.key]}
+        />
       ))}
       {props.ratios.map((ratio) => (
-        <div key={`ratio ${ratio.key}`}>
-          <dt>{ratio.label}</dt>
-          <dd>{ratioWords(ratio, tag, words)}</dd>
-        </div>
+        <Stat
+          key={`ratio ${ratio.key}`}
+          label={ratio.label}
+          value={ratioWords(ratio, tag, words)}
+        />
       ))}
-    </dl>
+    </Stats>
   );
 }
 
@@ -591,8 +603,10 @@ export interface DeskCollectionResultsProps {
 }
 
 /**
- * How a collection did: each metric's total and each ratio over everything, the metrics by
- * week, and the items that did best by a metric the person picks.
+ * How a collection did: each metric's total and each ratio over everything, as figures with the
+ * run each came by; the metrics by week, a chart each, since each has a scale of its own, with
+ * the weeks' figures in a table under them; and the items that did best by a metric the person
+ * picks, as bars.
  */
 export function DeskCollectionResults(props: DeskCollectionResultsProps) {
   const words = useWords().desk.records;
@@ -602,30 +616,62 @@ export function DeskCollectionResults(props: DeskCollectionResultsProps) {
   if (metrics.length === 0) {
     return <p className="sc-muted">{words.noMetrics}</p>;
   }
+  /** A metric's totals by week, the latest last; nothing for a week with no row of it. */
+  const byWeek = (key: string): readonly (number | undefined)[] =>
+    results.weeks.map((week) => week.metrics.find((metric) => metric.key === key)?.total);
+  const points = results.weeks.map((week) => weekStartLabel(week.start, tag));
+  const bestMetric = best.metric;
   return (
     <div className="sc-desk-figures">
       <section className="sc-task-section" aria-label={words.inAll}>
         <h3 className="sc-section-title">{words.inAll}</h3>
-        <Figures metrics={results.metrics} ratios={results.ratios} />
+        <Figures
+          label={words.inAll}
+          metrics={results.metrics}
+          ratios={results.ratios}
+          trends={Object.fromEntries(metrics.map((metric) => [metric.key, byWeek(metric.key)]))}
+        />
       </section>
       <section className="sc-task-section" aria-label={words.byWeek}>
         <h3 className="sc-section-title">{words.byWeek}</h3>
-        <dl className="sc-facts">
-          {results.weeks.map((week) => (
-            <div key={week.start}>
-              <dt>{weekLabel(week.start, week.end, tag)}</dt>
-              {week.metrics.every((metric) => metric.total === undefined) ? (
-                <dd>{words.noValue}</dd>
-              ) : (
-                week.metrics.map((metric) => (
-                  <dd key={metric.key}>
-                    {metric.label} {metricWords(metric, tag, words)}
-                  </dd>
-                ))
-              )}
+        <div className="sc-desk-charts">
+          {metrics.map((metric) => (
+            <div key={metric.key} className="sc-desk-chart">
+              <h4 className="sc-eyebrow">{metric.label}</h4>
+              <Chart
+                title={`${metric.label} · ${words.byWeek}`}
+                size="short"
+                figures="beside"
+                language={tag}
+                points={points}
+                series={[{ name: metric.label, values: byWeek(metric.key) }]}
+                // A count is written as the language writes a number, short on the scale; a
+                // share and a time carry their unit.
+                format={
+                  metric.unit === "percent" || metric.unit === "seconds"
+                    ? (value) => metricWords({ unit: metric.unit, total: value }, tag, words)
+                    : undefined
+                }
+                empty={words.noRows}
+              />
             </div>
           ))}
-        </dl>
+        </div>
+        <FigureTable
+          caption={words.byWeek}
+          language={tag}
+          columns={[words.week, ...metrics.map((metric) => metric.label)]}
+          rows={results.weeks.map((week) => ({
+            id: week.start,
+            label: weekLabel(week.start, week.end, tag),
+            values: metrics.map((metric) => {
+              const total = week.metrics.find((one) => one.key === metric.key)?.total;
+              return total === undefined
+                ? undefined
+                : metricWords({ unit: metric.unit, total }, tag, words);
+            }),
+          }))}
+        />
       </section>
       <section className="sc-task-section" aria-label={words.best}>
         <h3 className="sc-section-title">{words.best}</h3>
@@ -645,25 +691,25 @@ export function DeskCollectionResults(props: DeskCollectionResultsProps) {
             </select>
           </label>
         </div>
-        {best.metric === undefined || best.items.length === 0 ? (
+        {bestMetric === undefined || best.items.length === 0 ? (
           <p className="sc-muted">{words.noRows}</p>
         ) : (
-          <ol className="sc-task-rows" aria-label={words.best}>
-            {best.items.map(({ item, total }) => (
-              <li key={item.id} className="sc-task-row">
-                <a className="sc-task-row-title" href={props.itemHref(item.id)}>
-                  {item.title}
-                </a>
-                <span className="sc-task-row-meta">
+          <BarList
+            label={words.best}
+            ranked
+            language={tag}
+            rows={best.items.map(({ item, total }) => ({
+              id: item.id,
+              label: item.title,
+              href: props.itemHref(item.id),
+              note:
+                item.status === undefined ? undefined : (
                   <StatusBadge collection={collection} status={item.status} />
-                  <span className="sc-card-number">
-                    {best.metric !== undefined &&
-                      metricWords({ unit: best.metric.unit, total }, tag, words)}
-                  </span>
-                </span>
-              </li>
-            ))}
-          </ol>
+                ),
+              value: total,
+              words: metricWords({ unit: bestMetric.unit, total }, tag, words),
+            }))}
+          />
         )}
       </section>
     </div>

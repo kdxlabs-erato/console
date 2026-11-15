@@ -326,13 +326,24 @@ describe("one item", () => {
 
   it("shows how it did: its figures over every day, and each day's", () => {
     const html = view([]);
-    expect(html).toContain("<dt>Impressions</dt><dd>4,000</dd>");
-    expect(html).toContain("<dt>Clicks</dt><dd>80</dd>");
-    expect(html).toContain("<dt>Watched through</dt><dd>40%</dd>");
-    expect(html).toContain("<dt>View time</dt><dd>7.3 s</dd>");
-    expect(html).toContain("<dt>Clicks per impression</dt><dd>2%</dd>");
-    expect(html).toContain("Impressions 3,000 · Clicks 50 · View time 7.3 s");
-    expect(html).toContain("Impressions 1,000 · Clicks 30 · Watched through 40%");
+    const stat = (label: string, value: string) =>
+      `<div class="sc-stat"><dt class="sc-stat-label">${label}</dt><dd class="sc-stat-value">${value}</dd></div>`;
+    expect(html).toContain('<dl class="sc-stats" aria-label="Results">');
+    expect(html).toContain(stat("Impressions", "4,000"));
+    expect(html).toContain(stat("Clicks", "80"));
+    expect(html).toContain(stat("Watched through", "40%"));
+    expect(html).toContain(stat("View time", "7.3 s"));
+    expect(html).toContain(stat("Clicks per impression", "2%"));
+    // Each day's figures are a row of a table, a column a metric: nothing where a day has none.
+    expect(html).toContain(
+      '<thead><tr><th scope="col">Day</th><th scope="col">Impressions</th><th scope="col">Clicks</th><th scope="col">Watched through</th><th scope="col">View time</th></tr></thead>',
+    );
+    expect(html).toMatch(
+      /<tr><th scope="row"><time class="sc-time" dateTime="2026-11-11">[^<]+<\/time><\/th><td>3,000<\/td><td>50<\/td><td><\/td><td>7\.3 s<\/td><\/tr>/,
+    );
+    expect(html).toMatch(
+      /<tr><th scope="row"><time class="sc-time" dateTime="2026-11-10">[^<]+<\/time><\/th><td>1,000<\/td><td>30<\/td><td>40%<\/td><td><\/td><\/tr>/,
+    );
   });
 
   it("shows a file in place by the kind the server says it is, and hands the rest over", () => {
@@ -400,7 +411,7 @@ describe("a collection's results", () => {
   const results = resultsOf({ collection: ads, rows, today: "2026-11-11", weeks: 2 });
   const best = bestItems({ collection: ads, items, rows, by: "clicks" });
 
-  it("are each metric in all and by week, the ratios, and the items that did best by a metric", () => {
+  it("are each metric in all as a figure, by week as a chart with the weeks' figures under them, and what did best as bars", () => {
     const html = renderToStaticMarkup(
       <DeskCollectionResults
         collection={ads}
@@ -413,14 +424,42 @@ describe("a collection's results", () => {
     for (const section of ["In all", "By week", "What did best"]) {
       expect(html).toContain(`aria-label="${section}"`);
     }
-    expect(html).toContain("<dt>Impressions</dt><dd>4,000</dd>");
-    expect(html).toContain("<dt>Clicks per impression</dt><dd>2%</dd>");
-    // A week no row falls in says so once, and the week that has rows each metric's sum.
-    expect(html).toMatch(/<dt>Nov 2\s.\s8<\/dt><dd>none<\/dd><\/div>/);
-    expect(html).toMatch(/<dt>Nov 9\s.\s15<\/dt><dd>Impressions 4,000<\/dd>/);
+    // In all: a figure a metric and a ratio, a metric's with the run it came by.
+    expect(html).toContain('<dl class="sc-stats" aria-label="In all">');
+    expect(html).toContain(
+      '<dt class="sc-stat-label">Impressions</dt><dd class="sc-stat-value">4,000</dd><dd class="sc-stat-trend">',
+    );
+    expect(html).toContain(
+      '<div class="sc-stat"><dt class="sc-stat-label">Clicks per impression</dt><dd class="sc-stat-value">2%</dd></div>',
+    );
+    // By week: a chart a metric, since each has a scale of its own, each week named by its
+    // first day; a share and a time carry their unit on the scale.
+    expect(html.match(/<figure class="sc-chart sc-chart-short">/g)).toHaveLength(4);
+    expect(html).toContain(
+      '<h4 class="sc-eyebrow">Impressions</h4><figure class="sc-chart sc-chart-short"><figcaption class="sc-visually-hidden">Impressions · By week</figcaption>',
+    );
+    expect(html).toContain('<span class="sc-chart-label">Nov 2</span>');
+    expect(html).toContain("<title>Nov 9: 4,000</title>");
+    expect(html).toContain('<span class="sc-chart-tick">40%</span>');
+    expect(html).toContain("<title>Nov 9: 7.3 s</title>");
+    // The weeks' figures stand under the charts as one table: nothing where a week has no row.
+    expect(html.match(/<table/g)).toHaveLength(1);
+    expect(html).toContain(
+      '<thead><tr><th scope="col">Week</th><th scope="col">Impressions</th><th scope="col">Clicks</th><th scope="col">Watched through</th><th scope="col">View time</th></tr></thead>',
+    );
+    expect(html).toMatch(
+      /<tr><th scope="row">Nov 2\s.\s8<\/th><td><\/td><td><\/td><td><\/td><td><\/td><\/tr>/,
+    );
+    expect(html).toMatch(
+      /<tr><th scope="row">Nov 9\s.\s15<\/th><td>4,000<\/td><td>80<\/td><td>40%<\/td><td>7\.3 s<\/td><\/tr>/,
+    );
+    // What did best: a ranking, each item a link with its status after it and its figure.
     expect(html).toContain('<option value="clicks" selected="">By Clicks</option>');
-    expect(html).toContain('href="/pages/desk?collection=ad-creatives&amp;item=hook-1"');
-    expect(html).toContain('<span class="sc-card-number">80</span>');
+    expect(html).toContain('<ol class="sc-bars" aria-label="What did best">');
+    expect(html).toContain(
+      '<span class="sc-bars-label"><a href="/pages/desk?collection=ad-creatives&amp;item=hook-1">The &lt;b&gt;first&lt;/b&gt; hook</a> <span class="sc-badge',
+    );
+    expect(html).toContain('<span class="sc-bars-value">80</span>');
     // An item with no row of the metric is not among those that did best.
     expect(html).not.toContain("The second hook");
     // No look of its own.

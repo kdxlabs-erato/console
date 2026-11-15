@@ -194,9 +194,10 @@ export function Stats(props: {
 }
 
 export interface BarRow {
-  /** What tells the row apart, where two rows may have one label. */
+  /** What tells the row apart: needed where the label is not text, or two rows have one label. */
   readonly id?: string | undefined;
-  readonly label: string;
+  /** The row's name: text, or what the page shows for it, a mark with a name or a badge. */
+  readonly label: ReactNode;
   /** Where the label leads; text alone where left out. */
   readonly href?: string | undefined;
   /** What stands after the label on its line: a badge, say. */
@@ -228,12 +229,18 @@ export function BarList(props: BarListProps) {
     props.whole,
   );
   const List = props.ranked === true ? "ol" : "ul";
+  // A row is told apart by what the page names it, by its label where that is text, and
+  // failing both by its place, which a list given once keeps.
+  const rows = props.rows.map((row, at) => ({
+    row,
+    length: lengths[at] ?? 0,
+    key: row.id ?? (typeof row.label === "string" ? row.label : `row ${at}`),
+  }));
   return (
     <List className="sc-bars" aria-label={props.label}>
-      {props.rows.map((row, index) => {
-        const length = lengths[index] ?? 0;
+      {rows.map(({ row, length, key }) => {
         return (
-          <li key={row.id ?? row.label} className="sc-bars-row">
+          <li key={key} className="sc-bars-row">
             <span className="sc-bars-label">
               {row.href === undefined ? row.label : <a href={row.href}>{row.label}</a>}
               {row.note !== undefined && <> {row.note}</>}
@@ -325,9 +332,10 @@ export function ShareBar(props: ShareBarProps) {
 }
 
 export interface FigureRow {
-  /** What tells the row apart, where two rows may have one label. */
+  /** What tells the row apart: needed where the label is not text, or two rows have one label. */
   readonly id?: string | undefined;
-  readonly label: string;
+  /** The row's name: text, or what the page shows for it, a day or a badge. */
+  readonly label: ReactNode;
   /** The row's figures, one a column after the first: a number is written as the language writes it, words as they are, nothing where there is none. */
   readonly values: readonly (number | string | undefined)[];
 }
@@ -361,6 +369,12 @@ function figureCells(
 /** A table of figures: rows by columns, the names at the start and the numbers lined up at the end. */
 export function FigureTable(props: FigureTableProps) {
   const { columns, foot } = props;
+  // A row is told apart as a bar's is: by what the page names it, by its label where that is
+  // text, and failing both by its place.
+  const rows = props.rows.map((row, at) => ({
+    row,
+    key: row.id ?? (typeof row.label === "string" ? row.label : `row ${at}`),
+  }));
   return (
     <div className="sc-figures-box">
       <table className="sc-figures">
@@ -377,8 +391,8 @@ export function FigureTable(props: FigureTableProps) {
           </tr>
         </thead>
         <tbody>
-          {props.rows.map((row) => (
-            <tr key={row.id ?? row.label}>
+          {rows.map(({ row, key }) => (
+            <tr key={key}>
               <th scope="row">{row.label}</th>
               {figureCells(row, columns, props.language)}
             </tr>
@@ -420,6 +434,11 @@ export interface ChartProps {
   readonly language?: string | undefined;
   /** What stands in the chart's place where no point has an amount. */
   readonly empty?: ReactNode | undefined;
+  /**
+   * Where the chart's figures stand for a reader who cannot see it: under it, as a table only a
+   * screen reader is told, unless the page shows them `beside` it itself, in a `FigureTable`.
+   */
+  readonly figures?: "beside" | undefined;
 }
 
 /**
@@ -480,6 +499,9 @@ export function Chart(props: ChartProps) {
   };
   return (
     <figure className={classes("sc-chart", props.size === "short" && "sc-chart-short")}>
+      {props.figures === "beside" && (
+        <figcaption className="sc-visually-hidden">{props.title}</figcaption>
+      )}
       {series.length > 1 && (
         <Legend
           mark={kind === "line" ? "line" : "box"}
@@ -625,32 +647,34 @@ export function Chart(props: ChartProps) {
           ))}
         </div>
       </div>
-      <div className="sc-visually-hidden">
-        <table>
-          <caption>{props.title}</caption>
-          <thead>
-            <tr>
-              <td />
-              {series.map((one) => (
-                <th key={one.index} scope="col">
-                  {one.name}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {points.map((point) => (
-              <tr key={point.at}>
-                <th scope="row">{point.name}</th>
-                {series.map((one) => {
-                  const value = one.amounts[point.at];
-                  return <td key={one.index}>{value === undefined ? "" : words(value)}</td>;
-                })}
+      {props.figures !== "beside" && (
+        <div className="sc-visually-hidden">
+          <table>
+            <caption>{props.title}</caption>
+            <thead>
+              <tr>
+                <td />
+                {series.map((one) => (
+                  <th key={one.index} scope="col">
+                    {one.name}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {points.map((point) => (
+                <tr key={point.at}>
+                  <th scope="row">{point.name}</th>
+                  {series.map((one) => {
+                    const value = one.amounts[point.at];
+                    return <td key={one.index}>{value === undefined ? "" : words(value)}</td>;
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </figure>
   );
 }

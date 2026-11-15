@@ -151,6 +151,23 @@ describe("a list of bars", () => {
     expect(count(html, '<li class="sc-bars-row">')).toBe(4);
   });
 
+  it("takes for a name what the page shows for it, told apart by what the page names the row", () => {
+    const html = renderToStaticMarkup(
+      <BarList
+        label="By project"
+        rows={[
+          { id: "web", label: <b>Web</b>, value: 2, words: "2 done" },
+          { id: "docs", label: <b>Docs</b>, value: 1, words: "1 done" },
+          { label: <i>No name</i>, value: 0 },
+        ]}
+      />,
+    );
+    expect(html).toContain(
+      '<span class="sc-bars-label"><b>Web</b></span><span class="sc-bars-value">2 done</span>',
+    );
+    expect(count(html, '<li class="sc-bars-row">')).toBe(3);
+  });
+
   it("is an empty list for no rows", () => {
     expect(renderToStaticMarkup(<BarList label="None" rows={[]} />)).toBe(
       '<ul class="sc-bars" aria-label="None"></ul>',
@@ -275,6 +292,22 @@ describe("a table of figures", () => {
     expect(html).toContain('<tr><th scope="row">Jan 26</th><td>none</td><td></td></tr>');
     expect(html).toContain(
       '<tfoot><tr><th scope="row">In all</th><td>1,042</td><td>30.46</td></tr></tfoot>',
+    );
+  });
+
+  it("takes for a row's name what the page shows for it", () => {
+    const html = renderToStaticMarkup(
+      <FigureTable
+        caption="By day"
+        columns={["Day", "A"]}
+        rows={[
+          { id: "2026-11-11", label: <time dateTime="2026-11-11">Nov 11</time>, values: ["1"] },
+          { label: <i>No name</i>, values: ["2"] },
+        ]}
+      />,
+    );
+    expect(html).toContain(
+      '<tr><th scope="row"><time dateTime="2026-11-11">Nov 11</time></th><td>1</td></tr><tr><th scope="row"><i>No name</i></th><td>2</td></tr>',
     );
   });
 
@@ -479,6 +512,22 @@ describe("a chart over time", () => {
     expect(html).toContain('<span class="sc-chart-label">Day 21</span>');
     expect(html).toContain('<span class="sc-chart-label sc-chart-label-wide"></span>');
     expect(html.match(/<span class="sc-chart-label[^"]*">Day /g)).toHaveLength(10);
+  });
+
+  it("leaves its figures to the page that shows them beside it, and says only what it is", () => {
+    const html = renderToStaticMarkup(
+      <Chart
+        title="Clicks by week"
+        figures="beside"
+        language="en"
+        points={WEEKS}
+        series={[{ name: "Clicks", values: [1, 2, 3, 4] }]}
+      />,
+    );
+    expect(html).toContain(
+      '<figure class="sc-chart"><figcaption class="sc-visually-hidden">Clicks by week</figcaption><div class="sc-chart-frame" aria-hidden="true">',
+    );
+    expect(html).not.toContain("<table");
   });
 
   it("is shorter where the page asks, writes amounts the page's way, and takes two points of one name", () => {

@@ -12,6 +12,7 @@ import {
   DeskViews,
   DeskWords,
   weekLabel,
+  weekStartLabel,
 } from "./desk.js";
 
 const alice: RestPerson = {
@@ -267,29 +268,48 @@ describe("the figures", () => {
     ],
   });
 
-  it("are facts in the console's parts: by week, by ending, by project and by category", () => {
+  it("are drawn with the console's charts: by week as columns, by ending, by project and by category as bars", () => {
     const html = renderToStaticMarkup(<DeskFiguresView figures={figures} />);
     for (const section of ["Done by week", "How runs ended", "By project", "By category"]) {
       expect(html).toContain(`aria-label="${section}"`);
     }
-    expect(html.match(/<dl class="sc-facts"/g)).toHaveLength(2);
-    expect(html.match(/<dl class="sc-facts sc-facts-plain"/g)).toHaveLength(2);
-    expect(html).toContain("<dt>Finished</dt><dd>1 run</dd>");
-    expect(html).toContain("<dt>Failed</dt><dd>1 run</dd>");
-    expect(html).toContain("<dt>Abandoned</dt><dd>0 runs</dd>");
-    expect(html).toContain("1 done · 2 runs");
-    expect(html).toContain("1 done · 0 runs");
+    // By week: one chart of one series, each week named by its first day, with its figures
+    // under it as a table for a reader who cannot see the columns.
+    expect(html.match(/<figure class="sc-chart">/g)).toHaveLength(1);
+    expect(html).toContain("<caption>Done by week</caption>");
+    expect(html).toContain(
+      '<tbody><tr><th scope="row">Oct 5</th><td>1</td></tr><tr><th scope="row">Oct 12</th><td>1</td></tr></tbody>',
+    );
+    expect(html.match(/class="sc-chart-bar"/g)).toHaveLength(2);
+    // The endings, the projects and the categories: a name, its figure in words, and its bar.
+    expect(html.match(/<ul class="sc-bars"/g)).toHaveLength(3);
+    expect(html).toContain(
+      '<span class="sc-bars-label">Finished</span><span class="sc-bars-value">1 run</span>',
+    );
+    expect(html).toContain(
+      '<span class="sc-bars-label">Failed</span><span class="sc-bars-value">1 run</span>',
+    );
+    // An ending no run had is said, and has no bar.
+    expect(html).toContain(
+      '<span class="sc-bars-label">Abandoned</span><span class="sc-bars-value">0 runs</span><svg class="sc-bars-bar sc-series-1" aria-hidden="true" focusable="false"></svg>',
+    );
+    expect(html).toContain('<span class="sc-bars-value">1 done · 2 runs</span>');
+    expect(html).toContain('<span class="sc-bars-value">1 done · 0 runs</span>');
     expect(html).toContain("Engineering");
     expect(html).toContain("No category");
+    expect(html).not.toContain("sc-facts");
     // No look of its own: nothing is drawn by a style.
     expect(html).not.toContain("style=");
     expect(html).not.toContain("Counted from");
   });
 
-  it("name a week by its days, without the year", () => {
+  it("name a week by its days, without the year, and under a column by its first day", () => {
     expect(weekLabel("2026-10-05", "2026-10-11", "en")).toMatch(/^Oct 5\s.\s11$/);
     expect(weekLabel("2026-09-28", "2026-10-04", "en")).toMatch(/^Sep 28\s.\sOct 4$/);
     expect(weekLabel("nonsense", "2026-10-04", "en")).toBe("nonsense - 2026-10-04");
+    expect(weekStartLabel("2026-10-05", "en")).toBe("Oct 5");
+    expect(weekStartLabel("2026-10-05", "ko")).toBe("10월 5일");
+    expect(weekStartLabel("nonsense", "en")).toBe("nonsense");
   });
 
   it("say what they were counted from where a project had more", () => {
@@ -299,11 +319,15 @@ describe("the figures", () => {
     expect(html).toContain("Counted from the latest 100 tasks and 30 runs of each project.");
   });
 
-  it("say so in a pane with nothing in it", () => {
+  it("say so in a pane with nothing in it, and draw weeks of nothing as weeks of nothing", () => {
     const html = renderToStaticMarkup(
       <DeskFiguresView figures={figuresOf({ today: TODAY, tasks: [], runs: [] })} />,
     );
     expect(html.match(/Nothing in these weeks\./g)).toHaveLength(2);
+    // Eight weeks with nothing done are eight points with no column, on a scale all the same.
+    expect(html.match(/<div class="sc-chart-slot">/g)).toHaveLength(8);
+    expect(html).not.toContain('class="sc-chart-bar"');
+    expect(html).not.toContain("sc-bars-fill");
   });
 
   it("speak Korean from the pack", () => {
