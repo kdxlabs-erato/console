@@ -16,7 +16,7 @@ import {
 import { type Messages, useLanguage, useWords } from "../i18n/index.js";
 import type { RecordsCollection, RecordsItem, RecordsMetricRow, RecordsUse } from "../records.js";
 import { BarList, Chart, FigureTable, Stat, Stats } from "./charts.js";
-import { weekLabel, weekStartLabel } from "./desk.js";
+import { weekStartLabel } from "./desk.js";
 import { ShowMore, usePaged } from "./paged.js";
 import { Badge, Callout, Day, EmptyState } from "./ui.js";
 
@@ -409,9 +409,10 @@ export interface DeskItemViewProps {
 }
 
 /**
- * One item: its preview and its files, its note, where it was used and how it did by day, and
- * beside them what it says of itself: the day it was made, its status, its fields, its links,
- * and the task it names, where it names one.
+ * One item, what it is before what it holds: its preview and its note, how it did as figures
+ * with the run each came by, where it was used, its files, and last its figures day by day,
+ * to be read exactly; beside them what it says of itself: the day it was made, its status, its
+ * fields, its links, and the task it names, where it names one.
  */
 export function DeskItemView(props: DeskItemViewProps) {
   const words = useWords().desk.records;
@@ -425,6 +426,13 @@ export function DeskItemView(props: DeskItemViewProps) {
   });
   const metrics = collection?.metrics ?? [];
   const days = usePaged(results.days);
+  // The run each metric came by, day by day, the latest last.
+  const trends = Object.fromEntries(
+    metrics.map((metric) => [
+      metric.key,
+      results.days.map((row) => row.values[metric.key]).reverse(),
+    ]),
+  );
   return (
     <div className="sc-desk-item">
       <header className="sc-task-header">
@@ -442,14 +450,19 @@ export function DeskItemView(props: DeskItemViewProps) {
               <p className="sc-desk-words">{item.note}</p>
             </section>
           )}
-          {files.length > 0 && (
-            <section className="sc-task-section" aria-label={words.files}>
-              <h3 className="sc-section-title">{words.files}</h3>
-              <ul className="sc-link-list">
-                {files.map((file) => (
-                  <FileRow key={`${file.src ?? ""} ${file.label}`} file={file} />
-                ))}
-              </ul>
+          {metrics.length > 0 && (
+            <section className="sc-task-section" aria-label={words.results}>
+              <h3 className="sc-section-title">{words.results}</h3>
+              {results.days.length === 0 ? (
+                <p className="sc-muted">{words.noRows}</p>
+              ) : (
+                <Figures
+                  label={words.results}
+                  metrics={results.metrics}
+                  ratios={results.ratios}
+                  trends={trends}
+                />
+              )}
             </section>
           )}
           <section className="sc-task-section" aria-label={words.uses}>
@@ -472,39 +485,35 @@ export function DeskItemView(props: DeskItemViewProps) {
               </ul>
             )}
           </section>
-          {metrics.length > 0 && (
-            <section className="sc-task-section" aria-label={words.results}>
-              <h3 className="sc-section-title">{words.results}</h3>
-              {results.days.length === 0 ? (
-                <p className="sc-muted">{words.noRows}</p>
-              ) : (
-                <>
-                  <Figures
-                    label={words.results}
-                    metrics={results.metrics}
-                    ratios={results.ratios}
-                  />
-                  <section className="sc-panel" aria-label={words.byDay}>
-                    <h4 className="sc-eyebrow">{words.byDay}</h4>
-                    <FigureTable
-                      caption={words.byDay}
-                      language={tag}
-                      columns={[words.day, ...metrics.map((metric) => metric.label)]}
-                      rows={days.shown.map((row) => ({
-                        id: row.on,
-                        label: <Day day={row.on} />,
-                        values: metrics.map((metric) => {
-                          const total = row.values[metric.key];
-                          return total === undefined
-                            ? undefined
-                            : metricWords({ unit: metric.unit, total }, tag, words);
-                        }),
-                      }))}
-                    />
-                    <ShowMore rest={days.rest} onMore={days.more} />
-                  </section>
-                </>
-              )}
+          {files.length > 0 && (
+            <section className="sc-task-section" aria-label={words.files}>
+              <h3 className="sc-section-title">{words.files}</h3>
+              <ul className="sc-link-list">
+                {files.map((file) => (
+                  <FileRow key={`${file.src ?? ""} ${file.label}`} file={file} />
+                ))}
+              </ul>
+            </section>
+          )}
+          {metrics.length > 0 && results.days.length > 0 && (
+            <section className="sc-task-section" aria-label={words.byDay}>
+              <h3 className="sc-section-title">{words.byDay}</h3>
+              <FigureTable
+                caption={words.byDay}
+                language={tag}
+                columns={[words.day, ...metrics.map((metric) => metric.label)]}
+                rows={days.shown.map((row) => ({
+                  id: row.on,
+                  label: <Day day={row.on} />,
+                  values: metrics.map((metric) => {
+                    const total = row.values[metric.key];
+                    return total === undefined
+                      ? undefined
+                      : metricWords({ unit: metric.unit, total }, tag, words);
+                  }),
+                }))}
+              />
+              <ShowMore rest={days.rest} onMore={days.more} />
             </section>
           )}
         </div>
@@ -557,18 +566,25 @@ export function DeskItemView(props: DeskItemViewProps) {
 
 /**
  * The figures of some rows: each metric's total and each ratio, a number under its name, and
- * where the rows are counted by week, the run each metric came by.
+ * the run each metric came by, where it is one: two amounts or more.
  */
 function Figures(props: {
   /** What the figures are of, for a reader who cannot see the heading over them. */
   readonly label: string;
   readonly metrics: readonly MetricFigure[];
   readonly ratios: readonly RatioFigure[];
-  /** Each metric's total by week, the latest last, by the metric's key. */
+  /** Each metric's amounts in order, by week or by day, the latest last, by the metric's key. */
   readonly trends?: Readonly<Record<string, readonly (number | undefined)[]>> | undefined;
 }) {
   const words = useWords().desk.records;
   const { tag } = useLanguage();
+  /** A metric's run, where it has amounts enough to be one: a single amount is the figure itself. */
+  const runOf = (key: string): readonly (number | undefined)[] | undefined => {
+    const run = props.trends?.[key];
+    return run !== undefined && run.filter((value) => value !== undefined).length > 1
+      ? run
+      : undefined;
+  };
   return (
     <Stats label={props.label}>
       {props.metrics.map((metric) => (
@@ -576,7 +592,7 @@ function Figures(props: {
           key={metric.key}
           label={metric.label}
           value={metricWords(metric, tag, words)}
-          trend={props.trends?.[metric.key]}
+          trend={runOf(metric.key)}
         />
       ))}
       {props.ratios.map((ratio) => (
@@ -603,24 +619,28 @@ export interface DeskCollectionResultsProps {
 }
 
 /**
- * How a collection did: each metric's total and each ratio over everything, as figures with the
- * run each came by; the metrics by week, a chart each, since each has a scale of its own, with
- * the weeks' figures in a table under them; and the items that did best by a metric the person
- * picks, as bars.
+ * How a collection did, the figures that matter first: each metric's total and each ratio over
+ * everything, a number each with the run it came by; then one metric, the one the person
+ * picks, looked at closer: by week as one chart on its own scale, and the items that did best
+ * by it as bars. No figure stands twice: the weeks' exact figures are the chart's own, said to
+ * the pointer and, as a table, to a reader who cannot see it.
  */
 export function DeskCollectionResults(props: DeskCollectionResultsProps) {
   const words = useWords().desk.records;
   const { tag } = useLanguage();
   const { collection, results, best } = props;
   const metrics = collection?.metrics ?? [];
-  if (metrics.length === 0) {
+  const picked = best.metric;
+  if (metrics.length === 0 || picked === undefined) {
     return <p className="sc-muted">{words.noMetrics}</p>;
+  }
+  if (results.metrics.every((metric) => metric.total === undefined)) {
+    // Nothing recorded yet: what would fill the view, and no axis drawn over nothing.
+    return <EmptyState title={words.noFigures.title} body={words.noFigures.body} />;
   }
   /** A metric's totals by week, the latest last; nothing for a week with no row of it. */
   const byWeek = (key: string): readonly (number | undefined)[] =>
     results.weeks.map((week) => week.metrics.find((metric) => metric.key === key)?.total);
-  const points = results.weeks.map((week) => weekStartLabel(week.start, tag));
-  const bestMetric = best.metric;
   return (
     <div className="sc-desk-figures">
       <section className="sc-task-section" aria-label={words.inAll}>
@@ -632,85 +652,72 @@ export function DeskCollectionResults(props: DeskCollectionResultsProps) {
           trends={Object.fromEntries(metrics.map((metric) => [metric.key, byWeek(metric.key)]))}
         />
       </section>
-      <section className="sc-task-section" aria-label={words.byWeek}>
-        <h3 className="sc-section-title">{words.byWeek}</h3>
-        <div className="sc-desk-charts">
-          {metrics.map((metric) => (
-            <div key={metric.key} className="sc-desk-chart">
-              <h4 className="sc-eyebrow">{metric.label}</h4>
-              <Chart
-                title={`${metric.label} · ${words.byWeek}`}
-                size="short"
-                figures="beside"
-                language={tag}
-                points={points}
-                series={[{ name: metric.label, values: byWeek(metric.key) }]}
-                // A count is written as the language writes a number, short on the scale; a
-                // share and a time carry their unit.
-                format={
-                  metric.unit === "percent" || metric.unit === "seconds"
-                    ? (value) => metricWords({ unit: metric.unit, total: value }, tag, words)
-                    : undefined
-                }
-                empty={words.noRows}
-              />
-            </div>
-          ))}
-        </div>
-        <FigureTable
-          caption={words.byWeek}
-          language={tag}
-          columns={[words.week, ...metrics.map((metric) => metric.label)]}
-          rows={results.weeks.map((week) => ({
-            id: week.start,
-            label: weekLabel(week.start, week.end, tag),
-            values: metrics.map((metric) => {
-              const total = week.metrics.find((one) => one.key === metric.key)?.total;
-              return total === undefined
-                ? undefined
-                : metricWords({ unit: metric.unit, total }, tag, words);
-            }),
-          }))}
-        />
-      </section>
-      <section className="sc-task-section" aria-label={words.best}>
-        <h3 className="sc-section-title">{words.best}</h3>
-        <div className="sc-filters">
-          <label className="sc-field sc-field-inline">
-            <span className="sc-visually-hidden">{words.bestBy}</span>
-            <select
-              className="sc-input"
-              value={best.metric?.key ?? ""}
-              onChange={(event) => props.onBy(event.target.value)}
-            >
-              {metrics.map((metric) => (
-                <option key={metric.key} value={metric.key}>
-                  {words.bestBy} {metric.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {bestMetric === undefined || best.items.length === 0 ? (
-          <p className="sc-muted">{words.noRows}</p>
+      <section className="sc-task-section" aria-label={picked.label}>
+        {metrics.length > 1 ? (
+          <div className="sc-filters">
+            <label className="sc-field sc-field-inline">
+              <span className="sc-visually-hidden">{words.bestBy}</span>
+              <select
+                className="sc-input"
+                value={picked.key}
+                onChange={(event) => props.onBy(event.target.value)}
+              >
+                {metrics.map((metric) => (
+                  <option key={metric.key} value={metric.key}>
+                    {words.bestBy} {metric.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         ) : (
-          <BarList
-            label={words.best}
-            ranked
-            language={tag}
-            rows={best.items.map(({ item, total }) => ({
-              id: item.id,
-              label: item.title,
-              href: props.itemHref(item.id),
-              note:
-                item.status === undefined ? undefined : (
-                  <StatusBadge collection={collection} status={item.status} />
-                ),
-              value: total,
-              words: metricWords({ unit: bestMetric.unit, total }, tag, words),
-            }))}
-          />
+          <h3 className="sc-section-title">{picked.label}</h3>
         )}
+        <div className="sc-desk-pair">
+          <section className="sc-panel" aria-label={words.byWeek}>
+            <h4 className="sc-section-title">{words.byWeek}</h4>
+            <Chart
+              title={`${picked.label} · ${words.byWeek}`}
+              // What is counted in a week stands as a column; a share, which is followed
+              // from week to week, as a line.
+              kind={picked.unit === "percent" ? "line" : "columns"}
+              language={tag}
+              points={results.weeks.map((week) => weekStartLabel(week.start, tag))}
+              series={[{ name: picked.label, values: byWeek(picked.key) }]}
+              // A count is written as the language writes a number, short on the scale; a
+              // share and a time carry their unit.
+              format={
+                picked.unit === "percent" || picked.unit === "seconds"
+                  ? (value) => metricWords({ unit: picked.unit, total: value }, tag, words)
+                  : undefined
+              }
+              empty={words.noRows}
+            />
+          </section>
+          <section className="sc-panel" aria-label={words.best}>
+            <h4 className="sc-section-title">{words.best}</h4>
+            {best.items.length === 0 ? (
+              <p className="sc-muted">{words.noRows}</p>
+            ) : (
+              <BarList
+                label={words.best}
+                ranked
+                language={tag}
+                rows={best.items.map(({ item, total }) => ({
+                  id: item.id,
+                  label: item.title,
+                  href: props.itemHref(item.id),
+                  note:
+                    item.status === undefined ? undefined : (
+                      <StatusBadge collection={collection} status={item.status} />
+                    ),
+                  value: total,
+                  words: metricWords({ unit: picked.unit, total }, tag, words),
+                }))}
+              />
+            )}
+          </section>
+        </div>
       </section>
     </div>
   );

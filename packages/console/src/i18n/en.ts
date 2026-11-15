@@ -1012,13 +1012,16 @@ export const en = {
       results: "Results",
       inAll: "In all",
       byWeek: "By week",
-      week: "Week",
       byDay: "By day",
       day: "Day",
       best: "What did best",
       bestBy: "By",
       noMetrics: "This collection keeps no figures.",
       noRows: "No figures are recorded yet.",
+      noFigures: {
+        title: "No figures here yet",
+        body: "A figure is a row of this collection's metrics.json: an item, a day and what it came to that day. An agent working in your desk writes them as the README beside the records says; the first one shows up here.",
+      },
       noValue: "none",
       seconds: (amount: string) => `${amount} s`,
       percent: (amount: string) => `${amount}%`,
@@ -1046,8 +1049,16 @@ export const en = {
       noRuns: "No run of yours is open.",
     },
     figures: {
+      /** The stretch the figures count, over them. */
+      lead: (weeks: number) => (weeks === 1 ? "This week" : `The last ${weeks} weeks`),
+      tasksDone: "Tasks done",
+      /** A run's ending as the name of a figure: how many ended so. */
+      ended: {
+        finished: "Runs finished",
+        failed: "Runs failed",
+        abandoned: "Runs abandoned",
+      },
       weeks: "Done by week",
-      runs: "How runs ended",
       byProject: "By project",
       byCategory: "By category",
       noCategory: "No category",
@@ -1056,6 +1067,11 @@ export const en = {
       runsCount: (count: number) => (count === 1 ? "1 run" : `${count} runs`),
       partial: (tasks: number, runs: number) =>
         `Counted from the latest ${tasks} tasks and ${runs} runs of each project.`,
+      empty: {
+        title: "Nothing closed in these weeks",
+        body: (weeks: number) =>
+          `A task of yours that was done and a run of yours that ended ${weeks === 1 ? "this week" : `in the last ${weeks} weeks`} are counted here.`,
+      },
     },
     archive: {
       search: "Find in the archive",

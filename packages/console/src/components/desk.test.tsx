@@ -268,11 +268,21 @@ describe("the figures", () => {
     ],
   });
 
-  it("are drawn with the console's charts: by week as columns, by ending, by project and by category as bars", () => {
+  it("lead with the figures that matter, then by week as one chart, then by project and by category as bars", () => {
     const html = renderToStaticMarkup(<DeskFiguresView figures={figures} />);
-    for (const section of ["Done by week", "How runs ended", "By project", "By category"]) {
+    for (const section of ["The last 2 weeks", "Done by week", "By project", "By category"]) {
       expect(html).toContain(`aria-label="${section}"`);
     }
+    // First the few numbers: the tasks done and the runs by how they ended, an ending no run
+    // had said as none. They are told apart by their names, never by a colour.
+    const stat = (label: string, value: string) =>
+      `<div class="sc-stat"><dt class="sc-stat-label">${label}</dt><dd class="sc-stat-value">${value}</dd></div>`;
+    expect(html).toContain(
+      `<dl class="sc-stats" aria-label="The last 2 weeks">${stat("Tasks done", "2")}${stat("Runs finished", "1")}${stat("Runs failed", "1")}${stat("Runs abandoned", "0")}</dl>`,
+    );
+    // No figure stands twice: a heading carries no count of what a figure under it says.
+    expect(html).not.toContain("sc-column-count");
+    expect(html.indexOf('class="sc-stats"')).toBeLessThan(html.indexOf('class="sc-chart"'));
     // By week: one chart of one series, each week named by its first day, with its figures
     // under it as a table for a reader who cannot see the columns.
     expect(html.match(/<figure class="sc-chart">/g)).toHaveLength(1);
@@ -281,18 +291,9 @@ describe("the figures", () => {
       '<tbody><tr><th scope="row">Oct 5</th><td>1</td></tr><tr><th scope="row">Oct 12</th><td>1</td></tr></tbody>',
     );
     expect(html.match(/class="sc-chart-bar"/g)).toHaveLength(2);
-    // The endings, the projects and the categories: a name, its figure in words, and its bar.
-    expect(html.match(/<ul class="sc-bars"/g)).toHaveLength(3);
-    expect(html).toContain(
-      '<span class="sc-bars-label">Finished</span><span class="sc-bars-value">1 run</span>',
-    );
-    expect(html).toContain(
-      '<span class="sc-bars-label">Failed</span><span class="sc-bars-value">1 run</span>',
-    );
-    // An ending no run had is said, and has no bar.
-    expect(html).toContain(
-      '<span class="sc-bars-label">Abandoned</span><span class="sc-bars-value">0 runs</span><svg class="sc-bars-bar sc-series-1" aria-hidden="true" focusable="false"></svg>',
-    );
+    expect(html).not.toContain("sc-legend");
+    // The projects and the categories: a name, its figure in words, and its bar.
+    expect(html.match(/<ul class="sc-bars"/g)).toHaveLength(2);
     expect(html).toContain('<span class="sc-bars-value">1 done · 2 runs</span>');
     expect(html).toContain('<span class="sc-bars-value">1 done · 0 runs</span>');
     expect(html).toContain("Engineering");
@@ -319,15 +320,49 @@ describe("the figures", () => {
     expect(html).toContain("Counted from the latest 100 tasks and 30 runs of each project.");
   });
 
-  it("say so in a pane with nothing in it, and draw weeks of nothing as weeks of nothing", () => {
+  it("say what would be counted where nothing was closed in the weeks, and draw no axis", () => {
     const html = renderToStaticMarkup(
-      <DeskFiguresView figures={figuresOf({ today: TODAY, tasks: [], runs: [] })} />,
+      <DeskFiguresView
+        figures={figuresOf({ today: TODAY, tasks: [], runs: [] })}
+        partial={{ tasks: 100, runs: 30 }}
+      />,
     );
+    expect(html).toContain("Nothing closed in these weeks");
+    expect(html).toContain(
+      "A task of yours that was done and a run of yours that ended in the last 8 weeks are counted here.",
+    );
+    expect(html).not.toContain("sc-chart");
+    expect(html).not.toContain("sc-stats");
+    expect(html).not.toContain("sc-bars");
+    // What it was counted from is still said.
+    expect(html).toContain("Counted from the latest 100 tasks and 30 runs of each project.");
+  });
+
+  it("say so in a pane with nothing in it, and draw no column of nothing where a run ended and no task was done", () => {
+    const html = renderToStaticMarkup(
+      <DeskFiguresView
+        figures={figuresOf({
+          today: TODAY,
+          tasks: [],
+          runs: [
+            {
+              project: web,
+              run: run({ status: "abandoned", endedAt: "2026-10-13T12:00:00.000Z" }),
+              title: "a",
+            },
+          ],
+        })}
+      />,
+    );
+    expect(html).toContain(
+      '<dt class="sc-stat-label">Runs abandoned</dt><dd class="sc-stat-value">1</dd>',
+    );
+    // The weeks and the categories each say there is nothing, in words.
     expect(html.match(/Nothing in these weeks\./g)).toHaveLength(2);
-    // Eight weeks with nothing done are eight points with no column, on a scale all the same.
-    expect(html.match(/<div class="sc-chart-slot">/g)).toHaveLength(8);
+    expect(html).not.toContain("sc-chart-frame");
     expect(html).not.toContain('class="sc-chart-bar"');
-    expect(html).not.toContain("sc-bars-fill");
+    // The project the run was in is there, with no bar for a task done.
+    expect(html).toContain('<span class="sc-bars-value">0 done · 1 run</span>');
   });
 
   it("speak Korean from the pack", () => {
@@ -337,6 +372,9 @@ describe("the figures", () => {
       </LanguageContext.Provider>,
     );
     expect(html).toContain("주별 완료");
+    expect(html).toContain("지난 2주");
+    expect(html).toContain('<dt class="sc-stat-label">완료한 작업</dt>');
+    expect(html).toContain('<dt class="sc-stat-label">실패한 런</dt>');
     expect(html).toContain("완료 1개 · 런 2개");
   });
 });

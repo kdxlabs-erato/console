@@ -937,13 +937,16 @@ export const ko: Messages = {
       results: "성과",
       inAll: "전체",
       byWeek: "주별",
-      week: "주",
       byDay: "일별",
       day: "날짜",
       best: "가장 잘된 것",
       bestBy: "기준",
       noMetrics: "이 컬렉션은 수치를 기록하지 않습니다.",
       noRows: "아직 기록된 수치가 없습니다.",
+      noFigures: {
+        title: "아직 수치가 없습니다",
+        body: "수치는 이 컬렉션의 metrics.json에 적는 행입니다. 행 하나에 항목, 날짜, 그날의 값이 들어갑니다. 데스크에서 일하는 에이전트가 기록 옆의 README대로 쓰며, 첫 행이 쓰이면 여기에 나타납니다.",
+      },
       noValue: "없음",
       seconds: (amount) => `${amount}초`,
       percent: (amount) => `${amount}%`,
@@ -970,8 +973,14 @@ export const ko: Messages = {
       noRuns: "열려 있는 내 런이 없습니다.",
     },
     figures: {
+      lead: (weeks) => (weeks === 1 ? "이번 주" : `지난 ${weeks}주`),
+      tasksDone: "완료한 작업",
+      ended: {
+        finished: "완료된 런",
+        failed: "실패한 런",
+        abandoned: "중단된 런",
+      },
       weeks: "주별 완료",
-      runs: "런이 끝난 방식",
       byProject: "프로젝트별",
       byCategory: "카테고리별",
       noCategory: "카테고리 없음",
@@ -979,6 +988,11 @@ export const ko: Messages = {
       done: (count) => `완료 ${count}개`,
       runsCount: (count) => `런 ${count}개`,
       partial: (tasks, runs) => `프로젝트마다 최근 작업 ${tasks}개와 런 ${runs}개까지 세었습니다.`,
+      empty: {
+        title: "이 기간에 끝난 일이 없습니다",
+        body: (weeks) =>
+          `${weeks === 1 ? "이번 주" : `지난 ${weeks}주`} 동안 완료된 내 작업과 끝난 내 런이 여기에 집계됩니다.`,
+      },
     },
     archive: {
       search: "아카이브에서 찾기",

@@ -83,15 +83,17 @@ Only where the member asked to see something. Paths below are under the desk's `
    - `ShareBar`: the parts of a whole in one bar, with its legend.
    - `Legend`: the series by their colours.
    - `FigureTable`: rows by columns, the numbers aligned.
+
+   A view of figures is laid out in this order: the few numbers that matter first (`Stats`), then one chart, then what breaks them down (`BarList`). No figure stands twice at one level: a chart carries its own figures as a table for a reader who cannot see it, so a `FigureTable` beside it is for figures the chart does not show. Where there is nothing yet, the view says in a sentence what would fill it (`EmptyState`) and draws no empty axis. The ready views below are laid out so.
 5. **What is ready,** for a member who wants exactly that, in `<package>/README.md`, "A desk's pages". Each shows the collections of [collections.md](collections.md) or the member's own work on the board:
    - `deskPage()`: all of the below as one page, one more entry of `pages`, at `/pages/desk` (`DESK_PAGE_KEY`).
    - `DeskRecords`: the collections, read from `/records/` and shown whole, composed of the next four; it opens on the list of collections, and where an item was used is on the item's own view, so a member who asked to see that at a glance wants a page of their own.
    - `DeskCollections`: the collections, each with its items counted by status.
    - `DeskCollectionView`: a collection's items, narrowed by status.
-   - `DeskItemView`: an item with its preview, its files, where it was used and how it did by day.
-   - `DeskCollectionResults`: each metric in all and by week, the ratios, and the items that did best.
+   - `DeskItemView`: an item with its preview, how it did as figures, where it was used, its files, and its figures by day.
+   - `DeskCollectionResults`: each metric and each ratio in all, then one metric the member picks: by week as a chart, and the items that did best by it.
    - `DeskStanding`: the decisions that wait, the open runs and the open tasks.
-   - `DeskFiguresView`: what was done by week and how the runs ended, by project and by category.
+   - `DeskFiguresView`: how many tasks were done and how the runs ended, then what was done by week, by project and by category.
    - `DeskArchive`: the closed tasks and the ended runs, found by words.
    - `readDeskRecords`: reads the collections for a page of one's own, every file bounded and parsed.
 6. **Build, serve, show.** `npm run build`, which went well where it ended in 0 and `dist/index.html` is there, not by what it printed; then `npm run serve` and `http://127.0.0.1:11197/`: the page answers, and `/api/v1/me` there names the member. The page is checked with what the desk keeps, an empty state where it keeps nothing yet: no sample is made to fill it. Then the member is given the address, with the server left up, and asked whether it is what they wanted to see; the run stops there for them, and phases 5 and 6 wait for their answer, so that what is written down and pushed is what they saw. The server is the agent's own to stop, by ending the process it started, once they have looked or said to: say that it was stopped, and how the pages are started again.

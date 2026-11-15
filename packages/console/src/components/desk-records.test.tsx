@@ -324,16 +324,27 @@ describe("one item", () => {
     expect(html).not.toContain("<img");
   });
 
-  it("shows how it did: its figures over every day, and each day's", () => {
+  it("shows how it did: its figures over every day with the run each came by, and last each day's", () => {
     const html = view([]);
     const stat = (label: string, value: string) =>
       `<div class="sc-stat"><dt class="sc-stat-label">${label}</dt><dd class="sc-stat-value">${value}</dd></div>`;
+    const run = (label: string, value: string) =>
+      `<div class="sc-stat"><dt class="sc-stat-label">${label}</dt><dd class="sc-stat-value">${value}</dd><dd class="sc-stat-trend">`;
     expect(html).toContain('<dl class="sc-stats" aria-label="Results">');
-    expect(html).toContain(stat("Impressions", "4,000"));
-    expect(html).toContain(stat("Clicks", "80"));
+    // A metric with a figure on two days has the run it came by; one day is no run, and a
+    // ratio has none.
+    expect(html).toContain(run("Impressions", "4,000"));
+    expect(html).toContain(run("Clicks", "80"));
     expect(html).toContain(stat("Watched through", "40%"));
     expect(html).toContain(stat("View time", "7.3 s"));
     expect(html).toContain(stat("Clicks per impression", "2%"));
+    // What it is and how it did come before where it was used, and the days' figures last.
+    const at = (label: string) => html.indexOf(`aria-label="${label}"`);
+    expect(at("Note")).toBeGreaterThan(-1);
+    expect(at("Results")).toBeGreaterThan(at("Note"));
+    expect(at("Where it was used")).toBeGreaterThan(at("Results"));
+    expect(at("By day")).toBeGreaterThan(at("Where it was used"));
+    expect(html).toContain('<h3 class="sc-section-title">By day</h3>');
     // Each day's figures are a row of a table, a column a metric: nothing where a day has none.
     expect(html).toContain(
       '<thead><tr><th scope="col">Day</th><th scope="col">Impressions</th><th scope="col">Clicks</th><th scope="col">Watched through</th><th scope="col">View time</th></tr></thead>',
@@ -411,7 +422,18 @@ describe("a collection's results", () => {
   const results = resultsOf({ collection: ads, rows, today: "2026-11-11", weeks: 2 });
   const best = bestItems({ collection: ads, items, rows, by: "clicks" });
 
-  it("are each metric in all as a figure, by week as a chart with the weeks' figures under them, and what did best as bars", () => {
+  const shown = (by?: string, collection: RecordsCollection = ads) =>
+    renderToStaticMarkup(
+      <DeskCollectionResults
+        collection={collection}
+        results={resultsOf({ collection, rows, today: "2026-11-11", weeks: 2 })}
+        best={bestItems({ collection, items, rows, by })}
+        onBy={() => undefined}
+        itemHref={itemHref}
+      />,
+    );
+
+  it("lead with each metric in all as a figure, then the metric picked: by week as one chart, and what did best as bars", () => {
     const html = renderToStaticMarkup(
       <DeskCollectionResults
         collection={ads}
@@ -421,40 +443,36 @@ describe("a collection's results", () => {
         itemHref={itemHref}
       />,
     );
-    for (const section of ["In all", "By week", "What did best"]) {
+    for (const section of ["In all", "Clicks", "By week", "What did best"]) {
       expect(html).toContain(`aria-label="${section}"`);
     }
-    // In all: a figure a metric and a ratio, a metric's with the run it came by.
+    // In all: a figure a metric and a ratio. One week of the two has rows, which is no run,
+    // so no figure has a sparkline.
     expect(html).toContain('<dl class="sc-stats" aria-label="In all">');
-    expect(html).toContain(
-      '<dt class="sc-stat-label">Impressions</dt><dd class="sc-stat-value">4,000</dd><dd class="sc-stat-trend">',
-    );
-    expect(html).toContain(
-      '<div class="sc-stat"><dt class="sc-stat-label">Clicks per impression</dt><dd class="sc-stat-value">2%</dd></div>',
-    );
-    // By week: a chart a metric, since each has a scale of its own, each week named by its
-    // first day; a share and a time carry their unit on the scale.
-    expect(html.match(/<figure class="sc-chart sc-chart-short">/g)).toHaveLength(4);
-    expect(html).toContain(
-      '<h4 class="sc-eyebrow">Impressions</h4><figure class="sc-chart sc-chart-short"><figcaption class="sc-visually-hidden">Impressions · By week</figcaption>',
-    );
-    expect(html).toContain('<span class="sc-chart-label">Nov 2</span>');
-    expect(html).toContain("<title>Nov 9: 4,000</title>");
-    expect(html).toContain('<span class="sc-chart-tick">40%</span>');
-    expect(html).toContain("<title>Nov 9: 7.3 s</title>");
-    // The weeks' figures stand under the charts as one table: nothing where a week has no row.
-    expect(html.match(/<table/g)).toHaveLength(1);
-    expect(html).toContain(
-      '<thead><tr><th scope="col">Week</th><th scope="col">Impressions</th><th scope="col">Clicks</th><th scope="col">Watched through</th><th scope="col">View time</th></tr></thead>',
-    );
-    expect(html).toMatch(
-      /<tr><th scope="row">Nov 2\s.\s8<\/th><td><\/td><td><\/td><td><\/td><td><\/td><\/tr>/,
-    );
-    expect(html).toMatch(
-      /<tr><th scope="row">Nov 9\s.\s15<\/th><td>4,000<\/td><td>80<\/td><td>40%<\/td><td>7\.3 s<\/td><\/tr>/,
-    );
-    // What did best: a ranking, each item a link with its status after it and its figure.
+    const stat = (label: string, value: string) =>
+      `<div class="sc-stat"><dt class="sc-stat-label">${label}</dt><dd class="sc-stat-value">${value}</dd></div>`;
+    expect(html).toContain(stat("Impressions", "4,000"));
+    expect(html).toContain(stat("Clicks", "80"));
+    expect(html).toContain(stat("Clicks per impression", "2%"));
+    expect(html).not.toContain("sc-stat-trend");
+    // The metric looked at closer is the one picked, and is picked in one place for both.
+    expect(html.match(/<select/g)).toHaveLength(1);
     expect(html).toContain('<option value="clicks" selected="">By Clicks</option>');
+    expect(html.indexOf("<select")).toBeLessThan(html.indexOf('aria-label="By week"'));
+    // By week: one chart, of that metric, each week named by its first day. Its figures are
+    // the chart's own, under it as a table for a reader who cannot see it and said to the
+    // pointer: the page shows no table of weeks beside it.
+    expect(html.match(/<figure class="sc-chart">/g)).toHaveLength(1);
+    expect(html).toContain('class="sc-chart-columns"');
+    expect(html).toContain('<span class="sc-chart-label">Nov 2</span>');
+    expect(html).toContain("<title>Nov 9: 80</title>");
+    expect(html).toContain("<caption>Clicks · By week</caption>");
+    expect(html).toContain(
+      '<tbody><tr><th scope="row">Nov 2</th><td></td></tr><tr><th scope="row">Nov 9</th><td>80</td></tr></tbody>',
+    );
+    expect(html.match(/<table/g)).toHaveLength(1);
+    expect(html).not.toContain("sc-figures");
+    // What did best: a ranking, each item a link with its status after it and its figure.
     expect(html).toContain('<ol class="sc-bars" aria-label="What did best">');
     expect(html).toContain(
       '<span class="sc-bars-label"><a href="/pages/desk?collection=ad-creatives&amp;item=hook-1">The &lt;b&gt;first&lt;/b&gt; hook</a> <span class="sc-badge',
@@ -464,6 +482,72 @@ describe("a collection's results", () => {
     expect(html).not.toContain("The second hook");
     // No look of its own.
     expect(html).not.toContain("style=");
+  });
+
+  it("draw what is counted as columns and a share as a line, each with its unit on the scale", () => {
+    // A share is followed from week to week: a line, its scale in its unit.
+    const share = shown("watched");
+    expect(share).toContain('<option value="watched" selected="">By Watched through</option>');
+    expect(share).toContain('class="sc-chart-lines"');
+    expect(share).not.toContain('class="sc-chart-columns"');
+    expect(share).toContain('<span class="sc-chart-tick">40%</span>');
+    expect(share).toContain('<span class="sc-bars-value">40%</span>');
+    // A time is counted in a week: columns, in its unit.
+    const time = shown("view-time");
+    expect(time).toContain('class="sc-chart-columns"');
+    expect(time).toContain("<title>Nov 9: 7.3 s</title>");
+  });
+
+  it("show the run a metric came by where it has figures in two weeks or more", () => {
+    const html = renderToStaticMarkup(
+      <DeskCollectionResults
+        collection={ads}
+        results={resultsOf({
+          collection: ads,
+          rows: [...rows, { item: "hook-1", on: "2026-11-03", values: { impressions: 500 } }],
+          today: "2026-11-11",
+          weeks: 2,
+        })}
+        best={best}
+        onBy={() => undefined}
+        itemHref={itemHref}
+      />,
+    );
+    expect(html).toContain(
+      '<dt class="sc-stat-label">Impressions</dt><dd class="sc-stat-value">4,500</dd><dd class="sc-stat-trend">',
+    );
+    // Clicks has figures in one week still.
+    expect(html).toContain(
+      '<dt class="sc-stat-label">Clicks</dt><dd class="sc-stat-value">80</dd></div>',
+    );
+  });
+
+  it("name the one metric of a collection over its chart, with nothing to pick", () => {
+    const one: RecordsCollection = {
+      title: "Posts",
+      metrics: [{ key: "impressions", label: "Impressions", unit: "count" }],
+    };
+    const html = shown(undefined, one);
+    expect(html).not.toContain("<select");
+    expect(html).toContain('<h3 class="sc-section-title">Impressions</h3>');
+    expect(html.match(/<figure class="sc-chart">/g)).toHaveLength(1);
+  });
+
+  it("say what would fill them where a collection keeps figures and has none yet, and draw no axis", () => {
+    const html = renderToStaticMarkup(
+      <DeskCollectionResults
+        collection={ads}
+        results={resultsOf({ collection: ads, rows: [], today: "2026-11-11" })}
+        best={bestItems({ collection: ads, items, rows: [], by: undefined })}
+        onBy={() => undefined}
+        itemHref={itemHref}
+      />,
+    );
+    expect(html).toContain("No figures here yet");
+    expect(html).toContain("metrics.json");
+    expect(html).not.toContain("sc-chart");
+    expect(html).not.toContain("sc-stats");
+    expect(html).not.toContain("<select");
   });
 
   it("say so of a collection that keeps no figures", () => {

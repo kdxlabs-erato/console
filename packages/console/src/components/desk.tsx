@@ -10,7 +10,7 @@ import {
   standingOf,
 } from "../desk.js";
 import { useLanguage, useWords } from "../i18n/index.js";
-import { BarList, Chart } from "./charts.js";
+import { BarList, Chart, Stat, Stats } from "./charts.js";
 import { ShowMore, usePaged } from "./paged.js";
 import { ProjectMark } from "./projects.js";
 import { RunStatusBadge } from "./runs.js";
@@ -21,6 +21,7 @@ import {
   CategoryBadge,
   CopyButton,
   cx,
+  EmptyState,
   PersonChip,
   StateBadge,
   Time,
@@ -235,8 +236,10 @@ export interface DeskFiguresViewProps {
 }
 
 /**
- * The figures: what was done by week, as columns; how the runs ended, and what was done by
- * project and by category, each as bars with its figure in words beside it.
+ * The figures of the weeks counted, the few that matter first: how many tasks were done and
+ * how the runs ended, a number each; then what was done week by week, as one chart; then the
+ * same by project and by category, each as bars with its figure in words beside it. Where
+ * nothing was closed in those weeks the view says what would be counted, and draws no axis.
  */
 export function DeskFiguresView(props: DeskFiguresViewProps) {
   const words = useWords();
@@ -244,34 +247,48 @@ export function DeskFiguresView(props: DeskFiguresViewProps) {
   const { tag } = useLanguage();
   const { weeks, runs, byProject, byCategory, done } = props.figures;
   const ended = DESK_ENDINGS.reduce((sum, ending) => sum + runs[ending], 0);
+  const partial = props.partial !== undefined && (
+    <p className="sc-muted">{figures.partial(props.partial.tasks, props.partial.runs)}</p>
+  );
+  if (done === 0 && ended === 0) {
+    return (
+      <div className="sc-desk-figures">
+        <EmptyState title={figures.empty.title} body={figures.empty.body(weeks.length)} />
+        {partial}
+      </div>
+    );
+  }
   return (
     <div className="sc-desk-figures">
+      <section className="sc-task-section" aria-label={figures.lead(weeks.length)}>
+        <h2 className="sc-section-title">{figures.lead(weeks.length)}</h2>
+        {/* The endings are told apart by their names: a colour each would say good and bad
+            where the tones already do. */}
+        <Stats label={figures.lead(weeks.length)}>
+          <Stat label={figures.tasksDone} value={done.toLocaleString(tag)} />
+          {DESK_ENDINGS.map((ending) => (
+            <Stat
+              key={ending}
+              label={figures.ended[ending]}
+              value={runs[ending].toLocaleString(tag)}
+            />
+          ))}
+        </Stats>
+      </section>
       <section className="sc-task-section" aria-label={figures.weeks}>
-        <h2 className="sc-section-title">
-          {figures.weeks} <span className="sc-column-count">{done}</span>
-        </h2>
+        <h2 className="sc-section-title">{figures.weeks}</h2>
         <Chart
           title={figures.weeks}
           language={tag}
           points={weeks.map((week) => weekStartLabel(week.start, tag))}
-          series={[{ name: words.vocabulary.state.done, values: weeks.map((week) => week.done) }]}
-        />
-      </section>
-      <section className="sc-task-section" aria-label={figures.runs}>
-        <h2 className="sc-section-title">
-          {figures.runs} <span className="sc-column-count">{ended}</span>
-        </h2>
-        {/* The endings are told apart by their names: a colour each would say good and bad
-            where the tones already do. */}
-        <BarList
-          label={figures.runs}
-          language={tag}
-          rows={DESK_ENDINGS.map((ending) => ({
-            id: ending,
-            label: words.vocabulary.runStatus[ending],
-            value: runs[ending],
-            words: figures.runsCount(runs[ending]),
-          }))}
+          // No task done in these weeks is a sentence, never columns of nothing over an axis.
+          series={[
+            {
+              name: words.vocabulary.state.done,
+              values: weeks.map((week) => (done === 0 ? undefined : week.done)),
+            },
+          ]}
+          empty={figures.none}
         />
       </section>
       <div className="sc-desk-pair">
@@ -315,9 +332,7 @@ export function DeskFiguresView(props: DeskFiguresViewProps) {
           )}
         </section>
       </div>
-      {props.partial !== undefined && (
-        <p className="sc-muted">{figures.partial(props.partial.tasks, props.partial.runs)}</p>
-      )}
+      {partial}
     </div>
   );
 }

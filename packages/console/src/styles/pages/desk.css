@@ -23,21 +23,6 @@
   gap: var(--sc-space-6);
 }
 
-/* A collection's charts by week, one a metric: side by side where each still has the width to
-   be read, one under the other below that; each under its metric's name. */
-.sc-desk-charts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
-  align-items: start;
-  gap: var(--sc-space-5) var(--sc-space-6);
-}
-
-.sc-desk-chart {
-  display: grid;
-  gap: var(--sc-space-2);
-  min-width: 0;
-}
-
 /* Two panes of figures side by side where the window has the room. */
 .sc-desk-pair {
   display: grid;
