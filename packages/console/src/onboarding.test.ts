@@ -118,7 +118,7 @@ describe("the onboarding task of an agent account", () => {
       [
         "## When you are done",
         "",
-        "You are done when nothing of this task waits on anyone: every item above is set up, and every decision you raised is answered and acted on. Until then the run stays open and waits, since a decision is asked on a run and a run that is finished asks none. Then report what is set up, and finish the task.",
+        "You are done when nothing of this task waits on anyone: every item above is set up, or was answered as not to be done now, and every decision you raised is answered and acted on. Until then the run stays open and waits, since a decision is asked on a run and a run that is finished asks none. Then report what is set up and, item by item, what is not done and who said so, and finish the task.",
         "",
       ].join("\n"),
     );
