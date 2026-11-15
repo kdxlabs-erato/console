@@ -720,7 +720,12 @@ describe("the console command", () => {
       expect(begun(calls)).toBe(1);
       expect(claims(calls)).toBe(1);
       expect(time.now()).toBe(START);
-      expect(second.out()).toMatch(/^Connected as "Claude Code on laptop" to Acme at /);
+      // Where the token is kept is said without the file's path: under an agent the path would
+      // be handed to the one reader that must never open that file.
+      expect(second.out()).toBe(
+        'Connected as "Claude Code on laptop" to Acme at https://console.test as alice (member), the default console here. The token is kept on this machine by the command, and never shown.\n' +
+          "Only a project's checkout is bound to it: console use <key> (console projects lists them).\n",
+      );
       expect(memory.kept()).toEqual({
         default: ORIGIN,
         logins: [
@@ -1062,7 +1067,10 @@ describe("the console command", () => {
     expect(h.out()).toContain(
       "Signed in to Acme at https://console.test as @mira (mira@acme.example, member), the account itself",
     );
-    expect(h.out()).toContain("The session is kept while it is used");
+    // At a terminal, a person is told the file its secret is kept in.
+    expect(h.out()).toContain(
+      "The session is kept while it is used; its secret is kept in /home/alice/.config/skillcdn-console/credentials.json.\n",
+    );
     expect(memory.kept()?.logins).toEqual([
       {
         url: ORIGIN,
@@ -1074,6 +1082,40 @@ describe("the console command", () => {
       },
     ]);
     expect(h.out()).not.toContain("cns_");
+    // Where no terminal shows the words, an agent reads them: the file is not named to it,
+    // for the account itself as for an agent's token, and for a token given by hand.
+    const unattended = fakeConsole({
+      "POST /api/v1/connect": { status: 201, body: CONNECTION },
+      "POST /api/v1/connect/claim": {
+        body: { status: "signed_in", session, secret: "cns_a_handed" },
+      },
+      "GET /api/v1/me": { body: itself },
+    });
+    const under = memoryStore();
+    const begun = harness({ fetch: unattended.fetch, store: under.store, terminal: false });
+    expect(await runCli(["login", "--url", ORIGIN, "--self"], begun.io)).toBe(EXIT.ok);
+    const agentRead = harness({ fetch: unattended.fetch, store: under.store, terminal: false });
+    expect(await runCli(["login", "--url", ORIGIN, "--self"], agentRead.io)).toBe(EXIT.ok);
+    expect(agentRead.out()).toBe(
+      "Signed in to Acme at https://console.test as @mira (mira@acme.example, member), the account itself, the default console here: what this command does, mira@acme.example does, and no agent is named beside it. The session is kept while it is used; its secret is kept on this machine by the command, and never shown.\n" +
+        "Only a project's checkout is bound to it: console use <key> (console projects lists them).\n",
+    );
+    const byHand = harness({
+      fetch: fakeConsole({ "GET /api/v1/me": { body: ME } }).fetch,
+      store: memoryStore().store,
+      readStdin: async () => "cns_t_new\n",
+      terminal: false,
+    });
+    expect(await runCli(["login", "--url", ORIGIN, "--token-stdin"], byHand.io)).toBe(EXIT.ok);
+    expect(byHand.out()).toContain(
+      "The token is kept on this machine by the command, and never shown.\n",
+    );
+    const read = harness({ fetch, store: under.store, terminal: false });
+    expect(await runCli(["logins"], read.io)).toBe(EXIT.ok);
+    for (const said of [begun, agentRead, byHand, read]) {
+      expect(said.out() + said.err()).not.toContain("credentials.json");
+      expect(said.out() + said.err()).not.toContain("/home/alice");
+    }
     // What is kept is presented as a token is, and the listings say what it is.
     const listed = harness({ fetch, store: memory.store });
     expect(await runCli(["logins"], listed.io)).toBe(EXIT.ok);

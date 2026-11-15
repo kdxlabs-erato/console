@@ -1098,10 +1098,14 @@ async function keep(
   // directory, was bound to a project because it said so.
   const binding =
     "Only a project's checkout is bound to it: console use <key> (console projects lists them).";
+  // Where it is kept: the file, for a person at a terminal. Where no terminal shows the words,
+  // an agent reads them, and the path of the one file it must never open is not handed to it.
+  const where =
+    io.terminal === false ? "on this machine by the command, and never shown" : `in ${kept}`;
   say(
     self
-      ? `Signed in to ${me.workspace.name} at ${url} as ${whoOf(person)}, the account itself${standing}: what this command does, ${person.login} does, and no agent is named beside it. The session is kept while it is used; its secret is kept in ${kept}.\n${binding}\n`
-      : `${agent === undefined ? "Signed in" : `Connected as "${agent}"`} to ${me.workspace.name} at ${url} as ${whoOf(person)}${standing}. The token is kept in ${kept}.\n${binding}\n`,
+      ? `Signed in to ${me.workspace.name} at ${url} as ${whoOf(person)}, the account itself${standing}: what this command does, ${person.login} does, and no agent is named beside it. The session is kept while it is used; its secret is kept ${where}.\n${binding}\n`
+      : `${agent === undefined ? "Signed in" : `Connected as "${agent}"`} to ${me.workspace.name} at ${url} as ${whoOf(person)}${standing}. The token is kept ${where}.\n${binding}\n`,
   );
   return EXIT.ok;
 }
