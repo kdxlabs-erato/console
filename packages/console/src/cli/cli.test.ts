@@ -692,10 +692,14 @@ describe("the console command", () => {
       expect(await runCli(["login", "--url", ORIGIN, "--agent", "Claude Code"], first.io)).toBe(
         EXIT.ok,
       );
-      // Everything a person needs, in what the host shows when the command ends: now.
+      // Everything a person needs, in what the host shows when the command ends: now. The
+      // telling is a sentence of its own and comes before the command, since an agent that read
+      // the two in one sentence ran the command first and told its person after; and the wait
+      // of the next call is said apart from the code's end, which an agent took for the wait.
       expect(first.out()).toBe(
         "To connect this agent, a person opens https://console.test/connect/ABCD-EFGH signed in, checks that the page shows the code ABCD-EFGH, names the agent and approves.\n" +
-          `Tell the person that address and that code now, then run console login --url https://console.test once more: it waits for the approval, until ${WHEN}.\n`,
+          "Tell the person that address and that code now, in a message of its own, before you run the command again.\n" +
+          `Then run console login --url https://console.test again: it waits for the approval up to 90 seconds a call, and the code lasts until ${WHEN}.\n`,
       );
       // Nothing was waited for, and nothing claimed.
       expect(claims(calls)).toBe(0);
@@ -811,7 +815,7 @@ describe("the console command", () => {
       expect(await runCli(["login", "--url", ORIGIN, "--self"], m.io)).toBe(EXIT.ok);
       expect(other.calls[0]?.body).toEqual({ agent: "An agent", as: "self" });
       expect(m.out()).toContain(
-        "Have that done now, then run console login --url https://console.test --self once more",
+        "Have that done now, before you run the command again.\nThen run console login --url https://console.test --self again: it waits for the approval up to 90 seconds a call, and the code lasts until ",
       );
       expect(mixed.kept()?.pending).toEqual([
         { ...PENDING, code: "WXYZ-1234", page: `${ORIGIN}/connect/WXYZ-1234`, self: true },

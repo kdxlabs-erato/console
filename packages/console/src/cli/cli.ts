@@ -1221,9 +1221,13 @@ const login: Command = async (args, io) => {
     // connection says nothing before its wait where no terminal would show it.
     const told = !resumed && seconds === 0;
     if (!resumed || attended) {
+      // The telling is a sentence of its own, before the one that names the command: read in
+      // one sentence, an agent ran the command first and told its person after. And the wait
+      // of the next call is said apart from the code's end, which an agent took for how long
+      // that call waits, and gave it half an hour.
       io.stdout(
         told
-          ? `${asked(pending.page, pending.code)}\n${self ? "Have that done" : "Tell the person that address and that code"} now, then run ${again} once more: it waits for the approval, until ${until}.\n`
+          ? `${asked(pending.page, pending.code)}\n${self ? "Have that done now" : "Tell the person that address and that code now, in a message of its own"}, before you run the command again.\nThen run ${again} again: it waits for the approval up to ${DEFAULT_LOGIN_WAIT_SECONDS} seconds a call, and the code lasts until ${until}.\n`
           : `${asked(pending.page, pending.code)}\nWaiting for that, until ${until}.\n`,
       );
     }
