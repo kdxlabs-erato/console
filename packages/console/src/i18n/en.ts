@@ -1067,11 +1067,17 @@ export const en = {
       nothingFound: "Nothing found by these words.",
       older: "Read older ones",
     },
-    /** On the Agents page: a desk of a person's own, and the command that makes one. */
+    /** On the Agents page: a desk of a person's own, and what to tell an agent for one (ADR-0121). */
     command: {
       title: "A desk of your own",
       gives:
-        "Makes a folder desk, a repository of your own that your agent starts in: its instructions, a place for your projects, records of what you made, and with --web pages of your own beside the console's. It says what to tell your agent next.",
+        "A desk is a repository of your own, at your own git account, that your agent starts in: its instructions, a place for your projects, records of what you made, and pages of your own beside the console's.",
+      tellYourAgent:
+        "Start your agent where the folder desk is to be made, and tell it, in its own chat:",
+      quote: (origin: string) =>
+        `Run these three commands here. Tell me the address and the code the second shows (leave it out if console whoami already names me), then set my desk up as the third says:\nnpm install -g @skillcdn/console\nconsole login --url ${origin}\nconsole desk --web`,
+      doesTheRest:
+        "An agent that can run commands does the rest: it installs the command, connects, makes the folder desk with your pages, and sets it up as a repository at your git account, asking which account that is.",
     },
   },
 

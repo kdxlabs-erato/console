@@ -64,7 +64,7 @@ import {
   DecisionList,
   type DecisionListProps,
 } from "./components/decision-list.js";
-import { DeskCommand } from "./components/desk.js";
+import { DeskWords } from "./components/desk.js";
 import { EventFeed, type EventFeedProps } from "./components/event-feed.js";
 import { GoalForm, GoalList, type GoalListProps, GoalView, goalMonth } from "./components/goals.js";
 import { HomeGrid, type HomeGridProps, type ProjectGlance } from "./components/home.js";
@@ -3467,7 +3467,7 @@ function WorkspacePage(props: {
               empty={<EmptyState title={agents.empty.title} body={agents.empty.body} />}
             />
             <ConnectWords origin={origin} />
-            <DeskCommand />
+            <DeskWords origin={origin} />
           </section>
         )}
       </>

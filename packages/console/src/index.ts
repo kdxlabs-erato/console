@@ -68,18 +68,17 @@ export {
   type DecisionLogProps,
 } from "./components/decision-list.js";
 export {
-  DESK_COMMAND,
   DESK_VIEWS,
   DeskArchive,
   type DeskArchiveProps,
-  DeskCommand,
-  type DeskCommandProps,
   DeskFiguresView,
   type DeskFiguresViewProps,
   DeskStanding,
   type DeskStandingProps,
   type DeskView,
   DeskViews,
+  DeskWords,
+  type DeskWordsProps,
 } from "./components/desk.js";
 export {
   DeskCollectionResults,

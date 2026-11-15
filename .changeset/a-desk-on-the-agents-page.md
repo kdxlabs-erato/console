@@ -2,4 +2,4 @@
 "@skillcdn/console": patch
 ---
 
-The Agents page says where a desk of one's own comes from: under "Connecting an agent", one line with the command that makes one, `console desk`, shown to be copied (`DeskCommand`, `DESK_COMMAND`).
+The Agents page says where a desk of one's own comes from: under "Connecting an agent", what to tell an agent for one, shown to be copied whole as the words for connecting are: the command's install, the connection to this console, and `console desk --web`, which the agent then follows to set the desk up (`DeskWords`, which takes the console's origin).

@@ -414,26 +414,29 @@ export function DeskArchive(props: DeskArchiveProps) {
   );
 }
 
-export interface DeskCommandProps {
-  /** The command that makes a desk, as it is typed. */
-  readonly command?: string | undefined;
+export interface DeskWordsProps {
+  /** The console's origin, which the words name for the agent to connect to. */
+  readonly origin: string;
 }
 
-/** The one command that makes a desk of a person's own, shown to be copied. */
-export const DESK_COMMAND = "console desk";
-
-/** A desk of a person's own, on the Agents page: what it is in a line, and the command that makes one. */
-export function DeskCommand(props: DeskCommandProps) {
+/**
+ * A desk of a person's own, on the Agents page (ADR-0121): what it is in a line, and what to
+ * tell an agent for one, from installing the command to making the desk, copied whole as the
+ * words for connecting an agent are above it.
+ */
+export function DeskWords(props: DeskWordsProps) {
   const words = useWords().desk.command;
-  const command = props.command ?? DESK_COMMAND;
+  const quote = words.quote(props.origin);
   return (
     <section className="sc-panel sc-desk-command" aria-label={words.title}>
       <h2 className="sc-section-title">{words.title}</h2>
       <p>{words.gives}</p>
+      <p>{words.tellYourAgent}</p>
       <div className="sc-copyable">
-        <pre className="sc-code">{command}</pre>
-        <CopyButton text={command} size="sm" />
+        <pre className="sc-code">{quote}</pre>
+        <CopyButton text={quote} size="sm" />
       </div>
+      <p>{words.doesTheRest}</p>
     </section>
   );
 }

@@ -6,12 +6,11 @@ import { DESK_PAGE_KEY, deskHref, deskPage, deskViewOf } from "../desk-page.js";
 import { KOREAN, LanguageContext } from "../i18n/index.js";
 import { matchRoute } from "../router.js";
 import {
-  DESK_COMMAND,
   DeskArchive,
-  DeskCommand,
   DeskFiguresView,
   DeskStanding,
   DeskViews,
+  DeskWords,
   weekLabel,
 } from "./desk.js";
 
@@ -386,17 +385,29 @@ describe("the archive", () => {
 });
 
 describe("a desk of one's own, on the Agents page", () => {
-  it("is one command shown to be copied, in the part the invitation's line is shown in", () => {
-    const html = renderToStaticMarkup(<DeskCommand />);
-    expect(DESK_COMMAND).toBe("console desk");
+  it("is what to tell an agent, from installing the command to making the desk, shown to be copied", () => {
+    const html = renderToStaticMarkup(<DeskWords origin="https://console.acme.example" />);
     expect(html).toContain('aria-label="A desk of your own"');
-    expect(html).toContain('<div class="sc-copyable"><pre class="sc-code">console desk</pre>');
+    // The words are for an agent that has nothing yet: the command's install, the connection to
+    // this console, then the desk with its pages, in that order, in one block copied whole.
+    const quote = /<div class="sc-copyable"><pre class="sc-code">([^<]*)<\/pre>/.exec(html)?.[1];
+    expect(quote?.split("\n").slice(1)).toEqual([
+      "npm install -g @skillcdn/console",
+      "console login --url https://console.acme.example",
+      "console desk --web",
+    ]);
+    expect(quote?.split("\n")[0]).toContain("set my desk up");
+    // One block to copy, as connecting an agent has: nothing typed by hand beside it.
+    expect(html.match(/sc-copyable/g)).toHaveLength(1);
     const korean = renderToStaticMarkup(
       <LanguageContext.Provider value={KOREAN}>
-        <DeskCommand />
+        <DeskWords origin="https://console.acme.example" />
       </LanguageContext.Provider>,
     );
-    expect(korean).toContain("console desk");
+    expect(korean).toContain(
+      "console login --url https://console.acme.example\nconsole desk --web",
+    );
     expect(korean).toContain("내 데스크");
+    expect(korean).toContain("대화창에서 이렇게 말하세요");
   });
 });
