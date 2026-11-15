@@ -1,8 +1,9 @@
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 import {
   COLOR_NAMES,
   type ColorName,
   MAX_PROJECT_DESCRIPTION_LENGTH,
+  MAX_PROJECT_ICON_BYTES,
   MAX_PROJECT_KEY_LENGTH,
   MAX_PROJECT_NAME_LENGTH,
   MAX_PROJECT_SYMBOL_LENGTH,
@@ -141,18 +142,34 @@ export function ProjectForm(props: ProjectFormProps) {
   const [symbol, setSymbol] = useState(project?.symbol ?? "");
   /** The image for the mark: a file chosen, `null` for none any more, nothing to keep the project's. */
   const [icon, setIcon] = useState<File | null | undefined>(undefined);
-  const chosenSrc = useMemo(
-    () => (icon instanceof File ? URL.createObjectURL(icon) : undefined),
-    [icon],
-  );
-  useEffect(
-    () => () => {
-      if (chosenSrc !== undefined) {
-        URL.revokeObjectURL(chosenSrc);
+  // The image chosen, as an address the mark can show before it is saved: the file's own bytes,
+  // read here. The pages' policy lets an image come from the console or from a `data:` address
+  // and from nowhere else, so an address of the browser's own for the file (`blob:`) is refused
+  // and the mark would stay its symbol. A file larger than an icon may be is not read: the
+  // console refuses it when the form is sent.
+  const [chosenSrc, setChosenSrc] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    setChosenSrc(undefined);
+    if (
+      !(icon instanceof File) ||
+      icon.size > MAX_PROJECT_ICON_BYTES ||
+      typeof FileReader === "undefined"
+    ) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setChosenSrc(reader.result);
       }
-    },
-    [chosenSrc],
-  );
+    };
+    reader.readAsDataURL(icon);
+    // Another file chosen, or the form gone, before this one was read: its answer is dropped.
+    return () => {
+      reader.onload = null;
+      reader.abort();
+    };
+  }, [icon]);
   const kept = icon === undefined ? (project?.icon ?? null) : null;
   /** The mark as it will be, from what is typed and chosen so far. */
   const preview = {

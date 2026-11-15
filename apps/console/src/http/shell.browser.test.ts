@@ -295,3 +295,43 @@ describe("the header over the pages", () => {
     }
   });
 });
+
+/** A picture of one pixel, from its bytes: no file on the machine is read. */
+const ONE_PIXEL = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+describe("a picture chosen for a project's mark", () => {
+  it("is shown on the mark before it is saved, under the pages' own policy", async () => {
+    const context = await browser.newContext({ locale: "en-US" });
+    const page = await context.newPage();
+    // What the pages' policy refused, as the browser says it.
+    const refused: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" && /Content Security Policy/i.test(message.text())) {
+        refused.push(message.text());
+      }
+    });
+    try {
+      await page.goto(console_.signInUrl(BROWSER_ADMIN));
+      await page.waitForURL((url) => url.origin === console_.origin && url.pathname === "/");
+      await page.goto(`${console_.origin}/projects/new`);
+      await page
+        .locator('input[type="file"]')
+        .setInputFiles({ name: "mark.png", mimeType: "image/png", buffer: ONE_PIXEL });
+      // The picture is on the mark and loaded: a picture the policy refuses never loads, and
+      // the mark goes back to its symbol without a word.
+      await expect
+        .poll(() =>
+          page.evaluate(
+            `(() => { const image = document.querySelector(".sc-mark-row .sc-mark-image"); return image !== null && image.complete && image.naturalWidth > 0; })()`,
+          ),
+        )
+        .toBe(true);
+      expect(refused).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+});
