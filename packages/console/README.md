@@ -153,7 +153,7 @@ The pages run on your token: what you may do on the board, they may do, and no m
 A console of your own with one page more, the desk: your own extension of the console's pages ([ADR-0116](https://github.com/skillcdn/console/blob/main/docs/adr/0116-a-desks-dashboard-is-a-page-of-a-console-of-ones-own-read-as-it-is-looked-at.md), ADR-0117). It opens on your records, what you made and what became of it, and has your work on the board beside them: what stands there now, the board's figures and the board's archive. The package ships its shell, `template/desk-web`: the four files of a console of your own with `pages: [deskPage()]`, its `package.json` and five lines on how it is run. Two words in it are filled by whatever writes it into a desk's `web/`: `__VERSION__` in `package.json`, the package's version, for the dependency; and `__TITLE__` in `index.html` and in the README's heading, what the page is called until the server answers, as text.
 
 ```sh
-npm install && npm run build                      # in the desk's web/
+npm install && npm run build                      # in the desk's web/; quiet where it went well, the pages in dist/
 console serve dist --records ../records           # the pages at http://127.0.0.1:11197/, the desk's records at /records/
 ```
 

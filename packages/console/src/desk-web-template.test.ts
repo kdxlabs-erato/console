@@ -63,7 +63,17 @@ describe("the shell of a desk's pages", () => {
       "typescript",
       "vite",
     ]);
-    expect(manifest.scripts.build).toBe("tsc -p tsconfig.json --noEmit && vite build");
+    // A build that went well prints nothing of its own: the bundler's report of every file is
+    // a screen an agent reads for nothing, so it speaks from a warning up, and the one warning
+    // a console of one's own always got, the size of its one script, is set past what it is.
+    expect(manifest.scripts.build).toBe(
+      "tsc -p tsconfig.json --noEmit && vite build --logLevel warn",
+    );
+    expect(await read("vite.config.ts")).toContain("build: { chunkSizeWarningLimit: 4000 }");
+    // So the README says what such a build leaves, where it names it.
+    expect(await read("README.md")).toContain(
+      "- **Build it:** `npm install`, then `npm run build`, which says nothing of its own where it went well and leaves the pages in `dist/`.\n",
+    );
     // The pages are served with the desk's records beside them, and nothing else of the desk.
     expect(manifest.scripts.serve).toBe("console serve dist --records ../records");
   });
