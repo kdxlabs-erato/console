@@ -267,27 +267,41 @@ describe("the moments of a decision", () => {
   });
 });
 
-describe("the rules as they are printed (ADR-0119)", () => {
-  const WORKSPACE = "# Rules for agents on this board\n\nRead these.";
+describe("the rules as they are printed (ADR-0119, ADR-0120)", () => {
+  const CONSOLE = "# Rules for agents on this board\n\nRead these.";
+  const ADDED = "Ask alice before a release.";
   const OWN = "# Rules of this project\n\nAsk before pushing.";
-  const reference = restRulesSchema.parse({ source: "reference", body: WORKSPACE, page: null });
-  const none = restRulesSchema.parse({ source: "none", body: null, page: null });
-  const written = (body: string, updatedAt = "2026-11-06T08:00:00.000Z") =>
+  const page = (updatedAt = "2026-11-06T08:00:00.000Z") => ({
+    id: "0199c4d8-0000-7000-8000-000000000080",
+    path: "rules",
+    title: "Rules",
+    version: 2,
+    updatedBy: alice,
+    agent: null,
+    archivedAt: null,
+    createdAt: "2026-11-06T08:00:00.000Z",
+    updatedAt,
+  });
+  /** The workspace's half where the organization adds nothing: the console's rules alone. */
+  const alone = restRulesSchema.parse({
+    source: "reference",
+    body: CONSOLE,
+    page: null,
+    own: CONSOLE,
+    added: null,
+  });
+  /** The workspace's half where it adds something: the whole in `body`, the parts apart. */
+  const adding = (added = ADDED) =>
     restRulesSchema.parse({
       source: "written",
-      body,
-      page: {
-        id: "0199c4d8-0000-7000-8000-000000000080",
-        path: "rules",
-        title: "Rules",
-        version: 2,
-        updatedBy: alice,
-        agent: null,
-        archivedAt: null,
-        createdAt: "2026-11-06T08:00:00.000Z",
-        updatedAt,
-      },
+      body: `${CONSOLE}\n\n# What this organization adds\n\n${added}`,
+      page: page(),
+      own: CONSOLE,
+      added: { body: added, page: page() },
     });
+  const none = restRulesSchema.parse({ source: "none", body: null, page: null });
+  const written = (body: string, updatedAt?: string) =>
+    restRulesSchema.parse({ source: "written", body, page: page(updatedAt) });
   const own = written(OWN);
   const plugin = restRulesPluginSchema.parse({
     key: "hr",
@@ -296,69 +310,118 @@ describe("the rules as they are printed (ADR-0119)", () => {
     agentNote: { en: "Ask leave here.", ko: "휴가는 여기서." },
     roles: ["member"],
   });
+  const laterTake = (mark: string) =>
+    ` A later take in this session leaves them out: console take <number> --rules ${mark}`;
 
-  it("begins with a line that says which parts follow and how long each is, the project's own first", () => {
-    const rules = { workspace: reference, project: own, plugins: [plugin] };
+  it("begins with a line that says which parts follow and how long each is: what differs first, what always holds last", () => {
+    const rules = { workspace: adding(), project: own, plugins: [plugin] };
     const mark = rulesMark(rules, "en");
     expect(mark).toMatch(/^[0-9a-f]{8}$/);
     const text = formatRules(rules, "en");
-    // The first line: the mark, what follows in which order with how many characters, which
-    // hold where they differ, and how a later take leaves them out.
     expect(text.split("\n")[0]).toBe(
-      `Rules ${mark}: this project's own first (${OWN.length} characters) with its 1 plugin, which hold where the two differ, then the workspace's (${WORKSPACE.length} characters). A later take in this session leaves them out: console take <number> --rules ${mark}`,
+      `Rules ${mark}: this project's additions first (${OWN.length} characters) with its 1 plugin, then the organization's (${ADDED.length} characters), then the console's (${CONSOLE.length} characters), the earlier holding where they differ.${laterTake(mark)}`,
     );
-    // The project's own and the plugins' lines stand before the workspace's: short, and what
-    // differs by project, where an agent that cuts the print at its head still reads them.
+    // The project's additions and the plugins' lines stand first, then what the organization
+    // adds, then the console's rules: an agent that cuts the print at its head still reads
+    // what differs, and what always holds is what it has read before.
     const at = (words: string) => text.indexOf(words);
-    expect(at("Rules of this project (v2, by alice; ")).toBeGreaterThan(0);
+    expect(at("What this project adds (v2, by alice; ")).toBeGreaterThan(0);
     expect(at("Ask before pushing.")).toBeLessThan(at("## Plugins"));
     expect(at("- hr (HR): Ask leave here. Start with console plugin hr.")).toBeLessThan(
-      at("Rules of the workspace: the console's own"),
+      at("What this organization adds (v2, by alice; "),
     );
-    expect(at("Rules of the workspace: the console's own")).toBeLessThan(at("Read these."));
+    expect(at("What this organization adds (v2, by alice; ")).toBeLessThan(at(ADDED));
+    expect(at(ADDED)).toBeLessThan(at("The console's rules, which always hold:"));
+    expect(at("The console's rules, which always hold:")).toBeLessThan(at("Read these."));
+    // Each part once: the whole the console answers beside them is not printed again.
+    expect(text.split(ADDED)).toHaveLength(2);
+    expect(text.split("Read these.")).toHaveLength(2);
+    expect(text).not.toContain("# What this organization adds");
   });
 
-  it("says on that line that a project has none of its own, and that no project is named", () => {
-    const bare = { workspace: reference, project: none };
+  it("says in a clause of that line who adds nothing, and that no project is named", () => {
+    // A project that adds, in an organization that adds nothing.
+    const projects = { workspace: alone, project: own };
+    expect(formatRules(projects, "en").split("\n")[0]).toBe(
+      `Rules ${rulesMark(projects, "en")}: this project's additions first (${OWN.length} characters), then the console's (${CONSOLE.length} characters), the earlier holding where they differ; the organization adds nothing.${laterTake(rulesMark(projects, "en"))}`,
+    );
+    // A project that adds nothing, in an organization that adds.
+    const organizations = { workspace: adding(), project: none };
+    const theirs = formatRules(organizations, "en");
+    expect(theirs.split("\n")[0]).toBe(
+      `Rules ${rulesMark(organizations, "en")}: this project adds nothing; the organization's additions first (${ADDED.length} characters), then the console's (${CONSOLE.length} characters), the earlier holding where they differ.${laterTake(rulesMark(organizations, "en"))}`,
+    );
+    expect(theirs).not.toContain("What this project adds");
+    // Neither adds: the console's rules alone, said once, on the first line.
+    const bare = { workspace: alone, project: none };
     const mark = rulesMark(bare, "en");
     const text = formatRules(bare, "en");
     expect(text.split("\n")[0]).toBe(
-      `Rules ${mark}: this project has none of its own; the workspace's follow (${WORKSPACE.length} characters). A later take in this session leaves them out: console take <number> --rules ${mark}`,
+      `Rules ${mark}: this project and the organization add nothing; the console's follow (${CONSOLE.length} characters).${laterTake(mark)}`,
     );
-    // Said once, on the first line: no line of its own after the workspace's text, where an
-    // agent that had read the workspace's once never came.
-    expect(text).not.toContain("Rules of this project");
-    const withPlugins = formatRules(
-      { workspace: reference, project: none, plugins: [plugin] },
-      "en",
-    );
+    expect(text).not.toContain("What this project adds");
+    expect(text).not.toContain("What this organization adds");
+    const withPlugins = formatRules({ workspace: alone, project: none, plugins: [plugin] }, "en");
     expect(withPlugins.split("\n")[0]).toContain(
-      `: this project has none of its own; its 1 plugin first, then the workspace's (${WORKSPACE.length} characters). A later take`,
+      `: this project and the organization add nothing; its 1 plugin first, then the console's (${CONSOLE.length} characters). A later take`,
     );
     expect(withPlugins.indexOf("## Plugins")).toBeLessThan(withPlugins.indexOf("Read these."));
-    // The workspace's alone, where no project is named: the same mark as a project that adds nothing.
-    const alone = formatRules(reference, "en");
-    expect(alone.split("\n")[0]).toBe(
-      `Rules ${mark}: the workspace's (${WORKSPACE.length} characters); no project is named here, and a project's own stand before them where it has some.`,
+    // No project named: the organization's additions and the console's; the same mark as a
+    // project that adds nothing has.
+    expect(formatRules(alone, "en").split("\n")[0]).toBe(
+      `Rules ${mark}: the organization adds nothing; the console's follow (${CONSOLE.length} characters); no project is named here, and a project's additions stand before them where it has some.`,
     );
-    expect(rulesMark(reference, "en")).toBe(mark);
+    expect(rulesMark(alone, "en")).toBe(mark);
+    expect(formatRules(adding(), "en").split("\n")[0]).toBe(
+      `Rules ${rulesMark(adding(), "en")}: the organization's additions first (${ADDED.length} characters), then the console's (${CONSOLE.length} characters), the earlier holding where they differ; no project is named here, and a project's additions stand before them where it has some.`,
+    );
+  });
+
+  it("reads a console of before, which answers the workspace's rules whole and no parts, as two", () => {
+    const whole = restRulesSchema.parse({ source: "reference", body: CONSOLE, page: null });
+    const rules = { workspace: whole, project: own };
+    const mark = rulesMark(rules, "en");
+    const text = formatRules(rules, "en");
+    expect(text.split("\n")[0]).toBe(
+      `Rules ${mark}: this project's additions first (${OWN.length} characters), then the workspace's (${CONSOLE.length} characters), the earlier holding where they differ.${laterTake(mark)}`,
+    );
+    // On such a console an organization still writes the whole, and the command says so.
+    expect(text).toContain(
+      "Rules of the workspace: the console's own, until an administrator writes the organization's (console rules write --workspace).",
+    );
+    expect(formatRules({ workspace: whole, project: none }, "en").split("\n")[0]).toContain(
+      `: this project adds nothing; the workspace's follow (${CONSOLE.length} characters). A later take`,
+    );
+    // The mark is over the same text either way: a console that says the parts changes none.
+    expect(rulesMark({ workspace: alone, project: own }, "en")).toBe(mark);
   });
 
   it("marks the rules as they read for whoever reads them: the same for the same, another for another", () => {
-    const rules = { workspace: reference, project: own, plugins: [plugin] };
+    const rules = { workspace: adding(), project: own, plugins: [plugin] };
     const mark = rulesMark(rules, "en");
     // The same rules, read again: the same mark, whatever else of the answer moved.
     expect(rulesMark({ ...rules, project: written(OWN, "2026-11-07T08:00:00.000Z") }, "en")).toBe(
       mark,
     );
-    // A rule changed, in the project's own or in the workspace's.
+    // A rule changed: in what the project adds, in what the organization adds, in the console's.
     expect(rulesMark({ ...rules, project: written(`${OWN} Twice.`) }, "en")).not.toBe(mark);
+    expect(rulesMark({ ...rules, workspace: adding(`${ADDED} Always.`) }, "en")).not.toBe(mark);
+    expect(rulesMark({ ...rules, workspace: alone }, "en")).not.toBe(mark);
     expect(
-      rulesMark({ ...rules, workspace: { ...reference, body: `${WORKSPACE} And these.` } }, "en"),
+      rulesMark(
+        {
+          ...rules,
+          workspace: {
+            ...adding(),
+            body: adding().body?.replace("Read these.", "Read all.") ?? "",
+          },
+        },
+        "en",
+      ),
     ).not.toBe(mark);
     // Another project's rules: none of its own, or other plugins.
     expect(rulesMark({ ...rules, project: none }, "en")).not.toBe(mark);
-    expect(rulesMark({ workspace: reference, project: own }, "en")).not.toBe(mark);
+    expect(rulesMark({ workspace: adding(), project: own }, "en")).not.toBe(mark);
     // Another language: the plugins' lines are read in it, and so are the rules.
     expect(rulesMark(rules, "ko")).not.toBe(mark);
   });

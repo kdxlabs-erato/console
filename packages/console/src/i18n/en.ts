@@ -1210,9 +1210,9 @@ export const en = {
     form: {
       body: "Rules",
       hint: (max: number) =>
-        `Markdown, up to ${max} characters, read by every agent that works here, after the workspace's rules: what differs in this project and nothing else. Where its work lives, the skills to load first, its pages' folders, who decides what, its language where it is another. {language} stands for the language of the person the agent works for. Nothing secret, such as a token or a password.`,
+        `Markdown, up to ${max} characters, read by every agent that works here, with the workspace's rules: what differs in this project and nothing else. Where its work lives, the skills to load first, its pages' folders, who decides what, its language where it is another. {language} stands for the language of the person the agent works for. Nothing secret, such as a token or a password.`,
       hintAdded: (max: number) =>
-        `Markdown, up to ${max} characters, read by every agent after the console's rules: what this organization asks besides. It holds where it differs from them, except for what they say never happens. {language} stands for the language of the person the agent works for. Nothing secret, such as a token or a password.`,
+        `Markdown, up to ${max} characters, read by every agent with the console's rules: what this organization asks besides. It holds where it differs from them, except for what they say never happens. {language} stands for the language of the person the agent works for. Nothing secret, such as a token or a password.`,
       save: "Save the rules",
     },
   },

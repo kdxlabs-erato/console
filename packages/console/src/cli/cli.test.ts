@@ -181,12 +181,14 @@ const RULES_DOC = {
   backlinks: [],
   files: [],
 };
-/** The rules as a project answers them: the console's own at the workspace, and the project's own page. */
+/** The rules as a project answers them: the console's alone at the workspace, and what the project adds. */
 const RULES = {
   workspace: {
     source: "reference",
     body: "# Rules for agents on this board\n\nRead these.",
     page: null,
+    own: "# Rules for agents on this board\n\nRead these.",
+    added: null,
   },
   project: { source: "written", body: RULES_DOC.body, page: RULES_PAGE },
 };
@@ -1052,10 +1054,10 @@ describe("the console command", () => {
     // token is open in the project, so nothing of saying which run.
     expect(h.out()).not.toContain("taking it was deciding");
     expect(h.out()).not.toContain("Other runs of yours");
-    // The rules come with the run, under a line that says what follows: the project's own
-    // first, then the workspace's, before what to do next (ADR-0119).
+    // The rules come with the run, under a line that says what follows: what the project adds
+    // first, then the console's, before what to do next (ADR-0119, ADR-0120).
     expect(h.out()).toMatch(
-      /\nRules [0-9a-f]{8}: this project's own first \(\d+ characters\), which hold where the two differ, then the workspace's \(\d+ characters\)\. A later take in this session leaves them out: console take <number> --rules [0-9a-f]{8}\n/,
+      /\nRules [0-9a-f]{8}: this project's additions first \(\d+ characters\), then the console's \(\d+ characters\), the earlier holding where they differ; the organization adds nothing\. A later take in this session leaves them out: console take <number> --rules [0-9a-f]{8}\n/,
     );
     expect(h.out()).toMatch(/Ask before pushing\.[\s\S]*Read these\.[\s\S]*Say how it goes/);
     // The discussion comes with the task, whole, each file with the command that reads it.
@@ -1144,7 +1146,12 @@ describe("the console command", () => {
   it("reads the rules as they are for the person: {language} filled with the language they read in", async () => {
     const ruled = {
       ...RULES,
-      workspace: { ...RULES.workspace, body: "# Ours. Write what people read in {language}." },
+      // The whole and the console's own say it alike: both are read in the person's language.
+      workspace: {
+        ...RULES.workspace,
+        body: "# Rules. Write what people read in {language}.",
+        own: "# Rules. Write what people read in {language}.",
+      },
     };
     const { fetch } = fakeConsole({
       [`GET ${IN}/rules`]: { body: ruled },
@@ -1167,29 +1174,33 @@ describe("the console command", () => {
     expect(unchosen.out()).toContain("in the language the task is written in.");
   });
 
-  it("reads the rules that hold, writes a project's or the workspace's, and puts them away", async () => {
+  it("reads the rules that hold, writes what a project or the organization adds, and puts it away", async () => {
     const { fetch, calls } = fakeConsole({
       [`GET ${IN}/rules`]: { body: RULES },
       "GET /api/v1/rules": { body: RULES.workspace },
       "GET /api/v1/me": { body: ME },
       [`PUT ${IN}/docs/rules`]: { body: { ...RULES_DOC, version: 3 } },
       "PUT /api/v1/rules": {
-        body: { source: "written", body: "# Ours", page: { ...RULES_PAGE, version: 1 } },
+        body: {
+          source: "written",
+          body: `${RULES.workspace.body}\n\n# What this organization adds\n\n# Ours`,
+          page: { ...RULES_PAGE, version: 1 },
+          own: RULES.workspace.own,
+          added: { body: "# Ours", page: { ...RULES_PAGE, version: 1 } },
+        },
       },
       "POST /api/v1/rules/archive": { body: RULES.workspace },
       [`POST ${IN}/docs/rules/archive`]: { body: { ...RULES_DOC, archivedAt: WHEN } },
     });
     const h = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["rules"], h.io)).toBe(EXIT.ok);
-    expect(h.out()).toContain(
-      "Rules of the workspace: the console's own, until an administrator writes the organization's (console rules write --workspace).",
-    );
+    expect(h.out()).toContain("The console's rules, which always hold:");
     expect(h.out()).toContain("Read these.");
-    expect(h.out()).toContain("Rules of this project (v2, by alice; ");
+    expect(h.out()).toContain("What this project adds (v2, by alice; ");
     expect(h.out()).toContain("Ask before pushing.");
     // The first line says which parts follow, and carries the mark a later take names.
     expect(h.out()).toMatch(
-      /^Rules [0-9a-f]{8}: this project's own first \(\d+ characters\), which hold where the two differ, then the workspace's \(\d+ characters\)\. A later take in this session leaves them out: console take <number> --rules [0-9a-f]{8}\n/,
+      /^Rules [0-9a-f]{8}: this project's additions first \(\d+ characters\), then the console's \(\d+ characters\), the earlier holding where they differ; the organization adds nothing\. A later take in this session leaves them out: console take <number> --rules [0-9a-f]{8}\n/,
     );
     const ruled = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["rules", "--json"], ruled.io)).toBe(EXIT.ok);
@@ -1197,14 +1208,14 @@ describe("the console command", () => {
       ...RULES,
       mark: expect.stringMatching(/^[0-9a-f]{8}$/),
     });
-    // Without a project named, the workspace's alone.
+    // Without a project named, the console's and what the organization adds, alone.
     const alone = harness({ fetch, env: { CONSOLE_URL: ORIGIN, CONSOLE_TOKEN: "cns_t_secret" } });
     expect(await runCli(["rules"], alone.io)).toBe(EXIT.ok);
     expect(alone.out()).toContain("Read these.");
     expect(alone.out()).not.toContain("this project");
     const written = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["rules", "write", "--body", "# Ours"], written.io)).toBe(EXIT.ok);
-    expect(written.out()).toBe("Wrote this project's rules, version 3.\n");
+    expect(written.out()).toBe("Wrote what this project adds to the rules, version 3.\n");
     expect(calls.at(-1)?.body).toEqual({ title: "Rules", body: "# Ours" });
     const workspace = harness({ fetch, env: SIGNED_IN });
     expect(
@@ -1213,17 +1224,21 @@ describe("the console command", () => {
         workspace.io,
       ),
     ).toBe(EXIT.ok);
-    expect(workspace.out()).toBe("Wrote the workspace's rules, version 1.\n");
+    expect(workspace.out()).toBe("Wrote what this organization adds to the rules, version 1.\n");
     expect(calls.at(-1)?.body).toEqual({ body: "# Ours", baseVersion: 2 });
     const away = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["rules", "write", "none", "--workspace"], away.io)).toBe(EXIT.ok);
-    expect(away.out()).toBe("The organization's rules are put away: the console's own hold.\n");
+    expect(away.out()).toBe(
+      "What this organization adds to the rules is put away: the console's stand alone.\n",
+    );
     const projectAway = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["rules", "write", "none"], projectAway.io)).toBe(EXIT.ok);
-    expect(projectAway.out()).toBe("This project's rules are put away: it adds none now.\n");
+    expect(projectAway.out()).toBe(
+      "What this project adds to the rules is put away: it adds nothing now.\n",
+    );
     const nothing = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["rules", "write"], nothing.io)).toBe(EXIT.usage);
-    expect(nothing.err()).toContain("none to put the written rules away");
+    expect(nothing.err()).toContain("none to put what was added away");
     const odd = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["rules", "write", "--body", "x", "--base", "zero"], odd.io)).toBe(
       EXIT.usage,

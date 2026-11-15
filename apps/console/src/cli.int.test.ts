@@ -466,14 +466,12 @@ describe("the command line", () => {
   it("reads the rules that hold, prints them with a task taken, and writes the project's as its person", async () => {
     const start = await console_(["rules"]);
     expect(start.code, start.err).toBe(EXIT.ok);
-    expect(start.out).toContain(
-      "Rules of the workspace: the console's own, until an administrator writes the organization's",
-    );
+    expect(start.out).toContain("The console's rules, which always hold:");
     expect(start.out).toContain("# Rules for agents on this board");
-    // The first line says what follows, before the workspace's text (ADR-0119): here, that the
-    // project has no rules of its own, with the mark of the rules as they stand.
+    // The first line says what follows, before any text (ADR-0119, ADR-0120): here, that the
+    // project and the organization add nothing, with the mark of the rules as they stand.
     expect(start.out).toMatch(
-      /^Rules [0-9a-f]{8}: this project has none of its own; the workspace's follow \(\d+ characters\)\. A later take in this session leaves them out: console take <number> --rules [0-9a-f]{8}\n/,
+      /^Rules [0-9a-f]{8}: this project and the organization add nothing; the console's follow \(\d+ characters\)\. A later take in this session leaves them out: console take <number> --rules [0-9a-f]{8}\n/,
     );
     const bare = /^Rules ([0-9a-f]{8}): /.exec(start.out)?.[1] ?? "";
     const written = await console_([
@@ -483,13 +481,13 @@ describe("the command line", () => {
       "# Rules of web\n\nAsk before pushing.",
     ]);
     expect(written.code, written.err).toBe(EXIT.ok);
-    expect(written.out).toBe("Wrote this project's rules, version 1.\n");
+    expect(written.out).toBe("Wrote what this project adds to the rules, version 1.\n");
     const task = await writeTask(alice, { title: "Read the rules", body: "Then work." });
     const taken = await console_(["take", String(task.number)]);
     expect(taken.code, taken.err).toBe(EXIT.ok);
-    // The project's own stand first now, under a line that says so, then the workspace's.
+    // What the project adds stands first now, under a line that says so, then the console's.
     expect(taken.out).toMatch(
-      /\nRules [0-9a-f]{8}: this project's own first \(\d+ characters\), which hold where the two differ, then the workspace's \(\d+ characters\)\. A later take in this session leaves them out: console take <number> --rules [0-9a-f]{8}\n/,
+      /\nRules [0-9a-f]{8}: this project's additions first \(\d+ characters\), then the console's \(\d+ characters\), the earlier holding where they differ; the organization adds nothing\. A later take in this session leaves them out: console take <number> --rules [0-9a-f]{8}\n/,
     );
     expect(taken.out).toMatch(
       /Ask before pushing\.[\s\S]*# Rules for agents on this board[\s\S]*Say how it goes/,
@@ -530,10 +528,12 @@ describe("the command line", () => {
     expect(workspace.err).toContain("auth.forbidden");
     const away = await console_(["rules", "write", "none"]);
     expect(away.code, away.err).toBe(EXIT.ok);
-    expect(away.out).toBe("This project's rules are put away: it adds none now.\n");
+    expect(away.out).toBe(
+      "What this project adds to the rules is put away: it adds nothing now.\n",
+    );
     // Put away, the rules are the ones of before, and so is their mark.
     const after = await console_(["rules"]);
-    expect(after.out).toContain("this project has none of its own");
+    expect(after.out).toContain("this project and the organization add nothing");
     expect(after.out.startsWith(`Rules ${bare}: `)).toBe(true);
   });
 

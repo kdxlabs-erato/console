@@ -474,51 +474,68 @@ export function formatArtifact(
   return artifact.label === null ? what : `${artifact.label}: ${what}`;
 }
 
-/** One half of the rules that has a text: where it comes from, and the text as it stands. */
-function formatRulesHalf(where: "the workspace" | "this project", rules: RestRules): string {
-  const page = rules.page;
-  const facts =
-    page === null
-      ? undefined
-      : `v${page.version}, by ${writer(page.updatedBy, page.agent)}; ${moment(page.updatedAt)}`;
+/** When a part of the rules was written and by whom, where a page says; nothing for the console's own. */
+function rulesFacts(page: RestRules["page"]): string {
+  return page === null
+    ? ""
+    : ` (v${page.version}, by ${writer(page.updatedBy, page.agent)}; ${moment(page.updatedAt)})`;
+}
+
+/** A part of the rules that has a text: what it is, who wrote it where someone did, and the text as it stands. */
+const formatRulesPart = (head: string, page: RestRules["page"], body: string): string =>
+  `${head}${rulesFacts(page)}:\n\n${body.trimEnd()}`;
+
+/**
+ * The workspace's rules as a console of before the parts answers them (ADR-0120): whole, the
+ * console's own until an administrator writes the organization's in their place, which is
+ * what holds on such a console.
+ */
+function formatRulesWhole(rules: RestRules): string {
   const head =
     rules.source === "reference"
-      ? `Rules of ${where}: the console's own, until an administrator writes the organization's (console rules write --workspace).`
-      : `Rules of ${where} (${facts ?? "written"}):`;
+      ? "Rules of the workspace: the console's own, until an administrator writes the organization's (console rules write --workspace)."
+      : `Rules of the workspace${rulesFacts(rules.page) || " (written)"}:`;
   return `${head}\n\n${(rules.body ?? "").trimEnd()}`;
 }
 
 /**
- * The parts of the rules as they are printed for whoever reads them: the workspace's text, the
- * project's own where the command works in one and it has some, and the plugins' lines in the
- * language they are read in.
+ * The parts of the rules as they are printed for whoever reads them (ADR-0120): what the
+ * project adds where the command works in one and it adds something, the plugins' lines in the
+ * language they are read in, what the organization adds where it adds something, and the
+ * console's rules, which always hold.
  */
 function rulesParts(rules: RestProjectRules | RestRules, language: string | null | undefined) {
   const named = "workspace" in rules;
   const workspace = named ? rules.workspace : rules;
   const project = named && rules.project.source !== "none" ? rules.project : undefined;
   const count = rules.plugins?.length ?? 0;
+  const added = workspace.added ?? null;
   return {
-    /** Whether the command works in a project: its rules were asked for, whether it has any or not. */
+    /** Whether the command works in a project: its rules were asked for, whether it adds any or not. */
     named,
     workspace,
-    /** The project's own rules, where it has some. */
+    /** What the project adds, where it adds something. */
     own: project !== undefined && project.body !== null ? project : undefined,
     plugins:
       rules.plugins === undefined || count === 0
         ? undefined
         : formatRulesPlugins(rules.plugins, language),
     pluginCount: count,
+    /** What the organization adds, where it adds something and the console says the parts. */
+    added: workspace.own === undefined || added === null ? undefined : added,
+    /** The console's rules by themselves; nothing from a console of before, which answers the whole. */
+    console: workspace.own,
   };
 }
 
 /**
  * The mark of the rules (ADR-0119): the first eight hex characters of a SHA-256 over what they
- * say to whoever reads them, the workspace's text, the project's own and the plugins' lines, in
- * the language they are read in. A session that was shown the rules holds their mark, and a
- * later take of that session leaves out the rules the mark stands for; nothing but having been
- * shown them gives it. When they were written and by whom is no part of it: the same rules
- * have the same mark, and a project that adds nothing has the workspace's.
+ * say to whoever reads them: the workspace's text whole, which is the console's rules with
+ * what the organization adds (ADR-0120), what the project adds, and the plugins' lines, in the
+ * language they are read in. A session that was shown the rules holds their mark, and a later
+ * take of that session leaves out the rules the mark stands for; nothing but having been shown
+ * them gives it. When they were written and by whom is no part of it: the same rules have the
+ * same mark, and a project that adds nothing has the workspace's.
  */
 export function rulesMark(
   rules: RestProjectRules | RestRules,
@@ -538,15 +555,16 @@ export function rulesMark(
 }
 
 /** How long a text of the rules is, as its first line says it. */
-const charactersOf = (rules: RestRules): string =>
-  `${(rules.body ?? "").trimEnd().length} characters`;
+const charactersOf = (text: string | null): string => `${(text ?? "").trimEnd().length} characters`;
 
 /**
  * The rules that hold, under a first line that says what follows (ADR-0119): the mark, which
  * parts there are and how long each is, and how a later take of the session leaves them out.
- * A project's own rules and the plugins' lines stand first, since they are short and are what
- * differs from one project to the next, then the workspace's: an agent that had read the
- * workspace's once cut every later print at its head, and never saw what stood after them.
+ * What differs stands first and what always holds last (ADR-0120): what the project adds with
+ * the plugins' lines, then what the organization adds, then the console's rules. An agent that
+ * had read the long part once cut every later print at its head, and never saw what stood
+ * after it; and where they differ it is the earlier part that holds. Who adds nothing is said
+ * in a clause of the line, and has no part.
  */
 export function formatRules(
   rules: RestProjectRules | RestRules,
@@ -554,17 +572,43 @@ export function formatRules(
 ): string {
   const parts = rulesParts(rules, language);
   const mark = rulesMark(rules, language);
-  const theirs = `the workspace's (${charactersOf(parts.workspace)})`;
+  // A console of before answers the workspace's rules whole: they are the last part then.
+  const whole = parts.console === undefined;
+  const last = whole
+    ? `the workspace's (${charactersOf(parts.workspace.body)})`
+    : `the console's (${charactersOf(parts.console ?? null)})`;
+  const lastFollows = whole
+    ? `the workspace's follow (${charactersOf(parts.workspace.body)})`
+    : `the console's follow (${charactersOf(parts.console ?? null)})`;
   const plugins = `${parts.pluginCount} plugin${parts.pluginCount === 1 ? "" : "s"}`;
+  const HOLDS = "the earlier holding where they differ";
+  /** The organization's part and the last, after whatever stood before them. */
+  const rest = (first: boolean): string =>
+    parts.added === undefined
+      ? last
+      : `the organization's${first ? " additions first" : ""} (${charactersOf(parts.added.body)}), then ${last}`;
   let follows: string;
-  if (!parts.named) {
-    follows = `${parts.plugins === undefined ? "" : `the ${plugins} you may use first, then `}${theirs}; no project is named here, and a project's own stand before them where it has some.`;
-  } else if (parts.own !== undefined) {
-    follows = `this project's own first (${charactersOf(parts.own)})${parts.plugins === undefined ? "" : ` with its ${plugins}`}, which hold where the two differ, then ${theirs}.`;
-  } else if (parts.plugins !== undefined) {
-    follows = `this project has none of its own; its ${plugins} first, then ${theirs}.`;
+  if (parts.own !== undefined) {
+    follows = `this project's additions first (${charactersOf(parts.own.body)})${parts.plugins === undefined ? "" : ` with its ${plugins}`}, then ${rest(false)}, ${HOLDS}${whole || parts.added !== undefined ? "" : "; the organization adds nothing"}.`;
   } else {
-    follows = `this project has none of its own; the workspace's follow (${charactersOf(parts.workspace)}).`;
+    const nobody = parts.added === undefined && !whole;
+    const lead = parts.named
+      ? nobody
+        ? "this project and the organization add nothing; "
+        : "this project adds nothing; "
+      : nobody
+        ? "the organization adds nothing; "
+        : "";
+    const theirs = parts.named ? `its ${plugins}` : `the ${plugins} you may use`;
+    const body =
+      parts.plugins !== undefined
+        ? `${theirs} first, then ${parts.added === undefined ? last : `the organization's additions (${charactersOf(parts.added.body)}), then ${last}, ${HOLDS}`}`
+        : parts.added === undefined
+          ? parts.named || nobody
+            ? lastFollows
+            : last
+          : `${rest(true)}, ${HOLDS}`;
+    follows = `${lead}${body}${parts.named ? "." : "; no project is named here, and a project's additions stand before them where it has some."}`;
   }
   // The mark ends the line bare, so that it is copied as it is.
   const later = parts.named
@@ -572,10 +616,17 @@ export function formatRules(
     : "";
   return [
     `Rules ${mark}: ${follows}${later}`,
-    ...(parts.own === undefined ? [] : ["", formatRulesHalf("this project", parts.own)]),
+    ...(parts.own === undefined
+      ? []
+      : ["", formatRulesPart("What this project adds", parts.own.page, parts.own.body ?? "")]),
     ...(parts.plugins === undefined ? [] : ["", parts.plugins]),
+    ...(parts.added === undefined
+      ? []
+      : ["", formatRulesPart("What this organization adds", parts.added.page, parts.added.body)]),
     "",
-    formatRulesHalf("the workspace", parts.workspace),
+    parts.console === undefined
+      ? formatRulesWhole(parts.workspace)
+      : formatRulesPart("The console's rules, which always hold", null, parts.console),
   ].join("\n");
 }
 

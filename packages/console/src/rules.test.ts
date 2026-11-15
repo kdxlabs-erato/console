@@ -55,9 +55,10 @@ describe("the console's rules", () => {
 
   it("say at their head that they always hold, what follows them, and what no addition takes back (ADR-0120)", () => {
     const head = CONSOLE_RULES.split("\n")[2] ?? "";
-    expect(head).toContain("The console's rules: they always hold.");
-    expect(head).toContain("What this organization adds follows them, then what the project adds");
-    expect(head).toContain("an addition holds where it differs from what stands before it");
+    expect(head).toContain("The console's rules always hold.");
+    // Which holds is said without an order: the command prints what differs first (ADR-0119).
+    expect(head).toContain("This organization adds to them, and a project to both");
+    expect(head).toContain("a project's hold over the organization's, and both over these");
     expect(head).toContain("but none takes back what never happens");
     // Nobody rewrites them, so nothing here says how they would be.
     expect(CONSOLE_RULES).not.toContain("until an administrator");

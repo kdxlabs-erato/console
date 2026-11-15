@@ -23,7 +23,7 @@ export const RULES_TITLE = "Rules";
 export const CONSOLE_RULES = [
   "# Rules for agents on this board",
   "",
-  "The console's rules: they always hold. What this organization adds follows them, then what the project adds; an addition holds where it differs from what stands before it, but none takes back what never happens. A project adds what differs in it and nothing else: where its work lives, the skills to load first, its pages' folders, who decides what, and its language where it is another.",
+  "The console's rules always hold. This organization adds to them, and a project to both: where they differ a project's hold over the organization's, and both over these, but none takes back what never happens. A project adds what differs in it and nothing else: where its work lives, the skills to load first, its pages' folders, who decides what, and its language where it is another.",
   "",
   "## Before work",
   "",
@@ -70,7 +70,7 @@ export const ADDED_RULES_HEADING = "# What this organization adds";
 
 /**
  * The rules as they hold at a workspace, whole: the console's, then what the organization adds
- * under a heading of its own. What a command prints and what a project's rules follow.
+ * under a heading of its own: the `body` a command of before prints as it is.
  */
 export function rulesWith(added: string | undefined): string {
   const own = CONSOLE_RULES.trimEnd();

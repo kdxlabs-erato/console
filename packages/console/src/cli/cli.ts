@@ -68,6 +68,7 @@ import {
   type RestPluginEnableInput,
   type RestPluginGrantInput,
   type RestPluginInvocation,
+  type RestRules,
   type RestRun,
   type RestSkillCode,
   type RestSkillLoad,
@@ -2710,8 +2711,9 @@ function versionOf(given: string | undefined): number | undefined {
   return version;
 }
 
-// The rules of the board (ADR-0023): read before a task is taken, written by an owner for the
-// project and by an administrator for the workspace, through the same page the console keeps.
+// The rules of the board (ADR-0023, ADR-0120): the console's, which always hold, with what the
+// organization and the project add to them; read before a task is taken, and added to by an
+// owner for the project and by an administrator for the organization, on the page each keeps.
 const rules: Command = async (args, io) => {
   const [verb, ...rest] = args;
   if (verb === "write") {
@@ -2729,7 +2731,7 @@ const rules: Command = async (args, io) => {
     const body = none ? undefined : await bodyOf(io, values, given);
     if (!none && body === undefined) {
       throw misuse(
-        "Say what the rules are to say: --body <markdown>, --file <path>, - to read standard input, or none to put the written rules away.",
+        "Say what is added to the rules: --body <markdown>, --file <path>, - to read standard input, or none to put what was added away.",
       );
     }
     const baseVersion = versionOf(text(values, "base"));
@@ -2741,7 +2743,7 @@ const rules: Command = async (args, io) => {
           io,
           session,
           put,
-          () => "The organization's rules are put away: the console's own hold.",
+          () => "What this organization adds to the rules is put away: the console's stand alone.",
         );
         return EXIT.ok;
       }
@@ -2751,8 +2753,8 @@ const rules: Command = async (args, io) => {
       });
       answer(io, session, written, () =>
         written.page === null
-          ? "Nothing written: these are the console's own rules as they stand, and they hold already."
-          : `Wrote the workspace's rules, version ${written.page.version}.`,
+          ? "Nothing written: that adds nothing to the console's rules, which hold as they stand."
+          : `Wrote what this organization adds to the rules, version ${written.page.version}.`,
       );
       return EXIT.ok;
     }
@@ -2760,12 +2762,22 @@ const rules: Command = async (args, io) => {
     if (none) {
       try {
         const put = await project.archiveDocument(RULES_PATH);
-        answer(io, session, put, () => "This project's rules are put away: it adds none now.");
+        answer(
+          io,
+          session,
+          put,
+          () => "What this project adds to the rules is put away: it adds nothing now.",
+        );
       } catch (error) {
         if (!(error instanceof ApiError) || error.code !== "document.not_found") {
           throw error;
         }
-        answer(io, session, null, () => "This project has no rules of its own to put away.");
+        answer(
+          io,
+          session,
+          null,
+          () => "This project adds nothing to the rules: nothing to put away.",
+        );
       }
       return EXIT.ok;
     }
@@ -2774,7 +2786,12 @@ const rules: Command = async (args, io) => {
       body: body ?? "",
       ...(baseVersion === undefined ? {} : { baseVersion }),
     });
-    answer(io, session, written, () => `Wrote this project's rules, version ${written.version}.`);
+    answer(
+      io,
+      session,
+      written,
+      () => `Wrote what this project adds to the rules, version ${written.version}.`,
+    );
     return EXIT.ok;
   }
   const { values } = parse(args, {}, false);
@@ -2801,13 +2818,18 @@ const rules: Command = async (args, io) => {
 
 /**
  * The rules as they read for the person whose token the command holds: `{language}` filled
- * with the language they read in, or with the task's while they have none.
+ * with the language they read in, or with the task's while they have none; in the whole and,
+ * where the console says them apart (ADR-0120), in the console's own and in what is added.
  */
-function forPerson<T extends { readonly body: string | null }>(
-  half: T,
-  language: string | null,
-): T {
-  return half.body === null ? half : { ...half, body: fillRules(half.body, language) };
+function forPerson(half: RestRules, language: string | null): RestRules {
+  return {
+    ...half,
+    ...(half.body === null ? {} : { body: fillRules(half.body, language) }),
+    ...(half.own === undefined ? {} : { own: fillRules(half.own, language) }),
+    ...(half.added == null
+      ? {}
+      : { added: { ...half.added, body: fillRules(half.added.body, language) } }),
+  };
 }
 
 /** The flags that set a task's fields, shared by writing one and changing one. */
