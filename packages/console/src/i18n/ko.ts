@@ -931,7 +931,6 @@ export const ko: Messages = {
       noItems: "아직 기록된 것이 없습니다.",
       noneOfStatus: "이 상태인 항목이 없습니다.",
       madeOn: "만든 날",
-      status: "상태",
       about: "정보",
       note: "메모",
       links: "링크",

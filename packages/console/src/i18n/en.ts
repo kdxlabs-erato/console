@@ -1006,7 +1006,6 @@ export const en = {
       noItems: "Nothing is recorded here yet.",
       noneOfStatus: "No item has this status.",
       madeOn: "Made on",
-      status: "Status",
       about: "About it",
       note: "Note",
       links: "Links",
