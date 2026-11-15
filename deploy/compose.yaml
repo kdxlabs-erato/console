@@ -30,6 +30,10 @@ x-console: &console
 services:
   postgres:
     image: postgres:18
+    # An init process, so that a health check Docker timed out and left behind is reaped by it:
+    # reparented to PostgreSQL, a pg_isready that ends "no response" under load reads as a crashed
+    # child, and the server restarts every process and recovers for minutes.
+    init: true
     environment:
       POSTGRES_USER: console
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
