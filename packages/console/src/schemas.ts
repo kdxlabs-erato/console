@@ -1973,6 +1973,18 @@ export type RestPersonWork = z.infer<typeof restPersonWorkSchema>;
 export const restTaskBriefSchema = z.omit(restTaskSchema, { body: true });
 export type RestTaskBrief = z.infer<typeof restTaskBriefSchema>;
 
+/**
+ * `GET /api/v1/projects/<key>/tasks?brief=true`: a page of the board as `.../tasks` answers it,
+ * the tasks without their bodies, for whatever lists tasks and shows no body: a listing of
+ * the command, a desk's pages. A console from before the brief form answers the tasks whole,
+ * which reads the same.
+ */
+export const restTaskBriefsSchema = z.object({
+  items: z.array(restTaskBriefSchema),
+  more: z.boolean(),
+});
+export type RestTaskBriefs = z.infer<typeof restTaskBriefsSchema>;
+
 /** A decision as the plate's page asks for it: everything but its body. */
 export const restDecisionBriefSchema = z.omit(restDecisionSchema, { body: true });
 export type RestDecisionBrief = z.infer<typeof restDecisionBriefSchema>;
@@ -2223,6 +2235,32 @@ export type RestRun = z.infer<typeof restRunSchema>;
 /** `GET /api/v1/projects/<key>/runs`: a page of the runs, newest first, and whether there is more. */
 export const restRunsSchema = z.object({ items: z.array(restRunSchema), more: z.boolean() });
 export type RestRuns = z.infer<typeof restRunsSchema>;
+
+/**
+ * A run as a listing asks for it: everything but its reports, of which it says how many. The
+ * reports are what a run says as it goes, and weigh more than the rest of a listing together.
+ * A console from before the brief form (0.5.0) ignores the word and answers the run whole, so
+ * what is read is either: the count where the console counted, the reports where it sent them.
+ */
+export const restRunBriefSchema = z.extend(z.omit(restRunSchema, { reports: true }), {
+  /** How many reports the run has, as the brief form says it. */
+  reportCount: z.optional(count),
+  /** The reports themselves, from a console from before the brief form; a console that knows it leaves them out. */
+  reports: z.optional(z.array(restReportSchema)),
+});
+export type RestRunBrief = z.infer<typeof restRunBriefSchema>;
+
+/** How many reports a run has, as a listing says it: as the console counted them, else as many as it sent. */
+export function reportCountOf(run: RestRunBrief): number {
+  return run.reportCount ?? run.reports?.length ?? 0;
+}
+
+/** `GET /api/v1/projects/<key>/runs?brief=true`: a page of the runs as `.../runs` answers it, without their reports. */
+export const restRunBriefsSchema = z.object({
+  items: z.array(restRunBriefSchema),
+  more: z.boolean(),
+});
+export type RestRunBriefs = z.infer<typeof restRunBriefsSchema>;
 
 /** A file put in a comment, kept as a run's file is; its bytes are at `projectPath(key, "files", <id>)`. */
 export const restCommentFileSchema = z.object({

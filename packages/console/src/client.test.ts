@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, createClient, type FetchLike } from "./client.js";
+import { reportCountOf, restRunBriefSchema } from "./schemas.js";
 
 const PERSON = {
   id: "0199c4d8-0000-7000-8000-000000000001",
@@ -130,6 +131,102 @@ describe("createClient", () => {
     expect(await client.personWork(PERSON.id)).toEqual({ tasks: [] });
     await client.removeCategory("research");
     expect(calls.at(-1)?.init?.method).toBe("DELETE");
+  });
+
+  it("asks for the lists in the brief form, and reads a console from before it, which answers them whole", async () => {
+    const WHEN = "2026-10-09T10:00:00.000Z";
+    const task = {
+      id: "0199c4d8-0000-7000-8000-000000000010",
+      number: 1,
+      title: "Ship",
+      state: "ready",
+      priority: "normal",
+      owner: PERSON,
+      workers: [],
+      parentId: null,
+      category: null,
+      goalId: null,
+      startsOn: null,
+      dueOn: null,
+      startedAt: null,
+      doneAt: null,
+      archivedAt: null,
+      links: [],
+      openDecisions: 0,
+      openRuns: 1,
+      createdAt: WHEN,
+      updatedAt: WHEN,
+    };
+    const run = {
+      id: "0199c4d8-0000-7000-8000-000000000020",
+      taskId: task.id,
+      taskNumber: 1,
+      person: PERSON,
+      agent: "Claude Code",
+      status: "running",
+      startedAt: WHEN,
+      endedAt: null,
+      lastHeardAt: WHEN,
+      summary: null,
+      artifacts: [],
+      waitingFor: null,
+    };
+    const reports = [
+      { id: "0199c4d8-0000-7000-8000-0000000000c1", body: "Found it.", createdAt: WHEN },
+      { id: "0199c4d8-0000-7000-8000-0000000000c2", body: "Fixed it.", createdAt: WHEN },
+    ];
+    const TASKS = "GET https://console.test/api/v1/projects/web/tasks?open=true&limit=5&brief=true";
+    const RUNS = "GET https://console.test/api/v1/projects/web/runs?open=true&mine=true&brief=true";
+    // A console that knows the brief form: no body, no report, the reports counted.
+    const now = fakeFetch({
+      [TASKS]: { body: { items: [task], more: false } },
+      [RUNS]: { body: { items: [{ ...run, reportCount: 7 }], more: true } },
+    });
+    const brief = createClient({ baseUrl: "https://console.test", fetch: now.send }).project("web");
+    expect(await brief.taskBriefs({ open: true, limit: 5 })).toEqual({
+      items: [task],
+      more: false,
+    });
+    const counted = await brief.runBriefs({ open: true, mine: true });
+    expect(counted.more).toBe(true);
+    expect(counted.items.map(reportCountOf)).toEqual([7]);
+    expect(now.calls.map((call) => `GET ${call.url}`)).toEqual([TASKS, RUNS]);
+    // A console from before it (0.5.0) ignores the word and answers each whole: the body is let
+    // go, and the reports it sent are counted by whoever reads the run.
+    const before = fakeFetch({
+      [TASKS]: { body: { items: [{ ...task, body: "What to do." }], more: false } },
+      [RUNS]: { body: { items: [{ ...run, reports }], more: false } },
+    });
+    const whole = createClient({ baseUrl: "https://console.test", fetch: before.send }).project(
+      "web",
+    );
+    expect(await whole.taskBriefs({ open: true, limit: 5 })).toEqual({
+      items: [task],
+      more: false,
+    });
+    const sent = await whole.runBriefs({ open: true, mine: true });
+    expect(sent.items.map(reportCountOf)).toEqual([2]);
+    expect(sent.items[0]?.reports).toEqual(reports);
+    // A run that says neither has none; a hostile count is refused as any answer out of shape.
+    expect(reportCountOf(restRunBriefSchema.parse(run))).toBe(0);
+    for (const reportCount of [-1, 1.5, "7", null]) {
+      expect(restRunBriefSchema.safeParse({ ...run, reportCount }).success).toBe(false);
+    }
+    expect(restRunBriefSchema.safeParse({ ...run, reports: "many" }).success).toBe(false);
+    // The whole forms are asked for as before, without the word.
+    const plain = fakeFetch({
+      "GET https://console.test/api/v1/projects/web/tasks?open=true": {
+        body: { items: [{ ...task, body: "" }], more: false },
+      },
+      "GET https://console.test/api/v1/projects/web/runs?open=true": {
+        body: { items: [{ ...run, reports: [] }], more: false },
+      },
+    });
+    const full = createClient({ baseUrl: "https://console.test", fetch: plain.send }).project(
+      "web",
+    );
+    expect((await full.tasks({ open: true })).items[0]?.body).toBe("");
+    expect((await full.runs({ open: true })).items[0]?.reports).toEqual([]);
   });
 
   it("gives its own token up", async () => {

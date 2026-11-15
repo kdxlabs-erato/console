@@ -3,11 +3,14 @@ import {
   MAX_FILE_BYTES,
   projectPath,
   REST_ROUTES,
+  reportCountOf,
   restDecisionSchema,
   restErrorSchema,
   restEventsSchema,
+  restRunBriefsSchema,
   restRunSchema,
   restRunsSchema,
+  restTaskBriefsSchema,
   restTaskSchema,
   restTasksSchema,
   restTokenCreatedSchema,
@@ -295,6 +298,83 @@ describe("runs", () => {
       (await asAgent(aliceToken, "POST", `${IN}/runs/${mine.id}/end`, { status: "abandoned" }))
         .status,
     ).toBe(200);
+  });
+
+  it("are listed in the brief form without their reports, counted, as the tasks are without their bodies", async () => {
+    // A project of its own, so that the lists hold what is written here and nothing else.
+    await h.project(alice, { key: "brief", name: "Lists in brief", visibility: "workspace" });
+    const AT = projectPath("brief");
+    const body = `## What\n\n${"A paragraph of what is to be done, as a task says it. ".repeat(40)}`;
+    const said = "What was found and done, as an agent reports it while it works. ".repeat(12);
+    const taken: { taskId: string; runId: string }[] = [];
+    for (const title of ["One", "Two", "Three"]) {
+      const task = await writeTask(alice, { title, body }, AT);
+      const run = await startRun(aliceToken, task.id, AT);
+      taken.push({ taskId: task.id, runId: run.id });
+    }
+    // Two reports on the first run, one on the second, none on the third.
+    for (const runId of [taken[0]?.runId, taken[0]?.runId, taken[1]?.runId]) {
+      const reported = await asAgent(aliceToken, "POST", `${AT}/runs/${runId}/reports`, {
+        body: said,
+      });
+      expect(reported.status).toBe(201);
+    }
+    const read = async (path: string) => {
+      const answered = await asAgent(aliceToken, "GET", path);
+      expect(answered.status).toBe(200);
+      const text = await answered.text();
+      return { json: JSON.parse(text) as unknown, bytes: text.length };
+    };
+
+    const whole = await read(`${AT}/runs`);
+    const brief = await read(`${AT}/runs?brief=true`);
+    const runsWhole = restRunsSchema.parse(whole.json);
+    const runsBrief = restRunBriefsSchema.parse(brief.json);
+    // The same runs in the same order, each without its reports and with their count.
+    expect(runsBrief.more).toBe(runsWhole.more);
+    expect(runsBrief.items).toEqual(
+      runsWhole.items.map(({ reports, ...run }) => ({ ...run, reportCount: reports.length })),
+    );
+    expect(Object.fromEntries(runsBrief.items.map((run) => [run.id, reportCountOf(run)]))).toEqual({
+      [taken[0]?.runId ?? ""]: 2,
+      [taken[1]?.runId ?? ""]: 1,
+      [taken[2]?.runId ?? ""]: 0,
+    });
+    for (const item of (brief.json as { items: object[] }).items) {
+      expect(item).not.toHaveProperty("reports");
+    }
+    expect(brief.bytes).toBeLessThan(whole.bytes);
+    // What a console from before the brief form answers, the run whole, reads as the brief
+    // form too, its reports counted by whoever reads it.
+    expect(restRunBriefsSchema.parse(whole.json).items.map(reportCountOf)).toEqual(
+      runsWhole.items.map((run) => run.reports.length),
+    );
+    // The filters and the pages narrow the brief form as they do the whole.
+    const one = restRunBriefsSchema.parse(
+      (await read(`${AT}/runs?brief=true&task=${taken[0]?.taskId}&limit=1`)).json,
+    );
+    expect(one.items.map((run) => run.id)).toEqual([taken[0]?.runId]);
+    expect(restRunsSchema.parse((await read(`${AT}/runs?brief=false`)).json).items).toEqual(
+      runsWhole.items,
+    );
+    expect((await asAgent(aliceToken, "GET", `${AT}/runs?brief=yes`)).status).toBe(400);
+
+    const tasksWhole = await read(`${AT}/tasks`);
+    const tasksBrief = await read(`${AT}/tasks?brief=true`);
+    const full = restTasksSchema.parse(tasksWhole.json);
+    expect(restTaskBriefsSchema.parse(tasksBrief.json).items).toEqual(
+      full.items.map(({ body: _body, ...task }) => task),
+    );
+    for (const item of (tasksBrief.json as { items: object[] }).items) {
+      expect(item).not.toHaveProperty("body");
+    }
+    expect(full.items.every((task) => task.body === body)).toBe(true);
+    expect(tasksBrief.bytes).toBeLessThan(tasksWhole.bytes);
+    // The whole form, read as the brief one: the bodies are let go, and nothing else differs.
+    expect(restTaskBriefsSchema.parse(tasksWhole.json)).toEqual(
+      restTaskBriefsSchema.parse(tasksBrief.json),
+    );
+    expect((await asAgent(aliceToken, "GET", `${AT}/tasks?brief=yes`)).status).toBe(400);
   });
 
   it("keep a run to its agent and its project, refuse a closed task and a decision from another's run, and let a person give up on one", async () => {

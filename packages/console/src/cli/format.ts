@@ -32,14 +32,17 @@ import type {
   RestRules,
   RestRulesPlugin,
   RestRun,
+  RestRunBrief,
   RestSignal,
   RestTask,
+  RestTaskBrief,
   RestTeam,
   RestVersion,
   RestVersionSummary,
   RestWork,
   RestWorkspace,
 } from "../schemas.js";
+import { reportCountOf } from "../schemas.js";
 
 // What the command prints: one line per thing in a list, a few lines for one thing in full.
 // Plain text, for an agent to read and a person to skim; ids are given, since the commands take
@@ -328,7 +331,7 @@ export const calledOf = (person: Pick<RestPerson, "login" | "handle">): string =
 /** The members at work on a task as a line calls them, in the order they came to it. */
 const logins = (people: readonly RestPerson[]): string => people.map(calledOf).join(", ");
 
-export function formatTaskLine(task: RestTask): string {
+export function formatTaskLine(task: RestTaskBrief): string {
   const notes = [`owner ${calledOf(task.owner)}`];
   if (task.workers.length > 0) {
     notes.push(`workers ${logins(task.workers)}`);
@@ -375,7 +378,7 @@ function scheduleLines(task: RestTask): string[] {
 export function formatTask(
   task: RestTask,
   decisions?: readonly RestDecision[],
-  runs?: readonly RestRun[],
+  runs?: readonly RestRunBrief[],
   comments?: readonly RestComment[],
 ): string {
   const lines = [
@@ -436,8 +439,10 @@ export function formatComment(comment: RestComment): string {
   return lines.join("\n");
 }
 
-export function formatRunLine(run: RestRun): string {
-  const notes = [plural(run.reports.length, "report"), plural(run.artifacts.length, "artifact")];
+export function formatRunLine(run: RestRunBrief): string {
+  // A run of a listing comes without its reports, counted (`?brief=true`); a run read whole,
+  // or from a console from before the brief form, with them.
+  const notes = [plural(reportCountOf(run), "report"), plural(run.artifacts.length, "artifact")];
   if (run.waitingFor !== null) {
     notes.push(`waiting for decision ${run.waitingFor}`);
   }
@@ -670,7 +675,7 @@ export function formatGoalLine(goal: RestGoal): string {
 }
 
 /** One goal in full; with the tasks that work towards it, when given. */
-export function formatGoal(goal: RestGoal, tasks?: readonly RestTask[]): string {
+export function formatGoal(goal: RestGoal, tasks?: readonly RestTaskBrief[]): string {
   const lines = [
     `goal ${goal.id}: ${goal.title}`,
     `state: ${goal.state}  category: ${goal.category?.key ?? "none"}  starts: ${goal.startsOn ?? "none"}  due: ${goal.dueOn ?? "none"}  set by: ${calledOf(goal.createdBy)}${through(goal.agent)}`,

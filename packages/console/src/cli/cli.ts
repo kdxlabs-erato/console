@@ -79,6 +79,7 @@ import {
   type RestPluginInvocation,
   type RestRules,
   type RestRun,
+  type RestRunBrief,
   type RestTask,
   type RestTaskPatch,
 } from "../schemas.js";
@@ -635,7 +636,9 @@ async function currentRun(
   if (given !== undefined) {
     return given;
   }
-  const { items } = await project.runs({ open: true, mine: true });
+  // The brief form: a command on a run asks which run is open every time, and needs no report
+  // of it, where a long run has many.
+  const { items } = await project.runBriefs({ open: true, mine: true });
   const [only] = items;
   if (only !== undefined && items.length === 1) {
     return only.id;
@@ -673,11 +676,11 @@ async function currentRun(
 async function openRunsOfThePerson(
   session: Session,
   project: ProjectClient,
-): Promise<readonly RestRun[]> {
+): Promise<readonly RestRunBrief[]> {
   try {
     const [me, open] = await Promise.all([
       session.client.me(),
-      project.runs({ open: true, limit: LIST_LIMIT }),
+      project.runBriefs({ open: true, limit: LIST_LIMIT }),
     ]);
     const person = me.person;
     return person === null ? [] : open.items.filter((run) => run.person.id === person.id);
@@ -1603,7 +1606,7 @@ const tasks: Command = async (args, io) => {
   if (search === "") {
     throw misuse("Say what to search for: console tasks --search <words>");
   }
-  const found = await project.tasks({
+  const filter = {
     ...(state === undefined ? {} : { state }),
     ...(on(values, "open") || due === "overdue" ? { open: true } : {}),
     ...(worker === undefined ? {} : { worker }),
@@ -1614,7 +1617,10 @@ const tasks: Command = async (args, io) => {
     ...(search === undefined ? {} : { q: search }),
     ...(on(values, "archived") ? { archived: true } : {}),
     ...page,
-  });
+  };
+  // A line a task and no body: the listing is asked for in the brief form, without the bodies,
+  // which weigh more than the rest of a page together. --json is the console's own answer, whole.
+  const found = session.json ? await project.tasks(filter) : await project.taskBriefs(filter);
   // A search that finds nothing says how it looked: every word must be in a title, so three
   // words find nothing where one of them finds the task, and an agent that read "No tasks."
   // wrote the same work a second time.
@@ -3238,7 +3244,9 @@ const task: Command = async (args, io) => {
   const found = await project.task(ref);
   const [decisions, runs, comments] = await Promise.all([
     project.decisions({ task: found.id }),
-    project.runs({ task: found.id }),
+    // The runs are a line each, with their reports counted: the brief form, unless --json asks
+    // for the console's own answer.
+    session.json ? project.runs({ task: found.id }) : project.runBriefs({ task: found.id }),
     project.comments(found.id),
   ]);
   answer(
@@ -3389,7 +3397,7 @@ async function taking(
     session.client.me(),
     project.task(ref),
     project.comments(found.id),
-    project.runs({ open: true, mine: true }),
+    project.runBriefs({ open: true, mine: true }),
   ]);
   // Taking a task with a run open on it ends that run (ADR-0020): said when it happened.
   const tookOver =
@@ -4097,7 +4105,9 @@ const goal: Command = async (args, io) => {
   const session = await open(io, values);
   const project = await session.project();
   const found = await project.goal(id);
-  const towards = await project.tasks({ goal: found.id });
+  const towards = session.json
+    ? await project.tasks({ goal: found.id })
+    : await project.taskBriefs({ goal: found.id });
   answer(io, session, { goal: found, tasks: towards.items }, () =>
     formatGoal(found, towards.items),
   );
@@ -4207,13 +4217,15 @@ const runs: Command = async (args, io) => {
   const ref = text(values, "task");
   const taskId = ref === undefined ? undefined : (await project.task(ref)).id;
   const mine = on(values, "mine");
+  const filter = {
+    ...(taskId === undefined ? {} : { task: taskId }),
+    ...(on(values, "open") ? { open: true } : {}),
+    ...(mine ? { mine: true } : {}),
+    ...page,
+  };
   const [found, agent] = await Promise.all([
-    project.runs({
-      ...(taskId === undefined ? {} : { task: taskId }),
-      ...(on(values, "open") ? { open: true } : {}),
-      ...(mine ? { mine: true } : {}),
-      ...page,
-    }),
+    // A line a run, its reports counted: the brief form, unless --json asks for the console's own.
+    session.json ? project.runs(filter) : project.runBriefs(filter),
     // With a token, --mine is the runs begun with that token, one agent's, and a person may
     // have more: an empty listing would read as if they had none, so whose these are is said.
     mine && !session.json ? tokenNameOf(session) : undefined,

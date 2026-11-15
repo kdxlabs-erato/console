@@ -51,6 +51,7 @@ import {
   type RestProjects,
   type RestReachedDecision,
   type RestRules,
+  type RestRunBriefs,
   type RestRuns,
   type RestSessions,
   type RestSkillBrowse,
@@ -60,6 +61,7 @@ import {
   type RestSkillLoad,
   type RestSkillRows,
   type RestSkills,
+  type RestTaskBriefs,
   type RestTasks,
   type RestTeams,
   type RestTokenCreated,
@@ -318,6 +320,7 @@ import {
   restProject,
   restRules,
   restRun,
+  restRunBrief,
   restSession,
   restTask,
   restTaskBrief,
@@ -457,6 +460,8 @@ const tasksQuery = z.object({
   unassigned: z.enum(["true", "false"]).optional(),
   dueBy: z.string().regex(DAY).optional(),
   q: z.string().trim().min(1).max(MAX_SEARCH_LENGTH).optional(),
+  /** `true` for the tasks without their bodies, for what lists them and shows none. */
+  brief: z.enum(["true", "false"]).optional(),
   ...page,
 });
 const decisionsQuery = z.object({
@@ -483,6 +488,8 @@ const runsQuery = z.object({
   task: z.string().regex(UUID).optional(),
   open: z.enum(["true", "false"]).optional(),
   mine: z.enum(["true", "false"]).optional(),
+  /** `true` for the runs without their reports, counted, for what lists them and shows none. */
+  brief: z.enum(["true", "false"]).optional(),
   ...page,
 });
 const eventsQuery = z.object({
@@ -2653,6 +2660,12 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
       limit: query.data.limit,
       offset: query.data.offset,
     });
+    // The brief form: without the bodies, which a listing does not show and which weigh more
+    // than everything else of a page together.
+    if (query.data.brief === "true") {
+      const brief: RestTaskBriefs = { items: page.items.map(restTaskBrief), more: page.more };
+      return c.json(brief);
+    }
     const body: RestTasks = { items: page.items.map(restTask), more: page.more };
     return c.json(body);
   });
@@ -3078,9 +3091,15 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
       // An agent's own runs are the ones begun with its token; a person's, the ones for them.
       tokenId: mine && found.token !== undefined ? found.token.id : undefined,
       personId: mine && found.token === undefined ? found.person.id : undefined,
+      brief: query.data.brief === "true",
       limit: query.data.limit,
       offset: query.data.offset,
     });
+    // The brief form: without the reports, which are counted and never read.
+    if (query.data.brief === "true") {
+      const brief: RestRunBriefs = { items: page.items.map(restRunBrief), more: page.more };
+      return c.json(brief);
+    }
     const body: RestRuns = { items: page.items.map(restRun), more: page.more };
     return c.json(body);
   });

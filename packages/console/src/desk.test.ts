@@ -232,7 +232,7 @@ describe("the words of a search", () => {
   });
 });
 
-/** A reader that answers from what it is given and keeps what it was asked. */
+/** A reader that answers from what it is given and keeps what it was asked: a desk asks for the brief form of both. */
 function readerOf(answers: {
   readonly tasks?: (key: string, filter: TaskFilter) => RestTasks;
   readonly runs?: (
@@ -248,11 +248,11 @@ function readerOf(answers: {
     asked,
     reader: {
       project: (key) => ({
-        tasks: async (filter = {}) => {
+        taskBriefs: async (filter = {}) => {
           asked.push({ key, what: "tasks", filter });
           return answers.tasks?.(key, filter) ?? { items: [], more: false };
         },
-        runs: async (filter = {}) => {
+        runBriefs: async (filter = {}) => {
           asked.push({ key, what: "runs", filter });
           return answers.runs?.(key, filter) ?? { items: [], more: false };
         },

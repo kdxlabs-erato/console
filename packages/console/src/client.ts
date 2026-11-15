@@ -102,6 +102,7 @@ import {
   type RestRules,
   type RestRulesInput,
   type RestRun,
+  type RestRunBriefs,
   type RestRunEndInput,
   type RestRunInput,
   type RestRunnerHeartbeat,
@@ -120,6 +121,7 @@ import {
   type RestSkillRows,
   type RestSkills,
   type RestTask,
+  type RestTaskBriefs,
   type RestTaskInput,
   type RestTaskPatch,
   type RestTasks,
@@ -200,6 +202,7 @@ import {
   restProjectsSchema,
   restReachedDecisionSchema,
   restRulesSchema,
+  restRunBriefsSchema,
   restRunnerHeartbeatSchema,
   restRunSchema,
   restRunsSchema,
@@ -213,6 +216,7 @@ import {
   restSkillLoadSchema,
   restSkillRowsSchema,
   restSkillsSchema,
+  restTaskBriefsSchema,
   restTaskSchema,
   restTasksSchema,
   restTeamSchema,
@@ -399,6 +403,12 @@ export interface ProjectClient {
   updateMember(personId: string, patch: RestMemberPatch): Promise<RestMember>;
   removeMember(personId: string): Promise<void>;
   tasks(filter?: TaskFilter, signal?: AbortSignal): Promise<RestTasks>;
+  /**
+   * The same page of the board without the tasks' bodies (`?brief=true`), for what lists tasks
+   * and shows no body. A console from before the brief form answers the tasks whole, and they
+   * read the same.
+   */
+  taskBriefs(filter?: TaskFilter, signal?: AbortSignal): Promise<RestTaskBriefs>;
   /** One task, by its id or by its number. */
   task(ref: string, signal?: AbortSignal): Promise<RestTask>;
   createTask(input: RestTaskInput): Promise<RestTask>;
@@ -431,6 +441,15 @@ export interface ProjectClient {
     filter?: { readonly task?: string; readonly open?: boolean; readonly mine?: boolean } & Page,
     signal?: AbortSignal,
   ): Promise<RestRuns>;
+  /**
+   * The same page of the runs without their reports, counted (`?brief=true`), for what lists
+   * runs and shows no report. A console from before the brief form answers the runs whole,
+   * which reads the same: `reportCountOf` says how many reports a run has either way.
+   */
+  runBriefs(
+    filter?: { readonly task?: string; readonly open?: boolean; readonly mine?: boolean } & Page,
+    signal?: AbortSignal,
+  ): Promise<RestRunBriefs>;
   run(id: string, signal?: AbortSignal): Promise<RestRun>;
   /** Takes a task: a run begins, for the person the asker is or acts for. */
   startRun(input: RestRunInput): Promise<RestRun>;
@@ -1071,6 +1090,30 @@ export function createClient(options: ClientOptions = {}): ConsoleClient {
     value === undefined ? undefined : String(value);
   const number = (value: number | undefined): string | undefined =>
     value === undefined ? undefined : String(value);
+  /** What narrows a page of the board, as the query of its address. */
+  const tasksQuery = (filter: TaskFilter): Record<string, string | undefined> => ({
+    state: filter.state,
+    archived: flag(filter.archived),
+    open: flag(filter.open),
+    category: filter.category,
+    goal: filter.goal,
+    worker: filter.worker,
+    unassigned: flag(filter.unassigned),
+    dueBy: filter.dueBy,
+    q: filter.q,
+    limit: number(filter.limit),
+    offset: number(filter.offset),
+  });
+  /** What narrows a page of the runs, as the query of its address. */
+  const runsQuery = (
+    filter: { readonly task?: string; readonly open?: boolean; readonly mine?: boolean } & Page,
+  ): Record<string, string | undefined> => ({
+    task: filter.task,
+    open: flag(filter.open),
+    mine: flag(filter.mine),
+    limit: number(filter.limit),
+    offset: number(filter.offset),
+  });
 
   /** A file as the parts of a form: the bytes with their name and type, and the label. */
   const formOf = (input: FileUpload): FormData => {
@@ -1217,21 +1260,17 @@ export function createClient(options: ClientOptions = {}): ConsoleClient {
       tasks: (filter = {}, signal) =>
         request(
           "GET",
-          withQuery(at("tasks"), {
-            state: filter.state,
-            archived: flag(filter.archived),
-            open: flag(filter.open),
-            category: filter.category,
-            goal: filter.goal,
-            worker: filter.worker,
-            unassigned: flag(filter.unassigned),
-            dueBy: filter.dueBy,
-            q: filter.q,
-            limit: number(filter.limit),
-            offset: number(filter.offset),
-          }),
+          withQuery(at("tasks"), tasksQuery(filter)),
           undefined,
           restTasksSchema,
+          signal,
+        ),
+      taskBriefs: (filter = {}, signal) =>
+        request(
+          "GET",
+          withQuery(at("tasks"), { ...tasksQuery(filter), brief: "true" }),
+          undefined,
+          restTaskBriefsSchema,
           signal,
         ),
       task: (ref, signal) =>
@@ -1287,17 +1326,13 @@ export function createClient(options: ClientOptions = {}): ConsoleClient {
           restDecisionSchema,
         ),
       runs: (filter = {}, signal) =>
+        request("GET", withQuery(at("runs"), runsQuery(filter)), undefined, restRunsSchema, signal),
+      runBriefs: (filter = {}, signal) =>
         request(
           "GET",
-          withQuery(at("runs"), {
-            task: filter.task,
-            open: flag(filter.open),
-            mine: flag(filter.mine),
-            limit: number(filter.limit),
-            offset: number(filter.offset),
-          }),
+          withQuery(at("runs"), { ...runsQuery(filter), brief: "true" }),
           undefined,
-          restRunsSchema,
+          restRunBriefsSchema,
           signal,
         ),
       run: (id, signal) =>

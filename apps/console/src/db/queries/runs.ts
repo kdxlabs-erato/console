@@ -70,6 +70,8 @@ export interface RunRecord {
   /** When the agent was last heard from on this run: its start, a report, a hand-in, a question. */
   readonly lastHeardAt: Date;
   readonly reports: readonly ReportRecord[];
+  /** How many reports the run has, where a listing asked for them counted and not read; `reports` is empty then. */
+  readonly reportCount?: number | undefined;
   readonly artifacts: readonly ArtifactRecord[];
   /** The decision the run waits for, while one does. */
   readonly waitingFor: string | undefined;
@@ -182,12 +184,25 @@ function selectRuns(handle: Handle) {
 }
 
 /** The rows as records, with what each run reported and handed in, oldest first. */
-async function attach(handle: Handle, rows: readonly RunRow[]): Promise<RunRecord[]> {
+async function attach(
+  handle: Handle,
+  rows: readonly RunRow[],
+  /** Whether the reports are counted and not read: what a listing in the brief form asks for. */
+  counted = false,
+): Promise<RunRecord[]> {
   const ids = rows.map((row) => row.id);
   // One after the other, not side by side: the handle may be a transaction, which is one
   // connection, and a connection takes one query at a time.
+  const counts =
+    !counted || ids.length === 0
+      ? []
+      : await handle
+          .select({ runId: reports.runId, count: count() })
+          .from(reports)
+          .where(inArray(reports.runId, ids))
+          .groupBy(reports.runId);
   const reported =
-    ids.length === 0
+    counted || ids.length === 0
       ? []
       : await handle
           .select({
@@ -222,6 +237,9 @@ async function attach(handle: Handle, rows: readonly RunRow[]): Promise<RunRecor
     reports: reported
       .filter((report) => report.runId === row.id)
       .map((report) => ({ id: report.id, body: report.body, createdAt: report.createdAt })),
+    ...(counted
+      ? { reportCount: counts.find((counted) => counted.runId === row.id)?.count ?? 0 }
+      : {}),
     artifacts: handedIn.filter((artifact) => artifact.runId === row.id).map(toArtifact),
     waitingFor: row.waitingFor ?? undefined,
     sessionId: row.sessionId ?? undefined,
@@ -777,6 +795,8 @@ export async function listRuns(
     readonly open?: boolean | undefined;
     readonly personId?: string | undefined;
     readonly tokenId?: string | undefined;
+    /** True for the brief form: the reports counted, their bodies never read. */
+    readonly brief?: boolean | undefined;
     readonly limit: number;
     readonly offset?: number | undefined;
   },
@@ -800,7 +820,7 @@ export async function listRuns(
     .limit(filter.limit + 1)
     .offset(filter.offset ?? 0);
   return {
-    items: await attach(handle, rows.slice(0, filter.limit)),
+    items: await attach(handle, rows.slice(0, filter.limit), filter.brief === true),
     more: rows.length > filter.limit,
   };
 }

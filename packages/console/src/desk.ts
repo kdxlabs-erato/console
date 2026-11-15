@@ -1,4 +1,4 @@
-import type { RestRun, RestTaskBrief, RestWorkBrief, RunStatus, TaskState } from "./api.js";
+import type { RestRunBrief, RestTaskBrief, RestWorkBrief, RunStatus, TaskState } from "./api.js";
 import type { ProjectClient } from "./client.js";
 import { addDays, dayOf, weekOf } from "./dates.js";
 
@@ -32,7 +32,8 @@ export interface DeskTask {
 /** A run of the person's with the project it is in and, where the visit read its task, the task's title. */
 export interface DeskRun {
   readonly project: DeskProject;
-  readonly run: RestRun;
+  /** The run without its reports, which a desk never shows: what a listing in the brief form answers. */
+  readonly run: RestRunBrief;
   readonly title: string | undefined;
 }
 
@@ -199,9 +200,12 @@ function closedAt(task: RestTaskBrief): string {
   return task.archivedAt ?? task.doneAt ?? task.updatedAt;
 }
 
-/** What a desk reads of the console: a project at a time, its tasks and its runs. */
+/**
+ * What a desk reads of the console: a project at a time, its tasks and its runs, each in the
+ * brief form, without the bodies and the reports a desk does not show.
+ */
 export interface DeskReader {
-  project(key: string): Pick<ProjectClient, "tasks" | "runs">;
+  project(key: string): Pick<ProjectClient, "taskBriefs" | "runBriefs">;
 }
 
 /** A page of a person's closed work: what one visit read, and whether the console has more. */
@@ -247,9 +251,9 @@ export async function readHistory(
         offset: page * DESK_TASKS,
       };
       const [closed, away, ended] = await Promise.all([
-        client.tasks({ ...filter, open: false }, signal),
-        client.tasks({ ...filter, archived: true }, signal),
-        client.runs({ open: false, limit: DESK_RUNS, offset: page * DESK_RUNS }, signal),
+        client.taskBriefs({ ...filter, open: false }, signal),
+        client.taskBriefs({ ...filter, archived: true }, signal),
+        client.runBriefs({ open: false, limit: DESK_RUNS, offset: page * DESK_RUNS }, signal),
       ]);
       const tasks = [...closed.items, ...away.items];
       const titles = new Map(tasks.map((task) => [task.id, task.title]));
@@ -313,7 +317,9 @@ export async function readOpenRuns(
   const titles = new Map(input.tasks.map(({ task }) => [task.id, task.title]));
   const read = await Promise.all(
     [...projects.values()].slice(0, DESK_PROJECTS).map(async (project) => {
-      const open = await reader.project(project.key).runs({ open: true, limit: DESK_RUNS }, signal);
+      const open = await reader
+        .project(project.key)
+        .runBriefs({ open: true, limit: DESK_RUNS }, signal);
       return open.items
         .filter((run) => run.person.id === input.personId)
         .map((run) => ({ project, run, title: titles.get(run.taskId) }));

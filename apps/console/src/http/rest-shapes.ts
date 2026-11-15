@@ -18,6 +18,7 @@ import type {
   RestProject,
   RestRules,
   RestRun,
+  RestRunBrief,
   RestSession,
   RestTask,
   RestTaskBrief,
@@ -279,6 +280,15 @@ export function restGlanceGoal(goal: GoalRecord): RestGlanceGoal {
 export function restTaskBrief(task: TaskRecord): RestTaskBrief {
   const { body: _body, ...brief } = restTask(task);
   return brief;
+}
+
+/**
+ * A run as a listing asks for it (`brief=true`): everything but its reports, counted, as the
+ * query counted them where it did not read them.
+ */
+export function restRunBrief(run: RunRecord): RestRunBrief {
+  const { reports: _reports, ...brief } = restRun(run);
+  return { ...brief, reportCount: run.reportCount ?? run.reports.length };
 }
 
 /** A decision as the plate's page asks for it (`brief=true`): everything but its body. */
