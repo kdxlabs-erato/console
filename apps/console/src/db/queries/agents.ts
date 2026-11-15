@@ -124,7 +124,9 @@ export interface AgentAccountInput {
  * made an agent account only where that
  * is asked for (`convert`, ADR-0104), once: the member's row becomes the account, with
  * everything it did, unless they administer the workspace; unasked, it is refused, since a
- * persona's proposed login may spell a colleague's and `kind` never goes back. The account is
+ * persona's proposed login may spell a colleague's and `kind` never goes back. Where the host
+ * said which account the login is, a member bound to another account is not that member,
+ * whatever the console last saw them called, and stays as they are. The account is
  * listed in the project it starts in, where the project lists its
  * members. Its manager is another active member, who does not report to it.
  */
@@ -179,7 +181,10 @@ export async function createAgentAccount(
     }
     // Whoever is the account already, whatever they are called here, then whoever carries the
     // login: a member in before one out, one signed in with before a row that waits for its
-    // first sign-in.
+    // first sign-in. Where the host said which account the login is, a member bound to another
+    // account is not the one named, whatever the console last saw them called: the name was
+    // theirs, the host gave it to someone else since, and making them the agent account would
+    // be for good. Only a row bound to no account is found by the login then.
     const [member] = await tx
       .select(personColumns(people))
       .from(people)
@@ -189,7 +194,10 @@ export async function createAgentAccount(
           eq(people.host, host),
           hostAccountId === undefined
             ? sameLogin(login)
-            : or(sameLogin(login), eq(people.hostAccountId, hostAccountId)),
+            : or(
+                eq(people.hostAccountId, hostAccountId),
+                and(sameLogin(login), isNull(people.hostAccountId)),
+              ),
         ),
       )
       .orderBy(
@@ -288,9 +296,14 @@ export async function createAgentAccount(
           )
           .returning({ id: listings.id });
         if (listed === undefined) {
+          // A listing may still spell the login for a member bound to another account, whom
+          // the console has not seen since the host gave the name away: it stays theirs, and
+          // none is written beside it. The account is then let in by the organization, which
+          // is what said whose the login is.
           await tx
             .insert(listings)
-            .values({ workspaceId, host, login, personId: row.id, listedById: actor.id });
+            .values({ workspaceId, host, login, personId: row.id, listedById: actor.id })
+            .onConflictDoNothing();
         }
       }
       await recordEvent(tx, {

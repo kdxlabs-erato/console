@@ -67,6 +67,9 @@ beforeAll(async () => {
           // Accounts that hold a name the organization has no member of when it is added.
           eli: { accountId: "9002", login: "acme-juno" },
           dana: { accountId: "9003", login: "acme-wren" },
+          // Accounts that registered a name a member of the workspace gave up at the host.
+          "acme-juno": { accountId: "9004", login: "carol" },
+          "acme-wren": { accountId: "9005", login: "acme-pax" },
         },
       }),
     ],
@@ -195,5 +198,63 @@ describe("an agent account's first sign-in at a git host (ADR-0126)", () => {
     expect(made.status).toBe(409);
     expect(restErrorSchema.parse(await made.json()).error.code).toBe("agent.login_is_member");
     expect((await meOf(bob)).id).toBe(bobId);
+  });
+
+  it("makes no member of another account the agent account, whatever the console last called them", async () => {
+    const convert = (fields: { readonly login: string; readonly handle: string }) =>
+      post(alice, REST_ROUTES.agents, {
+        host: "gh",
+        name: "An agent",
+        project: "ops",
+        convert: true,
+        ...fields,
+      });
+    // Carol signed in as `carol`, let in by the organization. The host has since renamed her
+    // account, and another account registered the name and came into the organization; the
+    // console has not seen Carol again, and still calls her `carol`. The host says the login is
+    // that other account: the agent account made of it, with `convert` even, is not Carol's
+    // row, since she is not the account named and `kind` never goes back (ADR-0104).
+    organization.members.set("carol", "1003");
+    const carol = await h.signIn("carol");
+    const carolId = (await meOf(carol)).id;
+    organization.members.delete("carol");
+    organization.members.set("carol-2", "1003");
+    organization.members.set("carol", "9004");
+    const made = await convert({ login: "carol", handle: "nova" });
+    expect(made.status).toBe(201);
+    const agent = restAgentSchema.parse(await made.json());
+    expect(agent.person).toMatchObject({ login: "carol", kind: "agent", invited: true });
+    expect(agent.person.id).not.toBe(carolId);
+    expect(agent.firstSignIn).toBe("account");
+    // Carol is who she was, and the account the host named is let in as the agent account.
+    expect(await meOf(carol)).toMatchObject({ id: carolId, kind: "person", login: "carol" });
+    expect(await meOf(await h.signIn("acme-juno"))).toMatchObject({
+      id: agent.person.id,
+      kind: "agent",
+      handle: "nova",
+      login: "carol",
+    });
+
+    // The same of a member an administrator listed, whose listing still spells the name: it
+    // stays theirs, and the account is added beside them, let in by the organization that
+    // named it.
+    const listed = await post(alice, REST_ROUTES.listings, { host: "gh", login: "acme-pax" });
+    expect(listed.status).toBe(201);
+    const pax = await h.signIn("acme-pax");
+    const paxId = (await meOf(pax)).id;
+    organization.members.set("acme-pax", "9005");
+    const second = await convert({ login: "acme-pax", handle: "vega" });
+    expect(second.status).toBe(201);
+    const vega = restAgentSchema.parse(await second.json());
+    expect(vega.person.id).not.toBe(paxId);
+    expect(vega.firstSignIn).toBe("account");
+    expect(await meOf(pax)).toMatchObject({ id: paxId, kind: "person", source: "listed" });
+    expect(await meOf(await h.signIn("acme-wren"))).toMatchObject({
+      id: vega.person.id,
+      kind: "agent",
+      handle: "vega",
+    });
+    // The member comes back as themselves, by the listing that is theirs.
+    expect(await meOf(await h.signIn("acme-pax"))).toMatchObject({ id: paxId, kind: "person" });
   });
 });
