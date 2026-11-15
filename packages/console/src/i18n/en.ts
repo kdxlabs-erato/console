@@ -951,8 +951,8 @@ export const en = {
 
   /** The pages of a desk (ADR-0116, ADR-0117): a member's own, beside the console's, in a console of their own. */
   desk: {
-    tab: "Desk",
-    title: "My desk",
+    tab: "Records and work",
+    title: "Records and work",
     lead: "What you made and what became of it, and your work on the board.",
     loading: "Loading your desk",
     couldNotLoad: "Your desk could not be read from the console.",
@@ -1071,7 +1071,7 @@ export const en = {
     },
     /** The first of a desk's own pages, as its shell has it until its member says what it shows (ADR-0122). */
     mine: {
-      tab: "My page",
+      tab: "Desk",
       title: "This page is yours",
       body: "Tell your agent what you want to keep and to see here, and it builds this page from that.",
     },

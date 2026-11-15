@@ -176,7 +176,7 @@ describe("a desk's views", () => {
     const page = deskPage();
     expect(page.key).toBe(DESK_PAGE_KEY);
     expect(page.level).toBe("workspace");
-    expect(page.label).toEqual({ en: "Desk", ko: "데스크" });
+    expect(page.label).toEqual({ en: "Records and work", ko: "기록과 작업" });
     expect(deskPage({ key: "mine" }).key).toBe("mine");
   });
 });

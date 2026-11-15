@@ -879,8 +879,8 @@ export const ko: Messages = {
   },
 
   desk: {
-    tab: "데스크",
-    title: "내 데스크",
+    tab: "기록과 작업",
+    title: "기록과 작업",
     lead: "내가 만든 것과 그 뒤의 일, 그리고 보드의 내 작업.",
     loading: "내 데스크를 불러오는 중",
     couldNotLoad: "콘솔에서 내 데스크를 읽을 수 없습니다.",
@@ -993,7 +993,7 @@ export const ko: Messages = {
       older: "더 오래된 것 읽기",
     },
     mine: {
-      tab: "내 페이지",
+      tab: "데스크",
       title: "이 페이지는 내 것입니다",
       body: "여기에 무엇을 남기고 무엇을 보고 싶은지 에이전트에게 말하면, 에이전트가 그에 맞춰 이 페이지를 만듭니다.",
     },
