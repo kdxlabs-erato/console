@@ -913,9 +913,12 @@ describe("the console command", () => {
         },
       },
     });
+    // A pack that is not there to read ends the command as refused, as the skillcdn command
+    // ends on one (ADR-0118): the words on standard error, and nothing printed as if it were the pack.
     const n = harness({ fetch: none.fetch, env: SIGNED_IN });
-    expect(await runCli(["skills"], n.io)).toBe(EXIT.ok);
-    expect(n.out()).toBe(
+    expect(await runCli(["skills"], n.io)).toBe(EXIT.failed);
+    expect(n.out()).toBe("");
+    expect(n.err()).toBe(
       "No skills address: neither this project nor the console names one.\nThe plugins of this console have skills of their own: console plugins lists the plugins, console plugin <key> skills the skills of one.\n",
     );
     const down = fakeConsole({
@@ -930,9 +933,17 @@ describe("the console command", () => {
       },
     });
     const d = harness({ fetch: down.fetch, env: SIGNED_IN });
-    expect(await runCli(["skills"], d.io)).toBe(EXIT.ok);
-    expect(d.out()).toContain("could not be reached");
-    expect(d.out()).toContain("No answer.");
+    expect(await runCli(["skills"], d.io)).toBe(EXIT.failed);
+    expect(d.out()).toBe("");
+    expect(d.err()).toContain(
+      "skills at /gh/acme/skills, served by https://skillcdn.test: unavailable",
+    );
+    expect(d.err()).toContain("could not be reached");
+    expect(d.err()).toContain("No answer.");
+    // --json still prints what the console answered, which says the status, and ends the same.
+    const dj = harness({ fetch: down.fetch, env: SIGNED_IN });
+    expect(await runCli(["skills", "--json"], dj.io)).toBe(EXIT.failed);
+    expect(JSON.parse(dj.out())).toMatchObject({ status: "unavailable" });
     // A pack read from the console's machine has no deployment and no page.
     const local = fakeConsole({
       [`GET ${IN}/skills`]: {
@@ -5772,11 +5783,22 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
       `GET ${IN}/skills/one?path=review%2FSKILL.md`,
       `GET ${IN}/skills/one?path=review%2FSKILL.md&cursor=two`,
     ]);
+    // A file is read a page at a time, as the skillcdn command reads one (ADR-0118): the page
+    // the pack gives, and where the next begins, which --offset then reads.
     const read = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["skill", "--file", "review/guide.md"], read.io)).toBe(EXIT.ok);
-    expect(read.out()).toContain("File: review/guide.md (14 characters)");
-    expect(read.out()).toContain("--- content ---\nHow to review.");
-    expect(read.out()).not.toContain("More follows");
+    expect(read.out()).toContain("File: review/guide.md (characters 0 to 7 of 14)");
+    expect(read.out()).toContain("More follows: call console skill --file with offset 7.");
+    expect(read.out()).toContain("--- content ---\nHow to \n");
+    expect(calls.at(-1)?.key).toBe(`GET ${IN}/skills/file?path=review%2Fguide.md`);
+    const rest = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "--file", "review/guide.md", "--offset", "7"], rest.io)).toBe(
+      EXIT.ok,
+    );
+    expect(rest.out()).toContain("File: review/guide.md (characters 7 to 14 of 14)");
+    expect(rest.out()).toContain("--- content ---\nreview.");
+    expect(rest.out()).not.toContain("More follows");
+    expect(calls.at(-1)?.key).toBe(`GET ${IN}/skills/file?path=review%2Fguide.md&offset=7`);
     // The URI console skills lists beside the path is taken too; one of another pack is not.
     const byUri = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["skill", "skill://gh/acme/skills/review/SKILL.md"], byUri.io)).toBe(
@@ -5843,15 +5865,18 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
       }).fetch,
       env: SIGNED_IN,
     });
-    expect(await runCli(["skill", "review/SKILL.md"], refused.io)).toBe(EXIT.ok);
-    expect(refused.out()).toContain("pack token");
-    expect(refused.out()).toContain("console project pack-token");
-    expect(refused.out()).toContain("The token is no good here.");
+    expect(await runCli(["skill", "review/SKILL.md"], refused.io)).toBe(EXIT.failed);
+    expect(refused.out()).toBe("");
+    expect(refused.err()).toContain(
+      "skill at /gh/acme/skills, served by https://skillcdn.test: token_invalid",
+    );
+    expect(refused.err()).toContain("console project pack-token");
+    expect(refused.err()).toContain("The token is no good here.");
     const nothing = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["skill"], nothing.io)).toBe(EXIT.usage);
   });
 
-  it("reads a file of the pack by --file alone, browses a folder page after page, and searches by words", async () => {
+  it("reads a file of the pack by --file alone, browses a folder a page at a time, and searches by words", async () => {
     const entry = {
       name: null,
       description: null,
@@ -5974,12 +5999,22 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     );
     expect(folder).toContain("- skill: docs/review/SKILL.md (review)");
     expect(folder).toContain("- file: docs/architecture.md (Architecture)");
-    expect(folder).toContain("- file: docs/roadmap.md (Roadmap)");
-    expect(folder).not.toContain("nextCursor");
+    // One page, as the skillcdn command browses (ADR-0118): a page that ends before the folder
+    // does names the cursor that continues it, and --cursor reads the next.
+    expect(folder).not.toContain("docs/roadmap.md");
+    expect(folder).toContain('nextCursor: "two"');
+    const next = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skills", "docs", "--cursor", "two"], next.io)).toBe(EXIT.ok);
+    expect(next.out()).toContain("- file: docs/roadmap.md (Roadmap)");
+    expect(next.out()).not.toContain("nextCursor");
     expect(calls.map((call) => call.key).filter((key) => key.includes("browse"))).toEqual([
       `GET ${IN}/skills/browse?path=docs`,
       `GET ${IN}/skills/browse?path=docs&cursor=two`,
     ]);
+    // --limit says how long a page of a folder is, within what the pack takes.
+    const sized = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skills", "docs", "--limit", "500"], sized.io)).toBe(EXIT.usage);
+    expect(sized.err()).toContain("--limit takes an integer between 1 and 200");
     // One page of a search, in relevance order, with the cursor that continues it.
     const found = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["skills", "docs", "--search", "review", "--limit", "5"], found.io)).toBe(
@@ -5993,7 +6028,22 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     );
     expect(results).toContain("2. document: docs/handbook.md - Handbook\n   Welcome.");
     expect(results).toContain('nextCursor: "more"');
-    // The same JSON the console answered, with the pages joined.
+    // The folder a search keeps to is said after the words, or with --path, as the skillcdn
+    // command's find takes it; said twice, it is not understood.
+    const within = harness({ fetch, env: SIGNED_IN });
+    expect(
+      await runCli(["skills", "--search", "review", "--path", "docs", "--limit", "5"], within.io),
+    ).toBe(EXIT.ok);
+    expect(within.out()).toContain('2 results for "review" in acme/skills (commit 0123456):');
+    expect(calls.at(-1)?.key).toBe(`GET ${IN}/skills/find?query=review&path=docs&limit=5`);
+    const twice = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skills", "docs", "--search", "review", "--path", "docs"], twice.io)).toBe(
+      EXIT.usage,
+    );
+    expect(await runCli(["skills", "--path", "docs"], harness({ fetch, env: SIGNED_IN }).io)).toBe(
+      EXIT.usage,
+    );
+    // The JSON the console answered: the one page, as it came.
     const json = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["skills", "docs", "--json"], json.io)).toBe(EXIT.ok);
     const parsed = JSON.parse(json.out()) as {
@@ -6003,9 +6053,8 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
       "docs/adr",
       "docs/review/SKILL.md",
       "docs/architecture.md",
-      "docs/roadmap.md",
     ]);
-    expect(parsed.read.nextCursor).toBeNull();
+    expect(parsed.read.nextCursor).toBe("two");
     expect(await runCli(["skills", "--limit", "5"], harness({ fetch, env: SIGNED_IN }).io)).toBe(
       EXIT.usage,
     );
@@ -6017,7 +6066,7 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     ).toBe(EXIT.usage);
   });
 
-  it("outlines a document of the pack across its pages, and reads one section of it as asked (SkillCDN 0.4)", async () => {
+  it("outlines a document of the pack a page at a time, and reads one section of it as asked (SkillCDN 0.4)", async () => {
     const outline = (headings: unknown[], nextCursor: string | null) => ({
       ...AT,
       read: {
@@ -6045,17 +6094,20 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
         body: file("docs/guide.md", "Whole.", 0, null, 6),
       },
     });
-    // The outline whole, its pages joined, with the read that takes a section named as the command.
+    // A page of the outline, with the read that takes a section named as the command; a page
+    // that ends before the outline does names the cursor that continues it, as a folder's does.
     const outlined = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["skills", "docs/guide.md"], outlined.io)).toBe(EXIT.ok);
     const printed = outlined.out();
+    expect(printed).toContain("File: docs/guide.md (390 characters; 1 heading)");
     expect(printed).toContain(
-      "File: docs/guide.md (390 characters; 2 headings)\nSource: acme/skills (commit 0123456)",
+      "Outline; a section is read with console skill --file: the path, its offset and its limit.\n- # Guide (offset 0, limit 120)\n",
     );
-    expect(printed).toContain(
-      "Outline; a section is read with console skill --file: the path, its offset and its limit.\n- # Guide (offset 0, limit 120)\n  - ## Setup (offset 120, limit 270)",
-    );
-    expect(printed).not.toContain("nextCursor");
+    expect(printed).toContain('nextCursor: "two"');
+    const further = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skills", "docs/guide.md", "--cursor", "two"], further.io)).toBe(EXIT.ok);
+    expect(further.out()).toContain("## Setup (offset 120, limit 270)");
+    expect(further.out()).not.toContain("nextCursor");
     expect(calls.map((call) => call.key).filter((key) => key.includes("browse"))).toEqual([
       `GET ${IN}/skills/browse?path=docs%2Fguide.md`,
       `GET ${IN}/skills/browse?path=docs%2Fguide.md&cursor=two`,
@@ -6069,9 +6121,9 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
         nextCursor: string | null;
       };
     };
-    expect(parsed.read.outline.headings.map((heading) => heading.text)).toEqual(["Guide", "Setup"]);
+    expect(parsed.read.outline.headings.map((heading) => heading.text)).toEqual(["Guide"]);
     expect(parsed.read.entries).toEqual([]);
-    expect(parsed.read.nextCursor).toBeNull();
+    expect(parsed.read.nextCursor).toBe("two");
     // One section as the outline named it: the page as asked, saying where the file continues.
     const section = harness({ fetch, env: SIGNED_IN });
     expect(
@@ -6170,25 +6222,34 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     }
     // The root's own skill is read by the dot, as the root is everywhere.
     const root = harness({ fetch, env: SIGNED_IN });
-    expect(await runCli(["skill", "."], root.io)).toBe(EXIT.ok);
+    expect(await runCli(["skill", "."], root.io)).toBe(EXIT.failed);
     expect(calls.at(-1)?.key).toBe(`GET ${IN}/skills/one?path=SKILL.md`);
-    // No skill at the path: said as that, with the path that was read and how the pack is
-    // listed, and nothing of a token, since the pack has just answered its listing.
+    // No skill at the path: refused in the skillcdn command's words (ADR-0118), with the path
+    // that was read, the reads that find the exact one and the skills there are; nothing of a
+    // token, since the pack has just answered its listing.
     const missing = harness({ fetch, env: SIGNED_IN });
-    expect(await runCli(["skill", "docs/guide.md"], missing.io)).toBe(EXIT.ok);
-    expect(missing.out()).toBe(
-      "skill at /gh/acme/skills, served by https://skillcdn.test: not_found\nNo skill is at docs/guide.md/SKILL.md in this pack. console skills lists every skill with the path of its SKILL.md, and console skills --search <words> finds one; a file that is no skill is read with console skill --file <path>.\n",
+    expect(await runCli(["skill", "docs/guide.md"], missing.io)).toBe(EXIT.failed);
+    expect(missing.out()).toBe("");
+    expect(missing.err()).toBe(
+      'skill.not_found: No skill at "docs/guide.md/SKILL.md". Use console skills <folder> or console skills --search for its exact SKILL.md path. Available: review/SKILL.md.\n',
     );
+    // No file at the path: the pack's own code and words, as that command prints them.
     const noFile = harness({ fetch, env: SIGNED_IN });
-    expect(await runCli(["skill", "--file", "review/nothing.md"], noFile.io)).toBe(EXIT.ok);
-    expect(noFile.out()).toBe(
-      "file at /gh/acme/skills, served by https://skillcdn.test: not_found\nNo file at that path in this pack.\nconsole skills <folder> shows what a folder of the pack holds, . for the root.\n",
-    );
+    expect(await runCli(["skill", "--file", "review/nothing.md"], noFile.io)).toBe(EXIT.failed);
+    expect(noFile.out()).toBe("");
+    expect(noFile.err()).toBe("file.not_found: No file at that path in this pack.\n");
     // A pack that stops answering between the listing and the read is still the token's to mend.
     const hidden = harness({ fetch, env: SIGNED_IN });
-    expect(await runCli(["skill", "hidden"], hidden.io)).toBe(EXIT.ok);
-    expect(hidden.out()).toContain("the project holds no pack token for it");
-    expect(hidden.out()).toContain("Nothing is served here to the asker.");
+    expect(await runCli(["skill", "hidden"], hidden.io)).toBe(EXIT.failed);
+    expect(hidden.err()).toContain("the project holds no pack token for it");
+    expect(hidden.err()).toContain("Nothing is served here to the asker.");
+    // --json prints what the console answered, which says the status, and ends as refused too.
+    const missingJson = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "docs/guide.md", "--json"], missingJson.io)).toBe(EXIT.failed);
+    expect(JSON.parse(missingJson.out())).toMatchObject({
+      status: "not_found",
+      refusal: { code: "skill.not_found" },
+    });
     // After what a search found, and after the listing, how a skill is loaded: the pack's own
     // footer names how a section is read, and a skill read as a file comes without its rules.
     const found = harness({ fetch, env: SIGNED_IN });
@@ -6316,19 +6377,22 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
         },
       }).fetch;
     const hidden = harness({ fetch: refusal("not_found"), env: pair });
-    expect(await runCli(["skills"], hidden.io)).toBe(EXIT.ok);
-    expect(hidden.out()).toContain(
+    expect(await runCli(["skills"], hidden.io)).toBe(EXIT.failed);
+    expect(hidden.out()).toBe("");
+    // Whose pack it is comes first on a refusal too.
+    expect(hidden.err().startsWith(LINE)).toBe(true);
+    expect(hidden.err()).toContain(
       "the organization's pack is private and the workspace holds no SkillCDN token for it (console workspace pack-token --connect, for an administrator)",
     );
-    expect(hidden.out()).not.toContain("console project pack-token");
+    expect(hidden.err()).not.toContain("console project pack-token");
     const stale = harness({ fetch: refusal("token_invalid"), env: pair });
-    expect(await runCli(["skill", "review/SKILL.md"], stale.io)).toBe(EXIT.ok);
-    expect(stale.out()).toContain(
+    expect(await runCli(["skill", "review/SKILL.md"], stale.io)).toBe(EXIT.failed);
+    expect(stale.err()).toContain(
       "The SkillCDN token the workspace holds no longer works at the deployment: an administrator sets a new one (console workspace pack-token --connect).",
     );
     const none = harness({ fetch: refusal("none"), env: pair });
-    expect(await runCli(["skills"], none.io)).toBe(EXIT.ok);
-    expect(none.out()).toContain(
+    expect(await runCli(["skills"], none.io)).toBe(EXIT.failed);
+    expect(none.err()).toContain(
       "No skills address: the console names none for the organization's skills, and no project is named here.",
     );
     // A console from before has no such routes: the command says so, and what still reads a pack.
@@ -6486,37 +6550,73 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
       },
     });
     expect(saved.code).toBe(EXIT.ok);
-    expect(saved.out).toBe("Saved 3 rows of 2 tables in 2 files at /work/codes.csv\n");
+    // In the skillcdn command's words (ADR-0118).
+    expect(saved.out).toBe("Wrote 3 rows of 2 tables to /work/codes.csv.\n");
     expect(written).toEqual([{ path: "codes.csv", text: csv.out, name: "rows.csv" }]);
+    // As an array of rows, each with its file, its section and its cells by column name, as
+    // that command's --format json prints them.
+    const asJson = await run(["skills", "--rows", "docs/annex", "--format", "json"]);
+    expect(asJson.code).toBe(EXIT.ok);
+    expect(JSON.parse(asJson.out)).toEqual([
+      {
+        path: "docs/annex/codes-1.md",
+        heading: "Codes > A to B",
+        cells: { Code: "A1", Meaning: "Starts" },
+      },
+      {
+        path: "docs/annex/codes-1.md",
+        heading: "Codes > A to B",
+        cells: { Code: "B1", Meaning: 'Says "stop", then stops' },
+      },
+      {
+        path: "docs/annex/codes-2.md",
+        heading: "Codes > C to D",
+        cells: { Code: "C1", Meaning: "Waits" },
+      },
+    ]);
+    expect((await run(["skills", "--rows", "docs/annex", "--format", "xml"])).code).toBe(
+      EXIT.usage,
+    );
+    expect((await run(["skills", "--code", "--format", "json"])).code).toBe(EXIT.usage);
     const unwritable = await run(["skills", "--rows", "docs/annex", "--out", "/nowhere/x.csv"]);
     expect(unwritable.code).toBe(EXIT.failed);
     expect(unwritable.err).toContain("The file could not be written at /nowhere/x.csv.");
     // The code blocks of the whole pack, as written, each under a line that says where it stands.
     const code = await run(["skills", "--code"]);
     expect(code.code).toBe(EXIT.ok);
+    // Printed as the skillcdn command prints them: the line that names a block closed as it opens.
     expect(code.out).toBe(
-      "--- docs/annex/codes-1.md > Codes > A to B [sh]\nmachine --start\n\n--- docs/notes.md\nas written\n",
+      "--- docs/annex/codes-1.md > Codes > A to B (sh) ---\nmachine --start\n\n--- docs/notes.md ---\nas written\n\n",
     );
-    // Nothing to give is said, and is no CSV.
+    // --grep keeps the blocks whose text matches, a regular expression run on this machine.
+    const kept = await run(["skills", "--code", "--grep", "^machine"]);
+    expect(kept.out).toBe("--- docs/annex/codes-1.md > Codes > A to B (sh) ---\nmachine --start\n");
+    const unkept = await run(["skills", "--code", "--grep", "("]);
+    expect(unkept.code).toBe(EXIT.usage);
+    expect(unkept.err).toContain("--grep takes a regular expression");
+    expect((await run(["skills", "--rows", "docs/annex", "--grep", "x"])).code).toBe(EXIT.usage);
+    // No table is a CSV of its header alone, as the skillcdn command prints it, which a
+    // program takes as it is; a line beside it, on standard error, says that there is none.
     const empty = await run(["skills", "--rows", "docs/empty.md"]);
     expect(empty.code).toBe(EXIT.ok);
-    expect(empty.out).toBe("No tables in docs/empty.md.\n");
+    expect(empty.out).toBe("path,heading\r\n");
+    expect(empty.err).toBe("No tables in docs/empty.md.\n");
     // What the pack refuses fails, on standard error, so that a file a program takes is never
     // a refusal; and so does a read that does not reach its end.
     for (const what of ["--rows", "--code"]) {
       const missing = await run(["skills", what, "nothing"]);
       expect(missing.code, what).toBe(EXIT.failed);
       expect(missing.out).toBe("");
-      expect(missing.err).toContain(
-        "at /gh/acme/skills, served by https://skillcdn.test: not_found",
+      // The pack's own code and words, as the skillcdn command prints a refusal.
+      expect(missing.err).toBe(
+        "file.not_found: No Markdown document at that path in this mount, and none under it.\n",
       );
-      expect(missing.err).toContain("No Markdown document at that path in this mount");
     }
     const endless = await run(["skills", "--rows", "endless"]);
     expect(endless.code).toBe(EXIT.failed);
     expect(endless.out).toBe("");
     expect(endless.err).toContain(
-      "The tables under endless are more than the command reads at once (64 rows of 64 tables in 1 file so far)",
+      "The tables under endless are more than the command reads at once (64 rows of 64 tables so far)",
     );
     // A document's outline names the two reads as commands; --json keeps what the console said.
     const outlined = await run(["skills", "docs/annex/codes-1.md"]);

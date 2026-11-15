@@ -920,10 +920,13 @@ describe("the command line", () => {
       "tables at /gh/acme/manual, served by https://skillcdn.test: not_found",
     );
     expect(without.err).toContain("the workspace holds no SkillCDN token for it");
+    // The listing of a pack that is not served ends as refused too, as the skillcdn command
+    // ends on one (ADR-0118), with whose pack it is first.
     const whose = await unbound(["skills"]);
-    expect(whose.code, whose.err).toBe(EXIT.ok);
+    expect(whose.code).toBe(EXIT.failed);
+    expect(whose.out).toBe("");
     expect(
-      whose.out.startsWith(
+      whose.err.startsWith(
         "The organization's pack, since no project is named here: --project <key>, or a directory bound with console use <key>, reads a project's own.\nskills at /gh/acme/manual, served by https://skillcdn.test: not_found\n",
       ),
     ).toBe(true);
@@ -955,7 +958,7 @@ describe("the command line", () => {
     ]);
     const code = await as(["skills", "--code", "docs/annex"]);
     expect(code.code).toBe(EXIT.ok);
-    expect(code.out).toBe("--- docs/annex/codes-1.md > Codes > A to B [sh]\nmachine --start\n");
+    expect(code.out).toBe("--- docs/annex/codes-1.md > Codes > A to B (sh) ---\nmachine --start\n");
     // The outline of the document names the commands that read them, and never the
     // deployment's own address, which the console's token reads nothing at.
     const outlined = await as(["skills", "docs/annex/codes-1.md"]);
