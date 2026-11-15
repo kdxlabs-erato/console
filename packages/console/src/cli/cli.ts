@@ -376,6 +376,70 @@ type ProjectSource =
   | { readonly kind: "environment" }
   | { readonly kind: "directory"; readonly directory: string | undefined };
 
+/**
+ * What is said of a project the console does not have, or does not show the member: the key,
+ * the console and what named the key, then the two things a person can do about it, each
+ * something to ask for or to do. An agent that reads only "not found" guesses at causes; one of
+ * these two is always the one. `login` is the member's, where the command knows it.
+ */
+function unseenProjectWords(
+  url: string,
+  named: { readonly key: string; readonly source: ProjectSource },
+  login: string | undefined,
+): string {
+  const mend =
+    named.source.kind === "directory"
+      ? "bind this directory anew: console use <key>"
+      : named.source.kind === "environment"
+        ? "set CONSOLE_PROJECT to another, or unset it"
+        : "say another with --project";
+  return [
+    `project.not_found: ${url} has no project ${named.key}, or it is not yours to see. The key is named by ${sourceWords(named.source)}.`,
+    `Where the project is there and you are not in it, one of its owners lists you: console member add ${login ?? "<your login>"} --project ${named.key}. Where the key is wrong, ${mend}; console projects lists the projects you may work in at this console.`,
+  ].join("\n");
+}
+
+/**
+ * The console's refusal of the project a directory or the environment names, with the words
+ * above: still the refusal it was, for the code that reads one (a decision is looked for
+ * elsewhere when its project is not found), and said in full where the command ends on it.
+ */
+class UnseenProject extends ApiError {
+  readonly words: string;
+
+  constructor(refusal: ApiError, words: string) {
+    super(refusal.status, refusal.code, refusal.message);
+    this.name = "UnseenProject";
+    this.words = words;
+  }
+}
+
+/**
+ * A project's client whose refusals as `project.not_found` carry `words`: every command that
+ * works in the directory's project goes through one, so that the refusal names the key, the
+ * console and what named it wherever it is met, and no command says it for itself.
+ */
+function namingUnseen(project: ProjectClient, words: () => string): ProjectClient {
+  return new Proxy(project, {
+    get(target, property, receiver) {
+      const member: unknown = Reflect.get(target, property, receiver);
+      if (typeof member !== "function") {
+        return member;
+      }
+      return (...args: unknown[]): unknown => {
+        const result: unknown = Reflect.apply(member, target, args);
+        return result instanceof Promise
+          ? result.catch((error: unknown) => {
+              throw error instanceof ApiError && error.code === "project.not_found"
+                ? new UnseenProject(error, words())
+                : error;
+            })
+          : result;
+      };
+    },
+  });
+}
+
 /** Where a project's key came from, as `whoami` and its refusal say it. */
 function sourceWords(source: ProjectSource): string {
   switch (source.kind) {
@@ -495,11 +559,17 @@ async function open(io: CliIo, values: Values): Promise<Session> {
     projectKey,
     projectNamed,
     async project() {
-      const key = await projectKey();
-      if (key === undefined) {
+      const named = projectNamed();
+      if (named === undefined) {
         throw failed(NO_PROJECT);
       }
-      return client.project(key);
+      // A key typed on the command is in front of whoever typed it; one the directory or the
+      // environment named is not, and is said with the refusal.
+      return named.source.kind === "flag"
+        ? client.project(named.key)
+        : namingUnseen(client.project(named.key), () =>
+            unseenProjectWords(url, named, resolved.account),
+          );
     },
   };
 }
@@ -1161,9 +1231,7 @@ const whoami: Command = async (args, io) => {
   if (missing && named !== undefined) {
     // Who and where are said above, which is what mends it; the command still ends as refused,
     // so that a check of the binding never passes on a key alone.
-    throw failed(
-      `project.not_found: ${session.url} has no project ${named.key}, or it is not yours to see. The key is named by ${sourceWords(named.source)}. console projects lists the projects you may work in at this console; console use <key> binds this directory to one of them.`,
-    );
+    throw failed(unseenProjectWords(session.url, named, person.login));
   }
   return EXIT.ok;
 };
@@ -1604,10 +1672,9 @@ async function readSkills(
 async function packNamed(
   session: Session,
 ): Promise<{ readonly reader: PackReader; readonly owner: PackOwner }> {
-  const key = await session.projectKey();
-  return key === undefined
+  return (await session.projectKey()) === undefined
     ? { reader: session.client.organizationPack(), owner: "organization" }
-    : { reader: session.client.project(key), owner: "project" };
+    : { reader: await session.project(), owner: "project" };
 }
 
 /**
@@ -2570,7 +2637,7 @@ const rules: Command = async (args, io) => {
   const session = await open(io, values);
   const key = await session.projectKey();
   const [found, me] = await Promise.all([
-    key === undefined ? session.client.rules() : session.client.project(key).rules(),
+    key === undefined ? session.client.rules() : (await session.project()).rules(),
     session.client.me(),
   ]);
   const read =
@@ -6060,6 +6127,10 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
     if (error instanceof CliExit) {
       io.stderr(`${error.message}\n`);
       return error.exit;
+    }
+    if (error instanceof UnseenProject) {
+      io.stderr(`${error.words}\n`);
+      return EXIT.failed;
     }
     if (error instanceof ApiError) {
       io.stderr(`${error.code}: ${error.message}\n${hintFor(error, io, seen)}`);

@@ -5361,7 +5361,7 @@ describe("the consoles the command is signed in to (ADR-0027)", () => {
       `alice (member) at Acme, ${ORIGIN}; project elsewhere, named by .skillcdn-console.json in /work/app, which this console does not have or does not show you\n${LINES}`,
     );
     expect(missing.err()).toBe(
-      `project.not_found: ${ORIGIN} has no project elsewhere, or it is not yours to see. The key is named by .skillcdn-console.json in /work/app. console projects lists the projects you may work in at this console; console use <key> binds this directory to one of them.\n`,
+      `project.not_found: ${ORIGIN} has no project elsewhere, or it is not yours to see. The key is named by .skillcdn-console.json in /work/app.\nWhere the project is there and you are not in it, one of its owners lists you: console member add alice --project elsewhere. Where the key is wrong, bind this directory anew: console use <key>; console projects lists the projects you may work in at this console.\n`,
     );
     const missingJson = harness({ fetch: gone.fetch, env: pair, directory: stale });
     expect(await runCli(["whoami", "--json"], missingJson.io)).toBe(EXIT.failed);
@@ -5371,6 +5371,59 @@ describe("the consoles the command is signed in to (ADR-0027)", () => {
       projectSource: { kind: "directory", directory: "/work/app" },
     });
     expect(missingJson.err()).toContain("project.not_found: ");
+    // Every command that works in the project a directory or the environment names says the
+    // same of one the console does not show: the key, the console, what named it, and the two
+    // things a person can do about it, where the console's own line names none of them.
+    const answered = fakeConsole({
+      "GET /api/v1/me": { body: ME },
+      [`GET /api/v1/decisions/${DECISION.id}`]: {
+        body: {
+          project: { key: "hr", name: "HR", color: null, symbol: null, icon: null },
+          decision: DECISION,
+          mayAnswer: true,
+        },
+      },
+    });
+    const unseen: { fetch: CliIo["fetch"] } = {
+      fetch: async (url, init) =>
+        url.includes("/api/v1/projects/elsewhere")
+          ? Response.json(
+              { error: { code: "project.not_found", message: "The project was not found." } },
+              { status: 404 },
+            )
+          : answered.fetch(url, init),
+    };
+    const TWO_CASES =
+      "Where the project is there and you are not in it, one of its owners lists you: console member add alice --project elsewhere. Where the key is wrong, bind this directory anew: console use <key>; console projects lists the projects you may work in at this console.\n";
+    const kept = memoryStore(one(ORIGIN, "cns_t_kept")).store;
+    for (const args of [["tasks"], ["rules"], ["task", "7"], ["take", "7"], ["skills"]]) {
+      const refused = harness({ fetch: unseen.fetch, store: kept, directory: stale });
+      expect(await runCli(args, refused.io), args.join(" ")).toBe(EXIT.failed);
+      expect(refused.out()).toBe("");
+      expect(refused.err(), args.join(" ")).toBe(
+        `project.not_found: ${ORIGIN} has no project elsewhere, or it is not yours to see. The key is named by .skillcdn-console.json in /work/app.\n${TWO_CASES}`,
+      );
+    }
+    // Named by the environment, the key is mended there; and a login the command does not know
+    // is left for the person to fill in.
+    const byEnvironment = harness({
+      fetch: unseen.fetch,
+      env: { ...pair, CONSOLE_PROJECT: "elsewhere" },
+    });
+    expect(await runCli(["tasks"], byEnvironment.io)).toBe(EXIT.failed);
+    expect(byEnvironment.err()).toBe(
+      `project.not_found: ${ORIGIN} has no project elsewhere, or it is not yours to see. The key is named by CONSOLE_PROJECT.\nWhere the project is there and you are not in it, one of its owners lists you: console member add <your login> --project elsewhere. Where the key is wrong, set CONSOLE_PROJECT to another, or unset it; console projects lists the projects you may work in at this console.\n`,
+    );
+    // Named on the command itself, the key is in front of whoever typed it: the console's own words.
+    const byFlag = harness({ fetch: unseen.fetch, env: pair });
+    expect(await runCli(["tasks", "--project", "elsewhere"], byFlag.io)).toBe(EXIT.failed);
+    expect(byFlag.err()).toBe(
+      "project.not_found: The project was not found.\nNo project has this key, or it is not yours to see. console projects lists the projects you may work in.\n",
+    );
+    // A decision is still reached wherever it is, from a directory whose own project is not seen.
+    const reaching = harness({ fetch: unseen.fetch, store: kept, directory: stale });
+    expect(await runCli(["decision", DECISION.id], reaching.io)).toBe(EXIT.ok);
+    expect(reaching.out()).toContain(DECISION.question);
     // Any other refusal of that request is the refusal itself, as of any command.
     const refusing = fakeConsole({
       "GET /api/v1/me": { body: ME },
