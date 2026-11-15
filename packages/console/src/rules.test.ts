@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { isDocumentPath } from "./documents.js";
 import { MAX_RULES_LENGTH } from "./limits.js";
@@ -12,6 +14,11 @@ import {
   RULES_PATH,
   rulesWith,
 } from "./rules.js";
+
+/** The page of the skill planning-the-board that gives a project's rules as an example. */
+const THE_EXAMPLE = fileURLToPath(
+  new URL("../../../skills/planning-the-board/references/project-rules.md", import.meta.url),
+);
 
 /** Printable ASCII and the newline: English, with nothing invisible in it. */
 const PLAIN = /^[\x20-\x7e\n]*$/;
@@ -91,11 +98,29 @@ describe("the console's rules", () => {
       "## Skills to load first",
       "## The pages",
       "## Who decides what",
-      "## Language",
+      // What the language is of, said where it is set: what people read on the project's
+      // board. Read as the language of the work, it had an agent write a repository's own
+      // documents in it, against the repository's agreement.
+      "## Language on the board",
     ]);
     expect(lines.filter((line) => /^[^#\s]/.test(line))).toEqual([
       "Adds to the workspace's rules, for the agents at work here: what differs in this project, and nothing else.",
     ]);
+  });
+
+  it("are what the planning skill's example of a project's rules is written from", async () => {
+    const page = await readFile(THE_EXAMPLE, "utf8");
+    const example = /\n~~~markdown\n([\s\S]*?)\n~~~\n/.exec(page)?.[1] ?? "";
+    // The same title, the same line under it and the same five headings, in the template's
+    // order, with lines of a list under each and nothing else.
+    const outline = (text: string): string[] =>
+      text.split("\n").filter((line) => line !== "" && !/^(- | {2})/.test(line));
+    expect(outline(example)).toEqual(outline(PROJECT_RULES_TEMPLATE));
+    // The language is of what people read on the board, and the example says what that is and
+    // what it is not: a repository's own documents follow the repository.
+    expect(example).toContain(
+      "\n## Language on the board\n\n- Korean, for what people read on this project's board: reports, tasks, pages. A repository's own documents follow the repository.",
+    );
   });
 
   it("are read whole with what an organization adds under a heading of its own, and alone where it adds nothing", () => {

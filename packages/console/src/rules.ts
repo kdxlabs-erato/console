@@ -98,7 +98,9 @@ export function addedRulesOf(body: string): string {
 /**
  * What a project's rules start from: the five things a project may say, as headings, and
  * nothing an agent could mistake for a rule. A project says what differs in it and nothing
- * else, and a heading with nothing under it is taken out.
+ * else, and a heading with nothing under it is taken out. The last heading says what the
+ * language is of, what people read on the project's board: a repository's own documents follow
+ * the repository's agreement, and a heading that said "Language" alone was read as theirs too.
  */
 export const PROJECT_RULES_TEMPLATE = [
   "# Rules of this project",
@@ -113,7 +115,7 @@ export const PROJECT_RULES_TEMPLATE = [
   "",
   "## Who decides what",
   "",
-  "## Language",
+  "## Language on the board",
   "",
 ].join("\n");
 
