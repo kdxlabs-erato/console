@@ -786,12 +786,15 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     ],
   },
   serve: {
-    usage: "serve [<dir>] [--port <n>]",
+    usage: "serve [<dir>] [--port <n>] [--records <dir>]",
     synopsis:
       "For a person: serves a console of your own from this machine, its /api/ carried to the console with your token.",
     about:
-      "For a person: serves a console of your own from this machine, for you. The build in <dir> (its index.html and files) is served at http://127.0.0.1:11197/, and everything under /api/ is carried to the console you are signed in to with your token, which the pages never see. Without a directory only the API is served there, for a development server to send its /api/ requests to. The loopback only; a request from another site's page is refused. Stop it with Ctrl+C.",
-    refusals: ["not a build to serve: the directory holds no index.html"],
+      "For a person: serves a console of your own from this machine, for you. The build in <dir> (its index.html and files) is served at http://127.0.0.1:11197/, and everything under /api/ is carried to the console you are signed in to with your token, which the pages never see. Without a directory only the API is served there, for a development server to send its /api/ requests to. --records <dir> also serves what a desk keeps, the directory named, at /records/ (ADR-0117), for the desk's pages: each file read when it is asked for and never kept by the browser, GET alone, nothing outside the directory, no file whose name begins with a full stop and no listing; a picture, a video, a sound and a PDF by their kinds, so that a page shows them in place, and anything else as a download; a part of a file where a player asks for one; a file git LFS has not fetched here refused as records.not_fetched. The loopback only; a request from another site's page is refused. Stop it with Ctrl+C.",
+    refusals: [
+      "not a build to serve: the directory holds no index.html",
+      "no records to serve: the directory --records names is not there",
+    ],
   },
   runner: {
     usage: "runner",

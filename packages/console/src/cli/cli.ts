@@ -195,7 +195,14 @@ import {
   textOfCode,
 } from "./pack.js";
 import { type RunnerHost, workPath } from "./runner-host.js";
-import { createServeHandler, DEFAULT_SERVE_PORT, type Listen } from "./serve.js";
+import {
+  createServeHandler,
+  DEFAULT_SERVE_PORT,
+  type Listen,
+  loadRecordsRoot,
+  type RecordsRoot,
+  RecordsRootError,
+} from "./serve.js";
 import type { Ran, SetupMachine } from "./setup-machine.js";
 
 // The `console` command (docs/specs/cli.md): the agent's side of the console. A thin client of
@@ -3942,12 +3949,16 @@ function portOf(value: string | undefined): number {
 
 /**
  * A console of the person's own, served from this machine (ADR-0014): the build's pages here,
- * and everything under /api/ carried to the console with the token, which the pages never see.
+ * and everything under /api/ carried to the console with the token, which the pages never see;
+ * and, with --records, what a desk keeps under /records/ (ADR-0117), for the desk's pages.
  */
 const serve: Command = async (args, io) => {
-  const { values, positionals } = parse(args, { port: { type: "string" } });
+  const { values, positionals } = parse(args, {
+    port: { type: "string" },
+    records: { type: "string" },
+  });
   if (positionals.length > 1) {
-    throw misuse("Say at most one directory: console serve [<dir>] [--port <n>]");
+    throw misuse("Say at most one directory: console serve [<dir>] [--port <n>] [--records <dir>]");
   }
   const [dir] = positionals;
   const port = portOf(text(values, "port"));
@@ -3974,6 +3985,20 @@ const serve: Command = async (args, io) => {
       throw error;
     }
   }
+  const kept = text(values, "records");
+  let records: RecordsRoot | undefined;
+  if (kept !== undefined) {
+    try {
+      records = await loadRecordsRoot(kept);
+    } catch (error) {
+      if (error instanceof RecordsRootError) {
+        throw failed(
+          `No records to serve: ${error.message}. Name the records/ of a desk: console serve <dir> --records <desk>/records`,
+        );
+      }
+      throw error;
+    }
+  }
   const listening = await listen(
     (bound) =>
       createServeHandler({
@@ -3982,13 +4007,18 @@ const serve: Command = async (args, io) => {
         fetch: io.fetch,
         port: bound,
         web,
+        records,
       }),
     port,
   );
+  const served =
+    kept === undefined
+      ? ""
+      : ` The records in ${kept} are at ${listening.url}records/, read as they are when they are asked for.`;
   io.stdout(
     web === undefined
-      ? `Serving the API of ${me.workspace.name} (${session.url}) at ${listening.url}api/ as ${person.login}, for a development server to send its /api/ requests to. Stop with Ctrl+C.\n`
-      : `Serving ${dir} at ${listening.url} as ${person.login}: the pages are there, and everything under /api/ goes to ${me.workspace.name} (${session.url}) with your token, which the pages never see. Stop with Ctrl+C.\n`,
+      ? `Serving the API of ${me.workspace.name} (${session.url}) at ${listening.url}api/ as ${person.login}, for a development server to send its /api/ requests to.${served} Stop with Ctrl+C.\n`
+      : `Serving ${dir} at ${listening.url} as ${person.login}: the pages are there, and everything under /api/ goes to ${me.workspace.name} (${session.url}) with your token, which the pages never see.${served} Stop with Ctrl+C.\n`,
   );
   await listening.closed;
   return EXIT.ok;

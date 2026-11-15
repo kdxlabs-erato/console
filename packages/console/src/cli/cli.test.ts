@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MAX_SUMMARY_LENGTH } from "../limits.js";
 import { type CliIo, EXIT, runCli } from "./cli.js";
@@ -851,6 +854,63 @@ describe("the console command", () => {
     expect(await runCli(["serve"], nowhere.io)).toBe(EXIT.failed);
     expect(nowhere.err()).toContain("not possible here");
     expect(await runCli(["serve", "--port", "x"], nowhere.io)).toBe(EXIT.usage);
+  });
+
+  it("serves the records of a desk beside the API with --records, and none from a directory that is not there (ADR-0117)", async () => {
+    const { fetch } = fakeConsole({ "GET /api/v1/me": { body: ME } });
+    const desk = mkdtempSync(join(tmpdir(), "console-cli-records-"));
+    try {
+      writeFileSync(join(desk, "index.json"), '{"collections":[]}');
+      let close: () => void = () => undefined;
+      let ready: (handler: ServeHandler) => void = () => undefined;
+      const handler = new Promise<ServeHandler>((resolve) => {
+        ready = resolve;
+      });
+      const listen: Listen = async (handlerFor, port) => {
+        ready(handlerFor(port));
+        return {
+          url: `http://127.0.0.1:${port}/`,
+          closed: new Promise<void>((done) => {
+            close = done;
+          }),
+          close: async () => close(),
+        };
+      };
+      const h = harness({ fetch, env: SIGNED_IN, listen });
+      const running = runCli(["serve", "--port", "4100", "--records", desk], h.io);
+      const serve = await handler;
+      const index = await serve(
+        new Request("http://127.0.0.1:4100/records/index.json", {
+          headers: { "sec-fetch-site": "same-origin" },
+        }),
+      );
+      expect(index.status).toBe(200);
+      expect(await index.json()).toEqual({ collections: [] });
+      close();
+      expect(await running).toBe(EXIT.ok);
+      expect(h.out()).toContain(
+        `The records in ${desk} are at http://127.0.0.1:4100/records/, read as they are when they are asked for. Stop with Ctrl+C.`,
+      );
+      // A directory that is not there is said before anything listens.
+      let listened = false;
+      const none = harness({
+        fetch,
+        env: SIGNED_IN,
+        listen: async (...args) => {
+          listened = true;
+          return listen(...args);
+        },
+      });
+      expect(await runCli(["serve", "--records", join(desk, "nowhere")], none.io)).toBe(
+        EXIT.failed,
+      );
+      expect(none.err()).toContain("No records to serve:");
+      expect(none.err()).toContain("is not a directory that is there");
+      expect(none.err()).toContain("console serve <dir> --records <desk>/records");
+      expect(listened).toBe(false);
+    } finally {
+      rmSync(desk, { recursive: true, force: true });
+    }
   });
 
   it("takes the token from the environment over what was kept, and answers JSON on demand", async () => {

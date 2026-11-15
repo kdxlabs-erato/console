@@ -1,11 +1,18 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FetchLike } from "../client.js";
 import { loadWebRoot, type WebRoot } from "../web.js";
-import { createServeHandler, listenOn, type ServeHandler } from "./serve.js";
+import {
+  createServeHandler,
+  listenOn,
+  loadRecordsRoot,
+  type RecordsRoot,
+  RecordsRootError,
+  type ServeHandler,
+} from "./serve.js";
 
 const UPSTREAM = "https://console.test";
 const TOKEN = "cns_t_secret";
@@ -256,5 +263,295 @@ describe("console serve", () => {
       await listening.close();
     }
     await listening.closed;
+  });
+});
+
+describe("a desk's records, served beside the build (ADR-0117)", () => {
+  const POINTER =
+    "version https://git-lfs.github.com/spec/v1\noid sha256:4d7a214614ab2935c943f9e0ff69d22eadbb8f32b1258daaa5e2ca24d17e2393\nsize 480000000\n";
+  /** A video's worth of bytes, each its place in the file, so that a part read back says where it is from. */
+  const VIDEO = Uint8Array.from({ length: 100_000 }, (_, index) => index % 251);
+  const KOREAN = `${String.fromCodePoint(0xad11, 0xace0)} (v2).pdf`;
+  let desk: string;
+  let records: RecordsRoot;
+  let linked = false;
+
+  beforeAll(async () => {
+    desk = mkdtempSync(join(tmpdir(), "console-records-"));
+    const root = join(desk, "records");
+    const files = join(root, "ad-creatives", "files");
+    mkdirSync(files, { recursive: true });
+    writeFileSync(
+      join(root, "index.json"),
+      '{"collections":[{"key":"ad-creatives","title":"Ad creatives"}]}',
+    );
+    writeFileSync(join(root, ".hidden.json"), "{}");
+    writeFileSync(join(root, "README.md"), "# The records of this desk\n");
+    writeFileSync(join(root, "ad-creatives", "items.json"), "[]");
+    writeFileSync(join(root, "ad-creatives", ".keep"), "");
+    writeFileSync(join(files, "c-001.png"), Uint8Array.from([0x89, 0x50, 0x4e, 0x47]));
+    writeFileSync(join(files, "c-001.mp4"), VIDEO);
+    writeFileSync(join(files, "voice.mp3"), "ID3");
+    writeFileSync(join(files, "brief.pdf"), "%PDF-1.7");
+    writeFileSync(join(files, KOREAN), "%PDF-1.7");
+    writeFileSync(
+      join(files, "mark.svg"),
+      '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+    );
+    writeFileSync(join(files, "page.html"), "<script>alert(1)</script>");
+    writeFileSync(join(files, "notes.txt"), "plain");
+    writeFileSync(join(files, "empty.json"), "");
+    writeFileSync(join(files, "big.mov"), POINTER);
+    // What is beside the records is not the records': a file of the desk, and a way to it.
+    writeFileSync(join(desk, "secret.json"), '{"secret":true}');
+    mkdirSync(join(desk, "elsewhere"));
+    writeFileSync(join(desk, "elsewhere", "secret.json"), '{"secret":true}');
+    try {
+      // A junction where the system has them, which asks no leave; a link elsewhere.
+      symlinkSync(join(desk, "elsewhere"), join(root, "link"), "junction");
+      linked = true;
+    } catch {
+      linked = false;
+    }
+    records = await loadRecordsRoot(root);
+  });
+
+  afterAll(() => {
+    rmSync(desk, { recursive: true, force: true });
+  });
+
+  const served = (withRecords = true): ServeHandler =>
+    createServeHandler({
+      upstream: `${UPSTREAM}/`,
+      token: TOKEN,
+      fetch: fakeConsole().fetch,
+      port: PORT,
+      web,
+      records: withRecords ? records : undefined,
+    });
+  const get = (path: string, headers: Record<string, string> = {}) =>
+    served()(new Request(`${AT}${path}`, { headers: { ...fromPage, ...headers } }));
+
+  it("reads a file when it is asked for, and has no browser keep it", async () => {
+    const first = await get("/records/index.json");
+    expect(first.status).toBe(200);
+    expect(first.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    expect(first.headers.get("cache-control")).toBe("no-store");
+    expect(first.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(first.headers.get("cross-origin-resource-policy")).toBe("same-origin");
+    expect(first.headers.get("content-disposition")).toBeNull();
+    expect(await first.json()).toEqual({
+      collections: [{ key: "ad-creatives", title: "Ad creatives" }],
+    });
+    // What an agent wrote a moment ago is what the page is shown.
+    writeFileSync(join(desk, "records", "ad-creatives", "items.json"), '[{"id":"c-001"}]');
+    expect(await (await get("/records/ad-creatives/items.json")).json()).toEqual([{ id: "c-001" }]);
+    writeFileSync(join(desk, "records", "ad-creatives", "items.json"), "[]");
+    expect(await (await get("/records/ad-creatives/items.json")).json()).toEqual([]);
+    // A file that holds nothing is answered as it is.
+    const empty = await get("/records/ad-creatives/files/empty.json");
+    expect(empty.status).toBe(200);
+    expect(empty.headers.get("content-length")).toBe("0");
+    expect(await empty.text()).toBe("");
+  });
+
+  it("shows a picture, a video, a sound and a PDF in place by their kinds, and hands the rest over as a download", async () => {
+    for (const [name, type] of [
+      ["c-001.png", "image/png"],
+      ["c-001.mp4", "video/mp4"],
+      ["voice.mp3", "audio/mpeg"],
+      ["brief.pdf", "application/pdf"],
+    ] as const) {
+      const answer = await get(`/records/ad-creatives/files/${name}`);
+      expect(answer.status, name).toBe(200);
+      expect(answer.headers.get("content-type"), name).toBe(type);
+      expect(answer.headers.get("content-disposition"), name).toBeNull();
+      expect(answer.headers.get("accept-ranges"), name).toBe("bytes");
+      await answer.arrayBuffer();
+    }
+    // A name in any script, as an address spells it.
+    const korean = await get(`/records/ad-creatives/files/${encodeURIComponent(KOREAN)}`);
+    expect(korean.status).toBe(200);
+    expect(korean.headers.get("content-type")).toBe("application/pdf");
+    await korean.arrayBuffer();
+    // A picture that may carry a script is a picture to a page and a download to whoever opens
+    // it by itself, under a policy that runs nothing.
+    const svg = await get("/records/ad-creatives/files/mark.svg");
+    expect(svg.headers.get("content-type")).toBe("image/svg+xml");
+    expect(svg.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''mark.svg");
+    expect(svg.headers.get("content-security-policy")).toBe("sandbox");
+    await svg.arrayBuffer();
+    // Nothing a browser would run or lay out is answered as what it is.
+    for (const name of ["page.html", "notes.txt"]) {
+      const answer = await get(`/records/ad-creatives/files/${name}`);
+      expect(answer.status, name).toBe(200);
+      expect(answer.headers.get("content-type"), name).toBe("application/octet-stream");
+      expect(answer.headers.get("content-disposition"), name).toBe(
+        `attachment; filename*=UTF-8''${name}`,
+      );
+      expect(answer.headers.get("x-content-type-options"), name).toBe("nosniff");
+      await answer.arrayBuffer();
+    }
+    const readme = await get("/records/README.md");
+    expect(readme.headers.get("content-disposition")).toBe(
+      "attachment; filename*=UTF-8''README.md",
+    );
+    await readme.arrayBuffer();
+  });
+
+  it("answers a part of a file, so that a video plays from where it is looked at", async () => {
+    const video = "/records/ad-creatives/files/c-001.mp4";
+    const whole = await get(video);
+    expect(whole.headers.get("content-length")).toBe(String(VIDEO.length));
+    expect(new Uint8Array(await whole.arrayBuffer())).toEqual(VIDEO);
+    const part = await get(video, { range: "bytes=1000-1999" });
+    expect(part.status).toBe(206);
+    expect(part.headers.get("content-range")).toBe(`bytes 1000-1999/${VIDEO.length}`);
+    expect(part.headers.get("content-length")).toBe("1000");
+    expect(part.headers.get("content-type")).toBe("video/mp4");
+    expect(new Uint8Array(await part.arrayBuffer())).toEqual(VIDEO.slice(1000, 2000));
+    // From a byte to the end, the last bytes, and an end past the file's.
+    const rest = await get(video, { range: "bytes=99990-" });
+    expect(rest.headers.get("content-range")).toBe(`bytes 99990-99999/${VIDEO.length}`);
+    expect(new Uint8Array(await rest.arrayBuffer())).toEqual(VIDEO.slice(99_990));
+    const last = await get(video, { range: "bytes=-5" });
+    expect(last.headers.get("content-range")).toBe(`bytes 99995-99999/${VIDEO.length}`);
+    expect(new Uint8Array(await last.arrayBuffer())).toEqual(VIDEO.slice(-5));
+    const past = await get(video, { range: "bytes=99998-200000" });
+    expect(past.headers.get("content-range")).toBe(`bytes 99998-99999/${VIDEO.length}`);
+    await past.arrayBuffer();
+    // A range the file does not have is said so; one the command does not read is the whole file.
+    for (const none of ["bytes=100000-", "bytes=-0", "bytes=999999999999999999999-"]) {
+      const refused = await get(video, { range: none });
+      expect(refused.status, none).toBe(416);
+      expect(refused.headers.get("content-range"), none).toBe(`bytes */${VIDEO.length}`);
+    }
+    for (const unread of ["bytes=0-9,20-29", "lines=1-2", "bytes=9-1", "bytes=-", "bytes=a-b"]) {
+      const answer = await get(video, { range: unread });
+      expect(answer.status, unread).toBe(200);
+      expect(answer.headers.get("content-length"), unread).toBe(String(VIDEO.length));
+      await answer.arrayBuffer();
+    }
+  });
+
+  it("serves nothing outside the directory, no file whose name begins with a full stop, and lists nothing", async () => {
+    for (const path of [
+      "/records",
+      "/records/",
+      "/records/ad-creatives",
+      "/records/ad-creatives/",
+      "/records/ad-creatives/files",
+      "/records/gone.json",
+      "/records/.hidden.json",
+      "/records/ad-creatives/.keep",
+      "/records/..%2Fsecret.json",
+      "/records/ad-creatives/..%2F..%2Fsecret.json",
+      "/records/ad-creatives/..%5C..%5Csecret.json",
+      "/records/%2E%2E%2Fsecret.json",
+      "/records//index.json",
+      "/records/index.json.",
+      "/records/index.json%20",
+      "/records/index.json%00",
+      "/records/index.json:stream",
+      "/records/%E0%A4%A.json",
+      "/records/C:%5Csecret.json",
+    ]) {
+      const answer = await get(path);
+      expect(answer.status, path).toBe(404);
+      expect(await answer.json(), path).toEqual({
+        error: { code: "records.not_found", message: "No file of the records is at this path." },
+      });
+      expect(answer.headers.get("cache-control"), path).toBe("no-store");
+    }
+    // A link that leads out of the directory leads nowhere, where the system let one be made.
+    if (linked) {
+      const out = await get("/records/link/secret.json");
+      expect(out.status).toBe(404);
+      expect(await out.json()).toMatchObject({ error: { code: "records.not_found" } });
+    }
+    // The records are read, and only read.
+    for (const method of ["POST", "PUT", "DELETE", "HEAD"]) {
+      const answer = await served()(
+        new Request(`${AT}/records/index.json`, { method, headers: fromPage }),
+      );
+      expect(answer.status, method).toBe(405);
+      expect(answer.headers.get("allow"), method).toBe("GET");
+    }
+    expect(JSON.parse(readFileSync(join(desk, "records", "index.json"), "utf8"))).toEqual({
+      collections: [{ key: "ad-creatives", title: "Ad creatives" }],
+    });
+  });
+
+  it("refuses by name a file that git LFS has not fetched on this machine", async () => {
+    const answer = await get("/records/ad-creatives/files/big.mov");
+    expect(answer.status).toBe(409);
+    expect(await answer.json()).toEqual({
+      error: {
+        code: "records.not_fetched",
+        message:
+          "This file is a git LFS pointer: the file itself was not fetched on this machine. git lfs pull in the desk fetches it.",
+      },
+    });
+  });
+
+  it("answers the desk's own pages and no other site's, and only where records are served", async () => {
+    const elsewhere = await served()(
+      new Request(`${AT}/records/index.json`, { headers: { "sec-fetch-site": "cross-site" } }),
+    );
+    expect(elsewhere.status).toBe(403);
+    expect(await elsewhere.json()).toMatchObject({ error: { code: "auth.forbidden_origin" } });
+    const renamed = await served()(new Request("http://evil.example:11197/records/index.json"));
+    expect(renamed.status).toBe(421);
+    // An address typed by hand comes from no page, and is the person's own.
+    const typed = await served()(
+      new Request(`${AT}/records/index.json`, { headers: { "sec-fetch-site": "none" } }),
+    );
+    expect(typed.status).toBe(200);
+    await typed.arrayBuffer();
+    // Without records, a path under /records/ is said to be none, and never the build's page.
+    for (const path of [
+      "/records/index.json",
+      "/records",
+      "/records/ad-creatives/files/c-001.png",
+    ]) {
+      const none = await served(false)(new Request(`${AT}${path}`, { headers: fromPage }));
+      expect(none.status, path).toBe(404);
+      expect(await none.json(), path).toMatchObject({ error: { code: "records.not_served" } });
+    }
+    // The build's own pages are as they were.
+    const page = await get("/projects/web");
+    expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
+  });
+
+  it("serves no directory that is not there, and none that is a file", async () => {
+    await expect(loadRecordsRoot(join(desk, "nowhere"))).rejects.toBeInstanceOf(RecordsRootError);
+    await expect(loadRecordsRoot(join(desk, "secret.json"))).rejects.toThrow(
+      "is not a directory that is there",
+    );
+  });
+
+  it("answers a part of a video over the loopback, as a browser's player asks for it", async () => {
+    const listening = await listenOn(
+      (port) =>
+        createServeHandler({
+          upstream: `${UPSTREAM}/`,
+          token: TOKEN,
+          fetch: fakeConsole().fetch,
+          port,
+          web,
+          records,
+        }),
+      0,
+    );
+    try {
+      const answer = await fetch(`${listening.url}records/ad-creatives/files/c-001.mp4`, {
+        headers: { range: "bytes=50000-50999" },
+      });
+      expect(answer.status).toBe(206);
+      expect(answer.headers.get("content-range")).toBe(`bytes 50000-50999/${VIDEO.length}`);
+      expect(new Uint8Array(await answer.arrayBuffer())).toEqual(VIDEO.slice(50_000, 51_000));
+    } finally {
+      await listening.close();
+    }
   });
 });
