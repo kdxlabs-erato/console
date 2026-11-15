@@ -5,8 +5,11 @@ import type { Spawn } from "./types.js";
 // A child process on this machine, as a driver needs one: lines in, lines out, and how it
 // ended. The only place the runner starts anything.
 
-/** How much of what a process wrote on its standard error is kept: its end. */
-const MAX_ERRORS_LENGTH = 4000;
+/**
+ * How much of what a process wrote on its standard error is kept: its end, more than an event
+ * shows of it, so that the secrets are taken out of what is shown and of what is just before it.
+ */
+const MAX_ERRORS_LENGTH = 16_000;
 
 /**
  * What starts child processes with `base` as the environment each begins from, which whoever
@@ -21,9 +24,12 @@ export function createSpawn(base: Readonly<Record<string, string | undefined>>):
       windowsHide: true,
     });
     let errors = "";
+    let cut = false;
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
-      errors = `${errors}${chunk}`.slice(-MAX_ERRORS_LENGTH);
+      const all = `${errors}${chunk}`;
+      cut ||= all.length > MAX_ERRORS_LENGTH;
+      errors = all.slice(-MAX_ERRORS_LENGTH);
     });
     const exited = new Promise<{
       code: number | null;
@@ -55,7 +61,8 @@ export function createSpawn(base: Readonly<Record<string, string | undefined>>):
         child.stdin.end();
       },
       lines: createInterface({ input: child.stdout, crlfDelay: Number.POSITIVE_INFINITY }),
-      errors: () => errors,
+      // What it begins with may be the end of a secret where the beginning was let go: said so.
+      errors: () => (cut ? `…${errors}` : errors),
       kill: (signal) => {
         child.kill(signal);
       },

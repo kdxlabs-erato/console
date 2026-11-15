@@ -204,3 +204,39 @@ export function cutShown(redact: Redactor, text: string, most: number, more = fa
     window = Math.min(text.length, MAX_CUT_WINDOW, window * 2);
   }
 }
+
+/**
+ * The end of a text within `most` characters as a transcript shows it, begun by the mark of a
+ * cut where it was longer: what a process wrote last, which says why it ended. As `cutShown`,
+ * from the other side: the values are taken out of the end of the text first, as far back as
+ * the cut and one form before it, and the text is cut after, so that no part of a value stands
+ * at the cut. The first characters looked through may be the end of a value whose beginning
+ * was not read, so nothing of them is shown; so it is with the beginning of a text that is
+ * itself the end of a longer one, kept to a bound by whoever hands it over, which `more` says.
+ * A text within `most` that is whole comes through as it is: taking its values out is the
+ * caller's.
+ */
+export function cutShownEnd(redact: Redactor, text: string, most: number, more = false): string {
+  if (text.length <= most && !more) {
+    return text;
+  }
+  const beyond = Math.max(0, redact.longest - 1);
+  let window = Math.min(text.length, most + beyond);
+  for (;;) {
+    const out = redact(text.slice(text.length - window));
+    // Read from its beginning and whole: nothing comes before what was looked through.
+    const whole = window >= text.length && !more;
+    const safe = whole ? out.length : out.length - beyond;
+    if (safe >= most) {
+      return whole && out.length <= most ? out : `${CUT_MARK}${out.slice(out.length - most)}`;
+    }
+    if (whole) {
+      // Within the length once its values are out: shown whole.
+      return out;
+    }
+    if (window >= text.length || window >= MAX_CUT_WINDOW) {
+      return `${CUT_MARK}${out.slice(out.length - Math.max(0, safe))}`;
+    }
+    window = Math.min(text.length, MAX_CUT_WINDOW, window * 2);
+  }
+}

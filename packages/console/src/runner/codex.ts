@@ -6,8 +6,10 @@ import {
   type DriverEvent,
   type DriverMessage,
   type DriverSession,
+  errorsShown,
   type Fact,
   plainCut,
+  plainCutEnd,
   type StartOptions,
 } from "./types.js";
 
@@ -527,10 +529,12 @@ function sessionOf(
       } else if (!read.completed) {
         const errors = child.errors().trim();
         if (read.failed === undefined) {
+          // Its end, cut after the secrets are out, so that none stands at the cut.
+          const shown = errorsShown(errors, options.cutEnd ?? plainCutEnd);
           emit({
             type: "event",
             kind: "error",
-            text: `The product's process ended${exit.signal === null ? ` with code ${exit.code}` : ` on ${exit.signal}`} before the turn did.${errors.length === 0 ? "" : `\n${errors}`}`,
+            text: `The product's process ended${exit.signal === null ? ` with code ${exit.code}` : ` on ${exit.signal}`} before the turn did.${shown.length === 0 ? "" : `\n${shown}`}`,
           });
         }
         if (SIGN_IN.test(`${read.failed ?? ""}\n${errors}`)) {

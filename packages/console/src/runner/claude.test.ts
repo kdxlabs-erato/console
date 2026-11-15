@@ -2,6 +2,7 @@ import process from "node:process";
 import { describe, expect, it } from "vitest";
 import { claudeArguments, createClaudeDriver } from "./claude.js";
 import { createSpawn } from "./process.js";
+import { cutShown, cutShownEnd, redactorOf, WITHHELD } from "./redact.js";
 import type { Child, DriverEvent, Spawn } from "./types.js";
 
 // The `claude` driver against a product that is not there: a child whose lines the test writes,
@@ -612,7 +613,7 @@ describe("the claude driver", () => {
     exits(0);
     const events = (await collect(session.events)).filter((event) => event.type === "event");
     expect(events.slice(3).map((event) => event.data)).toEqual([
-      { parent: "toolu_a1", subagent: "k".repeat(80) },
+      { parent: "toolu_a1", subagent: `${"k".repeat(79)}${String.fromCodePoint(0x2026)}` },
       { parent: "toolu_b1" },
       { parent: "toolu_a3", subagent: "Agent" },
       undefined,
@@ -620,6 +621,71 @@ describe("the claude driver", () => {
       undefined,
       undefined,
     ]);
+  });
+
+  it("cuts what a sub-agent is called, and the end of what the product wrote on its standard error, after the secrets are out", async () => {
+    // The runner's own cuts, over a store of one value: a value that crosses the bound is not
+    // shown in part, at the end of a name or at the head of what was printed last.
+    const mark = String.fromCodePoint(0x2026);
+    const SECRET = "not-a-real-token-4f9a2c71";
+    const redact = redactorOf([SECRET]);
+    const runnerCuts = {
+      cut: (text: string, most: number, more?: boolean) => cutShown(redact, text, most, more),
+      cutEnd: (text: string, most: number, more?: boolean) => cutShownEnd(redact, text, most, more),
+    };
+    const named = started(runnerCuts);
+    named.says({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_a1",
+            name: "Agent",
+            // The value begins at the 71st character and runs past the 80th.
+            input: { subagent_type: `${"k".repeat(70)}${SECRET}`, prompt: "Look." },
+          },
+        ],
+      },
+    });
+    named.says({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "A line." }] },
+      parent_tool_use_id: "toolu_a1",
+    });
+    named.exits(0);
+    const lines = (await collect(named.session.events)).filter((event) => event.type === "event");
+    const subagent = lines[1]?.data?.subagent;
+    expect(subagent).toBe(`${`${"k".repeat(70)}${WITHHELD}`.slice(0, 79)}${mark}`);
+    expect(String(subagent)).not.toContain(SECRET.slice(0, 1));
+
+    // What it printed last, 4,000 characters of it shown, with a value across the cut.
+    const crashed = started(runnerCuts);
+    crashed.says(INIT);
+    crashed.writes(`a stack trace ${SECRET}${"t".repeat(3990)}\n`);
+    crashed.exits(1);
+    const ended = (await collect(crashed.session.events)).find(
+      (event) => event.type === "event" && event.kind === "error",
+    );
+    const text = ended?.type === "event" ? ended.text : "";
+    expect(text).toBe(
+      `The product's process ended with code 1.\n${mark}${`${WITHHELD}${"t".repeat(3990)}`.slice(-4000)}`,
+    );
+    for (let length = 1; length < SECRET.length; length += 1) {
+      expect(text.includes(`${SECRET.slice(-length)}t`), `${length}`).toBe(false);
+    }
+    // What the process kept the end of begins with the mark of a cut, and may begin inside a
+    // value: nothing of that value's end is shown, however little was printed after it.
+    const kept = started(runnerCuts);
+    kept.says(INIT);
+    kept.writes(`${mark}${SECRET.slice(-9)} ${"m".repeat(100)} out of memory\n`);
+    kept.exits(1);
+    const said = (await collect(kept.session.events)).find(
+      (event) => event.type === "event" && event.kind === "error",
+    );
+    const keptText = said?.type === "event" ? said.text : "";
+    expect(keptText).toMatch(/^The product's process ended with code 1\.\n…m+ out of memory$/);
+    expect(keptText).not.toContain(SECRET.slice(-4));
   });
 
   it("says that the model refused, and that the product is not signed in, as an agent that cannot go on", async () => {
@@ -1061,6 +1127,29 @@ describe("a child process on this machine", () => {
     expect(await child.exited).toEqual({ code: 3, signal: null });
     expect(child.errors()).toContain("input closed");
     await expect(child.write("three")).rejects.toThrow();
+  });
+
+  it("keeps the end of what a process wrote on its standard error, and says where its beginning was let go", async () => {
+    const spawn = createSpawn({});
+    const wrote = (script: string) =>
+      spawn(process.execPath, ["-e", script], { cwd: process.cwd(), env: {} });
+    const long = wrote(
+      'process.stderr.write("b".repeat(20000));process.stderr.write("e".repeat(100)+"END");',
+    );
+    for await (const _ of long.lines) {
+      // Nothing is printed on its standard output.
+    }
+    await long.exited;
+    const kept = long.errors();
+    expect(kept.startsWith(`${String.fromCodePoint(0x2026)}b`)).toBe(true);
+    expect(kept.endsWith(`${"e".repeat(100)}END`)).toBe(true);
+    expect(kept.length).toBe(16_001);
+    const short = wrote('process.stderr.write("only this");');
+    for await (const _ of short.lines) {
+      // Nothing is printed on its standard output.
+    }
+    await short.exited;
+    expect(short.errors()).toBe("only this");
   });
 
   it("says that a command is not there to start, when asked how it ended", async () => {

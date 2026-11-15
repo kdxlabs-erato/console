@@ -9,9 +9,11 @@ import {
   type DriverEvent,
   type DriverMessage,
   type DriverSession,
+  errorsShown,
   type Fact,
   type Picture,
   plainCut,
+  plainCutEnd,
   type StartOptions,
 } from "./types.js";
 
@@ -92,18 +94,19 @@ const SUBAGENT_TOOLS: ReadonlySet<string> = new Set(["Agent", "Task"]);
 
 /**
  * What a call that starts a sub-agent calls it: the kind of sub-agent its input names, else
- * what its input says it is for; nothing for a call that starts none.
+ * what its input says it is for; nothing for a call that starts none. Within the bound, mark
+ * and all, cut after the secrets are out of it, as everything a driver shows a part of is.
  */
-function subagentOf(tool: string, input: unknown): string | undefined {
+function subagentOf(tool: string, input: unknown, cut: Cut): string | undefined {
   const kind = isObject(input) ? textOf(input.subagent_type)?.trim() : undefined;
   if (kind !== undefined && kind.length > 0) {
-    return kind.slice(0, MAX_SUBAGENT_LENGTH);
+    return cut(kind, MAX_SUBAGENT_LENGTH - 1);
   }
   if (!SUBAGENT_TOOLS.has(tool)) {
     return undefined;
   }
   const about = isObject(input) ? textOf(input.description)?.trim() : undefined;
-  return about !== undefined && about.length > 0 ? about.slice(0, MAX_SUBAGENT_LENGTH) : tool;
+  return about !== undefined && about.length > 0 ? cut(about, MAX_SUBAGENT_LENGTH - 1) : tool;
 }
 
 /** The pictures and the text of what a tool returned: a string, or blocks of text and pictures. */
@@ -332,7 +335,7 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
         } else if (block.type === "tool_use") {
           const tool = textOf(block.name) ?? "a tool";
           const id = textOf(block.id);
-          const subagent = subagentOf(tool, block.input);
+          const subagent = subagentOf(tool, block.input, state.cut);
           if (id !== undefined && subagent !== undefined) {
             // What the sub-agent this call starts does names the call: remembered by its id.
             if (state.subagents.size >= MAX_SUBAGENTS) {
@@ -512,7 +515,13 @@ const wait = (ms: number): Promise<"timeout"> =>
     setTimeout(() => resolve("timeout"), ms).unref?.();
   });
 
-function sessionOf(child: Child, asked: string, uuid: () => string, cut: Cut): DriverSession {
+function sessionOf(
+  child: Child,
+  asked: string,
+  uuid: () => string,
+  cut: Cut,
+  cutEnd: Cut,
+): DriverSession {
   let stopping = false;
   const state: Read = {
     began: false,
@@ -544,10 +553,12 @@ function sessionOf(child: Child, asked: string, uuid: () => string, cut: Cut): D
     const clean = stopping || (exit.code === 0 && exit.signal === null && exit.error === undefined);
     if (!clean && !waits) {
       const said = child.errors().trim();
+      // Its end, cut after the secrets are out, so that none stands at the cut.
+      const shown = errorsShown(said, cutEnd);
       const text =
         exit.error !== undefined
           ? `The product could not be started: ${exit.error}`
-          : `The product's process ended${exit.signal === null ? ` with code ${exit.code}` : ` on ${exit.signal}`}.${said.length === 0 ? "" : `\n${said}`}`;
+          : `The product's process ended${exit.signal === null ? ` with code ${exit.code}` : ` on ${exit.signal}`}.${shown.length === 0 ? "" : `\n${shown}`}`;
       yield { type: "event", kind: "error", text };
       yield {
         type: "cannot_go_on",
@@ -666,6 +677,7 @@ export function createClaudeDriver(host: DriverHost): Driver {
         claudeMode(options.permissions),
         uuid,
         options.cut ?? plainCut,
+        options.cutEnd ?? plainCutEnd,
       );
     },
   };

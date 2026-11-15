@@ -629,6 +629,29 @@ describe("the codex driver", () => {
     expect(asked.map((one) => one.length)).toContain(1_000_000);
   });
 
+  it("keeps the end of what the product wrote on its standard error with what it was handed to keep it with", async () => {
+    // What the process kept the end of begins with the mark of a cut: the runner is told so,
+    // and shows nothing of a secret its beginning may end.
+    const asked: { length: number; most: number; more: boolean | undefined }[] = [];
+    const { session, turn, said } = started({
+      cutEnd: (text, most, more) => {
+        asked.push({ length: text.length, most, more });
+        return `[the end, ${most} at most]`;
+      },
+    });
+    await session.send(message("Go."));
+    const gone = await turn(0);
+    gone.says(...BEGAN);
+    gone.writes(`${String.fromCodePoint(0x2026)}${"e".repeat(16_000)}\n`);
+    gone.exits(101);
+    expect((await said(4)).at(3)).toEqual({
+      type: "event",
+      kind: "error",
+      text: "The product's process ended with code 101 before the turn did.\n[the end, 4000 at most]",
+    });
+    expect(asked).toEqual([{ length: 16_000, most: 4000, more: true }]);
+  });
+
   it("keeps a message that arrives while a turn runs for the turn after, and says the agent done when nothing waits", async () => {
     const { session, turn, turns, said, taken } = started();
     await session.send(message("Run the tests."));

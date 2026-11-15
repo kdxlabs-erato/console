@@ -1510,6 +1510,33 @@ describe("the acp driver", () => {
       { type: "cannot_go_on", state: "failed", reason: "crashed" },
       { type: "ended", how: "crashed" },
     ]);
+
+    // The end of what it wrote is kept with what the runner hands to keep it with, which takes
+    // the secrets out first.
+    const asked: { length: number; most: number; more: boolean | undefined }[] = [];
+    const prints = agentThat({
+      prompt: () => {
+        setTimeout(() => {
+          prints.writes(`${"e".repeat(5000)}\n`);
+          prints.exits(1);
+        }, 10);
+      },
+    });
+    const kept = driverFor(prints).start({
+      ...OPTIONS,
+      cutEnd: (words, most, more) => {
+        asked.push({ length: words.length, most, more });
+        return `[the end, ${most} at most]`;
+      },
+    });
+    await kept.send(message("A task."));
+    const ended = await until(kept, [], isType("ended"));
+    expect(ended).toContainEqual({
+      type: "event",
+      kind: "error",
+      text: "The product's process ended with code 1.\n[the end, 4000 at most]",
+    });
+    expect(asked).toEqual([{ length: 5000, most: 4000, more: false }]);
   });
 
   it("asks the product what it is and offers without a session to run, and leaves it", async () => {

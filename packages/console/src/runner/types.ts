@@ -106,6 +106,12 @@ export interface StartOptions {
    * part of through this, and never by itself first; left out, a text is cut as it is.
    */
   readonly cut?: Cut | undefined;
+  /**
+   * What keeps the end of a text to what the transcript shows of it, the secrets out first: the
+   * end of what the product wrote on its standard error, which says why it ended. A driver shows
+   * that through this (`errorsShown`); left out, a text is cut as it is.
+   */
+  readonly cutEnd?: Cut | undefined;
 }
 
 /**
@@ -120,6 +126,25 @@ export type Cut = (text: string, most: number, more?: boolean) => string;
 /** A text cut as it is, with the mark of a cut: what a driver cuts with where it was handed nothing to cut with. */
 export const plainCut: Cut = (text, most) =>
   text.length > most ? `${text.slice(0, most)}…` : text;
+
+/** The end of a text kept as it is, begun by the mark of a cut: what a driver keeps the end of a text with where it was handed nothing to. */
+export const plainCutEnd: Cut = (text, most, more = false) =>
+  text.length > most || more ? `…${text.slice(Math.max(0, text.length - most))}` : text;
+
+/** How much of the end of what a product wrote on its standard error an event shows. */
+export const MAX_ERRORS_SHOWN = 4000;
+
+/**
+ * What a product wrote on its standard error as an event shows it: its end, within
+ * `MAX_ERRORS_SHOWN`, kept through `cutEnd`, so that the secrets are out before it is cut. A
+ * text whose beginning the child let go begins with the mark of a cut (`Child.errors`), and its
+ * first characters may be the end of a secret: they are not shown.
+ */
+export function errorsShown(errors: string, cutEnd: Cut): string {
+  const text = errors.trim();
+  const more = text.startsWith("…");
+  return cutEnd(more ? text.slice(1) : text, MAX_ERRORS_SHOWN, more);
+}
 
 /** What the installed product is and offers, asked without starting a session. */
 export interface Probe {
@@ -167,7 +192,10 @@ export interface Child {
   end(): void;
   /** Its standard output, a line at a time, until it closes. Read once. */
   readonly lines: AsyncIterable<string>;
-  /** The end of what it wrote on its standard error, bounded. */
+  /**
+   * The end of what it wrote on its standard error, bounded: where its beginning was let go, it
+   * begins with the mark of a cut (`…`), since what it begins with may be the end of a secret.
+   */
   errors(): string;
   kill(signal: "SIGINT" | "SIGTERM" | "SIGKILL"): void;
   /** How it ended: its exit code, or the signal that ended it; or why it never started. Never rejects. */

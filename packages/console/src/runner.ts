@@ -40,6 +40,7 @@ export { ownRunnerModules } from "./runner/modules.js";
 export { createSpawn } from "./runner/process.js";
 export {
   cutShown,
+  cutShownEnd,
   formsOf,
   MAX_CUT_WINDOW,
   type Redactor,
@@ -100,4 +101,10 @@ export type {
   WakeSocket,
   WakeSource,
 } from "./runner/types.js";
-export { KEEPER_VARIABLE, plainCut } from "./runner/types.js";
+export {
+  errorsShown,
+  KEEPER_VARIABLE,
+  MAX_ERRORS_SHOWN,
+  plainCut,
+  plainCutEnd,
+} from "./runner/types.js";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseRunnerConfig } from "./config.js";
-import { cutShown, formsOf, MAX_CUT_WINDOW, redactorOf, WITHHELD } from "./redact.js";
+import { cutShown, cutShownEnd, formsOf, MAX_CUT_WINDOW, redactorOf, WITHHELD } from "./redact.js";
 import { createRegistry } from "./registry.js";
 
 // Invented values, shaped like nothing real: a token, a password with characters that encode.
@@ -158,6 +158,67 @@ describe("taking the secrets out of an event", () => {
     expect(cutShown(inner, handed, 64, true)).not.toContain(value.slice(0, 4));
     expect(cutShown(inner, handed, 200, true)).not.toContain(value.slice(0, 4));
     expect(cutShown(inner, handed, 200)).toBe(handed);
+  });
+
+  it("keeps the end of a text after its values are out, so that no part of one stands where its beginning was cut", () => {
+    const mark = String.fromCodePoint(0x2026);
+    const value = "not-a-real-token-4f9a2c71";
+    const hex = "9f2c41d07ab35e68c1d2e3f405162738";
+    const redact = redactorOf([value, hex]);
+    // The cut falls inside the value at every place, from its first character to its last:
+    // nothing of the value is shown, not even its last character before the rest.
+    for (const [name, secret] of [
+      ["a token", value],
+      ["a hexadecimal value", hex],
+    ] as const) {
+      for (let into = 1; into < secret.length; into += 1) {
+        const after = "x".repeat(40 - (secret.length - into));
+        const out = cutShownEnd(redact, `what came before it ${secret}${after}`, 40);
+        const without = `what came before it ${WITHHELD}${after}`;
+        expect(out, `${name}, ${into} in`).toBe(
+          without.length > 40 ? `${mark}${without.slice(without.length - 40)}` : without,
+        );
+        for (let length = 1; length <= secret.length - into; length += 1) {
+          expect(out.includes(`${secret.slice(-length)}x`), `${name}, ${into} in`).toBe(false);
+        }
+      }
+    }
+    // What is shown is what the whole text would show of its end: the cut is after the taking out.
+    const text = `${"z".repeat(100)} a ${value} b ${hex} c`;
+    expect(cutShownEnd(redact, text, 30)).toBe(`${mark}${redact(text).slice(-30)}`);
+    // A text within the length comes through as it is, and one with nothing to look for is cut as it is.
+    expect(cutShownEnd(redact, "short", 40)).toBe("short");
+    expect(cutShownEnd(redactorOf([]), "0123456789", 4)).toBe(`${mark}6789`);
+    // A text handed over as the end of a longer one may begin inside a value: its first
+    // characters are not shown, however short the text, and nothing of a value's end is.
+    const handed = `${value.slice(-12)}${"y".repeat(60)}`;
+    expect(cutShownEnd(redact, handed, 200, true)).not.toContain(value.slice(-4));
+    expect(cutShownEnd(redact, handed, 64, true)).not.toContain(value.slice(-4));
+    expect(cutShownEnd(redact, handed, 200, true).startsWith(mark)).toBe(true);
+    expect(cutShownEnd(redactorOf([]), "6789", 10, true)).toBe(`${mark}6789`);
+    expect(cutShownEnd(redact, handed, 200)).toBe(handed);
+  });
+
+  it("looks through the end of a long text alone when it keeps its end", () => {
+    const mark = String.fromCodePoint(0x2026);
+    const value = "not-a-real-token-4f9a2c71";
+    const inner = redactorOf([value]);
+    let read = 0;
+    const counting = Object.assign(
+      (text: string) => {
+        read += text.length;
+        return inner(text);
+      },
+      { longest: inner.longest },
+    );
+    const long = `${"z".repeat(1024 * 1024)}${value}${"y".repeat(3990)}`;
+    expect(cutShownEnd(counting, long, 4000)).toBe(`${mark}${WITHHELD}${"y".repeat(3990)}`);
+    expect(read).toBeLessThan(16 * 1024);
+    read = 0;
+    const out = cutShownEnd(counting, value.repeat(100_000), 4000);
+    expect(out.startsWith(mark)).toBe(true);
+    expect(out.replace(mark, "").replaceAll(WITHHELD, "")).toBe("");
+    expect(read).toBeLessThanOrEqual(2 * MAX_CUT_WINDOW);
   });
 
   it("takes the longest form first, so that one value inside another leaves nothing of either", () => {

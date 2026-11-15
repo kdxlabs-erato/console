@@ -22,7 +22,7 @@ import {
   introOf,
   makeMark,
 } from "./message.js";
-import { cutShown, type Redactor, redactorOf } from "./redact.js";
+import { cutShown, cutShownEnd, type Redactor, redactorOf } from "./redact.js";
 import type {
   Driver,
   DriverEvent,
@@ -847,6 +847,7 @@ export function createRunner(options: RunnerOptions): Runner {
         // Whatever the driver shows a part of is cut once the secrets, as the store has them
         // now, are out of it: no part of one stands where a text was cut.
         cut: (text, most, more) => cutShown(redact, text, most, more),
+        cutEnd: (text, most, more) => cutShownEnd(redact, text, most, more),
       }),
       startedAt: options.now(),
       first: true,

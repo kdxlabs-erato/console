@@ -8,10 +8,12 @@ import {
   type DriverEvent,
   type DriverMessage,
   type DriverSession,
+  errorsShown,
   type Fact,
   type Picture,
   type Probe,
   plainCut,
+  plainCutEnd,
   type StartOptions,
 } from "./types.js";
 
@@ -1101,6 +1103,8 @@ function sessionOf(
     const clean = stopping || (exit.code === 0 && exit.signal === null && exit.error === undefined);
     if (!clean && !gaveUp) {
       const errors = child.errors().trim();
+      // Its end, cut after the secrets are out, so that none stands at the cut.
+      const shown = errorsShown(errors, options.cutEnd ?? plainCutEnd);
       emit(
         {
           type: "event",
@@ -1108,7 +1112,7 @@ function sessionOf(
           text:
             exit.error !== undefined
               ? `The product could not be started: ${exit.error}`
-              : `The product's process ended${exit.signal === null ? ` with code ${exit.code}` : ` on ${exit.signal}`}.${errors.length === 0 ? "" : `\n${errors}`}`,
+              : `The product's process ended${exit.signal === null ? ` with code ${exit.code}` : ` on ${exit.signal}`}.${shown.length === 0 ? "" : `\n${shown}`}`,
         },
         {
           type: "cannot_go_on",

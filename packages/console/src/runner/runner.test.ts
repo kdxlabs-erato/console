@@ -536,8 +536,10 @@ describe("the runner", () => {
       model: null,
       effort: null,
       resume: undefined,
-      // What the driver cuts a text it shows a part of with: the runner's, which takes the secrets out first.
+      // What the driver cuts a text it shows a part of with, and keeps the end of one with: the
+      // runner's, which take the secrets out first.
       cut: expect.any(Function),
+      cutEnd: expect.any(Function),
     });
     expect(console.begun).toEqual([
       {
@@ -983,6 +985,13 @@ describe("the runner", () => {
     expect(cut?.(`say another-invented-value and ${"y".repeat(50)}`, 8)).toBe(
       `say ${WITHHELD.slice(0, 4)}${mark}`,
     );
+    // The end of a text is kept the same way: a value across where it is cut, its last two
+    // characters inside, is not shown in part.
+    const cutEnd = session.options.cutEnd;
+    const printed = `${"x".repeat(100)} token ${TOKEN} failed`;
+    const most = " failed".length + 2;
+    expect(cutEnd?.(printed, most)).toBe(`${mark}${WITHHELD.slice(-2)} failed`);
+    expect(cutEnd?.(printed, most)).not.toContain(TOKEN.slice(-2));
   });
 
   it("hands in the pictures an event carries, and goes on from where the console stands after a gap or a refusal", async () => {
