@@ -434,8 +434,8 @@ function twice(keys: readonly string[]): string[] {
  * Reads a desk's records whole and says everything that is wrong with them (ADR-0117): a file
  * that is no JSON or not in the format, a key or an id given twice, a status, a field or a
  * metric the collection does not name, a use or a figure of an item that is not there, a
- * preview or a file that is not there, a JSON file over its bound, a folder the index leaves
- * out. A file that is a git LFS pointer is a note, since nothing is wrong with the record, and
+ * preview or a file that is not there, a JSON file over its bound, a collection the index
+ * leaves out. What else a desk keeps under `records/`, in a shape of its own, is not read. A file that is a git LFS pointer is a note, since nothing is wrong with the record, and
  * so is a use or a row of figures dated before its item was made. What
  * reads right is counted, so that the command can say how much a desk keeps.
  */
@@ -495,8 +495,33 @@ export async function checkRecords(files: RecordsFiles): Promise<RecordsCheck> {
     return { value: result.value, json: JSON.parse(content) as unknown };
   };
 
+  /**
+   * The folders of `records/` that hold a collection's own file and are not among the keys
+   * given: collections nobody would be shown. Any other folder is the desk's own shape
+   * (ADR-0122), which this check neither reads nor finds anything wrong with.
+   */
+  const unlisted = async (keys: readonly string[]): Promise<string[]> => {
+    const found: string[] = [];
+    for (const folder of (await files.folders?.("")) ?? []) {
+      if (
+        !keys.includes(folder) &&
+        !folder.startsWith(".") &&
+        (await files.size(`${folder}/${RECORDS_COLLECTION_FILE}`)) !== undefined
+      ) {
+        found.push(folder);
+      }
+    }
+    return found;
+  };
   if ((await files.size(RECORDS_INDEX_FILE)) === undefined) {
-    return { found: false, problems: [], notes: [], collections: [] };
+    const lost = await unlisted([]);
+    for (const folder of lost) {
+      say(
+        RECORDS_INDEX_FILE,
+        `is not there, and the folder ${folder} holds a ${RECORDS_COLLECTION_FILE}: nothing of it is shown until the index names it`,
+      );
+    }
+    return { found: lost.length > 0, problems: said(), notes: [], collections: [] };
   }
   const index = await read(RECORDS_INDEX_FILE, recordsIndexSchema);
   if (index === undefined) {
@@ -506,11 +531,11 @@ export async function checkRecords(files: RecordsFiles): Promise<RecordsCheck> {
   for (const again of twice(keys)) {
     say(RECORDS_INDEX_FILE, `names the collection ${again} twice`);
   }
-  const folders = await files.folders?.("");
-  for (const folder of folders ?? []) {
-    if (!keys.includes(folder) && !folder.startsWith(".")) {
-      say(RECORDS_INDEX_FILE, `leaves out the folder ${folder}, so nothing of it is shown`);
-    }
+  for (const folder of await unlisted(keys)) {
+    say(
+      RECORDS_INDEX_FILE,
+      `leaves out the folder ${folder}, which holds a ${RECORDS_COLLECTION_FILE}, so nothing of it is shown`,
+    );
   }
 
   const collections: {

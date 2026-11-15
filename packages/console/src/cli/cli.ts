@@ -5327,7 +5327,7 @@ const deskCheck = async (args: readonly string[], io: CliIo): Promise<number> =>
     io.stdout(`${JSON.stringify({ directory: at.directory, ...found }, null, 2)}\n`);
   } else if (!found.found) {
     io.stdout(
-      `No records yet in ${at.directory}: ${RECORDS_DIR}/${RECORDS_INDEX_FILE} is not there. ${RECORDS_DIR}/README.md says how the first is written.\n`,
+      `No collection is kept in ${at.directory}: ${RECORDS_DIR}/${RECORDS_INDEX_FILE} is not there. What else is under ${RECORDS_DIR}/ is the desk's own shape, and not this check's to read. Where a collection is wanted, the skill keeping-a-desk says how one is kept (collections.md).\n`,
     );
   } else {
     const kept = found.collections.map(

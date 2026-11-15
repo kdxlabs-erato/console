@@ -388,13 +388,17 @@ describe("the check of a desk's records (ADR-0117)", () => {
           { item: "c-009", on: "2026-11-06", values: { impressions: 10 } },
           { item: "c-001", on: "2026-11-06", values: { views: 10 } },
         ],
+        // A folder that holds a collection's own file and is in no index is a collection left
+        // out; any other folder is the desk's own shape, and none of this check's.
+        "drafts/collection.json": { title: "Drafts" },
         "drafts/items.json": [],
+        "reading-list/books.json": [{ title: "A book" }],
       }),
     );
     expect(found.found).toBe(true);
     expect(found.problems.map((one) => `${one.file}: ${one.problem}`)).toEqual([
       "records/index.json: names the collection ad-creatives twice",
-      "records/index.json: leaves out the folder drafts, so nothing of it is shown",
+      "records/index.json: leaves out the folder drafts, which holds a collection.json, so nothing of it is shown",
       "records/ad-creatives/collection.json: colour is no part of a collection",
       "records/ad-creatives/collection.json: names the status used twice",
       "records/ad-creatives/collection.json: the ratio cpc is worked out from spent, which is no metric of the collection",
@@ -542,6 +546,50 @@ describe("the check of a desk's records (ADR-0117)", () => {
       }),
     );
     expect(bare.notes).toEqual([]);
+  });
+
+  it("reads the collections a desk keeps, and leaves what else is under records/ to the desk (ADR-0122)", async () => {
+    // A desk keeps what its member asks for, in the shape that fits it: a folder of its own
+    // shape is no collection, and nothing is wrong with it.
+    const open = {
+      "README.md": "# What I keep\n",
+      "reading-list/README.md": "# The books I read\n",
+      "reading-list/books.json": [{ id: "b-1", title: "A book", readOn: "2026-11-15" }],
+      "reading-list/files/cover.png": 48_000,
+    };
+    expect(await checkRecords(desk(open))).toEqual({
+      found: false,
+      problems: [],
+      notes: [],
+      collections: [],
+    });
+    // Beside collections it is left alone the same way.
+    expect(await checkRecords(desk({ ...WHOLE, ...open }))).toEqual({
+      found: true,
+      problems: [],
+      notes: [],
+      collections: [{ key: "ad-creatives", items: 2, uses: 1, metricRows: 2 }],
+    });
+    // A collection's own file with no index to name it is a collection nobody would be shown.
+    const lost = await checkRecords(
+      desk({
+        "ad-creatives/collection.json": COLLECTION,
+        "ad-creatives/items.json": ITEMS,
+        "reading-list/books.json": [],
+      }),
+    );
+    expect(lost).toEqual({
+      found: true,
+      problems: [
+        {
+          file: "records/index.json",
+          problem:
+            "is not there, and the folder ad-creatives holds a collection.json: nothing of it is shown until the index names it",
+        },
+      ],
+      notes: [],
+      collections: [],
+    });
   });
 
   it("reads no JSON file over its bound, and stops saying problems where there are too many to read", async () => {

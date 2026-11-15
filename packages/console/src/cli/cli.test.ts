@@ -5595,7 +5595,7 @@ describe("the check of a desk's records on the command line (ADR-0117)", () => {
     });
     expect(await runCli(["desk", "check"], run.io)).toBe(EXIT.ok);
     expect(run.out()).toBe(
-      "No records yet in /work/desk: records/index.json is not there. records/README.md says how the first is written.\n",
+      "No collection is kept in /work/desk: records/index.json is not there. What else is under records/ is the desk's own shape, and not this check's to read. Where a collection is wanted, the skill keeping-a-desk says how one is kept (collections.md).\n",
     );
   });
 
