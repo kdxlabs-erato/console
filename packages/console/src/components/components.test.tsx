@@ -38,13 +38,17 @@ import {
   NO_WHOLE,
   pastedName,
   SignalComposer,
+  sameLine,
+  type TalkHands,
   TalkWaiting,
   TalkWorking,
   TranscriptView,
   takenBy,
   takenOf,
+  talkLinesOf,
   talkOf,
   tellsWith,
+  turnStarts,
   waitingOf,
   wholeOf,
   withChosen,
@@ -2545,6 +2549,104 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     );
     expect(over).toContain("<span>The session ended: stopped.</span>");
     expect(over).not.toContain("sc-talk-fact");
+  });
+
+  it("draws a line again only when what it shows changed, however many events arrive", () => {
+    const hands: TalkHands = {
+      fileHref: (id) => id,
+      signalFileHref: undefined,
+      readWhole: () => undefined,
+      openPicture: () => undefined,
+    };
+    const files = [{ id: "f1", name: "notes.txt", size: 12, contentType: "text/plain" }];
+    const linesOf = (
+      events: Parameters<typeof talkOf>[0],
+      over: Partial<Parameters<typeof talkLinesOf>[0]> = {},
+    ) =>
+      talkLinesOf({
+        items: talkOf(events),
+        hands,
+        agent: mira,
+        began: turnStarts(events),
+        // The record is read again every few seconds: the same files, in a list made anew.
+        signalFiles: (number) => (number === 4 ? files.map((file) => ({ ...file })) : undefined),
+        whole: NO_WHOLE,
+        of: "session",
+        reading: undefined,
+        today: "2026-11-14",
+        ...over,
+      });
+    const session = [
+      event(1, { kind: "person", text: "Go.", data: { signal: 4 } }),
+      event(2, { kind: "thinking", text: "Hm." }),
+      event(3, { kind: "tool_call", text: "ls", data: { tool: "Bash", id: "t1" } }),
+      event(4, { kind: "tool_result", text: "a b", data: { id: "t1" } }),
+      event(5, { kind: "assistant", text: "Done.", whole: 4096 }),
+      event(6, { kind: "status", text: "", data: { turn: "completed" } }),
+      event(7, { kind: "tool_call", text: "pwd", data: { tool: "Bash", id: "t2" } }),
+    ];
+    const before = linesOf(session);
+    expect(before.map((line) => line.key)).toEqual([1, 2, 3, 5, 6, 7]);
+    // An event arrives: every line there was says the same and is not drawn again; the things
+    // of the session are made anew each time, and the same events are the same line.
+    const answer = event(8, { kind: "tool_result", text: "/home", data: { id: "t2" } });
+    const after = linesOf([...session, answer, event(9, { kind: "assistant", text: "Here." })]);
+    expect(after.map((line) => line.key)).toEqual([1, 2, 3, 5, 6, 7, 9]);
+    const same = (a: typeof before, b: typeof before) =>
+      a.map((line, index) => {
+        const other = b[index];
+        return other !== undefined && sameLine(line, other);
+      });
+    // All but the call that was answered, which now shows its answer.
+    expect(same(before, after)).toEqual([true, true, true, true, true, false]);
+    // A text read whole, and one being read, change the line they are of and no other.
+    const whole = { of: "session", texts: { 5: "Done, at length." } };
+    expect(same(before, linesOf(session, { whole }))).toEqual([
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+    ]);
+    expect(same(before, linesOf(session, { reading: 4 }))).toEqual([
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+    ]);
+    // A text read in another session is no text of this one: nothing changes.
+    expect(same(before, linesOf(session, { whole: { ...whole, of: "another" } }))).toEqual(
+      before.map(() => true),
+    );
+    // The account's picture stands beside what it said alone, so another picture draws that line.
+    expect(same(before, linesOf(session, { agent: { ...mira } }))).toEqual([
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+    ]);
+    // Other files of the signal draw the line they came with; a new day, new hands and a turn
+    // that began at another moment draw what shows them.
+    expect(
+      same(
+        before,
+        linesOf(session, { signalFiles: () => [{ ...files[0], id: "f2" }] as typeof files }),
+      ),
+    ).toEqual([false, true, true, true, true, true]);
+    expect(same(before, linesOf(session, { today: "2026-11-15" }))).toEqual(
+      before.map(() => false),
+    );
+    expect(same(before, linesOf(session, { hands: { ...hands } }))).toEqual(
+      before.map(() => false),
+    );
+    expect(
+      same(before, linesOf(session, { began: new Map([[6, "2026-11-14T02:00:00.000Z"]]) })),
+    ).toEqual([true, true, true, true, false, true]);
   });
 
   it("reads off a session's events whether a turn is under way, and what the agent is at", () => {

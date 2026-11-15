@@ -1,4 +1,13 @@
-import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type FormEvent,
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   type AgentState,
   type FileUpload,
@@ -13,9 +22,10 @@ import {
   type RestSignal,
   type RestTranscriptEvent,
 } from "../api.js";
+import { today } from "../dates.js";
 import { useWords } from "../i18n/index.js";
 import { isPicture } from "./files.js";
-import { Lightbox, PictureThumb, usePicture } from "./pictures.js";
+import { Lightbox, type PictureState, PictureThumb, usePicture } from "./pictures.js";
 import { Avatar, Badge, Button, Callout, cx, formatBytes, personName, Time } from "./ui.js";
 
 // The parts of an agent account's page (ADR-0085, ADR-0086): how it stands, what it is doing as
@@ -427,87 +437,186 @@ export function wordOf(words: Readonly<Record<string, string>>, name: string): s
 }
 
 /**
- * A session as a conversation: what the agent was told at the right, as whoever said it wrote
- * it, with the files that came with it; what the agent said at the left, beside its picture; its
- * thoughts folded; a tool's call and what it answered as one row that opens, the steps of a turn
- * close together; a wake, a status and an error as notes between, and a line where a turn
- * ended, with how long it took. A picture opens large over the page. Everything an agent's
- * product printed is text, never markup.
+ * What every line of a conversation is handed, the same from one render of the view to the
+ * next, so that a line is drawn again only when what it shows changed.
  */
-export function TranscriptView(props: TranscriptViewProps) {
-  const all = useWords();
-  const words = all.agents.page.live;
-  const shown = usePicture();
-  // What was read whole belongs to the session it was read in: the events of another carry the
-  // same numbers, and a view that goes on to show them must show none of this.
-  const [whole, setWhole] = useState<WholeTexts>(NO_WHOLE);
-  const [reading, setReading] = useState<
-    { readonly of: string | undefined; readonly n: number } | undefined
-  >(undefined);
-  const of = props.of;
-  const showing = useRef(of);
-  showing.current = of;
-  if (props.events.length === 0) {
+export interface TalkHands {
+  /** Where the bytes of a picture of the session are read. */
+  readonly fileHref: (fileId: string) => string;
+  /** Where the bytes of a file of a signal are read, where the view was told. */
+  readonly signalFileHref: ((number: number, fileId: string) => string) | undefined;
+  /** Reads the whole text of an event, where the view can. */
+  readonly readWhole: ((n: number) => void) | undefined;
+  readonly openPicture: PictureState["open"];
+}
+
+export interface TalkLineProps {
+  readonly one: TalkItem;
+  readonly hands: TalkHands;
+  /** The account's picture, beside what it said. */
+  readonly agent: RestPerson | undefined;
+  /** When the turn the line ends began, for a line that ends one. */
+  readonly began: string | undefined;
+  /** The files that came with what the agent was told, as the account's record names them. */
+  readonly files: readonly SignalFile[] | undefined;
+  /** The line's text read whole: its own, or its call's for a tool. */
+  readonly whole: string | undefined;
+  /** A tool's answer read whole. */
+  readonly wholeAnswer: string | undefined;
+  /** The event of the line whose whole text is being read, by its number. */
+  readonly reading: number | undefined;
+  /** The day it is: a moment of today is said by its hour alone, so a new day draws the lines again. */
+  readonly today: string;
+}
+
+/** Whether two things of a session are the same events: a thing is made anew each time the events are read through. */
+function sameItem(a: TalkItem, b: TalkItem): boolean {
+  if (a.type === "tool" || b.type === "tool") {
     return (
-      <>
-        {props.empty ?? null}
-        {props.foot !== undefined && props.foot !== null && (
-          <ol className="sc-talk" aria-label={words.transcript}>
-            {props.foot}
-          </ol>
-        )}
-      </>
+      a.type === "tool" &&
+      b.type === "tool" &&
+      a.call === b.call &&
+      a.result === b.result &&
+      a.permission === b.permission
     );
   }
-  /** When the turn an event ends began: the first thing the agent was sent after the turn before. */
-  const began = new Map<number, string>();
+  return a.type === b.type && a.event === b.event;
+}
+
+/** Whether two lists of a signal's files name the same files: the record is read again every few seconds. */
+function sameFiles(
+  a: readonly SignalFile[] | undefined,
+  b: readonly SignalFile[] | undefined,
+): boolean {
+  if (a === b) {
+    return true;
+  }
+  return (
+    a !== undefined &&
+    b !== undefined &&
+    a.length === b.length &&
+    a.every((file, index) => {
+      const other = b[index];
+      return (
+        other !== undefined &&
+        file.id === other.id &&
+        file.name === other.name &&
+        file.size === other.size &&
+        file.contentType === other.contentType
+      );
+    })
+  );
+}
+
+/** Whether a line would be drawn the same: then it is not drawn again. */
+export function sameLine(a: TalkLineProps, b: TalkLineProps): boolean {
+  return (
+    sameItem(a.one, b.one) &&
+    a.hands === b.hands &&
+    a.agent === b.agent &&
+    a.began === b.began &&
+    sameFiles(a.files, b.files) &&
+    a.whole === b.whole &&
+    a.wholeAnswer === b.wholeAnswer &&
+    a.reading === b.reading &&
+    a.today === b.today
+  );
+}
+
+/** When the turn an event ends began, by the event's number: the first thing the agent was sent after the turn before. */
+export function turnStarts(events: readonly RestTranscriptEvent[]): ReadonlyMap<number, string> {
+  const starts = new Map<number, string>();
   let since: string | undefined;
-  for (const event of props.events) {
+  for (const event of events) {
     if (event.kind === "status" && event.data.turn === "completed") {
       if (since !== undefined) {
-        began.set(event.n, since);
+        starts.set(event.n, since);
       }
       since = undefined;
     } else if ((event.kind === "person" || event.kind === "wake") && since === undefined) {
       since = event.at;
     }
   }
-  const kinds: Readonly<Record<string, string>> = words.kinds;
-  const readWhole = (n: number) => {
-    const load = props.onReadWhole;
-    if (load === undefined) {
-      return;
+  return starts;
+}
+
+/**
+ * What each line of a conversation is given, in order, with the number it is told apart by:
+ * its own events, and of everything the view holds only what the line itself shows, so that a
+ * line's props say the same until the line would be drawn otherwise.
+ */
+export function talkLinesOf(input: {
+  readonly items: readonly TalkItem[];
+  readonly hands: TalkHands;
+  readonly agent: RestPerson | undefined;
+  readonly began: ReadonlyMap<number, string>;
+  readonly signalFiles: TranscriptViewProps["signalFiles"];
+  readonly whole: WholeTexts;
+  /** The session the events are of. */
+  readonly of: string | undefined;
+  /** The event whose whole text is being read, by its number. */
+  readonly reading: number | undefined;
+  readonly today: string;
+}): readonly (TalkLineProps & { readonly key: number })[] {
+  const { whole, of, reading } = input;
+  return input.items.flatMap((one) => {
+    const main = one.type === "tool" ? one.call : one.event;
+    const answer = one.type === "tool" ? one.result : undefined;
+    const first = one.type === "tool" ? (main ?? one.permission ?? answer) : one.event;
+    if (first === undefined) {
+      return [];
     }
-    setReading({ of, n });
-    void load(n)
-      .then((text) => {
-        // An answer that arrives once another session is shown is that session's no more.
-        if (showing.current === of) {
-          setWhole((current) => withWhole(current, of, n, text));
-        }
-      })
-      .catch(() => undefined)
-      .finally(() =>
-        setReading((current) =>
-          current !== undefined && current.of === of && current.n === n ? undefined : current,
-        ),
-      );
-  };
+    const signal = one.type === "told" ? one.event.data.signal : undefined;
+    return [
+      {
+        key: first.n,
+        one,
+        hands: input.hands,
+        // The account's picture stands beside what it said, and nowhere else.
+        agent: one.type === "said" ? input.agent : undefined,
+        began: one.type === "tool" ? undefined : input.began.get(one.event.n),
+        files: typeof signal === "number" ? input.signalFiles?.(signal) : undefined,
+        whole: main === undefined ? undefined : wholeOf(whole, of, main.n),
+        wholeAnswer: answer === undefined ? undefined : wholeOf(whole, of, answer.n),
+        reading:
+          reading !== undefined && (reading === main?.n || reading === answer?.n)
+            ? reading
+            : undefined,
+        today: input.today,
+      },
+    ];
+  });
+}
+
+/**
+ * One line of a conversation. It is drawn again only when its own events, its own texts read
+ * whole or what it is handed changed: a session of thousands of events draws one line for an
+ * event that arrives, not all of them.
+ */
+const TalkLine = memo(function TalkLine(props: TalkLineProps): ReactNode {
+  const all = useWords();
+  const words = all.agents.page.live;
+  const { one, hands } = props;
+  const kinds: Readonly<Record<string, string>> = words.kinds;
   /** The words of an event, whole where they were read whole, with the way to read the rest. */
-  const text = (event: RestTranscriptEvent, className: string): ReactNode => {
-    const read = wholeOf(whole, of, event.n);
+  const text = (
+    event: RestTranscriptEvent,
+    className: string,
+    read: string | undefined,
+  ): ReactNode => {
     const shown = read ?? event.text;
+    const readWhole = hands.readWhole;
     return (
       <>
         {shown.length > 0 && <pre className={className}>{shown}</pre>}
         {event.whole !== null && read === undefined && (
           <p className="sc-talk-cut">
             {words.cutAt(formatBytes(event.whole))}{" "}
-            {props.onReadWhole !== undefined && (
+            {readWhole !== undefined && (
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={reading !== undefined && reading.of === of && reading.n === event.n}
+                disabled={props.reading === event.n}
                 onClick={() => readWhole(event.n)}
               >
                 {words.whole}
@@ -525,231 +634,317 @@ export function TranscriptView(props: TranscriptViewProps) {
           <li key={file.id}>
             <PictureThumb
               picture={{
-                src: props.fileHref(file.id),
+                src: hands.fileHref(file.id),
                 alt: file.name,
                 name: file.name,
                 size: file.size,
               }}
-              onOpen={shown.open}
+              onOpen={hands.openPicture}
             />
           </li>
         ))}
       </ul>
     );
   const when = (event: RestTranscriptEvent): ReactNode => <Time iso={event.at} precision="clock" />;
-  const item = (one: TalkItem): ReactNode => {
-    if (one.type === "tool") {
-      const first = one.call ?? one.permission ?? one.result;
-      if (first === undefined) {
-        return null;
-      }
-      const name = word(one.call?.data[TOOL]) ?? word(one.permission?.data[TOOL]);
-      const failed = one.result?.data.error === true;
-      const answer = word(one.permission?.data.answer);
-      const refused = answer !== undefined && answer !== "allowed";
-      const line = firstLine(one.call?.text ?? one.permission?.text ?? one.result?.text ?? "");
-      return (
-        <li
-          key={first.n}
-          className={cx(
-            "sc-talk-item",
-            "sc-talk-step",
-            "sc-talk-tool",
-            (failed || refused) && "sc-talk-tool-failed",
-          )}
-          data-n={first.n}
-        >
-          <details className="sc-talk-tool-fold">
-            <summary className="sc-talk-tool-head">
-              <code className="sc-talk-tool-name">{name ?? kinds.tool_call}</code>
-              <span className="sc-talk-tool-line">{line}</span>
-              {failed && <Badge tone="danger">{words.toolFailed}</Badge>}
-              {refused && <Badge tone="warning">{words.toolRefused}</Badge>}
-              {one.result === undefined && one.call !== undefined && !refused && (
-                <span className="sc-muted">{words.toolRunning}</span>
-              )}
-              {when(first)}
-            </summary>
-            <div className="sc-talk-tool-body">
-              {one.permission !== undefined && (
-                <p className="sc-talk-note-line">
-                  {kinds.permission}
-                  {answer === undefined ? "" : ` · ${wordOf(words.answers, answer)}`}
-                  {one.permission.text.length > 0 && ` · ${one.permission.text}`}
-                </p>
-              )}
-              {one.call !== undefined && text(one.call, "sc-talk-code")}
-              {one.result !== undefined && text(one.result, "sc-talk-code sc-talk-code-answer")}
-            </div>
-          </details>
-          {pictures(one.result)}
-        </li>
-      );
+  if (one.type === "tool") {
+    const first = one.call ?? one.permission ?? one.result;
+    if (first === undefined) {
+      return null;
     }
-    const { event } = one;
-    if (event.sealed !== null) {
-      return (
-        <li key={event.n} className="sc-talk-item sc-talk-note" data-n={event.n}>
-          <span className="sc-talk-note-line">
-            {words.sealed(
-              event.sealed.by === null ? "?" : (event.sealed.by.name ?? event.sealed.by.login),
-              event.sealed.reason,
-            )}
-          </span>
-          {when(event)}
-        </li>
-      );
-    }
-    if (one.type === "told") {
-      const number = typeof event.data.signal === "number" ? event.data.signal : undefined;
-      const kind = word(event.data.kind);
-      const through = word(event.data.agent);
-      const unseen = word(event.data.unseen);
-      const others = word(event.data.files);
-      const listed =
-        number === undefined
-          ? undefined
-          : props.signalFiles?.(number)?.filter((file) => !isPicture(file.contentType));
-      const who = word(event.data.by) ?? words.kinds.person;
-      // An interrupt with no words of its own stopped the turn so that what waited is read: a
-      // note of who did, and no message.
-      if (
-        kind === "interrupt" &&
-        event.text.length === 0 &&
-        event.files.length === 0 &&
-        others === undefined
-      ) {
-        return (
-          <li key={event.n} className="sc-talk-item sc-talk-note" data-n={event.n}>
-            <span className="sc-talk-note-line">
-              {words.interrupted(who)}
-              {when(event)}
-            </span>
-          </li>
-        );
-      }
-      return (
-        <li key={event.n} className="sc-talk-item sc-talk-told" data-n={event.n}>
-          <div className="sc-talk-bubble">
-            {text(event, "sc-talk-text")}
-            {pictures(event)}
-            {listed !== undefined && listed.length > 0 ? (
-              <ul className="sc-chosen-files" aria-label={words.files}>
-                {listed.map((file) => (
-                  <li key={file.id} className="sc-chosen-file">
-                    {props.signalFileHref === undefined || number === undefined ? (
-                      <span>{file.name}</span>
-                    ) : (
-                      <a href={props.signalFileHref(number, file.id)} download={file.name}>
-                        {file.name}
-                      </a>
-                    )}{" "}
-                    <span className="sc-muted">{formatBytes(file.size)}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              others !== undefined && (
-                <p className="sc-talk-note-line">
-                  {words.files}: {others}
-                </p>
-              )
-            )}
-            {unseen !== undefined && (
-              <p className="sc-talk-note-line sc-talk-unseen">{words.unseen(unseen)}</p>
-            )}
-          </div>
-          <div className="sc-talk-meta">
-            <span className="sc-talk-who">{who}</span>
-            {through !== undefined && <span>{words.through(through)}</span>}
-            {kind !== undefined && kind !== "tell" && (
-              <Badge>{wordOf(words.signalKinds, kind)}</Badge>
-            )}
-            {when(event)}
-          </div>
-          {event.data.unread === true && (
-            <p className="sc-talk-note-line sc-talk-unread">{words.unread}</p>
-          )}
-        </li>
-      );
-    }
-    if (one.type === "said") {
-      return (
-        <li key={event.n} className="sc-talk-item sc-talk-said" data-n={event.n}>
-          {props.agent !== undefined && <Avatar person={props.agent} size="sm" />}
-          <div className="sc-talk-prose">
-            {text(event, "sc-talk-text")}
-            {pictures(event)}
-          </div>
-          {when(event)}
-        </li>
-      );
-    }
-    if (one.type === "thought") {
-      return (
-        <li key={event.n} className="sc-talk-item sc-talk-step sc-talk-thought" data-n={event.n}>
-          <details className="sc-talk-tool-fold">
-            <summary className="sc-talk-tool-head">
-              <span className="sc-talk-kind">{kinds.thinking}</span>
-              <span className="sc-talk-tool-line">{firstLine(event.text)}</span>
-              {when(event)}
-            </summary>
-            <div className="sc-talk-tool-body">{text(event, "sc-talk-text")}</div>
-          </details>
-        </li>
-      );
-    }
-    // Where a turn ended: a line, with how long the agent was at it where the record says when it began.
-    if (event.kind === "status" && event.data.turn === "completed") {
-      const from = began.get(event.n);
-      const seconds =
-        from === undefined
-          ? undefined
-          : Math.max(0, Math.round((Date.parse(event.at) - Date.parse(from)) / 1000));
-      return (
-        <li key={event.n} className="sc-talk-item sc-talk-turn" data-n={event.n}>
-          <span className="sc-talk-note-line">
-            {words.turnDone(Number.isFinite(seconds) ? seconds : undefined)}
-            {when(event)}
-          </span>
-        </li>
-      );
-    }
-    // A wake, a status, an error, and whatever a newer runner calls otherwise: a note between.
-    // What the note's own words say already, how a session ended, is not said twice as a fact.
-    const facts = Object.entries(event.data).filter(
-      ([name, fact]) => fact !== null && name !== "signal" && name !== "kind" && name !== "ended",
-    );
-    const lines = event.text.split("\n").filter((line) => line.trim().length > 0);
+    const name = word(one.call?.data[TOOL]) ?? word(one.permission?.data[TOOL]);
+    const failed = one.result?.data.error === true;
+    const answer = word(one.permission?.data.answer);
+    const refused = answer !== undefined && answer !== "allowed";
+    const line = firstLine(one.call?.text ?? one.permission?.text ?? one.result?.text ?? "");
     return (
       <li
-        key={event.n}
         className={cx(
           "sc-talk-item",
-          "sc-talk-note",
-          event.kind === "error" && "sc-talk-note-error",
+          "sc-talk-step",
+          "sc-talk-tool",
+          (failed || refused) && "sc-talk-tool-failed",
         )}
-        data-n={event.n}
+        data-n={first.n}
       >
-        <span className="sc-talk-note-line">
-          <span className="sc-talk-kind">{kinds[event.kind] ?? event.kind}</span>
-          {facts.map(([name, fact]) => (
-            <span key={name} className="sc-talk-fact">
-              {wordOf(words.facts, name)} {String(fact)}
-            </span>
-          ))}
-          {lines.length === 1 && <span>{lines[0]}</span>}
-          {when(event)}
-        </span>
-        {lines.length > 1 && text(event, "sc-talk-text sc-talk-text-note")}
-        {pictures(event)}
+        <details className="sc-talk-tool-fold">
+          <summary className="sc-talk-tool-head">
+            <code className="sc-talk-tool-name">{name ?? kinds.tool_call}</code>
+            <span className="sc-talk-tool-line">{line}</span>
+            {failed && <Badge tone="danger">{words.toolFailed}</Badge>}
+            {refused && <Badge tone="warning">{words.toolRefused}</Badge>}
+            {one.result === undefined && one.call !== undefined && !refused && (
+              <span className="sc-muted">{words.toolRunning}</span>
+            )}
+            {when(first)}
+          </summary>
+          <div className="sc-talk-tool-body">
+            {one.permission !== undefined && (
+              <p className="sc-talk-note-line">
+                {kinds.permission}
+                {answer === undefined ? "" : ` · ${wordOf(words.answers, answer)}`}
+                {one.permission.text.length > 0 && ` · ${one.permission.text}`}
+              </p>
+            )}
+            {one.call !== undefined && text(one.call, "sc-talk-code", props.whole)}
+            {one.result !== undefined &&
+              text(one.result, "sc-talk-code sc-talk-code-answer", props.wholeAnswer)}
+          </div>
+        </details>
+        {pictures(one.result)}
       </li>
     );
-  };
+  }
+  const { event } = one;
+  if (event.sealed !== null) {
+    return (
+      <li className="sc-talk-item sc-talk-note" data-n={event.n}>
+        <span className="sc-talk-note-line">
+          {words.sealed(
+            event.sealed.by === null ? "?" : (event.sealed.by.name ?? event.sealed.by.login),
+            event.sealed.reason,
+          )}
+        </span>
+        {when(event)}
+      </li>
+    );
+  }
+  if (one.type === "told") {
+    const number = typeof event.data.signal === "number" ? event.data.signal : undefined;
+    const kind = word(event.data.kind);
+    const through = word(event.data.agent);
+    const unseen = word(event.data.unseen);
+    const others = word(event.data.files);
+    const listed =
+      number === undefined
+        ? undefined
+        : props.files?.filter((file) => !isPicture(file.contentType));
+    const who = word(event.data.by) ?? words.kinds.person;
+    // An interrupt with no words of its own stopped the turn so that what waited is read: a
+    // note of who did, and no message.
+    if (
+      kind === "interrupt" &&
+      event.text.length === 0 &&
+      event.files.length === 0 &&
+      others === undefined
+    ) {
+      return (
+        <li className="sc-talk-item sc-talk-note" data-n={event.n}>
+          <span className="sc-talk-note-line">
+            {words.interrupted(who)}
+            {when(event)}
+          </span>
+        </li>
+      );
+    }
+    const signalFileHref = hands.signalFileHref;
+    return (
+      <li className="sc-talk-item sc-talk-told" data-n={event.n}>
+        <div className="sc-talk-bubble">
+          {text(event, "sc-talk-text", props.whole)}
+          {pictures(event)}
+          {listed !== undefined && listed.length > 0 ? (
+            <ul className="sc-chosen-files" aria-label={words.files}>
+              {listed.map((file) => (
+                <li key={file.id} className="sc-chosen-file">
+                  {signalFileHref === undefined || number === undefined ? (
+                    <span>{file.name}</span>
+                  ) : (
+                    <a href={signalFileHref(number, file.id)} download={file.name}>
+                      {file.name}
+                    </a>
+                  )}{" "}
+                  <span className="sc-muted">{formatBytes(file.size)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            others !== undefined && (
+              <p className="sc-talk-note-line">
+                {words.files}: {others}
+              </p>
+            )
+          )}
+          {unseen !== undefined && (
+            <p className="sc-talk-note-line sc-talk-unseen">{words.unseen(unseen)}</p>
+          )}
+        </div>
+        <div className="sc-talk-meta">
+          <span className="sc-talk-who">{who}</span>
+          {through !== undefined && <span>{words.through(through)}</span>}
+          {kind !== undefined && kind !== "tell" && (
+            <Badge>{wordOf(words.signalKinds, kind)}</Badge>
+          )}
+          {when(event)}
+        </div>
+        {event.data.unread === true && (
+          <p className="sc-talk-note-line sc-talk-unread">{words.unread}</p>
+        )}
+      </li>
+    );
+  }
+  if (one.type === "said") {
+    return (
+      <li className="sc-talk-item sc-talk-said" data-n={event.n}>
+        {props.agent !== undefined && <Avatar person={props.agent} size="sm" />}
+        <div className="sc-talk-prose">
+          {text(event, "sc-talk-text", props.whole)}
+          {pictures(event)}
+        </div>
+        {when(event)}
+      </li>
+    );
+  }
+  if (one.type === "thought") {
+    return (
+      <li className="sc-talk-item sc-talk-step sc-talk-thought" data-n={event.n}>
+        <details className="sc-talk-tool-fold">
+          <summary className="sc-talk-tool-head">
+            <span className="sc-talk-kind">{kinds.thinking}</span>
+            <span className="sc-talk-tool-line">{firstLine(event.text)}</span>
+            {when(event)}
+          </summary>
+          <div className="sc-talk-tool-body">{text(event, "sc-talk-text", props.whole)}</div>
+        </details>
+      </li>
+    );
+  }
+  // Where a turn ended: a line, with how long the agent was at it where the record says when it began.
+  if (event.kind === "status" && event.data.turn === "completed") {
+    const from = props.began;
+    const seconds =
+      from === undefined
+        ? undefined
+        : Math.max(0, Math.round((Date.parse(event.at) - Date.parse(from)) / 1000));
+    return (
+      <li className="sc-talk-item sc-talk-turn" data-n={event.n}>
+        <span className="sc-talk-note-line">
+          {words.turnDone(Number.isFinite(seconds) ? seconds : undefined)}
+          {when(event)}
+        </span>
+      </li>
+    );
+  }
+  // A wake, a status, an error, and whatever a newer runner calls otherwise: a note between.
+  // What the note's own words say already, how a session ended, is not said twice as a fact.
+  const facts = Object.entries(event.data).filter(
+    ([name, fact]) => fact !== null && name !== "signal" && name !== "kind" && name !== "ended",
+  );
+  const lines = event.text.split("\n").filter((line) => line.trim().length > 0);
+  return (
+    <li
+      className={cx("sc-talk-item", "sc-talk-note", event.kind === "error" && "sc-talk-note-error")}
+      data-n={event.n}
+    >
+      <span className="sc-talk-note-line">
+        <span className="sc-talk-kind">{kinds[event.kind] ?? event.kind}</span>
+        {facts.map(([name, fact]) => (
+          <span key={name} className="sc-talk-fact">
+            {wordOf(words.facts, name)} {String(fact)}
+          </span>
+        ))}
+        {lines.length === 1 && <span>{lines[0]}</span>}
+        {when(event)}
+      </span>
+      {lines.length > 1 && text(event, "sc-talk-text sc-talk-text-note", props.whole)}
+      {pictures(event)}
+    </li>
+  );
+}, sameLine);
+
+/**
+ * A session as a conversation: what the agent was told at the right, as whoever said it wrote
+ * it, with the files that came with it; what the agent said at the left, beside its picture; its
+ * thoughts folded; a tool's call and what it answered as one row that opens, the steps of a turn
+ * close together; a wake, a status and an error as notes between, and a line where a turn
+ * ended, with how long it took. A picture opens large over the page. Everything an agent's
+ * product printed is text, never markup. Each line is drawn once and again only when it
+ * changed, however long the session is.
+ */
+export function TranscriptView(props: TranscriptViewProps) {
+  const words = useWords().agents.page.live;
+  const shown = usePicture();
+  // What was read whole belongs to the session it was read in: the events of another carry the
+  // same numbers, and a view that goes on to show them must show none of this.
+  const [whole, setWhole] = useState<WholeTexts>(NO_WHOLE);
+  const [reading, setReading] = useState<
+    { readonly of: string | undefined; readonly n: number } | undefined
+  >(undefined);
+  const of = props.of;
+  const showing = useRef(of);
+  showing.current = of;
+  // What the view is given may be made anew by whoever renders it; the lines are handed the
+  // same hands each time, which reach for what was given last.
+  const given = useRef(props);
+  given.current = props;
+  const readWhole = useCallback(
+    (n: number) => {
+      const load = given.current.onReadWhole;
+      if (load === undefined) {
+        return;
+      }
+      setReading({ of, n });
+      void load(n)
+        .then((text) => {
+          // An answer that arrives once another session is shown is that session's no more.
+          if (showing.current === of) {
+            setWhole((current) => withWhole(current, of, n, text));
+          }
+        })
+        .catch(() => undefined)
+        .finally(() =>
+          setReading((current) =>
+            current !== undefined && current.of === of && current.n === n ? undefined : current,
+          ),
+        );
+    },
+    [of],
+  );
+  const reads = props.onReadWhole !== undefined;
+  const hasSignalFiles = props.signalFileHref !== undefined;
+  const openPicture = shown.open;
+  const hands = useMemo<TalkHands>(
+    () => ({
+      fileHref: (fileId) => given.current.fileHref(fileId),
+      signalFileHref: hasSignalFiles
+        ? (number, fileId) => given.current.signalFileHref?.(number, fileId) ?? ""
+        : undefined,
+      readWhole: reads ? readWhole : undefined,
+      openPicture,
+    }),
+    [hasSignalFiles, reads, readWhole, openPicture],
+  );
+  const events = props.events;
+  const items = useMemo(() => talkOf(events), [events]);
+  const began = useMemo(() => turnStarts(events), [events]);
+  if (events.length === 0) {
+    return (
+      <>
+        {props.empty ?? null}
+        {props.foot !== undefined && props.foot !== null && (
+          <ol className="sc-talk" aria-label={words.transcript}>
+            {props.foot}
+          </ol>
+        )}
+      </>
+    );
+  }
+  const lines = talkLinesOf({
+    items,
+    hands,
+    agent: props.agent,
+    began,
+    signalFiles: props.signalFiles,
+    whole,
+    of,
+    reading: reading !== undefined && reading.of === of ? reading.n : undefined,
+    today: today(),
+  });
   return (
     <>
       <ol className="sc-talk" aria-label={words.transcript}>
-        {talkOf(props.events).map(item)}
+        {lines.map(({ key, ...line }) => (
+          <TalkLine key={key} {...line} />
+        ))}
         {props.foot}
       </ol>
       <Lightbox picture={shown.shown} onClose={shown.close} />
