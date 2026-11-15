@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { argUsage } from "../plugin/args.js";
 import type {
   RestAgent,
@@ -473,44 +474,118 @@ export function formatArtifact(
   return artifact.label === null ? what : `${artifact.label}: ${what}`;
 }
 
-/** One half of the rules: where it comes from, and the text as it stands. */
+/** One half of the rules that has a text: where it comes from, and the text as it stands. */
 function formatRulesHalf(where: "the workspace" | "this project", rules: RestRules): string {
   const page = rules.page;
   const facts =
     page === null
       ? undefined
       : `v${page.version}, by ${writer(page.updatedBy, page.agent)}; ${moment(page.updatedAt)}`;
-  if (rules.source === "none" || rules.body === null) {
-    return `Rules of ${where}: none of its own; the workspace's hold.`;
-  }
   const head =
     rules.source === "reference"
       ? `Rules of ${where}: the console's own, until an administrator writes the organization's (console rules write --workspace).`
       : `Rules of ${where} (${facts ?? "written"}):`;
-  return `${head}\n\n${rules.body.trimEnd()}`;
+  return `${head}\n\n${(rules.body ?? "").trimEnd()}`;
 }
 
 /**
- * The rules that hold: the workspace's, and what the project adds when the command works in one;
- * then the plugins the console names after them, a line each, where there are any.
+ * The parts of the rules as they are printed for whoever reads them: the workspace's text, the
+ * project's own where the command works in one and it has some, and the plugins' lines in the
+ * language they are read in.
+ */
+function rulesParts(rules: RestProjectRules | RestRules, language: string | null | undefined) {
+  const named = "workspace" in rules;
+  const workspace = named ? rules.workspace : rules;
+  const project = named && rules.project.source !== "none" ? rules.project : undefined;
+  const count = rules.plugins?.length ?? 0;
+  return {
+    /** Whether the command works in a project: its rules were asked for, whether it has any or not. */
+    named,
+    workspace,
+    /** The project's own rules, where it has some. */
+    own: project !== undefined && project.body !== null ? project : undefined,
+    plugins:
+      rules.plugins === undefined || count === 0
+        ? undefined
+        : formatRulesPlugins(rules.plugins, language),
+    pluginCount: count,
+  };
+}
+
+/**
+ * The mark of the rules (ADR-0119): the first eight hex characters of a SHA-256 over what they
+ * say to whoever reads them, the workspace's text, the project's own and the plugins' lines, in
+ * the language they are read in. A session that was shown the rules holds their mark, and a
+ * later take of that session leaves out the rules the mark stands for; nothing but having been
+ * shown them gives it. When they were written and by whom is no part of it: the same rules
+ * have the same mark, and a project that adds nothing has the workspace's.
+ */
+export function rulesMark(
+  rules: RestProjectRules | RestRules,
+  language?: string | null | undefined,
+): string {
+  const parts = rulesParts(rules, language);
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        (parts.workspace.body ?? "").trimEnd(),
+        parts.own === undefined ? null : (parts.own.body ?? "").trimEnd(),
+        parts.plugins ?? null,
+      ]),
+    )
+    .digest("hex")
+    .slice(0, 8);
+}
+
+/** How long a text of the rules is, as its first line says it. */
+const charactersOf = (rules: RestRules): string =>
+  `${(rules.body ?? "").trimEnd().length} characters`;
+
+/**
+ * The rules that hold, under a first line that says what follows (ADR-0119): the mark, which
+ * parts there are and how long each is, and how a later take of the session leaves them out.
+ * A project's own rules and the plugins' lines stand first, since they are short and are what
+ * differs from one project to the next, then the workspace's: an agent that had read the
+ * workspace's once cut every later print at its head, and never saw what stood after them.
  */
 export function formatRules(
   rules: RestProjectRules | RestRules,
   language?: string | null | undefined,
 ): string {
-  const parts =
-    "workspace" in rules
-      ? [
-          formatRulesHalf("the workspace", rules.workspace),
-          "",
-          formatRulesHalf("this project", rules.project),
-        ]
-      : [formatRulesHalf("the workspace", rules)];
-  if (rules.plugins !== undefined && rules.plugins.length > 0) {
-    parts.push("", formatRulesPlugins(rules.plugins, language));
+  const parts = rulesParts(rules, language);
+  const mark = rulesMark(rules, language);
+  const theirs = `the workspace's (${charactersOf(parts.workspace)})`;
+  const plugins = `${parts.pluginCount} plugin${parts.pluginCount === 1 ? "" : "s"}`;
+  let follows: string;
+  if (!parts.named) {
+    follows = `${parts.plugins === undefined ? "" : `the ${plugins} you may use first, then `}${theirs}; no project is named here, and a project's own stand before them where it has some.`;
+  } else if (parts.own !== undefined) {
+    follows = `this project's own first (${charactersOf(parts.own)})${parts.plugins === undefined ? "" : ` with its ${plugins}`}, which hold where the two differ, then ${theirs}.`;
+  } else if (parts.plugins !== undefined) {
+    follows = `this project has none of its own; its ${plugins} first, then ${theirs}.`;
+  } else {
+    follows = `this project has none of its own; the workspace's follow (${charactersOf(parts.workspace)}).`;
   }
-  return parts.join("\n");
+  // The mark ends the line bare, so that it is copied as it is.
+  const later = parts.named
+    ? ` A later take in this session leaves them out: console take <number> --rules ${mark}`
+    : "";
+  return [
+    `Rules ${mark}: ${follows}${later}`,
+    ...(parts.own === undefined ? [] : ["", formatRulesHalf("this project", parts.own)]),
+    ...(parts.plugins === undefined ? [] : ["", parts.plugins]),
+    "",
+    formatRulesHalf("the workspace", parts.workspace),
+  ].join("\n");
 }
+
+/** What stands in the rules' place where a take was told the mark they have (ADR-0119). */
+export const formatRulesLeftOut = (mark: string): string =>
+  `Rules ${mark}: left out, since they stand as this session read them. console rules prints them.`;
+
+/** What stands before the rules where a take was told a mark they do not have (ADR-0119). */
+export const formatRulesChanged = (given: string): string =>
+  `The rules are not the ones marked ${given}: they changed since, or that mark is of another project's. They follow whole, under the mark they have now.`;
 
 /** How far a goal is, from its tasks: the done, the at work, and the rest, in one phrase. */
 function progressOf(goal: RestGoal): string {

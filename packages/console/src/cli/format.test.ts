@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { RestPluginOperation } from "../plugin/rest-schemas.js";
-import { restDecisionSchema, restGoalSchema, restTaskSchema } from "../schemas.js";
+import {
+  restDecisionSchema,
+  restGoalSchema,
+  restRulesPluginSchema,
+  restRulesSchema,
+  restTaskSchema,
+} from "../schemas.js";
 import {
   calledOf,
   formatDecision,
@@ -9,9 +15,13 @@ import {
   formatOperationUsage,
   formatPersonLine,
   formatPluginGrantLine,
+  formatRules,
+  formatRulesChanged,
+  formatRulesLeftOut,
   formatTask,
   formatTaskLine,
   formatWork,
+  rulesMark,
   setMomentZone,
 } from "./format.js";
 
@@ -254,6 +264,112 @@ describe("the moments of a decision", () => {
     expect(text).toContain("written by alice at 2026-11-06T19:00:00+09:00");
     expect(text).not.toContain("T09:00:00.000Z");
     expect(text).not.toContain("T10:00:00.000Z");
+  });
+});
+
+describe("the rules as they are printed (ADR-0119)", () => {
+  const WORKSPACE = "# Rules for agents on this board\n\nRead these.";
+  const OWN = "# Rules of this project\n\nAsk before pushing.";
+  const reference = restRulesSchema.parse({ source: "reference", body: WORKSPACE, page: null });
+  const none = restRulesSchema.parse({ source: "none", body: null, page: null });
+  const written = (body: string, updatedAt = "2026-11-06T08:00:00.000Z") =>
+    restRulesSchema.parse({
+      source: "written",
+      body,
+      page: {
+        id: "0199c4d8-0000-7000-8000-000000000080",
+        path: "rules",
+        title: "Rules",
+        version: 2,
+        updatedBy: alice,
+        agent: null,
+        archivedAt: null,
+        createdAt: "2026-11-06T08:00:00.000Z",
+        updatedAt,
+      },
+    });
+  const own = written(OWN);
+  const plugin = restRulesPluginSchema.parse({
+    key: "hr",
+    name: { en: "HR", ko: "인사" },
+    description: { en: "Leave and notices.", ko: "휴가와 공지." },
+    agentNote: { en: "Ask leave here.", ko: "휴가는 여기서." },
+    roles: ["member"],
+  });
+
+  it("begins with a line that says which parts follow and how long each is, the project's own first", () => {
+    const rules = { workspace: reference, project: own, plugins: [plugin] };
+    const mark = rulesMark(rules, "en");
+    expect(mark).toMatch(/^[0-9a-f]{8}$/);
+    const text = formatRules(rules, "en");
+    // The first line: the mark, what follows in which order with how many characters, which
+    // hold where they differ, and how a later take leaves them out.
+    expect(text.split("\n")[0]).toBe(
+      `Rules ${mark}: this project's own first (${OWN.length} characters) with its 1 plugin, which hold where the two differ, then the workspace's (${WORKSPACE.length} characters). A later take in this session leaves them out: console take <number> --rules ${mark}`,
+    );
+    // The project's own and the plugins' lines stand before the workspace's: short, and what
+    // differs by project, where an agent that cuts the print at its head still reads them.
+    const at = (words: string) => text.indexOf(words);
+    expect(at("Rules of this project (v2, by alice; ")).toBeGreaterThan(0);
+    expect(at("Ask before pushing.")).toBeLessThan(at("## Plugins"));
+    expect(at("- hr (HR): Ask leave here. Start with console plugin hr.")).toBeLessThan(
+      at("Rules of the workspace: the console's own"),
+    );
+    expect(at("Rules of the workspace: the console's own")).toBeLessThan(at("Read these."));
+  });
+
+  it("says on that line that a project has none of its own, and that no project is named", () => {
+    const bare = { workspace: reference, project: none };
+    const mark = rulesMark(bare, "en");
+    const text = formatRules(bare, "en");
+    expect(text.split("\n")[0]).toBe(
+      `Rules ${mark}: this project has none of its own; the workspace's follow (${WORKSPACE.length} characters). A later take in this session leaves them out: console take <number> --rules ${mark}`,
+    );
+    // Said once, on the first line: no line of its own after the workspace's text, where an
+    // agent that had read the workspace's once never came.
+    expect(text).not.toContain("Rules of this project");
+    const withPlugins = formatRules(
+      { workspace: reference, project: none, plugins: [plugin] },
+      "en",
+    );
+    expect(withPlugins.split("\n")[0]).toContain(
+      `: this project has none of its own; its 1 plugin first, then the workspace's (${WORKSPACE.length} characters). A later take`,
+    );
+    expect(withPlugins.indexOf("## Plugins")).toBeLessThan(withPlugins.indexOf("Read these."));
+    // The workspace's alone, where no project is named: the same mark as a project that adds nothing.
+    const alone = formatRules(reference, "en");
+    expect(alone.split("\n")[0]).toBe(
+      `Rules ${mark}: the workspace's (${WORKSPACE.length} characters); no project is named here, and a project's own stand before them where it has some.`,
+    );
+    expect(rulesMark(reference, "en")).toBe(mark);
+  });
+
+  it("marks the rules as they read for whoever reads them: the same for the same, another for another", () => {
+    const rules = { workspace: reference, project: own, plugins: [plugin] };
+    const mark = rulesMark(rules, "en");
+    // The same rules, read again: the same mark, whatever else of the answer moved.
+    expect(rulesMark({ ...rules, project: written(OWN, "2026-11-07T08:00:00.000Z") }, "en")).toBe(
+      mark,
+    );
+    // A rule changed, in the project's own or in the workspace's.
+    expect(rulesMark({ ...rules, project: written(`${OWN} Twice.`) }, "en")).not.toBe(mark);
+    expect(
+      rulesMark({ ...rules, workspace: { ...reference, body: `${WORKSPACE} And these.` } }, "en"),
+    ).not.toBe(mark);
+    // Another project's rules: none of its own, or other plugins.
+    expect(rulesMark({ ...rules, project: none }, "en")).not.toBe(mark);
+    expect(rulesMark({ workspace: reference, project: own }, "en")).not.toBe(mark);
+    // Another language: the plugins' lines are read in it, and so are the rules.
+    expect(rulesMark(rules, "ko")).not.toBe(mark);
+  });
+
+  it("says in a line that the rules were left out, or that they changed since the mark given", () => {
+    expect(formatRulesLeftOut("3f9a1c2e")).toBe(
+      "Rules 3f9a1c2e: left out, since they stand as this session read them. console rules prints them.",
+    );
+    expect(formatRulesChanged("0a1b2c3d")).toBe(
+      "The rules are not the ones marked 0a1b2c3d: they changed since, or that mark is of another project's. They follow whole, under the mark they have now.",
+    );
   });
 });
 

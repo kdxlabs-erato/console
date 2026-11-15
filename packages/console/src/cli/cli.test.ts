@@ -1052,8 +1052,12 @@ describe("the console command", () => {
     // token is open in the project, so nothing of saying which run.
     expect(h.out()).not.toContain("taking it was deciding");
     expect(h.out()).not.toContain("Other runs of yours");
-    // The rules come with the run, the workspace's then the project's, before what to do next.
-    expect(h.out()).toMatch(/Read these\.[\s\S]*Ask before pushing\.[\s\S]*Say how it goes/);
+    // The rules come with the run, under a line that says what follows: the project's own
+    // first, then the workspace's, before what to do next (ADR-0119).
+    expect(h.out()).toMatch(
+      /\nRules [0-9a-f]{8}: this project's own first \(\d+ characters\), which hold where the two differ, then the workspace's \(\d+ characters\)\. A later take in this session leaves them out: console take <number> --rules [0-9a-f]{8}\n/,
+    );
+    expect(h.out()).toMatch(/Ask before pushing\.[\s\S]*Read these\.[\s\S]*Say how it goes/);
     // The discussion comes with the task, whole, each file with the command that reads it.
     expect(h.out()).toContain(
       `comments:\n  bob as Codex on the laptop, ${WHEN}, comment ${COMMENT.id}:`,
@@ -1068,12 +1072,41 @@ describe("the console command", () => {
     expect(calls[8]?.body).toEqual({ taskId: TASK.id, agent: "Codex on the laptop" });
     const asJson = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["take", "7", "--json"], asJson.io)).toBe(EXIT.ok);
-    expect(JSON.parse(asJson.out())).toEqual({
+    // --json carries the rules whole, and their mark.
+    const taken = JSON.parse(asJson.out()) as { rules: { mark: string } };
+    expect(taken).toEqual({
       run: RUN,
       task: TASK,
       comments: [COMMENT],
-      rules: RULES,
+      rules: { ...RULES, mark: expect.stringMatching(/^[0-9a-f]{8}$/) },
     });
+    const mark = taken.rules.mark;
+    expect(h.out()).toContain(`\nRules ${mark}: `);
+    // A later take of the session says the mark it holds: the rules are left out, and a line
+    // stands in their place. Everything else of the take is as it was.
+    const again = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["take", "7", "--rules", mark], again.io)).toBe(EXIT.ok);
+    expect(again.out()).toContain(`Run ${RUN.id} began on #7 Fix the parser`);
+    expect(again.out()).toContain("It fails on empty input.");
+    expect(again.out()).toContain(
+      `\nRules ${mark}: left out, since they stand as this session read them. console rules prints them.\n`,
+    );
+    expect(again.out()).not.toContain("Ask before pushing.");
+    expect(again.out()).not.toContain("Read these.");
+    expect(again.out()).toContain("Say how it goes");
+    // A mark that is not the rules' own, since they changed or it is of another project's:
+    // the rules whole, under the mark they have now, and a line that says so first.
+    const stale = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["take", "7", "--rules", "0a1b2c3d"], stale.io)).toBe(EXIT.ok);
+    expect(stale.out()).toContain(
+      `\nThe rules are not the ones marked 0a1b2c3d: they changed since, or that mark is of another project's. They follow whole, under the mark they have now.\nRules ${mark}: `,
+    );
+    expect(stale.out()).toContain("Ask before pushing.");
+    expect(stale.out()).toContain("Read these.");
+    // --json carries the rules either way: a program reads what it is given.
+    const heldJson = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["take", "7", "--rules", mark, "--json"], heldJson.io)).toBe(EXIT.ok);
+    expect(JSON.parse(heldJson.out())).toMatchObject({ rules: { ...RULES, mark } });
     // A run open on the task is taken over, and that is said.
     const busy = fakeConsole({
       [`GET ${IN}/tasks/7`]: { body: { ...TASK, openRuns: 1 } },
@@ -1154,6 +1187,16 @@ describe("the console command", () => {
     expect(h.out()).toContain("Read these.");
     expect(h.out()).toContain("Rules of this project (v2, by alice; ");
     expect(h.out()).toContain("Ask before pushing.");
+    // The first line says which parts follow, and carries the mark a later take names.
+    expect(h.out()).toMatch(
+      /^Rules [0-9a-f]{8}: this project's own first \(\d+ characters\), which hold where the two differ, then the workspace's \(\d+ characters\)\. A later take in this session leaves them out: console take <number> --rules [0-9a-f]{8}\n/,
+    );
+    const ruled = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["rules", "--json"], ruled.io)).toBe(EXIT.ok);
+    expect(JSON.parse(ruled.out())).toMatchObject({
+      ...RULES,
+      mark: expect.stringMatching(/^[0-9a-f]{8}$/),
+    });
     // Without a project named, the workspace's alone.
     const alone = harness({ fetch, env: { CONSOLE_URL: ORIGIN, CONSOLE_TOKEN: "cns_t_secret" } });
     expect(await runCli(["rules"], alone.io)).toBe(EXIT.ok);
@@ -7857,7 +7900,7 @@ describe("the plugins on the command line (ADR-0049, ADR-0053)", () => {
     expect(disabled.out()).toContain("Disabled hello:");
   });
 
-  it("prints the plugins the console names after the rules, a line each, with take and with rules", async () => {
+  it("prints the plugins the console names with the rules, a line each, with take and with rules", async () => {
     const ruled = {
       ...RULES,
       plugins: [

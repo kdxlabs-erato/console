@@ -152,6 +152,8 @@ import {
   formatProject,
   formatProjectLine,
   formatRules,
+  formatRulesChanged,
+  formatRulesLeftOut,
   formatRun,
   formatRunLine,
   formatSecretLine,
@@ -165,6 +167,7 @@ import {
   formatWorkspace,
   localized,
   moment,
+  rulesMark,
   setMomentZone,
 } from "./format.js";
 import { COMMAND_HELP, helpFor, ownSkillPath, usage } from "./help.js";
@@ -2785,7 +2788,10 @@ const rules: Command = async (args, io) => {
           ...(found.plugins === undefined ? {} : { plugins: found.plugins }),
         }
       : forPerson(found, readingLanguage(me));
-  answer(io, session, read, () => formatRules(read, readingLanguage(me)));
+  // The mark of what is printed goes with --json too, for a program that takes a task next.
+  answer(io, session, { ...read, mark: rulesMark(read, readingLanguage(me)) }, () =>
+    formatRules(read, readingLanguage(me)),
+  );
   return EXIT.ok;
 };
 
@@ -3099,8 +3105,11 @@ const file: Command = async (args, io) => {
 };
 
 const take: Command = async (args, io) => {
-  const { values, positionals } = parse(args, { agent: { type: "string" } });
-  const ref = theOne(positionals, "Say which task: console take <number|id>");
+  const { values, positionals } = parse(args, {
+    agent: { type: "string" },
+    rules: { type: "string" },
+  });
+  const ref = theOne(positionals, "Say which task: console take <number|id> [--rules <mark>]");
   const session = await open(io, values);
   const project = await session.project();
   const found = await project.task(ref);
@@ -3135,20 +3144,37 @@ const take: Command = async (args, io) => {
     project: forPerson(ruling.project, readingLanguage(me)),
     ...(ruling.plugins === undefined ? {} : { plugins: ruling.plugins }),
   };
-  answer(io, session, { run, task: taken, comments: comments.items, rules }, () =>
-    [
-      `Run ${run.id} began on #${found.number} ${found.title}, as "${run.agent}" for ${calledOf(run.person)}. The task is in progress and theirs.${tookOver}${elsewhere}`,
-      // The ids on a line of their own, each named: a run's and a task's begin alike, and a
-      // task has a number for people as well.
-      `run id: ${run.id}  task id: ${found.id}  (task #${found.number})`,
-      "",
-      formatTask(taken, undefined, undefined, comments.items),
-      "",
-      formatRules(rules, readingLanguage(me)),
-      "",
-      'Say how it goes: console report "<what you found or did>". Hand in what you make: console hand-in <https url | file path>.',
-      'Ask when a person must decide: console ask "<question>" --option "..." --option "...". A word for the task\'s people that is not a report: console comment <number> "<markdown>". End with: console finish --summary "<what was done, what is left>".',
-    ].join("\n"),
+  // A take gives the rules, whole, unless the session says the mark they have (ADR-0119): a
+  // mark is known only from having been shown them, so a session that never was, a fresh one
+  // or a subagent, gets them whatever it does. A mark that is not theirs, since they changed
+  // or it is of another project's, gets them whole again, and is told so first.
+  const language = readingLanguage(me);
+  const mark = rulesMark(rules, language);
+  const held = text(values, "rules")?.trim().toLowerCase();
+  const ruled =
+    held === undefined
+      ? formatRules(rules, language)
+      : held === mark
+        ? formatRulesLeftOut(mark)
+        : `${formatRulesChanged(held)}\n${formatRules(rules, language)}`;
+  answer(
+    io,
+    session,
+    { run, task: taken, comments: comments.items, rules: { ...rules, mark } },
+    () =>
+      [
+        `Run ${run.id} began on #${found.number} ${found.title}, as "${run.agent}" for ${calledOf(run.person)}. The task is in progress and theirs.${tookOver}${elsewhere}`,
+        // The ids on a line of their own, each named: a run's and a task's begin alike, and a
+        // task has a number for people as well.
+        `run id: ${run.id}  task id: ${found.id}  (task #${found.number})`,
+        "",
+        formatTask(taken, undefined, undefined, comments.items),
+        "",
+        ruled,
+        "",
+        'Say how it goes: console report "<what you found or did>". Hand in what you make: console hand-in <https url | file path>.',
+        'Ask when a person must decide: console ask "<question>" --option "..." --option "...". A word for the task\'s people that is not a report: console comment <number> "<markdown>". End with: console finish --summary "<what was done, what is left>".',
+      ].join("\n"),
   );
   return EXIT.ok;
 };

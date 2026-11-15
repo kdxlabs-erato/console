@@ -493,7 +493,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     synopsis:
       "What this organization and this project ask of agents; rules write writes them, for an owner or an administrator.",
     about:
-      "What this organization asks of agents (ADR-0023): the workspace's rules, the console's own until an administrator writes the organization's, and this project's own when it has them. rules write writes this project's rules, for an owner, or with --workspace the workspace's, for an administrator; none puts the written rules away, so that the console's own hold again, or the project adds none. Without a project named, rules shows the workspace's alone. After the rules, a section Plugins names the plugins bound to the project that you hold a role in, or at the workspace every plugin you may use, a line each with the sentence its manifest gives agents and where to start: console plugin <key>.",
+      "What this organization asks of agents (ADR-0023), under a first line that says what follows (ADR-0119): the mark of the rules, which parts there are and how many characters each is, and that a later take of the session leaves them out with console take <number> --rules <mark>. Then this project's own when it has them, which hold where the two differ, and the workspace's rules, the console's own until an administrator writes the organization's. The mark is the same for the same rules, and another once a rule changed, for another project's and in another language. rules write writes this project's rules, for an owner, or with --workspace the workspace's, for an administrator; none puts the written rules away, so that the console's own hold again, or the project adds none. Without a project named, rules shows the workspace's alone. A section Plugins, before the workspace's rules, names the plugins bound to the project that you hold a role in, or at the workspace every plugin you may use, a line each with the sentence its manifest gives agents and where to start: console plugin <key>.",
     limits: [
       `body: Markdown, up to ${MAX_RULES_LENGTH} characters; the console's own rules, written as they are, write nothing`,
     ],
@@ -538,10 +538,12 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     ],
   },
   take: {
-    usage: "take <number|id> [--agent <name>]",
+    usage: "take <number|id> [--agent <name>] [--rules <mark>]",
+    // The map keeps the short form: the mark is on the first line of the rules a take prints.
+    overview: "take <number|id> [--agent <name>]",
     synopsis: "Takes a task: a run begins, and the task is in progress and the person's.",
     about:
-      "Takes a task: a run begins, and the task is in progress and the person's; the run's id and the task's id are printed on a line of their own, then the task, then the rules of the board, with a section Plugins after them where plugins are bound to the project: a line per plugin you may use there, which console plugin <key> then says how to use. A run still open on the task is taken over, since the board cannot know whether its agent still runs: it ends as abandoned, the feed says who took over, and that agent is refused on its next command; console task <number> shows the runs on a task, with when each was last heard from, before it is taken. --agent is what people see at work; left out, it is what the person called the token.",
+      "Takes a task: a run begins, and the task is in progress and the person's; the run's id and the task's id are printed on a line of their own, then the task, then the rules of the board as console rules prints them: a first line with their mark that says which parts follow and how long each is, the project's own, a section Plugins where plugins are bound to the project, a line per plugin you may use there, which console plugin <key> then says how to use, then the workspace's. --rules <mark> is for a later take of the same session (ADR-0119): given the mark the rules have, the take leaves them out and says so in a line; given another, since a rule changed or it is of another project's, it prints them whole and says that they changed. Without it the rules are printed whole. A run still open on the task is taken over, since the board cannot know whether its agent still runs: it ends as abandoned, the feed says who took over, and that agent is refused on its next command; console task <number> shows the runs on a task, with when each was last heard from, before it is taken. --agent is what people see at work; left out, it is what the person called the token.",
     limits: [
       `agent: one line, up to ${MAX_AGENT_LENGTH} characters`,
       `at most ${MAX_RUNS_PER_TASK} runs on one task`,
