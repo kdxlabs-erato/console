@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MAX_SUMMARY_LENGTH } from "../limits.js";
 import { type CliIo, EXIT, runCli } from "./cli.js";
+import { NO_LINE_TO_RUN } from "./command-words.js";
 import { type CredentialStore, type Credentials, CredentialsError } from "./credentials.js";
 import type { DirectorySettings, DirectoryStore } from "./directory.js";
 import { COMMAND_HELP } from "./help.js";
@@ -8640,6 +8641,45 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     expect(await runCli(["plugin", "hello", "skill", "nothing"], missing.io)).toBe(EXIT.failed);
     expect(missing.err()).toBe(
       'skill.not_found: No skill at "nothing/SKILL.md". Use console plugin hello skills <folder> or console plugin hello skills --search for its exact SKILL.md path. Available: review/SKILL.md.\n',
+    );
+  });
+
+  it("spells the command that reads the next part so that bash and PowerShell run it as it is, or prints none where no spelling serves both", async () => {
+    const page = (letter: string, nextCursor: string | null) =>
+      longPage(letter, 12_000, nextCursor);
+    const partOf = async (path: string, more: readonly string[] = []) => {
+      const one = (cursor?: string) =>
+        `GET ${IN}/skills/one?${new URLSearchParams(cursor === undefined ? { path } : { path, cursor })}`;
+      const { fetch } = fakeConsole({
+        [`GET ${IN}/skills`]: { body: LISTING },
+        [one()]: { body: page("a", "two") },
+        [one("two")]: { body: page("b", "three") },
+        [one("three")]: { body: page("c", null) },
+      });
+      const run = harness({ fetch, env: SIGNED_IN });
+      expect(await runCli(["skill", path, ...more], run.io), path).toBe(EXIT.ok);
+      const out = run.out();
+      const line = "The skill continues. Read the next part before using it: ";
+      return out.slice(out.lastIndexOf(line) + line.length, out.lastIndexOf(`\n${PART_ENDS}`));
+    };
+    // `$`, a backtick and parentheses, which bash and PowerShell expand inside double quotes,
+    // and a space: in single quotes, inside which neither reads anything.
+    expect(await partOf("skills/$(x) `y` $HOME/SKILL.md")).toBe(
+      "console skill 'skills/$(x) `y` $HOME/SKILL.md' --cursor three",
+    );
+    // A single quote: in double quotes, where nothing else in the path is read by either.
+    expect(await partOf("skills/it's (draft)/SKILL.md")).toBe(
+      `console skill "skills/it's (draft)/SKILL.md" --cursor three`,
+    );
+    // The flags that say where the pack is read are spelled the same way.
+    expect(await partOf("review/SKILL.md", ["--project", "web", "--account", "it's me"])).toBe(
+      `console skill review/SKILL.md --cursor three --project web --account "it's me"`,
+    );
+    // A single quote with `$`: no one spelling keeps it whole in both, so no line is printed,
+    // and the next part is still said, with why.
+    const none = await partOf("skills/it's $(x)/SKILL.md");
+    expect(none).toBe(
+      `the command you ran, with --cursor three in place of any it had, each word quoted for your shell. ${NO_LINE_TO_RUN}`,
     );
   });
 

@@ -23,6 +23,7 @@ import {
 import type { PackClient } from "../client.js";
 import type { RestSkills } from "../schemas.js";
 import type { SkillsStatus } from "../vocabulary.js";
+import { commandLine, NO_LINE_TO_RUN } from "./command-words.js";
 
 // The pack of the project, as the command prints it (ADR-0028, ADR-0031, ADR-0124): the console
 // answers what the pack's REST API answered, in the shapes of @skillcdn/core, and the command
@@ -211,28 +212,27 @@ function listingOf(mount: RestMount): Ready<RestFind> {
   };
 }
 
-/** A path as a word of a command line: as it is, or quoted where a shell would split it. */
-export const pathWord = (path: string): string =>
-  /^[\w./@+:=~-]+$/.test(path) ? path : JSON.stringify(path);
-
 /**
  * A document's outline with the reads of its tables and its code blocks named as commands
  * (ADR-0100): where the console said an address of its own for one, the command that reads it,
- * `command` being the one the pack is read with, so that an agent is told what to run.
+ * `command` being the one the pack is read with, so that an agent is told what to run. Where the
+ * path has no spelling both shells take whole, what to run is said in words, with why.
  */
 function withDataCommands(read: Ready<RestBrowse>, command: string): Ready<RestBrowse> {
   const outline = read.outline;
   if (outline?.data === undefined) {
     return read;
   }
-  const path = pathWord(outline.path);
+  const line = (flag: string): string =>
+    commandLine(command, [flag, outline.path]) ??
+    `${command} ${flag} with this file's path, quoted for your shell. ${NO_LINE_TO_RUN}`;
   return {
     ...read,
     outline: {
       ...outline,
       data: {
-        ...(outline.data.rows === undefined ? {} : { rows: `${command} --rows ${path}` }),
-        ...(outline.data.code === undefined ? {} : { code: `${command} --code ${path}` }),
+        ...(outline.data.rows === undefined ? {} : { rows: line("--rows") }),
+        ...(outline.data.code === undefined ? {} : { code: line("--code") }),
       },
     },
   };

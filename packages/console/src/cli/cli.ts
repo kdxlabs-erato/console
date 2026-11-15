@@ -112,6 +112,7 @@ import {
   WEEK_STARTS,
 } from "../vocabulary.js";
 import { loadWebRoot, type WebRoot, WebRootError } from "../web.js";
+import { commandLine, commandWord, NO_LINE_TO_RUN } from "./command-words.js";
 import {
   type CredentialStore,
   type Credentials,
@@ -201,7 +202,6 @@ import {
   type PackOwner,
   PackRefusal,
   packWords,
-  pathWord,
   refusalWords,
   skillPathIn,
 } from "./pack.js";
@@ -1827,13 +1827,11 @@ function checkedNumber(given: string | undefined, name: string, most: number): v
  * The flags that say where a pack is read, as they were given, for the command that reads the
  * next part of a skill (ADR-0124): it is asked as this part was.
  */
-function whereGiven(values: Readonly<Record<string, unknown>>): string {
-  return ["project", "url", "account"]
-    .map((name) => {
-      const value = values[name];
-      return typeof value === "string" ? ` --${name} ${pathWord(value)}` : "";
-    })
-    .join("");
+function whereGiven(values: Readonly<Record<string, unknown>>): readonly string[] {
+  return ["project", "url", "account"].flatMap((name) => {
+    const value = values[name];
+    return typeof value === "string" ? [`--${name}`, value] : [];
+  });
 }
 
 /**
@@ -2179,7 +2177,8 @@ const skills: Command = async (args, io) => {
  * and for a plugin's as `console plugin <key> skill`. Each as the skillcdn command reads it,
  * through its own reads (ADR-0124): a skill whole where a host shows it whole, else in parts,
  * each ending with the command that reads the next; a file a page at a time. `again` is what
- * that command says after the cursor: where the pack is read, as it was said for this part.
+ * that command says after the cursor, its words: where the pack is read, as it was said for this
+ * part.
  */
 async function readSkill(
   io: CliIo,
@@ -2189,7 +2188,7 @@ async function readSkill(
   positionals: readonly string[],
   command: string,
   owner: PackOwner = "project",
-  again = "",
+  again: readonly string[] = [],
 ): Promise<number> {
   const say = (value: unknown, words: () => string): void =>
     answerPack(io, session, owner, value, words);
@@ -2264,9 +2263,14 @@ async function readSkill(
     { read: "skill", path: wanted.path, cursor },
     {
       words: toolWords,
+      // Spelled so that bash and PowerShell run it as it is; where a word has no such spelling,
+      // the command that was run is run again, with the cursor, and the line says why.
       nextPart: (next) => {
         continues = true;
-        return `${command} ${pathWord(given)} --cursor ${pathWord(next)}${again}`;
+        return (
+          commandLine(command, [given, "--cursor", next, ...again]) ??
+          `the command you ran, with --cursor ${commandWord(next) ?? JSON.stringify(next)} in place of any it had, each word quoted for your shell. ${NO_LINE_TO_RUN}`
+        );
       },
     },
   );

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { PluginDescription } from "../plugin/define.js";
 import type { ServerLoad } from "../plugin/load.js";
 import { forbiddenImportsIn, removedGlobalsIn } from "../plugin/sandbox.js";
+import { NO_LINE_TO_RUN } from "./command-words.js";
 import {
   classesIn,
   consoleNamesIn,
@@ -207,6 +208,27 @@ describe("console-plugin init", () => {
       await readFile(join(dir, "c", "console-plugin.json"), "utf8"),
     ) as Record<string, unknown>;
     expect(Object.keys(manifest)).not.toContain("console");
+  });
+
+  it("says the folder to go into as bash and PowerShell both take it whole, or names no line where none serves both", async () => {
+    const dir = await scratch();
+    const nextOf = async (into: string, key: string) => {
+      const { io, out } = ioOf(dir);
+      expect(await runPluginCli(["init", into, "--key", key], io), into).toBe(0);
+      return (
+        out()
+          .split("\n")
+          .find((line) => line.startsWith("Next: ")) ?? ""
+      );
+    };
+    expect(await nextOf("plain", "aa")).toMatch(/^Next: cd plain, install the dependencies/);
+    expect(await nextOf("my $(x) `y` plugin", "bb")).toMatch(
+      /^Next: cd 'my \$\(x\) `y` plugin', install/,
+    );
+    expect(await nextOf("it's (draft)", "cc")).toMatch(/^Next: cd "it's \(draft\)", install/);
+    const none = await nextOf("it's $(x)", "dd");
+    expect(none).toMatch(/^Next: go into that folder, install the dependencies/);
+    expect(none.endsWith(NO_LINE_TO_RUN)).toBe(true);
   });
 
   it("names the package, the repository and the languages, so that less is adapted by hand", async () => {

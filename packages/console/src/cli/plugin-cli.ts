@@ -6,6 +6,7 @@ import { parseArgs } from "node:util";
 import type { ServerLoad } from "../plugin/load.js";
 import { isPluginKey, RESERVED_PLUGIN_KEYS } from "../plugin/manifest.js";
 import { lineRangeFrom, versionOfDependency } from "../plugin/semver.js";
+import { commandWord, NO_LINE_TO_RUN } from "./command-words.js";
 import { checkPlugin, MAX_CHECKED_FILE_BYTES, readConsoleClasses } from "./plugin-check.js";
 import { LANGUAGE_TAG, nameFromKey, PACKAGE_NAME, writePluginFromTemplate } from "./plugin-init.js";
 
@@ -203,8 +204,11 @@ async function init(args: readonly string[], io: PluginCliIo): Promise<number> {
       languages,
     });
     io.stdout(`Wrote the plugin ${key} into ${target}: ${written.length} files.\n`);
+    // The folder as bash and PowerShell both take it whole; where it has no such spelling, it is
+    // named above, and no line is printed to run.
+    const into = commandWord(dir);
     io.stdout(
-      `Next: cd ${dir}, install the dependencies (npm install), build (npm run build), run the tests (npm test), and check it as a console would (npm run check). The contract is docs/specs/plugins.md in node_modules/@skillcdn/console/.\n`,
+      `Next: ${into === undefined ? "go into that folder" : `cd ${into}`}, install the dependencies (npm install), build (npm run build), run the tests (npm test), and check it as a console would (npm run check). The contract is docs/specs/plugins.md in node_modules/@skillcdn/console/.${into === undefined ? ` ${NO_LINE_TO_RUN}` : ""}\n`,
     );
     return PLUGIN_EXIT.ok;
   } catch (error) {

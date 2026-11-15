@@ -5,6 +5,7 @@ import { PackError, readPack } from "@skillcdn/cli";
 import { describe, expect, it } from "vitest";
 import type { PackClient } from "../client.js";
 import type { RestSkills } from "../schemas.js";
+import { NO_LINE_TO_RUN } from "./command-words.js";
 import { CONSOLE_WORDS, consolePack, PackRefusal, packWords, refusalWords } from "./pack.js";
 
 // The pack the command makes of the console's answers (ADR-0124), by itself: what it hands the
@@ -203,15 +204,41 @@ describe("the pack made of the console's answers (ADR-0124)", () => {
       },
     });
     const named = await packOf({ skillBrowse: outline }, "console plugin hr skills").browse({});
+    // In single quotes, which neither bash nor PowerShell reads into.
     expect(named.status === "ready" ? named.outline?.data : undefined).toEqual({
-      rows: 'console plugin hr skills --rows "docs/my codes.md"',
-      code: 'console plugin hr skills --code "docs/my codes.md"',
+      rows: "console plugin hr skills --rows 'docs/my codes.md'",
+      code: "console plugin hr skills --code 'docs/my codes.md'",
     });
     const kept = await packOf({ skillBrowse: outline }).browse({});
     expect(kept.status === "ready" ? kept.outline?.data : undefined).toEqual({
       rows: "/api/v1/projects/web/skills/rows?path=x",
       code: "/api/v1/x",
     });
+    // A path a shell would expand in double quotes is printed so that it expands nothing; one
+    // with a single quote is printed so that both shells take it as one word; and one that no
+    // spelling keeps whole in both is printed as no line, with why.
+    const outlineAt = (path: string) => async () => {
+      const read = await outline();
+      return { ...read, read: { ...read.read, path, outline: { ...read.read.outline, path } } };
+    };
+    const commandsFor = async (path: string) => {
+      const read = await packOf({ skillBrowse: outlineAt(path) }, "console skills").browse({});
+      return read.status === "ready" ? read.outline?.data : undefined;
+    };
+    expect(await commandsFor("docs/$(x) `y` $HOME.md")).toEqual({
+      rows: "console skills --rows 'docs/$(x) `y` $HOME.md'",
+      code: "console skills --code 'docs/$(x) `y` $HOME.md'",
+    });
+    expect(await commandsFor("docs/it's (draft).md")).toEqual({
+      rows: `console skills --rows "docs/it's (draft).md"`,
+      code: `console skills --code "docs/it's (draft).md"`,
+    });
+    const none = await commandsFor("docs/it's $(x).md");
+    expect(none?.rows).toBe(
+      `console skills --rows with this file's path, quoted for your shell. ${NO_LINE_TO_RUN}`,
+    );
+    expect(none?.code).toMatch(/^console skills --code with this file's path, quoted/);
+    expect(JSON.stringify(none)).not.toContain("$(x)");
   });
 
   it("follows no more pages than one command reads, of a console that names the same cursor again", async () => {
