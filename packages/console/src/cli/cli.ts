@@ -5189,6 +5189,8 @@ const desk: Command = async (args, io) => {
   const input = {
     person: { name: person.name ?? person.login, login: person.login },
     console: { url: session.url, workspace: me.workspace.name },
+    // The language to write to them in (A-F6): theirs, else the workspace's, else none is said.
+    language: readingLanguage(me) ?? undefined,
   };
   // The shell of the pages is settled before anything is written, so that a command that cannot
   // write it writes nothing.

@@ -4751,6 +4751,25 @@ describe("a person's desk on the command line (ADR-0115)", () => {
     });
     expect(await runCli(["desk"], unnamed.io)).toBe(EXIT.ok);
     expect(plain.files.get("/work/desk/AGENTS.md")).toContain("I am alice (`alice`)");
+    // The desk says which language to write to them in, from what the console knows: the
+    // person's own, else the workspace's, and nothing where neither is known.
+    expect(plain.files.get("/work/desk/AGENTS.md")).not.toContain("Write to me in");
+    const korean = fakeFiles("/work");
+    const own = harness({
+      fetch: consoleFor({ ...ALICE, language: "ko" }).fetch,
+      store: signedIn(),
+      machine: korean.machine,
+    });
+    expect(await runCli(["desk"], own.io)).toBe(EXIT.ok);
+    expect(korean.files.get("/work/desk/AGENTS.md")).toContain("Write to me in Korean.");
+    const japanese = fakeFiles("/work");
+    const fromWorkspace = harness({
+      fetch: consoleFor({ ...ALICE, workspace: { ...ME.workspace, language: "ja" } }).fetch,
+      store: signedIn(),
+      machine: japanese.machine,
+    });
+    expect(await runCli(["desk"], fromWorkspace.io)).toBe(EXIT.ok);
+    expect(japanese.files.get("/work/desk/AGENTS.md")).toContain("Write to me in Japanese.");
   });
 
   it("writes into the directory named, this one as a full stop, and takes at most one", async () => {
