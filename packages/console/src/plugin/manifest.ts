@@ -115,6 +115,7 @@ export const RESERVED_COMMAND_NAMES: readonly string[] = [
   "skill",
   "enable",
   "disable",
+  "capabilities",
   "settings",
   "secret",
   "grant",
