@@ -412,7 +412,8 @@ function AgentLive(props: {
     const open = session !== undefined && session.ended === null;
     const working = open && state === "running" ? workingOf(events) : undefined;
     // Signals are taken in order: everything up to the last one the record says was taken is.
-    // Where the record says none, what the runner was handed counts as taken.
+    // Where the record says none, what the runner says is delivered counts as taken: what the
+    // product took, or the record of an earlier session says was never read (ADR-0131).
     const floor = open ? (taken ?? delivered) : Math.max(taken ?? 0, delivered);
     const waiting = waitingOf(signals ?? [], floor);
     const why =
