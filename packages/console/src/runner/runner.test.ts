@@ -2015,6 +2015,63 @@ describe("the runner", () => {
     );
   });
 
+  it("says how many events were let go where a session ends while the console takes no more of it within the hour", async () => {
+    const id = "0199c4d8-0000-7000-8000-000000000001";
+    const kept = `the console takes no more events of session ${id} within the hour (transcript.too_many); they are kept and sent again later`;
+    // Held back first, and the session ends before the hour has room.
+    const held = setup();
+    held.console.signal({ text: "Begin." });
+    const session = await sessionOf(held.product);
+    await until("the first event", () => held.console.events().length === 1);
+    held.console.says.full.events = true;
+    const before = held.console.says.asked.events;
+    session.emit(...STARTED, { type: "taken" }, { type: "event", kind: "assistant", text: "One." });
+    await until("the refusal", () => held.console.says.asked.events === before + 1);
+    held.runner.stop();
+    await held.done;
+    // Asked once more at the session's end, whatever the hold, and refused: what waited went
+    // with the session, and the runner's line says how many, the session's end among them.
+    expect(held.console.says.asked.events).toBe(before + 2);
+    expect(held.console.events()).toHaveLength(1);
+    expect(held.log.filter((line) => line === kept)).toHaveLength(1);
+    expect(held.log).toContain(
+      `3 events of session ${id} were let go unsent when it ended: the console takes no more of it within the hour (transcript.too_many)`,
+    );
+    expect(held.log.indexOf(kept)).toBeLessThan(
+      held.log.findIndex((line) => line.includes("were let go unsent when it ended")),
+    );
+
+    // Refused for the first time as the session ends: nothing is kept, and no line says so.
+    const last = setup();
+    last.console.signal({ text: "Begin." });
+    const other = await sessionOf(last.product);
+    await until("the message", () => other.sent.length === 1);
+    other.emit(...STARTED, { type: "taken" }, { type: "turn_completed" });
+    await until("the transcript", () => last.console.events().length === 3);
+    last.console.says.full.events = true;
+    last.runner.stop();
+    await last.done;
+    expect(last.console.events()).toHaveLength(3);
+    expect(last.log.some((line) => line.includes("kept and sent again later"))).toBe(false);
+    expect(last.log).toContain(
+      `1 event of session ${id} was let go unsent when it ended: the console takes no more of it within the hour (transcript.too_many)`,
+    );
+
+    // A console that is away as the session ends takes none either, and the line says which.
+    const away = setup();
+    away.console.signal({ text: "Begin." });
+    const third = await sessionOf(away.product);
+    await until("the message", () => third.sent.length === 1);
+    third.emit(...STARTED, { type: "taken" }, { type: "turn_completed" });
+    await until("the transcript", () => away.console.events().length === 3);
+    away.console.says.away = true;
+    away.runner.stop();
+    await away.done;
+    expect(away.log).toContain(
+      `1 event of session ${id} was let go unsent when it ended: the console did not take it (network)`,
+    );
+  });
+
   it("tries a session the console would not begin within the hour again after the cool-down, and loses nothing it was to hand over", async () => {
     const { console, product, log, saved } = setup({
       before: (at) => {

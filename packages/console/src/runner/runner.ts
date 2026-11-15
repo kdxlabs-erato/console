@@ -283,6 +283,8 @@ interface OpenSession {
   refused: boolean;
   /** The console took as many of its events as an hour takes: until when nothing is sent, and how long that was. */
   hold?: { readonly until: number; readonly pause: number } | undefined;
+  /** Why the console did not take what waits, in its code: said where the session ends with it unsent. */
+  unsent?: string | undefined;
   running: { model: string | null; effort: string | null };
   /** The files written for it, to remove at its end. */
   readonly written: string[];
@@ -666,6 +668,7 @@ export function createRunner(options: RunnerOptions): Runner {
             target.waiting -= event.held;
           }
           target.hold = undefined;
+          target.unsent = undefined;
           sayOver(about, `the transcript of session ${target.id} is sent again`);
           sayOver(`outbox ${target.id}`);
         } catch (error) {
@@ -719,10 +722,14 @@ export function createRunner(options: RunnerOptions): Runner {
             // time, so that the console is not asked every second for what it will refuse.
             const pause = heldFor(target.hold);
             target.hold = { until: options.now() + pause, pause };
-            sayOnce(
-              about,
-              `the console takes no more events of session ${target.id} within the hour (${code}); they are kept and sent again later`,
-            );
+            target.unsent = code;
+            // Nothing is kept past the session's end: what is let go then is said there.
+            if (!last) {
+              sayOnce(
+                about,
+                `the console takes no more events of session ${target.id} within the hour (${code}); they are kept and sent again later`,
+              );
+            }
             return;
           }
           if (
@@ -740,8 +747,10 @@ export function createRunner(options: RunnerOptions): Runner {
         }
       }
     } catch (error) {
-      // Kept, and sent with the next batch. Said once for as long as it lasts, and when it is over.
-      if (!stopped) {
+      // Kept, and sent with the next batch. Said once for as long as it lasts, and when it is
+      // over; at the session's end there is no next batch, and what is let go is said there.
+      target.unsent = codeOf(error);
+      if (!stopped && !last) {
         sayOnce(
           about,
           `the transcript of session ${target.id} waits to be sent (${codeOf(error)})`,
@@ -884,6 +893,21 @@ export function createRunner(options: RunnerOptions): Runner {
     await leave(target, stopped ? "after" : already || target.took ? undefined : "next");
     record(target, "status", `The session ended: ${how}.`, { ended: how });
     await flush(target, true);
+    // What the console did not take by now goes with the session: nothing of it is sent
+    // later, and the runner's line says how many, where an earlier one said they were kept.
+    const unsent = target.outbox.length;
+    if (unsent > 0) {
+      const one = unsent === 1;
+      log(
+        `${unsent} ${one ? "event" : "events"} of session ${target.id} ${one ? "was" : "were"} let go unsent when it ended: ${
+          target.unsent === "transcript.too_many"
+            ? `the console takes no more of it within the hour (${target.unsent})`
+            : `the console did not take ${one ? "it" : "them"} (${target.unsent ?? "error"})`
+        }`,
+      );
+    }
+    saidOf.delete(`transcript ${target.id}`);
+    saidOf.delete(`outbox ${target.id}`);
     try {
       await client.endAgentSession(target.id, { how });
     } catch (error) {
