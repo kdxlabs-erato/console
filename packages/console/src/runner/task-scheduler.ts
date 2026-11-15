@@ -90,16 +90,20 @@ const word = (text: string): string => {
  * first where it is full, as `<log>.1`, the ones put aside before each moved one on and the
  * oldest let go, and the line is added and the log let go of, so that it is read while the
  * runner runs. Whoever writes the log bounds it: a runner that cannot start writes lines too.
- * A log that cannot be put aside, read by something that holds it say, is added to as it is,
- * and put aside at a later line. The log is `$log`; no quote and no percent sign is written,
- * as nothing of the task's line may hold one.
+ * The log itself is moved first, to a spare name, `<log>.0`, and the ones put aside are
+ * touched only once that worked: a log that cannot be moved, read by something that holds it
+ * say, is added to as it is and put aside at a later line, and costs none of them, where
+ * letting the oldest go first lost one at every line. A spare name left by a step after it
+ * that did not work is gone on from, the log after it added to meanwhile. The log is `$log`;
+ * no quote and no percent sign is written, as nothing of the task's line may hold one.
  */
 export function logKeeper(maxBytes: number = MAX_LOG_BYTES, kept: number = KEPT_LOGS): string {
   const aside = [
+    "$spare = $log + '.0'",
+    "if (-not [IO.File]::Exists($spare)) { [IO.File]::Move($log, $spare) }",
     `$last = $log + '.${kept}'`,
     "if ([IO.File]::Exists($last)) { [IO.File]::Delete($last) }",
-    `for ($i = ${kept - 1}; $i -ge 1; $i--) { $from = $log + '.' + $i; if ([IO.File]::Exists($from)) { [IO.File]::Move($from, $log + '.' + ($i + 1)) } }`,
-    "[IO.File]::Move($log, $log + '.1')",
+    `for ($i = ${kept - 1}; $i -ge 0; $i--) { $from = $log + '.' + $i; if ([IO.File]::Exists($from)) { [IO.File]::Move($from, $log + '.' + ($i + 1)) } }`,
   ].join("; ");
   return `function Keep($line) { try { $now = [IO.FileInfo]$log; if ($now.Exists -and $now.Length -ge ${maxBytes}) { ${aside} } } catch { }; [IO.File]::AppendAllText($log, [string]$line + [Environment]::NewLine) }`;
 }

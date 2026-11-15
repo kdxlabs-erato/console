@@ -175,15 +175,17 @@ describe("the task-scheduler service", () => {
       "$ErrorActionPreference = 'Continue'",
       "[Console]::OutputEncoding = [Text.Encoding]::UTF8",
       `$log = '${LOG}'`,
-      // What keeps a line: the log put aside first where it is full, three of them kept.
+      // What keeps a line: the log put aside first where it is full, to a spare name, and the
+      // ones put aside before moved on only once that worked, three of them kept.
       "function Keep($line) { try { $now = [IO.FileInfo]$log",
-      "if ($now.Exists -and $now.Length -ge 4194304) { $last = $log + '.3'",
+      "if ($now.Exists -and $now.Length -ge 4194304) { $spare = $log + '.0'",
+      "if (-not [IO.File]::Exists($spare)) { [IO.File]::Move($log, $spare) }",
+      "$last = $log + '.3'",
       "if ([IO.File]::Exists($last)) { [IO.File]::Delete($last) }",
       "for ($i = 2",
-      "$i -ge 1",
+      "$i -ge 0",
       "$i--) { $from = $log + '.' + $i",
-      "if ([IO.File]::Exists($from)) { [IO.File]::Move($from, $log + '.' + ($i + 1)) } }",
-      "[IO.File]::Move($log, $log + '.1') } } catch { }",
+      "if ([IO.File]::Exists($from)) { [IO.File]::Move($from, $log + '.' + ($i + 1)) } } } } catch { }",
       "[IO.File]::AppendAllText($log, [string]$line + [Environment]::NewLine) }",
       `$runner = '${NODE}'`,
       `$words = @('${MAIN}', 'runner', '--url', 'https://console.acme.example', '--account', 'mira@acme.example')`,
@@ -225,7 +227,120 @@ describe("the task-scheduler service", () => {
     expect(logKeeper(200, 2)).toContain("$now.Length -ge 200");
     expect(logKeeper(200, 2)).toContain("$last = $log + '.2'");
     expect(logKeeper(200, 2)).toContain("for ($i = 1;");
+    // The log is moved before any log put aside is let go or moved on: one that cannot be
+    // moved, held by whatever reads it, costs none of them.
+    for (const keeper of [logKeeper(), logKeeper(200, 2)]) {
+      const moved = keeper.indexOf("[IO.File]::Move($log, $spare)");
+      expect(moved).toBeGreaterThan(0);
+      expect(moved).toBeLessThan(keeper.indexOf("[IO.File]::Delete("));
+      expect(moved).toBeLessThan(keeper.indexOf("[IO.File]::Move($from"));
+    }
   });
+
+  /**
+   * Runs lines through the keeper in the system's own shell, against a log of the test's own
+   * that is full at two hundred bytes, two put aside; each line is thirty bytes. Answers what
+   * the shell printed, and what the folder holds afterwards, the oldest line first.
+   */
+  const kept = (folder: string, steps: readonly string[]) => {
+    const log = join(folder, "runner.log");
+    const script = [
+      `$log = '${log}'`,
+      logKeeper(200, 2),
+      "function Line($n) { Keep ('line ' + $n.ToString('00') + ' ' + ('x' * 20)) }",
+      // What the folder holds, as names and sizes on one line.
+      `function Held { [Console]::Out.WriteLine(((Get-ChildItem -LiteralPath '${folder}' | Sort-Object Name | ForEach-Object { $_.Name + '=' + $_.Length }) -join ',')) }`,
+      ...steps,
+    ].join("; ");
+    const ran = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      encoding: "utf8",
+    });
+    const linesOf = (name: string): number[] =>
+      readFileSync(join(folder, name), "utf8")
+        .split(/\r?\n/)
+        .filter((line) => line.length > 0)
+        .map((line) => (/^line (\d\d) x{20}$/.test(line) ? Number(line.slice(5, 7)) : Number.NaN));
+    const names = readdirSync(folder).sort();
+    return {
+      status: ran.status,
+      printed: ran.stdout.split(/\r?\n/).filter((line) => line.length > 0),
+      stderr: ran.stderr,
+      names,
+      // The oldest first: the logs put aside from the highest number down, then the log.
+      numbers: [...names].reverse().flatMap((name) => linesOf(name)),
+    };
+  };
+
+  it.runIf(process.platform === "win32")(
+    "loses no log put aside while the log is held by whatever reads it, and puts it aside once it is let go",
+    () => {
+      const folder = mkdtempSync(join(tmpdir(), "console-runner-log-"));
+      try {
+        const ran = kept(folder, [
+          // Twenty lines: two logs put aside, of seven lines each, and six in the log.
+          "1..20 | ForEach-Object { Line $_ }",
+          "Held",
+          // Something reads the log, and lets nobody move it; the runner goes on writing.
+          "$reader = [IO.File]::Open($log, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)",
+          "21..40 | ForEach-Object { Line $_ }",
+          "Held",
+          // It lets go: the next line puts the log aside.
+          "$reader.Dispose()",
+          "Line 41",
+          "Held",
+        ]);
+        expect(ran.status, ran.stderr).toBe(0);
+        expect(ran.printed).toEqual([
+          "runner.log=180,runner.log.1=210,runner.log.2=210",
+          // Held: every line was added to the log as it is, and both logs put aside are there.
+          "runner.log=780,runner.log.1=210,runner.log.2=210",
+          // Let go: put aside whole, the oldest gone, and no spare name left behind.
+          "runner.log=30,runner.log.1=780,runner.log.2=210",
+        ]);
+        expect(ran.names).toEqual(["runner.log", "runner.log.1", "runner.log.2"]);
+        // No line twice, none missing between the first kept and the last written.
+        expect(ran.numbers).toEqual(Array.from({ length: 34 }, (_, index) => 8 + index));
+      } finally {
+        rmSync(folder, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
+
+  it.runIf(process.platform === "win32")(
+    "goes on from a log put aside to its spare name where the oldest could not be let go, and loses no line",
+    () => {
+      const folder = mkdtempSync(join(tmpdir(), "console-runner-log-"));
+      try {
+        const ran = kept(folder, [
+          "1..20 | ForEach-Object { Line $_ }",
+          // Something reads the oldest log put aside, and lets nobody remove it.
+          "$reader = [IO.File]::Open($log + '.2', [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)",
+          "21..30 | ForEach-Object { Line $_ }",
+          "Held",
+          "$reader.Dispose()",
+          "Line 31",
+          "Held",
+          "Line 32",
+          "Held",
+        ]);
+        expect(ran.status, ran.stderr).toBe(0);
+        expect(ran.printed).toEqual([
+          // The log was put aside to its spare name, and stays there while the oldest is held:
+          // the log after it is added to as it is.
+          "runner.log=270,runner.log.0=210,runner.log.1=210,runner.log.2=210",
+          // Let go: the logs put aside move on, the spare name among them.
+          "runner.log=300,runner.log.1=210,runner.log.2=210",
+          // And the next line puts the log aside as ever.
+          "runner.log=30,runner.log.1=300,runner.log.2=210",
+        ]);
+        expect(ran.numbers).toEqual(Array.from({ length: 18 }, (_, index) => 15 + index));
+      } finally {
+        rmSync(folder, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
 
   it.runIf(process.platform === "win32")(
     "puts a full log aside and lets the oldest go, in the system's own shell: the last lines are kept, in order",
