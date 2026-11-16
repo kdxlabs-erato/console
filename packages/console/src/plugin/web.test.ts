@@ -301,6 +301,25 @@ describe("connect", () => {
     ).toBe(true);
     plugin.close();
   });
+
+  it("says its height rounded up from the body as drawn, so that its frame is never shorter than its page", async () => {
+    const frame = frameOf();
+    // A page 516.4 pixels tall, whose scrollHeight the browser rounds down to 516: a frame of 516
+    // pixels would leave its document a fraction to scroll, which Firefox gives the wheel to.
+    const doc: FrameDocument = {
+      ...frame.doc,
+      body: { scrollHeight: 516, getBoundingClientRect: () => ({ height: 516.4 }) },
+    };
+    const connecting = connect({ window: frame.win, document: doc });
+    frame.init();
+    const plugin = await connecting;
+    const heights = frame.posted.flatMap((post) => {
+      const message = post.message as { readonly t?: unknown; readonly height?: unknown };
+      return message.t === "resize" ? [message.height] : [];
+    });
+    expect(heights).toEqual([517]);
+    plugin.close();
+  });
 });
 
 describe("applyTheme", () => {

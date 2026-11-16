@@ -67,7 +67,10 @@ export interface FrameDocument {
     readonly style: { setProperty(name: string, value: string): void };
     lang: string;
   };
-  readonly body: { readonly scrollHeight: number } | null;
+  readonly body: {
+    readonly scrollHeight: number;
+    getBoundingClientRect?(): { readonly height: number };
+  } | null;
   title: string;
 }
 
@@ -203,7 +206,11 @@ function startHeightWatch(document: FrameDocument, post: (height: number) => voi
   }
   let last = -1;
   const say = () => {
-    const height = Math.ceil(body.scrollHeight);
+    // The body as drawn, its fraction of a pixel rounded up: scrollHeight is rounded to the
+    // nearest pixel, and a frame a fraction shorter than its page leaves its document that
+    // fraction to scroll. scrollHeight still counts what reaches past the body.
+    const drawn = body.getBoundingClientRect?.().height ?? 0;
+    const height = Math.ceil(Math.max(body.scrollHeight, drawn));
     if (height !== last) {
       last = height;
       post(height);

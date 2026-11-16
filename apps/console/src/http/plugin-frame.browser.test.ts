@@ -169,6 +169,20 @@ const FRAME_OUTSIDE_THE_COLUMN = `(() => {
   return column - document.querySelector(".sc-plugin-frame").getBoundingClientRect().left;
 })()`;
 
+/** Makes a page's frame 40 pixels shorter than the height its page said. */
+const SHORTEN_THE_FRAME = `(() => {
+  const box = document.querySelector(".sc-plugin-frame-box");
+  box.style.height = (box.getBoundingClientRect().height - 40) + "px";
+})()`;
+
+/** How far the frame's document reaches past the frame; on the console's page, past the window. */
+const FRAME_OVERFLOW =
+  "document.scrollingElement.scrollHeight - document.scrollingElement.clientHeight";
+const PAGE_OVERFLOW = FRAME_OVERFLOW;
+
+/** A window lower than the console's page with the example plugin's page on it, short as it is. */
+const WINDOW_HEIGHT = 200;
+
 describe("the example plugin in a browser", () => {
   it("shows its page in a frame, works it through the bridge alone, and the widget follows", async () => {
     const page = await signedIn(BROWSER_ADMIN);
@@ -243,6 +257,36 @@ describe("the example plugin in a browser", () => {
     await page.waitForSelector("text=Greetings kept as records");
     // Its one role is the default one: every member's, which the roles say without a grant.
     await page.waitForSelector("text=Every member");
+    await page.context().close();
+  });
+
+  it("moves the console's page under a wheel over a page's frame, which never scrolls on its own", async () => {
+    const page = await signedIn(BROWSER_ADMIN);
+    // A window low enough for the console's page to scroll.
+    await page.setViewportSize({ width: 1280, height: WINDOW_HEIGHT });
+    await page.goto(`${console_.origin}/plugins/hello/greetings`);
+    const frame = await frameOf(page, "iframe.sc-plugin-frame");
+    await frame.waitForSelector("input.sc-input");
+    await page.waitForSelector(".sc-plugin-frame-wait", { state: "detached" });
+    await frame.evaluate("document.fonts.ready.then(() => true)");
+    // The frame made shorter than its page, as a rounding of its height leaves it by a fraction
+    // of a pixel, or a page that grew leaves it until the console hears: its document overflows,
+    // and a browser scrolls a frame that may scroll under the wheel before the page around it.
+    await page.evaluate(SHORTEN_THE_FRAME);
+    expect(await frame.evaluate(FRAME_OVERFLOW)).toBeGreaterThan(0);
+    expect(await page.evaluate(PAGE_OVERFLOW)).toBeGreaterThan(0);
+    const box = await page.locator("iframe.sc-plugin-frame").boundingBox();
+    if (box === null) {
+      throw new Error("the frame is not on the page");
+    }
+    // The pointer in the middle of what the window shows of the frame.
+    await page.mouse.move(
+      box.x + box.width / 2,
+      (Math.max(box.y, 0) + Math.min(box.y + box.height, WINDOW_HEIGHT)) / 2,
+    );
+    await page.mouse.wheel(0, 100);
+    await expect.poll(() => page.evaluate("window.scrollY")).toBeGreaterThan(0);
+    expect(await frame.evaluate("document.scrollingElement.scrollTop")).toBe(0);
     await page.context().close();
   });
 

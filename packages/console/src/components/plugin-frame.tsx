@@ -490,6 +490,13 @@ export function PluginFrame(props: PluginFrameProps) {
         // sandbox so that the page it shows is a page as any.
         sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
         referrerPolicy="origin"
+        // A page's frame is as tall as its page, and the console's page is what scrolls: the frame
+        // never scrolls itself, whatever its document's overflow, as the HTML standard renders
+        // `scrolling="no"`. A frame shorter than its page, by the fraction of a pixel a rounding
+        // leaves or while its height catches up with a page that grew, would otherwise take the
+        // wheel over it, and Firefox holds the wheel to what it scrolled first. A page at the most
+        // a frame grows to scrolls the rest of itself inside.
+        scrolling={isWidget || height >= MAX_PAGE_HEIGHT ? undefined : "no"}
         // Loaded, with its scripts run: a page that never says it is ready is shown as it is.
         onLoad={drawnSoon}
       />
