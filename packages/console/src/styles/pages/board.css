@@ -190,6 +190,7 @@
   line-height: var(--sc-leading-snug);
   text-decoration: none;
   overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .sc-card-title:hover {

@@ -26,6 +26,7 @@
   font-weight: var(--sc-weight-medium);
   text-decoration: none;
   overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .sc-task-row-title:hover {

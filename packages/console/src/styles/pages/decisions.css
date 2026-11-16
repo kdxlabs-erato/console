@@ -76,6 +76,7 @@
 .sc-decision-question {
   font-size: var(--sc-text-lg);
   overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .sc-decision-question a {
@@ -297,6 +298,7 @@
 .sc-decision-record-question {
   font-weight: var(--sc-weight-medium);
   overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .sc-decision-record-question a {

@@ -26,6 +26,7 @@
 
 .sc-callout-title {
   font-weight: var(--sc-weight-bold);
+  text-wrap: balance;
 }
 
 .sc-callout-body {

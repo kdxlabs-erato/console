@@ -3,6 +3,8 @@
   border: 1px dashed var(--sc-color-border);
   border-radius: var(--sc-radius-lg);
   text-align: center;
+  /* Centred lines of about one length, a title's and a sentence's alike. */
+  text-wrap: balance;
 }
 
 .sc-empty-title {

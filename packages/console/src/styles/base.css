@@ -26,6 +26,23 @@ body {
   line-height: var(--sc-leading-normal);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* Where a line breaks: no word is left alone on a last line, in whatever holds a sentence. A
+     title's lines come out about one length instead, below and in the parts that are titles. */
+  text-wrap: pretty;
+}
+
+/* What is typed breaks where it is typed, so that a line already written does not move under
+   the caret; and what is written out as it was, a log or a block of code, is left as it was. */
+input,
+textarea,
+pre,
+[contenteditable="true"] {
+  text-wrap-style: auto;
+}
+
+/* A moment is read as one thing: a date or a time is never broken in two. */
+time {
+  white-space: nowrap;
 }
 
 /* Korean breaks between any two syllables by default; keeping words whole reads much better. */
