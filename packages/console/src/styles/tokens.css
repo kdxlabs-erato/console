@@ -42,15 +42,17 @@
   --sc-color-info-subtle: #dbe6ff;
   --sc-color-neutral: #4b5563;
   --sc-color-neutral-subtle: #e7eaf0;
-  /* The series of a chart (ADR-0123): blue, teal, raspberry, coral, violet, green. The console's
+  /* The series of a chart (ADR-0123, ADR-0134): blue, coral, raspberry, teal, violet, green, the warm coral
+     second so that the commonest charts, of two series, put the two that stand furthest apart side
+     by side, to full colour vision and to a reader who does not tell red from green. The console's
      own hues, and a coral between its pink and its orange, each stepped until any two of the
      six are told apart, also by a reader who does not tell red from green, and until each
      stands out on a light ground and on a dark one. No orange among them, which is the point's,
      and no yellow, which at this lightness is a brown. They are marks, never words. */
   --sc-series-1: #285fd4;
-  --sc-series-2: #0097ac;
-  --sc-series-3: #bb2b76;
-  --sc-series-4: #fa4655;
+  --sc-series-2: #e45b63;
+  --sc-series-3: #bf1b7f;
+  --sc-series-4: #0097ac;
   --sc-series-5: #946ff2;
   --sc-series-6: #04933e;
   /* The figures that line up: for a column of numbers, a scale, a table. */

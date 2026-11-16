@@ -1,6 +1,6 @@
 # ADR-0123: Charts are parts, placed by measures and drawn by the stylesheet
 
-- Status: Accepted
+- Status: Accepted; the order of the six colours of point 4 and two of their values amended by [ADR-0134](0134-the-coral-is-the-second-colour-of-a-series-and-a-calmer-one.md)
 - Date: 2026-11-15
 - Builds on [ADR-0106](0106-a-look-is-a-part-with-a-file-and-a-row-and-a-page-places-its-parts.md) (a look is a part), [ADR-0054](0054-a-plugins-pages-run-in-a-sandboxed-frame-and-speak-only-to-their-plugin.md) (a plugin's frame and its policy) and [ADR-0040](0040-the-pages-are-light-by-default.md) (one look, light).
 

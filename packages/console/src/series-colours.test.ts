@@ -38,12 +38,12 @@ function contrast(one: string, other: string): number {
 }
 
 describe("the colours of a series", () => {
-  it("are six: blue, teal, raspberry, coral, violet and green", async () => {
+  it("are six: blue, coral, raspberry, teal, violet and green", async () => {
     const tokens = await read("tokens.css");
     const six = Array.from({ length: CHART_SERIES }, (_, index) =>
       colourOf(tokens, `--sc-series-${index + 1}`),
     );
-    expect(six).toEqual(["#285fd4", "#0097ac", "#bb2b76", "#fa4655", "#946ff2", "#04933e"]);
+    expect(six).toEqual(["#285fd4", "#e45b63", "#bf1b7f", "#0097ac", "#946ff2", "#04933e"]);
     expect(tokens).not.toContain("--sc-series-7");
   });
 
