@@ -72,6 +72,11 @@
   font-size: var(--sc-text-sm);
 }
 
+/* Said over what it is about, not under a name: it keeps its distance from what follows. */
+.sc-section-head + .sc-settings-hint {
+  margin-bottom: var(--sc-space-3);
+}
+
 .sc-settings-control {
   display: grid;
   justify-items: start;

@@ -1,4 +1,5 @@
 import type { Messages } from "./en.js";
+import { asObject, asSubject, asWay } from "./particles.js";
 
 // The Korean pack (ADR-0012): every word of the English one, in Korean. With the English pack,
 // the one place in this repository where text is not English (AGENTS.md, rule 10).
@@ -319,7 +320,7 @@ export const ko: Messages = {
       optionalHint: "쓰려는 것만 켜세요. 나중에 바꿀 수 있습니다.",
       newCapability: "새 권한",
       board: "보드 프로젝트",
-      boardHint: "플러그인의 결정, 태스크, 문서가 가는 곳입니다.",
+      boardHint: "플러그인의 결정, 작업, 문서가 가는 곳입니다.",
       boardNone: "없음",
       boardCreate: "새 프로젝트",
       boardChoose: "기존 프로젝트",
@@ -363,7 +364,7 @@ export const ko: Messages = {
         "이 플러그인이 다른 플러그인에서 자기 이름으로 쓰려고 요청한 역할입니다. 관리자가 여기서, 또는 켤 때 부여합니다.",
       askGranted: "부여됨",
       askUngranted: "부여되지 않음",
-      askUnavailable: (plugin) => `${plugin}이(가) 꺼져 있습니다. 켜진 뒤 여기서 부여하세요.`,
+      askUnavailable: (plugin) => `${asSubject(plugin)} 꺼져 있습니다. 켜진 뒤 여기서 부여하세요.`,
       askGrantNow: "지금 부여",
       grant: "부여",
       revoke: "회수",
@@ -427,11 +428,11 @@ export const ko: Messages = {
       },
       "board:read": {
         name: "보드 읽기",
-        opens: "보드 프로젝트와 호출된 프로젝트의 태스크, 결정, 실행, 문서, 이벤트를 읽습니다.",
+        opens: "보드 프로젝트와 호출된 프로젝트의 작업, 결정, 실행, 문서, 이벤트를 읽습니다.",
       },
       "board:tasks": {
-        name: "태스크",
-        opens: "자기 프로젝트에 태스크를 만들고, 만든 것을 바꾸고 닫고 댓글을 답니다.",
+        name: "작업",
+        opens: "자기 프로젝트에 작업를 만들고, 만든 것을 바꾸고 닫고 댓글을 답니다.",
       },
       "board:decisions": { name: "결정", opens: "자기 프로젝트에 결정을 올리고 그 답을 읽습니다." },
       "board:documents": { name: "문서", opens: "자기 프로젝트의 문서에 자기 폴더를 두고 씁니다." },
@@ -457,7 +458,10 @@ export const ko: Messages = {
         opens:
           "페이지가 콘솔을 거치지 않고 각 사람의 브라우저에서 어떤 주소로든 연결합니다. 화면에 보여 주는 내용과 그 사람의 네트워크 주소가 어디로든 나갈 수 있습니다.",
       },
-      outbound: (host) => ({ name: `${host}로 요청`, opens: `${host}에 https 요청을 보냅니다.` }),
+      outbound: (host) => ({
+        name: `${asWay(host)} 요청`,
+        opens: `${host}에 https 요청을 보냅니다.`,
+      }),
       plugins: (key) => ({
         name: `플러그인 ${key} 호출`,
         opens: `플러그인 ${key}의 API를 호출한 사람의 권한으로 호출합니다.`,
@@ -533,7 +537,7 @@ export const ko: Messages = {
     members: {
       title: "멤버",
       list: "멤버",
-      since: "부터",
+      since: { before: "", after: "부터" },
       roleOf: (name) => `${name}의 역할`,
       addAria: "멤버 추가",
       person: "사람",
@@ -720,17 +724,17 @@ export const ko: Messages = {
     ownAnswer: "직접 입력",
     answer: "답변",
     asked: "질문",
-    askedThrough: (agent) => `${agent}을(를) 통해 질문`,
+    askedThrough: (agent) => `${asObject(agent)} 통해 질문`,
     about: "관련 작업:",
     answeredBy: "답변",
-    answeredThrough: (agent) => `${agent}을(를) 통해 답변`,
+    answeredThrough: (agent) => `${asObject(agent)} 통해 답변`,
     context: "맥락",
     files: "파일",
     picture: (name) => `그림 ${name}`,
     whatFollowed: "그 뒤에 일어난 일",
     nothingWritten: "아직 적힌 것이 없습니다.",
     wroteWhatFollowed: "그 뒤에 일어난 일을 적음",
-    wroteWhatFollowedThrough: (agent) => `${agent}을(를) 통해 그 뒤에 일어난 일을 적음`,
+    wroteWhatFollowedThrough: (agent) => `${asObject(agent)} 통해 그 뒤에 일어난 일을 적음`,
     outcomePlaceholder: "답변으로 무엇을 했고 무엇이 됐는지, Markdown으로.",
     writeWhatFollowed: "그 뒤에 일어난 일 쓰기",
     changeIt: "고치기",
@@ -843,7 +847,7 @@ export const ko: Messages = {
     target: "목표일",
     noTarget: "목표일 없음",
     setBy: "세운 사람",
-    setThrough: (agent) => `${agent}을(를) 통해`,
+    setThrough: (agent) => `${asObject(agent)} 통해`,
     state: "상태",
     nothingMore: "더 적힌 내용이 없습니다.",
     about: "이루면 무엇이 달라지나",
@@ -1128,7 +1132,7 @@ export const ko: Messages = {
       consoleTakes: (range) => `받는 console 명령: ${range}`,
       language: "기본 언어",
       languageHint:
-        "언어를 정하지 않은 사람에게 쓰는 언어입니다. 브라우저가 콘솔이 쓰지 않는 언어만 요청하는 사람에게 화면이 이 언어로 나오고, 콘솔을 한 번도 열지 않은 사람에게 플러그인이 결정·태스크·채팅으로 쓰는 글도 이 언어로 씁니다. 자기 언어를 정한 사람은 그대로입니다.",
+        "언어를 정하지 않은 사람에게 쓰는 언어입니다. 브라우저가 콘솔이 쓰지 않는 언어만 요청하는 사람에게 화면이 이 언어로 나오고, 콘솔을 한 번도 열지 않은 사람에게 플러그인이 결정·작업·채팅으로 쓰는 글도 이 언어로 씁니다. 자기 언어를 정한 사람은 그대로입니다.",
       languageNone: "정하지 않음: 영어",
       peopleVisibility: "멤버 공개 범위",
       peopleVisibilityHint:
@@ -1171,11 +1175,11 @@ export const ko: Messages = {
   },
 
   feed: {
-    title: "일어난 일",
+    title: "피드",
     list: "일어난 일",
     empty: "아직 아무 일도 없었습니다",
     console: "콘솔",
-    as: (agent) => `${agent}(으)로`,
+    as: (agent) => `${asWay(agent)}`,
     asTitle: "그 사람이 사용한 에이전트",
     via: (plugin) => `${plugin} 플러그인을 통해`,
     viaTitle: "그 사람 대신 실행한 플러그인",
@@ -1184,7 +1188,7 @@ export const ko: Messages = {
     aPlugin: "플러그인",
     aTeam: "팀",
     theTeam: (team) => `팀 ${team}`,
-    throughPlugin: (plugin) => `플러그인 ${plugin}을(를) 통해`,
+    throughPlugin: (plugin) => `플러그인 ${asObject(plugin)} 통해`,
     everyone: "모든 구성원",
     membersOf: (project) => `${project}의 구성원`,
     outcome: {
@@ -1239,21 +1243,21 @@ export const ko: Messages = {
     },
     event: {
       personJoined: () => "보드에 들어왔습니다",
-      workspaceUpdated: (fields) => `워크스페이스의 ${fields}을(를) 바꿨습니다`,
-      roleChanged: (login, role) => `${login}을(를) ${role}(으)로 지정했습니다`,
-      personListed: (login) => `${login}을(를) 추가했습니다`,
-      personUnlisted: (login) => `${login}을(를) 목록에서 뺐습니다`,
-      personDeactivated: (login) => `${login}을(를) 비활성화했습니다`,
-      personReactivated: (login) => `${login}을(를) 다시 활성화했습니다`,
-      managerChanged: (login, manager) => `${login}의 매니저를 ${manager}(으)로 지정했습니다`,
+      workspaceUpdated: (fields) => `워크스페이스의 ${asObject(fields)} 바꿨습니다`,
+      roleChanged: (login, role) => `${asObject(login)} ${asWay(role)} 지정했습니다`,
+      personListed: (login) => `${asObject(login)} 추가했습니다`,
+      personUnlisted: (login) => `${asObject(login)} 목록에서 뺐습니다`,
+      personDeactivated: (login) => `${asObject(login)} 비활성화했습니다`,
+      personReactivated: (login) => `${asObject(login)} 다시 활성화했습니다`,
+      managerChanged: (login, manager) => `${login}의 매니저를 ${asWay(manager)} 지정했습니다`,
       managerCleared: (login) => `${login}의 매니저 지정을 해제했습니다`,
       emailChanged: (login) => `${login}의 업무 이메일을 바꿨습니다`,
       emailCleared: (login) => `${login}의 업무 이메일을 지웠습니다`,
-      personUpdated: (fields, login) => `${login}의 ${fields}을(를) 바꿨습니다`,
+      personUpdated: (fields, login) => `${login}의 ${asObject(fields)} 바꿨습니다`,
       agentRunning: (agent) =>
-        agent === undefined ? "실행 중입니다" : `${agent}이(가) 실행 중임을 확인했습니다`,
+        agent === undefined ? "실행 중입니다" : `${asSubject(agent)} 실행 중임을 확인했습니다`,
       agentStopped: (agent) =>
-        agent === undefined ? "정지했습니다" : `${agent}이(가) 정지했음을 확인했습니다`,
+        agent === undefined ? "정지했습니다" : `${asSubject(agent)} 정지했음을 확인했습니다`,
       agentRefused: (agent) =>
         agent === undefined
           ? "모델이 응답을 거부해 기다리고 있습니다"
@@ -1261,68 +1265,70 @@ export const ko: Messages = {
       agentFailed: (agent) =>
         agent === undefined
           ? "시작하지 못해 기다리고 있습니다"
-          : `${agent}이(가) 시작하지 못했음을 확인했습니다`,
+          : `${asSubject(agent)} 시작하지 못했음을 확인했습니다`,
       agentUnheard: (agent) =>
         agent === undefined ? "응답이 없습니다" : `${agent}의 응답을 받지 못하고 있습니다`,
-      teamCreated: (team) => `팀 ${team}을(를) 만들었습니다`,
-      teamRenamed: (from, team) => `팀 ${from}의 이름을 ${team}(으)로 바꿨습니다`,
-      teamRemoved: (team) => `팀 ${team}을(를) 삭제했습니다`,
-      teamMemberAdded: (login, team) => `${login}을(를) 팀 ${team}에 추가했습니다`,
-      teamMemberRemoved: (login, team) => `${login}을(를) 팀 ${team}에서 뺐습니다`,
-      projectCreated: (project) => `프로젝트 ${project}을(를) 만들었습니다`,
-      projectUpdated: (fields, project) => `프로젝트 ${project}의 ${fields}을(를) 바꿨습니다`,
+      teamCreated: (team) => `팀 ${asObject(team)} 만들었습니다`,
+      teamRenamed: (from, team) => `팀 ${from}의 이름을 ${asWay(team)} 바꿨습니다`,
+      teamRemoved: (team) => `팀 ${asObject(team)} 삭제했습니다`,
+      teamMemberAdded: (login, team) => `${asObject(login)} 팀 ${team}에 추가했습니다`,
+      teamMemberRemoved: (login, team) => `${asObject(login)} 팀 ${team}에서 뺐습니다`,
+      projectCreated: (project) => `프로젝트 ${asObject(project)} 만들었습니다`,
+      projectUpdated: (fields, project) => `프로젝트 ${project}의 ${asObject(fields)} 바꿨습니다`,
       memberAdded: (login, project, role) =>
-        `${login}을(를) ${project}에 ${role}(으)로 추가했습니다`,
+        `${asObject(login)} ${project}에 ${asWay(role)} 추가했습니다`,
       memberChanged: (login, role, project) =>
-        `${login}을(를) ${project}의 ${role}(으)로 지정했습니다`,
-      memberRemoved: (login, project) => `${login}을(를) ${project}에서 제외했습니다`,
-      categoryCreated: (category) => `카테고리 ${category}을(를) 만들었습니다`,
-      categoryUpdated: (fields, category) => `카테고리 ${category}의 ${fields}을(를) 바꿨습니다`,
-      categoryRemoved: (category) => `카테고리 ${category}을(를) 제거했습니다`,
-      goalCreated: (goal) => `목표 ${goal}을(를) 세웠습니다`,
-      goalUpdated: (fields, goal) => `목표 ${goal}의 ${fields}을(를) 바꿨습니다`,
-      taskCreated: (task) => `${task}을(를) 썼습니다`,
-      taskMoved: (task, from, to) => `${task}을(를) ${from}에서 ${to}(으)로 옮겼습니다`,
-      taskUpdated: (fields, task) => `${task}의 ${fields}을(를) 바꿨습니다`,
+        `${asObject(login)} ${project}의 ${asWay(role)} 지정했습니다`,
+      memberRemoved: (login, project) => `${asObject(login)} ${project}에서 제외했습니다`,
+      categoryCreated: (category) => `카테고리 ${asObject(category)} 만들었습니다`,
+      categoryUpdated: (fields, category) =>
+        `카테고리 ${category}의 ${asObject(fields)} 바꿨습니다`,
+      categoryRemoved: (category) => `카테고리 ${asObject(category)} 제거했습니다`,
+      goalCreated: (goal) => `목표 ${asObject(goal)} 세웠습니다`,
+      goalUpdated: (fields, goal) => `목표 ${goal}의 ${asObject(fields)} 바꿨습니다`,
+      taskCreated: (task) => `${asObject(task)} 썼습니다`,
+      taskMoved: (task, from, to) => `${asObject(task)} ${from}에서 ${asWay(to)} 옮겼습니다`,
+      taskUpdated: (fields, task) => `${task}의 ${asObject(fields)} 바꿨습니다`,
       taskCommented: (task, excerpt) =>
         `${task}에 댓글을 남겼습니다${excerpt === undefined || excerpt === "" ? "" : `: ${excerpt}`}`,
-      taskArchived: (task) => `${task}을(를) 보관했습니다`,
-      taskRestored: (task) => `${task}을(를) 되살렸습니다`,
+      taskArchived: (task) => `${asObject(task)} 보관했습니다`,
+      taskRestored: (task) => `${asObject(task)} 되살렸습니다`,
       decisionRaised: (question) => `질문했습니다: ${question}`,
       decisionAnswered: (question, option) => `"${question}"에 답했습니다: ${option}`,
       decisionAddressed: (question, deciders) =>
-        `결정 "${question}"을(를) ${deciders}에게 넘겼습니다`,
-      decisionUpdated: (fields, question) => `결정 "${question}"의 ${fields}을(를) 썼습니다`,
+        `결정 ${asObject(`"${question}"`)} ${deciders}에게 넘겼습니다`,
+      decisionUpdated: (fields, question) => `결정 "${question}"의 ${asObject(fields)} 썼습니다`,
       runStarted: (task) => `${task} 작업을 시작했습니다`,
       runReported: (task, excerpt) =>
         `${task}에 보고했습니다${excerpt === undefined ? "" : `: ${excerpt}`}`,
-      runHandedIn: (label, task) => `${task}에 ${label}을(를) 제출했습니다`,
-      runTakenOver: (task, agent) => `${agent}에게서 ${task}을(를) 넘겨받았습니다`,
-      runFinished: (task) => `${task}을(를) 끝냈습니다`,
+      runHandedIn: (label, task) => `${task}에 ${asObject(label)} 제출했습니다`,
+      runTakenOver: (task, agent) => `${agent}에게서 ${asObject(task)} 넘겨받았습니다`,
+      runFinished: (task) => `${asObject(task)} 끝냈습니다`,
       runFailed: (task) => `${task}에 실패했습니다`,
-      runAbandoned: (task) => `${task}을(를) 포기했습니다`,
+      runAbandoned: (task) => `${asObject(task)} 포기했습니다`,
       runUnheard: (task, agent) =>
         `${task}의 ${agent} 런을 끝냈습니다. 너무 오래 소식이 없었습니다`,
       documentWritten: (page, version) =>
-        `${page}을(를) 썼습니다${version === undefined ? "" : `, 버전 ${version}`}`,
-      documentArchived: (page) => `${page}을(를) 보관했습니다`,
-      documentRestored: (page) => `${page}을(를) 복원했습니다`,
-      fileAttached: (label, page) => `${page}에 ${label}을(를) 첨부했습니다`,
-      pluginEnabled: (plugin) => `플러그인 ${plugin}을(를) 활성화했습니다`,
-      pluginDisabled: (plugin) => `플러그인 ${plugin}을(를) 비활성화했습니다`,
+        `${asObject(page)} 썼습니다${version === undefined ? "" : `, 버전 ${version}`}`,
+      documentArchived: (page) => `${asObject(page)} 보관했습니다`,
+      documentRestored: (page) => `${asObject(page)} 복원했습니다`,
+      fileAttached: (label, page) => `${page}에 ${asObject(label)} 첨부했습니다`,
+      pluginEnabled: (plugin) => `플러그인 ${asObject(plugin)} 활성화했습니다`,
+      pluginDisabled: (plugin) => `플러그인 ${asObject(plugin)} 비활성화했습니다`,
       pluginConsented: (plugin) => `플러그인 ${plugin}의 권한을 바꿨습니다`,
-      pluginConfigured: (fields, plugin) => `플러그인 ${plugin}의 ${fields}을(를) 바꿨습니다`,
+      pluginConfigured: (fields, plugin) => `플러그인 ${plugin}의 ${asObject(fields)} 바꿨습니다`,
       pluginSealed: (fields, plugin, host) =>
-        `플러그인 ${plugin}의 ${fields}을(를) ${host}에서 받아 저장했습니다`,
+        `플러그인 ${plugin}의 ${asObject(fields)} ${host}에서 받아 저장했습니다`,
       pluginGranted: (role, who, plugin) =>
         `${who}에게 플러그인 ${plugin}의 ${role} 역할을 부여했습니다`,
       pluginRevoked: (role, who, plugin) =>
         `${who}에게서 플러그인 ${plugin}의 ${role} 역할을 제거했습니다`,
-      pluginUpgraded: (plugin, version) => `플러그인 ${plugin}을(를) ${version}으로 올렸습니다`,
+      pluginUpgraded: (plugin, version) =>
+        `플러그인 ${asObject(plugin)} ${asWay(version)} 올렸습니다`,
       pluginCommand: (command, plugin, outcome) =>
-        `플러그인 ${plugin}의 ${command}을(를) 실행했습니다: ${outcome}`,
-      pluginPurged: (plugin) => `플러그인 ${plugin}을(를) 완전히 지웠습니다`,
-      pluginFailed: (plugin, problem) => `플러그인 ${plugin}이(가) 실패했습니다: ${problem}`,
+        `플러그인 ${plugin}의 ${asObject(command)} 실행했습니다: ${outcome}`,
+      pluginPurged: (plugin) => `플러그인 ${asObject(plugin)} 완전히 지웠습니다`,
+      pluginFailed: (plugin, problem) => `플러그인 ${asSubject(plugin)} 실패했습니다: ${problem}`,
     },
   },
 
@@ -1349,7 +1355,7 @@ export const ko: Messages = {
     reports: "보고",
     handedIn: "제출물",
     picture: (name) => `그림 ${name}`,
-    label: (agent, name) => `${name}을(를) 위한 ${agent}`,
+    label: (agent, name) => `${asObject(name)} 위한 ${agent}`,
   },
 
   comments: {
@@ -1425,7 +1431,7 @@ export const ko: Messages = {
     find: "찾기",
     searching: "찾는 중",
     loading: "문서를 불러오는 중",
-    pagesWith: (words) => `"${words}"이(가) 있는 페이지`,
+    pagesWith: (words) => `${asSubject(`"${words}"`)} 있는 페이지`,
     noPageHasWords: "이 단어가 있는 페이지가 없습니다",
     couldNotLoad: "문서를 불러올 수 없습니다.",
     searchFailed: "검색이 되지 않았습니다.",
@@ -1500,11 +1506,11 @@ export const ko: Messages = {
       working: "진행 중",
       review: "검토 대기",
       decisions: "결정 대기",
-      tasks: "진행 중인 태스크",
-      reviewTasks: "검토를 기다리는 태스크",
+      tasks: "진행 중인 작업",
+      reviewTasks: "검토를 기다리는 작업",
       roadmap: "로드맵",
       more: (count: number) => `외 ${count}건`,
-      noTasks: "진행 중인 태스크가 없습니다",
+      noTasks: "진행 중인 작업가 없습니다",
       noGoals: "남은 목표가 없습니다",
       done: (done: number, total: number) => `${total}개 중 ${done}개 완료`,
       named: (project: string, key: string, working: number, review: number, decisions: number) =>
@@ -1594,7 +1600,7 @@ export const ko: Messages = {
     team: "직속 구성원",
     teams: "팀",
     joinTeam: "팀 추가…",
-    joinTeamOf: (name) => `${name}을(를) 추가할 팀`,
+    joinTeamOf: (name) => `${asObject(name)} 추가할 팀`,
     leaveTeam: (name, team) => `${team}에서 ${name} 빼기`,
     howMany: (count) => `${count}명`,
     views: { aria: "구성원과 팀", people: "구성원", teams: "팀" },
@@ -1617,7 +1623,7 @@ export const ko: Messages = {
     ofOrganization: (name) => `${name} 조직의 구성원`,
     ofDomain: (domain) => `${domain} 도메인의 계정`,
     at: { gh: "GitHub", google: "Google" },
-    organization: (name) => `GitHub 조직 ${name}이(가) 구성원을 정합니다.`,
+    organization: (name) => `GitHub 조직 ${asSubject(name)} 구성원을 정합니다.`,
     organizationRead: "마지막으로 읽음",
     organizationNotRead: "아직 읽지 않았습니다.",
     form: {
@@ -1664,7 +1670,7 @@ export const ko: Messages = {
     removeMember: (name, team) => `${team}에서 ${name} 빼기`,
     remove: "팀 삭제",
     removeAsk: (team) =>
-      `팀 ${team}을(를) 삭제할까요? 이 팀에 준 플러그인 역할도 함께 사라지고, 사람들은 그대로 남습니다.`,
+      `팀 ${asObject(team)} 삭제할까요? 이 팀에 준 플러그인 역할도 함께 사라지고, 사람들은 그대로 남습니다.`,
     newTeam: "새 팀",
     newAria: "새 팀",
     form: {
@@ -1712,7 +1718,7 @@ export const ko: Messages = {
       make: "토큰 만들기",
     },
     fresh: {
-      ready: (name) => `토큰 "${name}"이(가) 준비됐습니다`,
+      ready: (name) => `토큰 ${asSubject(`"${name}"`)} 준비됐습니다`,
       copyNow: "지금 복사하세요. 이번 한 번만 보이며, 콘솔은 해시만 보관합니다.",
       useIt:
         "이 토큰으로 console 명령을 로그인시키거나, REST API에 bearer 토큰으로 제시하거나, 내 콘솔이나 스크립트에 주세요.",
@@ -1850,7 +1856,7 @@ export const ko: Messages = {
           files: "파일",
           subagent: "서브 에이전트",
         },
-        through: (agent) => `${agent}(으)로`,
+        through: (agent) => `${asWay(agent)}`,
         subagent: (name) => (name.length === 0 ? "서브 에이전트" : `서브 에이전트: ${name}`),
         files: "파일",
         unseen: (names) =>
@@ -1908,7 +1914,7 @@ export const ko: Messages = {
         resetWarning:
           "초기화하면 새 대화가 시작됩니다. 에이전트에게는 보드와 데스크에 있는 것 말고는 이 대화의 아무것도 남지 않습니다. 위에 적은 말이 먼저 전해집니다.",
         cancel: "취소",
-        sent: (number: number, kind: string) => `#${number}로 보냈습니다: ${kind}.`,
+        sent: (number: number, kind: string) => `${asWay(`#${number}`)} 보냈습니다: ${kind}.`,
         tooMany: (most: number) => `한 번에 파일은 ${most}개까지입니다.`,
         tooLarge: (most) => `파일을 모두 합쳐 ${most}까지 보낼 수 있습니다.`,
       },
@@ -1920,7 +1926,7 @@ export const ko: Messages = {
         own: "제품 기본값",
         none: "러너가 아직 고를 수 있는 것을 알려 주지 않았습니다.",
         runsWith: (model: string, effort: string) =>
-          `열린 세션은 모델 ${model}, 추론 강도 ${effort}(으)로 실행 중입니다.`,
+          `열린 세션은 모델 ${model}, 추론 강도 ${asWay(effort)} 실행 중입니다.`,
       },
       sessions: {
         title: "세션",
@@ -2001,7 +2007,7 @@ export const ko: Messages = {
           end: "종료",
           save: "저장",
           intro:
-            "워크스페이스의 시간대 기준입니다. 시작 시각에 콘솔이 하루 브리핑을 보냅니다. 오늘 계획된 태스크, 넘어온 태스크, 기다리는 결정을 알려 주고, 주의 첫날에는 한 주의 브리핑을 보냅니다. 종료 시각이 있으면 그때 마무리를 보냅니다. 하루를 기록하고 데스크를 푸시하라는 알림입니다. 시작을 비워 두면 09:00이고, 종료를 비워 두면 마무리가 없습니다.",
+            "워크스페이스의 시간대 기준입니다. 시작 시각에 콘솔이 하루 브리핑을 보냅니다. 오늘 계획된 작업, 넘어온 작업, 기다리는 결정을 알려 주고, 주의 첫날에는 한 주의 브리핑을 보냅니다. 종료 시각이 있으면 그때 마무리를 보냅니다. 하루를 기록하고 데스크를 푸시하라는 알림입니다. 시작을 비워 두면 09:00이고, 종료를 비워 두면 마무리가 없습니다.",
         },
         elsewhere: {
           title: "외부 계정",
@@ -2169,14 +2175,14 @@ export const ko: Messages = {
         "승인하면 그 머신의 명령이 내 계정으로 동작합니다. 세션은 쓰는 동안 유지되고 오래 쓰지 않으면 끝나며, 토큰으로 할 수 있는 일을 모두 할 수 있습니다. 세션 목록에서 확인하고 끝낼 수 있습니다.",
       approve: "나입니다",
       approved: {
-        title: (name) => `"${name}"이(가) 내 계정으로 로그인했습니다`,
+        title: (name) => `${asSubject(`"${name}"`)} 내 계정으로 로그인했습니다`,
         body: "세션은 명령이 직접 받으므로 복사할 것이 없습니다. 이 페이지를 닫아도 되고, 세션 페이지에서 로그인된 곳을 볼 수 있습니다.",
         sessionsPage: "세션 페이지",
       },
     },
     notMine: "내 것이 아님",
     approved: {
-      title: (agent) => `"${agent}"이(가) 나로서 연결됐습니다`,
+      title: (agent) => `${asSubject(`"${agent}"`)} 나로서 연결됐습니다`,
       body: "에이전트는 토큰을 스스로 받습니다. 복사할 것은 없습니다. 이 페이지를 닫거나, 연결된 것을 에이전트 페이지에서 보세요.",
       agentsPage: "에이전트 페이지",
     },

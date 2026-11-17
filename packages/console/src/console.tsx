@@ -591,7 +591,7 @@ function ProjectsPage(props: {
       </div>
       {error !== undefined && <Callout tone="danger">{error}</Callout>}
       {making && (
-        <section className="sc-panel sc-panel-form" aria-label={words.form.aria}>
+        <section className="sc-panel sc-panel-form sc-panel-form-lead" aria-label={words.form.aria}>
           <ProjectForm
             busy={busy}
             skillsSource={data.me?.workspace.skills.source}
@@ -1406,13 +1406,10 @@ function ProjectPage(props: {
     const viewHref = (view: GoalTaskView) => goalHref(key, goal.id, { view });
     return (
       <>
-        <div className="sc-page-head">
-          <h1 className="sc-page-title">{roadmap.one}</h1>
-          <LinkButton href={projectHref(key, "roadmap")}>{roadmap.all}</LinkButton>
-        </div>
         {error !== undefined && <Callout tone="danger">{error}</Callout>}
         <GoalView
           goal={goal}
+          allHref={projectHref(key, "roadmap")}
           tasks={data.tasks}
           taskHref={href}
           docHref={toDoc}
@@ -1579,27 +1576,29 @@ function ProjectPage(props: {
         <div className="sc-page-head">
           <h1 className="sc-page-title">{words.feed.title}</h1>
         </div>
-        <components.EventFeed
-          events={data.events}
-          href={(event) => {
-            const task = event.taskId === null ? undefined : tasksById.get(event.taskId);
-            if (task !== undefined) {
-              return href(task);
-            }
-            if (event.decisionId !== null) {
-              return decisionHref(key, event.decisionId);
-            }
-            if (event.goalId !== null) {
-              return goalHref(key, event.goalId);
-            }
-            // The rules are a page shown on the settings, not among the documents (ADR-0023).
-            if (event.data.path === RULES_PATH) {
-              return projectSettingsHref(key);
-            }
-            return event.data.path === undefined ? undefined : toDoc(event.data.path);
-          }}
-          empty={<EmptyState title={words.feed.empty} />}
-        />
+        <section className="sc-panel" aria-label={words.feed.list}>
+          <components.EventFeed
+            events={data.events}
+            href={(event) => {
+              const task = event.taskId === null ? undefined : tasksById.get(event.taskId);
+              if (task !== undefined) {
+                return href(task);
+              }
+              if (event.decisionId !== null) {
+                return decisionHref(key, event.decisionId);
+              }
+              if (event.goalId !== null) {
+                return goalHref(key, event.goalId);
+              }
+              // The rules are a page shown on the settings, not among the documents (ADR-0023).
+              if (event.data.path === RULES_PATH) {
+                return projectSettingsHref(key);
+              }
+              return event.data.path === undefined ? undefined : toDoc(event.data.path);
+            }}
+            empty={<EmptyState title={words.feed.empty} />}
+          />
+        </section>
       </>
     );
   }
@@ -1728,9 +1727,6 @@ function ProjectSettingsPage(props: {
   const head = (
     <div className="sc-page-head">
       <h1 className="sc-page-title">{settings.title}</h1>
-      {owner && route.form === undefined && (
-        <LinkButton href={projectSettingsHref(key, "edit")}>{words.common.edit}</LinkButton>
-      )}
     </div>
   );
   if (route.form === "edit") {
@@ -1842,6 +1838,17 @@ function ProjectSettingsPage(props: {
       {head}
       {error !== undefined && <Callout tone="danger">{error}</Callout>}
       <section className="sc-panel" aria-label={settings.aria}>
+        <div className="sc-section-head">
+          <h2 className="sc-section-title">{words.nav.projects}</h2>
+          {owner && (
+            <a
+              className="sc-button sc-button-secondary sc-button-sm"
+              href={projectSettingsHref(key, "edit")}
+            >
+              {words.common.edit}
+            </a>
+          )}
+        </div>
         <dl className="sc-facts sc-facts-plain">
           <div>
             <dt>{form.name}</dt>
@@ -1947,8 +1954,9 @@ function ProjectSettingsPage(props: {
  * signed in on (board #309), which a console that holds a token does not offer, and so does not
  * name.
  */
-function SettingsViews(props: { readonly on: "workspace" | "sessions" }) {
-  const views = useWords().settings.views;
+function SettingsViews(props: { readonly on: "workspace" | "sessions" | "categories" }) {
+  const settings = useWords().settings;
+  const views = settings.views;
   return (
     <nav className="sc-subtabs sc-settings-views" aria-label={views.aria}>
       <a
@@ -1964,6 +1972,13 @@ function SettingsViews(props: { readonly on: "workspace" | "sessions" }) {
         aria-current={props.on === "sessions" ? "page" : undefined}
       >
         {views.sessions}
+      </a>
+      <a
+        className={cx("sc-tab", props.on === "categories" && "sc-tab-current")}
+        href={PATHS.categories}
+        aria-current={props.on === "categories" ? "page" : undefined}
+      >
+        {settings.categories}
       </a>
     </nav>
   );
@@ -2502,6 +2517,8 @@ function PlatePage(props: {
   readonly lead?: string | undefined;
   /** What stands beside the title: the way back, on another person's plate. */
   readonly aside?: ReactNode;
+  /** What stands under the head and over the plate: the agents that need the person, on their own. */
+  readonly under?: ReactNode;
   /** A day of the week shown at the top, from the address; today's week when it names none. */
   readonly week: string | undefined;
   readonly weekHref: (day: string) => string;
@@ -2557,6 +2574,7 @@ function PlatePage(props: {
           {props.aside}
         </div>
       )}
+      {props.under}
       {problem !== undefined && <Callout tone="danger">{problem}</Callout>}
       {forbidden && refused !== undefined ? (
         <EmptyState
@@ -2833,22 +2851,20 @@ function WorkPage(props: {
   const words = useWords();
   const { plate } = props.data.actions;
   return (
-    <>
-      <AgentsNeedingYou agents={props.data.agents} me={props.data.me?.person?.id} />
-      <PlatePage
-        components={props.components}
-        load={plate}
-        remember={`work:${props.data.me?.person?.id ?? ""}`}
-        early="work"
-        title={words.work.title}
-        week={props.week}
-        weekStart={weekStartOf(props.data.me?.workspace)}
-        weekHref={workHref}
-        loading={words.work.loading}
-        couldNotLoad={words.work.couldNotLoad}
-        empty={words.work.empty}
-      />
-    </>
+    <PlatePage
+      components={props.components}
+      under={<AgentsNeedingYou agents={props.data.agents} me={props.data.me?.person?.id} />}
+      load={plate}
+      remember={`work:${props.data.me?.person?.id ?? ""}`}
+      early="work"
+      title={words.work.title}
+      week={props.week}
+      weekStart={weekStartOf(props.data.me?.workspace)}
+      weekHref={workHref}
+      loading={words.work.loading}
+      couldNotLoad={words.work.couldNotLoad}
+      empty={words.work.empty}
+    />
   );
 }
 
@@ -3094,8 +3110,9 @@ function WorkspacePage(props: {
     return (
       <>
         <div className="sc-page-head">
-          <h1 className="sc-page-title">{categories.title}</h1>
+          <h1 className="sc-page-title">{words.settings.title}</h1>
         </div>
+        {!holdsToken(data) && <SettingsViews on="categories" />}
         {error !== undefined && <Callout tone="danger">{error}</Callout>}
         <components.CategoryList
           categories={data.categories}
@@ -3176,7 +3193,10 @@ function WorkspacePage(props: {
         {narrowed && <p className="sc-lead">{words.people.narrowed}</p>}
         {error !== undefined && <Callout tone="danger">{error}</Callout>}
         {makingTeam && (
-          <section className="sc-panel sc-panel-form" aria-label={words.teams.newAria}>
+          <section
+            className="sc-panel sc-panel-form sc-panel-form-lead"
+            aria-label={words.teams.newAria}
+          >
             <TeamForm
               busy={busy}
               onSubmit={(input) =>
@@ -3223,7 +3243,10 @@ function WorkspacePage(props: {
           />
         )}
         {making && (
-          <section className="sc-panel sc-panel-form" aria-label={words.people.letInAria}>
+          <section
+            className="sc-panel sc-panel-form sc-panel-form-lead"
+            aria-label={words.people.letInAria}
+          >
             <ListingForm
               providers={data.me?.signIn ?? []}
               busy={busy}
@@ -3445,7 +3468,10 @@ function WorkspacePage(props: {
               />
             )}
             {making && (
-              <section className="sc-panel sc-panel-form" aria-label={agents.makeAria}>
+              <section
+                className="sc-panel sc-panel-form sc-panel-form-lead"
+                aria-label={agents.makeAria}
+              >
                 <TokenForm
                   daysAtMost={data.me?.workspace.tokenDaysAtMost}
                   busy={busy}
@@ -3559,7 +3585,11 @@ export function createConsole(config: ConsoleConfig = {}): ConsoleApp {
     /** The tab the page shown is under, once the tabs are known. */
     let here: string | undefined;
     let content: React.ReactNode;
-    if (data.me === undefined) {
+    // The shell waits for the workspace's lists as it waits for who is asking: its tabs name the
+    // plugins, and tabs drawn before those are known move under the pointer when they arrive.
+    const listsToCome =
+      data.me !== undefined && data.me.person !== null && !data.loaded && data.error === undefined;
+    if (data.me === undefined || listsToCome) {
       content = (
         <Ground>
           <div className="sc-loading">
@@ -3674,7 +3704,10 @@ export function createConsole(config: ConsoleConfig = {}): ConsoleApp {
                 href: projectHref(projectKey),
                 label: words.nav.board,
                 current:
-                  route.name === "board" || route.name === "task" || route.name === "new-task",
+                  route.name === "board" ||
+                  route.name === "task" ||
+                  route.name === "new-task" ||
+                  route.name === "archive",
               },
               {
                 href: projectHref(projectKey, "roadmap"),

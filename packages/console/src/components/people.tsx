@@ -245,7 +245,7 @@ export function PeopleList(props: PeopleListProps) {
                 <span className="sc-person-you">{words.common.you}</span>
               )}
             </span>
-            {title !== "" && <span className="sc-person-card-title">{title}</span>}
+            {title !== "" && !writesTitle && <span className="sc-person-card-title">{title}</span>}
             <span className="sc-person-card-note">
               {typeof person.handle === "string" && <>@{person.handle} · </>}
               {person.name !== null && <>{person.login} · </>}

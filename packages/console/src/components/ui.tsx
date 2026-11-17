@@ -557,17 +557,20 @@ export function EmptyState(props: {
   );
 }
 
-/** An instant as people read one in a language: the date, and the time of day. */
-export function formatInstant(iso: string, language?: string): string {
+/**
+ * An instant as people read one in a language: the day and the time of day, with the year
+ * where it is another than this one's, as a day alone is written (formatDay).
+ */
+export function formatInstant(iso: string, language?: string, now: Date = new Date()): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) {
     return iso;
   }
   return date.toLocaleString(language, {
-    year: "numeric",
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
     month: "short",
     day: "numeric",
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
   });
 }
@@ -606,8 +609,8 @@ export function Time(props: {
     const shown = date.toLocaleString(
       tag,
       dayOf(date) === dayOf(props.against === undefined ? new Date() : new Date(props.against))
-        ? { hour: "2-digit", minute: "2-digit" }
-        : { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" },
+        ? { hour: "numeric", minute: "2-digit" }
+        : { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" },
     );
     return (
       <time className="sc-time" dateTime={props.iso} title={full}>

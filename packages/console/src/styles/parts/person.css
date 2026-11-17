@@ -119,11 +119,14 @@
   opacity: 0.7;
 }
 
-/* What the member does, in a line under the name (ADR-0084). */
+/* What the member does, in one line under the name (ADR-0084): a long one is cut short, so
+   that the cards of a row keep their lines level. */
 .sc-person-card-title {
+  overflow: hidden;
   color: var(--sc-color-text);
   font-size: var(--sc-text-sm);
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sc-person-card-note {

@@ -2136,7 +2136,7 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
 
     <Part
       name="detail"
-      classes="sc-task-header, sc-task-title, sc-task-badges, sc-task-actions, sc-task-main, sc-task-body, sc-task-aside, sc-task-section"
+      classes="sc-task-header, sc-task-heading, sc-task-parent, sc-task-title, sc-task-badges, sc-task-actions, sc-task-main, sc-task-body, sc-task-aside, sc-task-section"
       use="A page about one thing: its head with the title, the badges and the actions, a main column and an aside. A task, a goal and a document are laid out by it."
       ground="field"
     >

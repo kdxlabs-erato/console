@@ -484,6 +484,11 @@ export interface TalkLineProps {
   readonly reading: number | undefined;
   /** The day it is: a moment of today is said by its hour alone, so a new day draws the lines again. */
   readonly today: string;
+  /**
+   * When the line before this one was: a line of the same day says its hour alone, and the day
+   * is said once, on the first line of it. The first line is read against today.
+   */
+  readonly after: string | undefined;
 }
 
 /** Whether two things of a session are the same events: a thing is made anew each time the events are read through. */
@@ -536,7 +541,8 @@ export function sameLine(a: TalkLineProps, b: TalkLineProps): boolean {
     a.whole === b.whole &&
     a.wholeAnswer === b.wholeAnswer &&
     a.reading === b.reading &&
-    a.today === b.today
+    a.today === b.today &&
+    a.after === b.after
   );
 }
 
@@ -576,6 +582,7 @@ export function talkLinesOf(input: {
   readonly today: string;
 }): readonly (TalkLineProps & { readonly key: number })[] {
   const { whole, of, reading } = input;
+  let before: string | undefined;
   return input.items.flatMap((one) => {
     const main = one.type === "tool" ? one.call : one.event;
     const answer = one.type === "tool" ? one.result : undefined;
@@ -584,6 +591,8 @@ export function talkLinesOf(input: {
       return [];
     }
     const signal = one.type === "told" ? one.event.data.signal : undefined;
+    const after = before;
+    before = first.at;
     return [
       {
         key: first.n,
@@ -601,6 +610,7 @@ export function talkLinesOf(input: {
             ? reading
             : undefined,
         today: input.today,
+        after,
       },
     ];
   });
@@ -663,7 +673,9 @@ const TalkLine = memo(function TalkLine(props: TalkLineProps): ReactNode {
         ))}
       </ul>
     );
-  const when = (event: RestTranscriptEvent): ReactNode => <Time iso={event.at} precision="clock" />;
+  const when = (event: RestTranscriptEvent): ReactNode => (
+    <Time iso={event.at} precision="clock" against={props.after} />
+  );
   if (one.type === "tool") {
     const first = one.call ?? one.permission ?? one.result;
     if (first === undefined) {

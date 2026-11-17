@@ -108,3 +108,25 @@
     min-width: 0;
   }
 }
+
+/* The head's words where something stands over the title: what the thing is a part of, or the
+   way back to all of its kind, in a quiet line, then the title and its badges. */
+.sc-task-heading {
+  display: grid;
+  flex: 1 1 28rem;
+  gap: var(--sc-space-2);
+  min-width: 0;
+}
+
+.sc-task-parent {
+  color: var(--sc-color-text-muted);
+  font-size: var(--sc-text-sm);
+}
+
+@media (max-width: 40rem) {
+  .sc-task-parent {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+}

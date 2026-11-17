@@ -55,7 +55,7 @@ describe("the language packs", () => {
       "added alice to web as an owner",
     );
     expect(ko.feed.event.memberAdded("alice", "web", "소유자")).toBe(
-      "alice을(를) web에 소유자(으)로 추가했습니다",
+      "alice를 web에 소유자로 추가했습니다",
     );
     expect(en.board.decisions(2)).toBe("2 decisions");
     expect(ko.board.decisions(2)).toBe("결정 2건");

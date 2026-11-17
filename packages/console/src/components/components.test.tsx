@@ -267,7 +267,7 @@ describe("the language", () => {
         },
         KOREAN.messages,
       ),
-    ).toBe("#7 Ship을(를) 준비됨에서 진행 중(으)로 옮겼습니다");
+    ).toBe("#7 Ship을 준비됨에서 진행 중으로 옮겼습니다");
   });
 });
 
@@ -935,7 +935,7 @@ describe("the feed", () => {
     const titled = event({ kind: "person.updated", data: { login: "bob", fields: ["title"] } });
     expect(describeEvent(titled)).toBe("changed the title of bob");
     // A member's title is not a task's: the Korean pack words the two apart.
-    expect(describeEvent(titled, KOREAN.messages)).toBe("bob의 직함을(를) 바꿨습니다");
+    expect(describeEvent(titled, KOREAN.messages)).toBe("bob의 직함을 바꿨습니다");
     const mira = { ...alice, login: "mira@acme.example", kind: "agent" as const, handle: "mira" };
     const state = (data: RestEvent["data"], actor: RestEvent["actor"] = mira) =>
       describeEvent(
@@ -1707,7 +1707,7 @@ describe("the agent accounts (ADR-0084)", () => {
       />,
     );
     expect(running).toContain(">Stopped<");
-    expect(running).toContain("a supervisor stopped it · since ");
+    expect(running).toContain('a supervisor stopped it</span><span class="sc-muted">since ');
     expect(running).toContain("<dt>Runs</dt><dd>Claude Code 2.1.321 · opus</dd>");
     expect(running).toContain('<a class="sc-agent-card-link" href="/agents/mira">Mira</a>');
     expect(seen).toContain(
@@ -2059,16 +2059,16 @@ describe("a moment told short", () => {
     // Read against its own day, whatever the zone of the machine: the hour and nothing else.
     const same = renderToStaticMarkup(<Time iso={AT} precision="clock" against={AT} />);
     expect(same).toMatch(
-      /^<time class="sc-time" dateTime="2026-11-10T14:02:11\.000Z" title="[^"]+">\d{2}:\d{2}\s[AP]M<\/time>$/,
+      /^<time class="sc-time" dateTime="2026-11-10T14:02:11\.000Z" title="[^"]+">\d{1,2}:\d{2}\s[AP]M<\/time>$/,
     );
     // Read against a day three days on, it says which day it was.
     const other = renderToStaticMarkup(
       <Time iso={AT} precision="clock" against="2026-11-13T14:02:11.000Z" />,
     );
-    expect(other).toMatch(/>Nov (9|10|11), \d{2}:\d{2}\s[AP]M<\/time>$/);
+    expect(other).toMatch(/>Nov (9|10|11), \d{1,2}:\d{2}\s[AP]M<\/time>$/);
     // Against nothing it is read against now, which this moment's day is not.
     expect(renderToStaticMarkup(<Time iso="2001-02-03T12:00:00.000Z" precision="clock" />)).toMatch(
-      />Feb \d, \d{2}:\d{2}\s[AP]M</,
+      />Feb \d, \d{1,2}:\d{2}\s[AP]M</,
     );
     // The whole moment stays in the title, for whoever rests the pointer on it.
     expect(same).toContain('title="');

@@ -228,7 +228,7 @@
     "sc-sign-in-stage",
     "sc-sign-in-title"
   ],
-  "task": ["sc-subtasks", "sc-task-parent"],
+  "task": ["sc-subtasks"],
   "thread": [
     "sc-comment",
     "sc-comment sc-prose",

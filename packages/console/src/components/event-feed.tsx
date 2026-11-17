@@ -254,7 +254,7 @@ function formatClock(iso: string, language: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime())
     ? iso
-    : date.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+    : date.toLocaleTimeString(language, { hour: "numeric", minute: "2-digit" });
 }
 
 type FeedRun = { readonly actor: RestEvent; readonly events: RestEvent[] };

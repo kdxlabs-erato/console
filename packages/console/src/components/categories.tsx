@@ -85,7 +85,7 @@ function CategoryRow(props: {
         </label>
         <Button
           type="submit"
-          variant="primary"
+          variant="secondary"
           size="sm"
           disabled={props.busy === true || !changed || name.trim() === ""}
         >
@@ -93,7 +93,7 @@ function CategoryRow(props: {
         </Button>
         {props.onRemove !== undefined && (
           <Button
-            variant="danger"
+            variant="ghost"
             size="sm"
             disabled={props.busy === true}
             onClick={() => props.onRemove?.(category)}

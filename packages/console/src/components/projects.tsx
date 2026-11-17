@@ -417,7 +417,9 @@ export function MemberList(props: MemberListProps) {
                 {member.person.name ?? ""}
                 <span className="sc-muted">
                   {" "}
-                  {members.since} <Time iso={member.addedAt} />
+                  {members.since.before}
+                  <Time iso={member.addedAt} />
+                  {members.since.after}
                 </span>
               </span>
               {props.onChangeRole === undefined || member.person.role === "admin" ? (

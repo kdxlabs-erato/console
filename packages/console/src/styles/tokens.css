@@ -117,6 +117,8 @@
   --sc-tracking-tight: -0.02em;
   --sc-tracking-wide: 0.04em;
   --sc-tracking-code: 0.12em;
+  /* How a small label is cased: capitals where the script has them. */
+  --sc-label-case: uppercase;
   --sc-weight-normal: 400;
   --sc-weight-medium: 500;
   --sc-weight-bold: 650;
@@ -147,8 +149,12 @@
 
   /* Layout. The gutter at the sides of the header, the tabs and every page grows with the
      window, from a step of the grid on a laptop to a wide margin on a large screen, so that a
-     page on a wide screen does not run to its very edges; a phone narrows it further below. */
-  --sc-gutter: clamp(var(--sc-space-7), 5vw, 10rem);
+     page on a wide screen does not run to its very edges; a phone narrows it further below. A
+     window wider than a page is read at gives what is over to the gutters; a page that wants
+     every bit of the window, the board, keeps the gutter a wide screen had before that. */
+  --sc-gutter-wide: clamp(var(--sc-space-7), 5vw, 10rem);
+  --sc-gutter: max(var(--sc-gutter-wide), calc((100vw - var(--sc-width-page)) / 2));
+  --sc-width-page: 100rem;
   --sc-width-prose: 46rem;
   --sc-width-aside: 18rem;
   --sc-column-width: 13.5rem;
@@ -169,12 +175,19 @@
   --sc-transition: 120ms ease-out;
 }
 
+/* Under a page as wide as the window, the board, the header and the tabs are as wide as it. */
+.sc-shell:has(.sc-main-wide) {
+  --sc-gutter: var(--sc-gutter-wide);
+}
+
 /* A page in Korean (the pages say their language on <html>): Hangul fills more of its box than
-   Latin capitals and sits higher in it, so a label is lifted less, and the tracking is off. */
+   Latin capitals and sits higher in it, so a label is lifted less, and the tracking is off; a
+   label is written as it is, since capitals would touch only the Latin words in it. */
 :root:lang(ko) {
   --sc-label-lift: -0.083em;
   --sc-tracking-tight: 0;
   --sc-tracking-wide: 0;
+  --sc-label-case: none;
 }
 
 /* The schedule, the roadmap and the categories (ADR-0019). */

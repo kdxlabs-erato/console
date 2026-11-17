@@ -21,18 +21,6 @@
   max-width: var(--sc-width-prose);
 }
 
-.sc-task-heading {
-  display: grid;
-  flex: 1 1 28rem;
-  gap: var(--sc-space-2);
-  min-width: 0;
-}
-
-.sc-task-parent {
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-sm);
-}
-
 .sc-subtasks {
   display: grid;
   gap: var(--sc-space-2);
@@ -96,13 +84,5 @@
      the select and the dates pressed against each other. */
   .sc-task .sc-task-aside .sc-facts {
     grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 40rem) {
-  .sc-task-parent {
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
   }
 }

@@ -601,7 +601,8 @@ export const en = {
     members: {
       title: "Members",
       list: "Members",
-      since: "since",
+      /** What stands before and after the day a member was added: "since 14 Nov". */
+      since: { before: "since ", after: "" },
       roleOf: (name: string) => `Role of ${name}`,
       addAria: "Add a member",
       person: "Person",
@@ -1255,7 +1256,7 @@ export const en = {
   },
 
   feed: {
-    title: "What happened",
+    title: "Feed",
     list: "What happened",
     empty: "Nothing happened yet",
     console: "The console",

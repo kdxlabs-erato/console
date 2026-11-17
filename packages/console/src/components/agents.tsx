@@ -186,11 +186,15 @@ export function AgentAccountList(props: AgentAccountListProps) {
                   {state === null ? (
                     <span className="sc-muted">{invited ? accounts.invitedHint : states.none}</span>
                   ) : (
-                    <span>
-                      {state.reason !== null && `${reasons[state.reason] ?? state.reason} · `}
-                      {states.since.before}
-                      <Time iso={state.since} precision="clock" />
-                      {states.since.after}
+                    <span className="sc-agent-card-now">
+                      {state.reason !== null && (
+                        <span>{reasons[state.reason] ?? state.reason}</span>
+                      )}
+                      <span className="sc-muted">
+                        {states.since.before}
+                        <Time iso={state.since} precision="clock" />
+                        {states.since.after}
+                      </span>
                     </span>
                   )}
                 </dd>

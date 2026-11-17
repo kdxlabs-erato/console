@@ -18,7 +18,7 @@
   font-size: var(--sc-text-xs);
   font-weight: var(--sc-weight-medium);
   letter-spacing: var(--sc-tracking-wide);
-  text-transform: uppercase;
+  text-transform: var(--sc-label-case);
 }
 
 /* A page that takes the whole window takes the header with it, so that the lockup, the tabs and

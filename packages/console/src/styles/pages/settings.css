@@ -99,6 +99,15 @@
   flex: 1 1 10rem;
 }
 
+/* Where there is room a row stands on columns every row shares: the colour, the name, the key,
+   the colour's name, and what is done to it, each under the same thing above. */
+@media (min-width: 40rem) {
+  .sc-category-form {
+    display: grid;
+    grid-template-columns: auto minmax(8rem, 1fr) 8rem 9rem auto auto;
+  }
+}
+
 /* The pack token (ADR-0028, ADR-0036): what it is for first, then the two ways to one side by
    side, each a card with its words before its controls, and the code shown large while the
    page waits for the approval. */

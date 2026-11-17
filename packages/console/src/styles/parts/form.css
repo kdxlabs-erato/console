@@ -7,7 +7,7 @@
   font-size: var(--sc-text-xs);
   font-weight: var(--sc-weight-medium);
   letter-spacing: var(--sc-tracking-wide);
-  text-transform: uppercase;
+  text-transform: var(--sc-label-case);
 }
 
 /* Forms */
@@ -71,6 +71,7 @@
 }
 
 .sc-field-hint {
+  max-width: var(--sc-width-prose);
   margin-top: var(--sc-space-2);
   color: var(--sc-color-text-muted);
   font-size: var(--sc-text-sm);

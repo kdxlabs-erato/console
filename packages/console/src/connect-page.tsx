@@ -69,7 +69,7 @@ export function ConnectPage(props: ConnectPageProps) {
   );
   const ask = (
     <>
-      <section className="sc-panel" aria-label={words.aria}>
+      <section className="sc-panel sc-panel-form" aria-label={words.aria}>
         <ConnectCodeForm busy={busy} onSubmit={(typed) => navigation.go(connectHref(typed))} />
       </section>
     </>

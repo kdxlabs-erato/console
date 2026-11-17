@@ -49,7 +49,7 @@
   font-size: var(--sc-text-xs);
   font-weight: var(--sc-weight-medium);
   letter-spacing: var(--sc-tracking-wide);
-  text-transform: uppercase;
+  text-transform: var(--sc-label-case);
 }
 
 .sc-figures tbody th {

@@ -5,7 +5,7 @@
   font-size: var(--sc-text-xs);
   font-weight: var(--sc-weight-medium);
   letter-spacing: var(--sc-tracking-wide);
-  text-transform: uppercase;
+  text-transform: var(--sc-label-case);
 }
 
 /* Who has what: a table on a sheet of its own, a quiet band for the headings, a hairline

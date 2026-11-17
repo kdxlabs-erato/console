@@ -200,13 +200,17 @@ function AnswerForm(props: {
           />
         </label>
       </div>
-      <input
-        className="sc-input"
-        placeholder={words.decisions.notePlaceholder}
-        maxLength={MAX_NOTE_LENGTH}
-        value={note}
-        onChange={(event) => setNote(event.target.value)}
-      />
+      {/* A word to add is asked for once an answer is chosen: until then a waiting decision is
+          its question and its options, and a page of them is short enough to read down. */}
+      {(chosen !== undefined || own) && (
+        <input
+          className="sc-input"
+          placeholder={words.decisions.notePlaceholder}
+          maxLength={MAX_NOTE_LENGTH}
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+        />
+      )}
       <div className="sc-form-actions">
         <Button
           type="submit"

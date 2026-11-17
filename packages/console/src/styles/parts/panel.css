@@ -25,6 +25,16 @@
   max-width: 56rem;
 }
 
+/* A form that stands over a list is as wide as the list under it, edge to edge with it, and
+   what it holds keeps the width a form is comfortable at. */
+.sc-panel-form-lead {
+  max-width: none;
+}
+
+.sc-panel-form-lead > * {
+  max-width: calc(56rem - var(--sc-space-5) * 2);
+}
+
 @media (max-width: 40rem) {
   .sc-panel {
     padding: var(--sc-space-4);

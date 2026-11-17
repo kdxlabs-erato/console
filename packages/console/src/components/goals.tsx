@@ -234,6 +234,8 @@ export interface GoalViewProps {
   /** Where a document of the project is read, by its path, for the links in what was written. */
   readonly docHref?: ((path: string) => string) | undefined;
   readonly today?: string | undefined;
+  /** Where every goal of the project is: the way back, over the title. */
+  readonly allHref?: string | undefined;
   /** Where the goal is changed; left out, it cannot be changed from here. */
   readonly editHref?: string | undefined;
   /** Called when an owner moves the goal to another state from here. */
@@ -287,14 +289,39 @@ export function GoalView(props: GoalViewProps) {
     <div className="sc-goal-page">
       <header className="sc-goal-header">
         <div className="sc-task-header">
-          <h1 className="sc-task-title">{goal.title}</h1>
-          <div className="sc-task-badges">
-            {goal.category !== null && <CategoryBadge category={goal.category} />}
-            <GoalStateBadge state={goal.state} />
-            {goal.dueOn !== null && (
-              <DueBadge dueOn={goal.dueOn} state={dueState(goal)} today={props.today} />
+          <div className="sc-task-heading">
+            {props.allHref !== undefined && (
+              <p className="sc-task-parent">
+                <a href={props.allHref}>{roadmap.all}</a>
+              </p>
             )}
+            <h1 className="sc-task-title">{goal.title}</h1>
+            <div className="sc-task-badges">
+              {goal.category !== null && <CategoryBadge category={goal.category} />}
+              <GoalStateBadge state={goal.state} />
+              {goal.dueOn !== null && (
+                <DueBadge dueOn={goal.dueOn} state={dueState(goal)} today={props.today} />
+              )}
+            </div>
           </div>
+          {(props.editHref !== undefined || props.onArchiveTasks !== undefined) && (
+            <div className="sc-task-actions">
+              {props.editHref !== undefined && (
+                <a className="sc-button sc-button-secondary" href={props.editHref}>
+                  {words.common.edit}
+                </a>
+              )}
+              {props.onArchiveTasks !== undefined && (
+                <Button
+                  variant="secondary"
+                  disabled={props.busy === true}
+                  onClick={props.onArchiveTasks}
+                >
+                  {roadmap.archiveTasks}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
         <div className="sc-goal-progress">
           <ProgressBar counts={goal.taskCounts} />
@@ -361,25 +388,6 @@ export function GoalView(props: GoalViewProps) {
               <Time iso={goal.createdAt} />
             </dd>
           </div>
-          {props.editHref !== undefined && (
-            <div>
-              <a className="sc-button sc-button-secondary sc-button-sm" href={props.editHref}>
-                {words.common.edit}
-              </a>
-            </div>
-          )}
-          {props.onArchiveTasks !== undefined && (
-            <div>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={props.busy === true}
-                onClick={props.onArchiveTasks}
-              >
-                {roadmap.archiveTasks}
-              </Button>
-            </div>
-          )}
         </dl>
         {goal.body.length > 0 && (
           <details className="sc-goal-about">

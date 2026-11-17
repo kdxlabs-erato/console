@@ -37,7 +37,14 @@
 }
 
 .sc-mark-row {
+  grid-template-columns: auto minmax(7rem, 1fr) minmax(9rem, 1fr) minmax(16rem, 2fr);
   align-items: end;
+}
+
+@media (max-width: 40rem) {
+  .sc-mark-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
 }
 
 /* A project's own image over the symbol, filling the mark; the symbol shows until the image is there. */

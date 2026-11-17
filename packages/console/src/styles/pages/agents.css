@@ -999,9 +999,23 @@
   grid-column: 1 / -1;
 }
 
+/* How it ended stands beside the first line of when, where when takes two. */
+.sc-agent-live-side .sc-agent-session {
+  align-items: start;
+}
+
+/* On a card: why the agent stands as it does, and under it since when. */
+.sc-agent-card-now {
+  display: grid;
+}
+
 @media (max-width: 48rem) {
   .sc-agent-sessions {
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .sc-agent-session {
+    align-items: start;
   }
 
   .sc-agent-session-facts,
@@ -1098,6 +1112,12 @@
 
 .sc-agent-persona .sc-input {
   width: 100%;
+}
+
+@media (max-width: 40rem) {
+  .sc-agent-persona .sc-field {
+    flex-basis: 100%;
+  }
 }
 
 .sc-agent-settings .sc-agent-runner-facts {

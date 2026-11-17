@@ -5,7 +5,7 @@
   font-size: var(--sc-text-xs);
   font-weight: var(--sc-weight-medium);
   letter-spacing: var(--sc-tracking-wide);
-  text-transform: uppercase;
+  text-transform: var(--sc-label-case);
 }
 
 /* The roadmap: a goal a pane, with how far it is as a bar. */
@@ -93,7 +93,7 @@
 
 .sc-timeline-row {
   display: grid;
-  grid-template-columns: minmax(8rem, 14rem) minmax(20rem, 1fr);
+  grid-template-columns: minmax(8rem, 22rem) minmax(20rem, 1fr);
   align-items: center;
   gap: var(--sc-space-2);
 }

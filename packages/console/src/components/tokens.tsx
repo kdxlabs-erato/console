@@ -112,7 +112,7 @@ export function TokenList(props: TokenListProps) {
           </div>
           {props.onRevoke !== undefined && (
             <Button
-              variant="danger"
+              variant="ghost"
               size="sm"
               disabled={props.busy === true}
               onClick={() => props.onRevoke?.(token)}
