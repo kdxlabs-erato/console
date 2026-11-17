@@ -510,8 +510,13 @@ export function ProgressBar(props: {
   return (
     <div className="sc-progress">
       <div className="sc-progress-bar" {...said}>
-        <span className="sc-progress-done" style={{ width: `${share(counts.done)}%` }} />
-        <span className="sc-progress-working" style={{ width: `${share(working)}%` }} />
+        {/* A part of nothing is not drawn: it would leave its gap at the bar's edge. */}
+        {counts.done > 0 && (
+          <span className="sc-progress-done" style={{ width: `${share(counts.done)}%` }} />
+        )}
+        {working > 0 && (
+          <span className="sc-progress-working" style={{ width: `${share(working)}%` }} />
+        )}
       </div>
       {props.words !== false && (
         <span className="sc-progress-words">

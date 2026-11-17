@@ -3,8 +3,11 @@
   gap: var(--sc-space-1);
 }
 
+/* The bar is drawn as a share is (ADR-0138): its parts in the colours a chart draws its series
+   in, the green for what is done and the blue for what is at work, and a gap between the two. */
 .sc-progress-bar {
   display: flex;
+  gap: 2px;
   height: 0.5rem;
   overflow: hidden;
   border-radius: var(--sc-radius-full);
@@ -12,11 +15,11 @@
 }
 
 .sc-progress-done {
-  background: var(--sc-color-success);
+  background: var(--sc-series-6);
 }
 
 .sc-progress-working {
-  background: var(--sc-color-accent);
+  background: var(--sc-series-1);
 }
 
 .sc-progress-words {
