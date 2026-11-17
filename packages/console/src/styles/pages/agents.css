@@ -613,7 +613,7 @@
   }
 
   .sc-talk-said > .sc-time {
-    flex-basis: 100%;
+    flex-basis: calc(100% - 1.5rem - var(--sc-space-3));
     margin-inline-start: calc(1.5rem + var(--sc-space-3));
     padding-top: 0;
   }
@@ -652,6 +652,20 @@
 .sc-talk-tool-head > .sc-muted {
   flex: none;
   white-space: nowrap;
+}
+
+/* A badge in the row, whose step it is or how it ended, gives way where the row is narrow, after
+   the call's line has given all of its own: cut short, so that when it was done stays in the row. */
+.sc-talk-tool-head > .sc-badge {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sc-talk-tool-head > .sc-talk-tool-line {
+  flex-shrink: 100000;
 }
 
 .sc-talk-tool-head:focus-visible {
