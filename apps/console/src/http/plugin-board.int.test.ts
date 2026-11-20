@@ -1520,6 +1520,31 @@ describe("a plugin on the board", () => {
         `the job broken has failed since ${since}: why is said in its board project ${BOARD}, which you are not in; a member of it or an administrator reads plugin.failed among its events`,
       ]);
       expect((await detail()).problems).toEqual([problem]);
+      // An upgrade that failed is told the same way: why is an event of that project too.
+      const rows = drizzleOf(testDatabase.database);
+      const [kept] = await rows
+        .select({ dataVersion: pluginInstalls.dataVersion })
+        .from(pluginInstalls)
+        .where(eq(pluginInstalls.key, "leave"));
+      const at = kept?.dataVersion ?? 1;
+      await rows
+        .update(pluginInstalls)
+        .set({ dataVersion: at - 1 })
+        .where(eq(pluginInstalls.key, "leave"));
+      try {
+        const behind = `its records are at data version ${at - 1} and its code at ${at}: the upgrades did not run, or one failed; the migrate role runs them`;
+        expect((await detail(member)).problems[0]).toBe(
+          `${behind}, and why one failed is said in its board project ${BOARD}, which you are not in; a member of it or an administrator reads plugin.failed among its events`,
+        );
+        expect((await detail()).problems[0]).toBe(
+          `${behind}, and plugin.failed in the feed says why one failed`,
+        );
+      } finally {
+        await rows
+          .update(pluginInstalls)
+          .set({ dataVersion: at })
+          .where(eq(pluginInstalls.key, "leave"));
+      }
     } finally {
       const relisted = await h.request(
         projectPath(BOARD, "members"),

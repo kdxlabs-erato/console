@@ -373,10 +373,13 @@ export function settingProblem(setting: PluginSetting, value: unknown): string |
  * What is said of an enabled plugin whose records are behind its code: its upgrades did not
  * run, or one of them failed. It is loaded all the same, since a plugin is written to read the
  * records of the version before; an administrator is told, and so is whoever lists the plugins.
+ * Why one failed is the `plugin.failed` event, written in the plugin's board project as a
+ * job's is: `hidden` names that project to a reader who may not read it (`saidOfFailing`).
  */
 function recordsBehind(
   manifest: PluginManifest | undefined,
   install: PluginInstallRecord | undefined,
+  hidden?: string | undefined,
 ): string[] {
   if (
     manifest === undefined ||
@@ -386,8 +389,11 @@ function recordsBehind(
   ) {
     return [];
   }
+  const behind = `its records are at data version ${install.dataVersion} and its code at ${manifest.dataVersion}: the upgrades did not run, or one failed; the migrate role runs them`;
   return [
-    `its records are at data version ${install.dataVersion} and its code at ${manifest.dataVersion}: the upgrades did not run, or one failed; the migrate role runs them, and plugin.failed in the feed says why one failed`,
+    hidden === undefined
+      ? `${behind}, and plugin.failed in the feed says why one failed`
+      : `${behind}, and why one failed is said in its board project ${hidden}, which you are not in; a member of it or an administrator reads plugin.failed among its events`,
   ];
 }
 
@@ -823,10 +829,10 @@ export class Plugins {
       install?.boardProjectId === undefined
         ? undefined
         : await findProjectBrief(this.options.database, workspace.id, install.boardProjectId);
-    // Whether this reader may read why a job fails is asked only where one does.
+    // Whether this reader may read why a job or an upgrade failed is asked only where one did.
     const failing = jobsFailing(entry, install, jobs);
     const hidden =
-      failing.length > 0 &&
+      (failing.length > 0 || recordsBehind(manifest, install).length > 0) &&
       board !== undefined &&
       install?.boardProjectId !== undefined &&
       !(await seesProject(this.options.database, workspace.id, install.boardProjectId, person))
@@ -842,7 +848,7 @@ export class Plugins {
       state: this.stateOf(entry, install),
       problems: [
         ...entry.problems,
-        ...recordsBehind(manifest, install),
+        ...recordsBehind(manifest, install, hidden),
         ...failing.map((row) => saidOfFailing(row, hidden)),
       ],
       roles: held,
