@@ -121,7 +121,7 @@ export function formatProject(project: RestProject): string {
   const lines = [
     `project ${project.key}: ${project.name}`,
     `visibility: ${project.visibility}  role: ${project.role}  skills: ${project.skillsAddress ?? "the organization's"}`,
-    `color: ${project.color ?? "none"}  symbol: ${project.symbol ?? "none"}  image: ${project.icon === null ? "none" : project.icon.contentType}`,
+    `color: ${project.color ?? "none"}  symbol: ${project.symbol ?? "none"}  glyph: ${project.glyph ?? "none"}  image: ${project.icon === null ? "none" : project.icon.contentType}`,
     `pack token: ${project.packToken === null ? "none" : `set ${moment(project.packToken.setAt)}`}`,
   ];
   if (project.description.trim().length > 0) {

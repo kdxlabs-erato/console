@@ -159,6 +159,70 @@ describe("making a project (ADR-0045)", () => {
   });
 });
 
+describe("a project's mark with an icon of the pack (ADR-0142)", () => {
+  const patch = (key: string, body: unknown) =>
+    h.request(projectPath(key), {
+      method: "PATCH",
+      headers: { ...fromPages(admin), ...JSON_HEADERS },
+      body: JSON.stringify(body),
+    });
+
+  it("is made with one by its name, changed to another and left without, each told to the board", async () => {
+    const made = await post(fromPages(admin), { key: "iconed", name: "Iconed", glyph: "calendar" });
+    expect(made.status).toBe(201);
+    expect(restProjectSchema.parse(await made.json())).toMatchObject({
+      key: "iconed",
+      glyph: "calendar",
+      symbol: null,
+    });
+
+    const changed = await patch("iconed", { glyph: "flag" });
+    expect(changed.status).toBe(200);
+    expect(restProjectSchema.parse(await changed.json()).glyph).toBe("flag");
+    // Left out, the icon stays; `null` takes it away, and the mark is its symbol again.
+    const renamed = await patch("iconed", { name: "With an icon" });
+    expect(restProjectSchema.parse(await renamed.json())).toMatchObject({
+      name: "With an icon",
+      glyph: "flag",
+    });
+    const cleared = await patch("iconed", { glyph: null });
+    expect(restProjectSchema.parse(await cleared.json()).glyph).toBeNull();
+
+    const events = restEventsSchema.parse(
+      await (
+        await h.request(`${projectPath("iconed")}/events?after=0`, { headers: { cookie: admin } })
+      ).json(),
+    ).items;
+    expect(events.map((event) => [event.kind, event.data.fields])).toEqual([
+      ["project.created", undefined],
+      ["project.updated", ["glyph"]],
+      ["project.updated", ["name"]],
+      ["project.updated", ["glyph"]],
+    ]);
+
+    // A project made without one says none, as every project of before does.
+    const listed = restProjectsSchema.parse(
+      await (await h.request(REST_ROUTES.projects, { headers: { cookie: admin } })).json(),
+    );
+    expect(listed.items.find((project) => project.key === "docs")?.glyph).toBeNull();
+  });
+
+  it("takes a name of the pack and nothing else, on making and on changing", async () => {
+    for (const glyph of ["no-such-icon", "Calendar", "constructor", "__proto__", "", 7, ["flag"]]) {
+      const making = await post(fromPages(admin), { key: "ok", name: "x", glyph });
+      expect(making.status, JSON.stringify(glyph)).toBe(400);
+      expect(await errorOf(making)).toBe("request.invalid");
+      const changing = await patch("iconed", { glyph });
+      expect(changing.status, JSON.stringify(glyph)).toBe(400);
+      expect(await errorOf(changing)).toBe("request.invalid");
+    }
+    const kept = restProjectSchema.parse(
+      await (await h.request(projectPath("iconed"), { headers: { cookie: admin } })).json(),
+    );
+    expect(kept.glyph).toBeNull();
+  });
+});
+
 describe("a project at a glance (ADR-0107)", () => {
   const at = (key: string, path = "") => `${projectPath(key)}${path}`;
   const make = async (key: string, path: string, body: unknown): Promise<string> => {

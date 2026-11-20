@@ -1562,7 +1562,7 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
     <Part
       name="mark"
       classes="sc-mark*"
-      use="A project's mark: its image, or its symbol on its colour; sm, md, lg."
+      use="A project's mark: its image, or its symbol or an icon of the pack on its colour; sm, md, lg."
     >
       <Specimen label="The sizes: the first letter of the name on a colour chosen from the key" row>
         <ProjectMark project={ledger} size="sm" />
@@ -1578,6 +1578,11 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
         <ProjectMark project={ledger} size="sm" iconSrc={SEAL} />
         <ProjectMark project={ledger} size="md" iconSrc={SEAL} />
         <ProjectMark project={ledger} size="lg" iconSrc={SEAL} />
+      </Specimen>
+      <Specimen label="An icon of the pack in the symbol's place" row>
+        <ProjectMark project={{ ...payrollProject, glyph: "finance" }} size="sm" />
+        <ProjectMark project={{ ...payrollProject, glyph: "finance" }} size="md" />
+        <ProjectMark project={{ ...payrollProject, glyph: "finance" }} size="lg" />
       </Specimen>
       <Specimen label="Before a name" row>
         <span>

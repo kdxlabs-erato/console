@@ -62,7 +62,7 @@ A part is a file under `parts/` and a row here, with the classes that are its ow
 | `avatar` | `sc-avatar*` | `Avatar` | A person's or an agent's picture, `xs` to `xl`. |
 | `person` | `sc-person*`, `sc-people*` | `PersonChip` | A person: by name in a line (`sc-person`), as a row of a list (`sc-person-row`), as a card with their facts (`sc-person-card`, `sc-person-facts`), cards in a grid (`sc-people`). |
 | `workers` | `sc-workers*`, `sc-worker*` | `Workers` | The people at work on one thing, as pictures side by side with a count of the rest. |
-| `mark` | `sc-mark*` | `ProjectMark` | A project's mark: its image, or its symbol on its colour; `sm`, `md`, `lg`. |
+| `mark` | `sc-mark*` | `ProjectMark` | A project's mark: its image, or its symbol or an icon of the pack on its colour; `sm`, `md`, `lg`. |
 | `icon` | `sc-icon*` | `Icon`, `IconPicker` | A glyph of the icon pack by its name ([ADR-0142](../../../../docs/adr/0142-the-console-has-one-icon-pack-drawn-on-one-grid-and-used-by-name.md)), in the colour of the text it stands in: `xs` a caret beside a word, `sm` in a line of text, `md` by itself, `lg` in an empty state or on a card. `sc-icon-picker` is the way to choose one: the field that shows the choice, and the pack under it, searched by words, in its groups (`sc-icon-grid` of `sc-icon-tile`s). An icon stands beside words or is given a label; it never replaces the words of a button a person has to understand. |
 | `eyebrow` | `sc-eyebrow*` | | The small capitals over a group. The one label of that kind. |
 | `progress` | `sc-progress*` | `ProgressBar` | How much of something is done and at work, as a bar with its count. |

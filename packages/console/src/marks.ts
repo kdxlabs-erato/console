@@ -1,3 +1,4 @@
+import { type IconName, isIconName } from "./icons/index.js";
 import { COLOR_NAMES, type ColorName } from "./vocabulary.js";
 
 // A project's mark: a symbol on a colour, so that projects tell apart at a glance. A project
@@ -37,4 +38,15 @@ export function projectSymbolOf(project: {
   }
   const first = [...project.name.trim()][0];
   return first === undefined ? "?" : first.toUpperCase();
+}
+
+/**
+ * The icon of the pack a project's mark shows in its symbol's place (ADR-0142), or nothing: a
+ * project that names none, a console older than the field, and a name this pack does not hold,
+ * as one a newer console's pack gave, all leave the mark its symbol.
+ */
+export function projectGlyphOf(project: {
+  readonly glyph?: string | null | undefined;
+}): IconName | undefined {
+  return isIconName(project.glyph) ? project.glyph : undefined;
 }

@@ -1744,17 +1744,21 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
 
   /** A project as a plate names and links it: its key, its name and its mark. */
   const projectRefOf = (
-    project: Pick<ProjectRecord, "key" | "name" | "color" | "symbol" | "icon">,
+    project: Pick<ProjectRecord, "key" | "name" | "color" | "symbol" | "glyph" | "icon">,
   ) => ({
     key: project.key,
     name: project.name,
     color: project.color ?? null,
     symbol: project.symbol ?? null,
+    glyph: project.glyph ?? null,
     icon: project.icon ?? null,
   });
   /** The projects a plate's tasks are in, as a page says and links them; nothing for one the asker may not see. */
   const projectRefsOf = (
-    found: readonly Pick<ProjectRecord, "id" | "key" | "name" | "color" | "symbol" | "icon">[],
+    found: readonly Pick<
+      ProjectRecord,
+      "id" | "key" | "name" | "color" | "symbol" | "glyph" | "icon"
+    >[],
   ) => {
     const named = new Map(found.map((project) => [project.id, project]));
     return (projectId: string) => {
@@ -1768,7 +1772,10 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
    */
   const projectsOfDecisions = async (
     person: PersonRecord,
-    seen: readonly Pick<ProjectRecord, "id" | "key" | "name" | "color" | "symbol" | "icon">[],
+    seen: readonly Pick<
+      ProjectRecord,
+      "id" | "key" | "name" | "color" | "symbol" | "glyph" | "icon"
+    >[],
     found: readonly DecisionRecord[],
   ) => {
     const known = new Set(seen.map((project) => project.id));

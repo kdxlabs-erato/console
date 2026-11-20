@@ -11,6 +11,7 @@ import {
   MAX_TOKEN_NAME_LENGTH,
   MAX_WORKERS,
 } from "./limits.js";
+import { projectGlyphOf } from "./marks.js";
 import {
   hostOfLogin,
   isLoginAt,
@@ -354,6 +355,52 @@ describe("projects", () => {
         restMemberInputSchema.safeParse({ personId: PERSON.id, role: input.role }).success,
       ).toBe(false);
     }
+  });
+
+  it("take an icon of the pack for the mark by its name, and nothing that is none (ADR-0142)", () => {
+    expect(restProjectInputSchema.parse({ key: "web", name: "x", glyph: "calendar" }).glyph).toBe(
+      "calendar",
+    );
+    expect(restProjectPatchSchema.parse({ glyph: "arrow-right" })).toEqual({
+      glyph: "arrow-right",
+    });
+    expect(restProjectPatchSchema.parse({ glyph: null })).toEqual({ glyph: null });
+    for (const glyph of ["no-such-icon", "Calendar", "", "constructor", "__proto__", 7, ["flag"]]) {
+      expect(restProjectPatchSchema.safeParse({ glyph }).success, JSON.stringify(glyph)).toBe(
+        false,
+      );
+      expect(
+        restProjectInputSchema.safeParse({ key: "web", name: "x", glyph }).success,
+        JSON.stringify(glyph),
+      ).toBe(false);
+    }
+    // What is read is read wider than what is sent: a console of before leaves the field out,
+    // and a newer one may name a glyph this pack does not hold yet.
+    const answer = {
+      color: null,
+      symbol: null,
+      icon: null,
+      id: "0199c4d8-0000-7000-8000-000000000050",
+      key: "web",
+      name: "The web app",
+      description: "",
+      visibility: "private",
+      skillsAddress: null,
+      packToken: null,
+      role: "owner",
+      openDecisions: 0,
+      openRuns: 0,
+      createdAt: "2026-10-09T10:00:00.000Z",
+      updatedAt: "2026-10-09T10:00:00.000Z",
+    };
+    expect(restProjectSchema.parse(answer).glyph).toBeUndefined();
+    expect(restProjectSchema.parse({ ...answer, glyph: null }).glyph).toBeNull();
+    expect(restProjectSchema.parse({ ...answer, glyph: "a-glyph-of-a-newer-pack" }).glyph).toBe(
+      "a-glyph-of-a-newer-pack",
+    );
+    expect(projectGlyphOf({ glyph: "a-glyph-of-a-newer-pack" })).toBeUndefined();
+    expect(projectGlyphOf({ glyph: "calendar" })).toBe("calendar");
+    expect(projectGlyphOf({})).toBeUndefined();
   });
 
   it("are read as the server answers them, with what the asker is in each", () => {

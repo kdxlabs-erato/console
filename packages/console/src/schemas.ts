@@ -13,6 +13,7 @@ import {
 } from "@skillcdn/core";
 import * as z from "zod/mini";
 import { isDocumentPath } from "./documents.js";
+import { isIconName } from "./icons/index.js";
 import {
   MAX_AGENT_ELSEWHERE,
   MAX_AGENT_LENGTH,
@@ -1449,6 +1450,14 @@ const projectSymbol = line(MAX_PROJECT_SYMBOL_LENGTH).check(
   z.refine((value) => !/\s/.test(value), "must have no space in it"),
 );
 
+/**
+ * An icon of the pack by its name (ADR-0142), which a project's mark shows in its symbol's place:
+ * a name of the pack this console was built with, and nothing else.
+ */
+const projectGlyph = z
+  .string()
+  .check(z.refine((value) => isIconName(value), "must be the name of an icon of the pack"));
+
 /** A project of the workspace, as the asker sees it: with what they are in it. */
 /** A project's own image for its mark: the hash it is kept by, which `projectIconPath` reads it with, and its kind. */
 export const restProjectIconSchema = z.object({
@@ -1481,7 +1490,12 @@ export const restProjectSchema = z.object({
   color: z.nullable(z.enum(COLOR_NAMES)),
   /** The project's mark, a letter or two or a symbol, or `null` for the first letter of its name. */
   symbol: z.nullable(z.string()),
-  /** The project's own image for its mark, shown in place of the symbol, or `null` for none. */
+  /**
+   * The icon of the pack the mark shows in the symbol's place (ADR-0142), by its name, or `null`
+   * for none. Left out by a console older than it; a name the reader's pack lacks is read as none.
+   */
+  glyph: z.optional(z.nullable(z.string())),
+  /** The project's own image for its mark, shown in place of the symbol and of the icon, or `null` for none. */
   icon: z.nullable(restProjectIconSchema),
   /** The pack token the project reads a private pack with (ADR-0028): when it was set, never the token; `null` for none. */
   packToken: z.nullable(z.object({ setAt: instant })),
@@ -1512,6 +1526,8 @@ export const restProjectInputSchema = z.object({
   /** Left out or `null`: a colour chosen from the key, and the first letter of the name. */
   color: z.optional(z.nullable(z.enum(COLOR_NAMES))),
   symbol: z.optional(z.nullable(projectSymbol)),
+  /** Left out or `null`: no icon of the pack, and the mark is the symbol. */
+  glyph: z.optional(z.nullable(projectGlyph)),
 });
 export type RestProjectInput = z.infer<typeof restProjectInputSchema>;
 
@@ -1523,6 +1539,7 @@ export const restProjectPatchSchema = z.object({
   skillsAddress: z.optional(z.nullable(skillsAddress)),
   color: z.optional(z.nullable(z.enum(COLOR_NAMES))),
   symbol: z.optional(z.nullable(projectSymbol)),
+  glyph: z.optional(z.nullable(projectGlyph)),
 });
 export type RestProjectPatch = z.infer<typeof restProjectPatchSchema>;
 
@@ -1928,6 +1945,8 @@ const projectRef = z.object({
   name: z.string(),
   color: z.nullable(z.enum(COLOR_NAMES)),
   symbol: z.nullable(z.string()),
+  /** The icon of the pack on the mark, as a project says it; left out by a console older than it. */
+  glyph: z.optional(z.nullable(z.string())),
   icon: z.nullable(restProjectIconSchema),
 });
 

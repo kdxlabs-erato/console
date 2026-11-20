@@ -4800,7 +4800,7 @@ describe("configuring, as the person", () => {
     expect(await runCli(["project", "ops"], one.io)).toBe(EXIT.ok);
     expect(one.out()).toContain("project ops: Operations");
     expect(one.out()).toContain("visibility: private  role: owner  skills: the organization's");
-    expect(one.out()).toContain("color: teal  symbol: OP  image: none");
+    expect(one.out()).toContain("color: teal  symbol: OP  glyph: none  image: none");
     expect(one.out()).toContain("Runs the place.");
     const changed = harness({ fetch, env: SIGNED_IN });
     expect(
@@ -4837,6 +4837,39 @@ describe("configuring, as the person", () => {
       const wrong = harness({ fetch, env: SIGNED_IN });
       expect(await runCli(args, wrong.io), args.join(" ")).toBe(EXIT.usage);
     }
+  });
+
+  it("gives a project's mark an icon of the pack by its name, and answers a name that is none with the pack's", async () => {
+    const { fetch, calls } = fakeConsole({
+      "POST /api/v1/projects": { status: 201, body: { ...OPS, glyph: "flag" } },
+      "PATCH /api/v1/projects/ops": { body: { ...OPS, glyph: null } },
+    });
+    const made = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["project", "new", "ops", "Operations", "--glyph", "flag"], made.io)).toBe(
+      EXIT.ok,
+    );
+    expect(calls.find((call) => call.key === "POST /api/v1/projects")?.body).toEqual({
+      key: "ops",
+      name: "Operations",
+      glyph: "flag",
+    });
+    const cleared = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["project", "edit", "ops", "--glyph", "none"], cleared.io)).toBe(EXIT.ok);
+    expect(calls.find((call) => call.key === "PATCH /api/v1/projects/ops")?.body).toEqual({
+      glyph: null,
+    });
+    expect(cleared.out()).toContain("symbol: OP  glyph: none  image: none");
+    // A name that is none of the pack's sends nothing, and says what the pack holds.
+    const sent = calls.length;
+    for (const name of ["no-such-icon", "Flag", "constructor", ""]) {
+      const wrong = harness({ fetch, env: SIGNED_IN });
+      expect(await runCli(["project", "edit", "ops", "--glyph", name], wrong.io), name).toBe(
+        EXIT.usage,
+      );
+      expect(wrong.err()).toContain("The pack's icons: ");
+      expect(wrong.err()).toContain("calendar");
+    }
+    expect(calls).toHaveLength(sent);
   });
 
   it("shows the workspace's settings, and changes who sees whom for an administrator", async () => {

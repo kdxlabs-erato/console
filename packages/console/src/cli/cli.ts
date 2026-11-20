@@ -40,6 +40,7 @@ import {
 } from "../compat.js";
 import { normalizeConnectCode } from "../connect.js";
 import { addDays, dayOf as dayOfDate, firstDayOfWeek, isDay, weekOf } from "../dates.js";
+import { ICON_NAMES, type IconName, isIconName } from "../icons/index.js";
 import {
   DEFAULT_PAGE_LIMIT,
   EVENTS_PAGE_LIMIT,
@@ -6324,7 +6325,24 @@ const PROJECT_FIELDS: OptionSpec = {
   skills: { type: "string" },
   color: { type: "string" },
   symbol: { type: "string" },
+  glyph: { type: "string" },
 };
+
+/** An icon of the pack as a flag names it, `null` for `none`; a name that is none of the pack's is answered with the pack's names. */
+function glyphOrNoneOf(value: string | undefined): IconName | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === "none") {
+    return null;
+  }
+  if (!isIconName(value)) {
+    throw misuse(
+      `No icon of the pack is called ${value}. The pack's icons: ${ICON_NAMES.join(", ")}; none takes the icon away.`,
+    );
+  }
+  return value;
+}
 
 /** What the flags say of a project; `none` clears what may be cleared. */
 async function projectFieldsOf(io: CliIo, values: Values) {
@@ -6333,6 +6351,7 @@ async function projectFieldsOf(io: CliIo, values: Values) {
   const skills = orNone(text(values, "skills"));
   const color = colorOrNoneOf(text(values, "color"));
   const symbol = orNone(text(values, "symbol"));
+  const glyph = glyphOrNoneOf(text(values, "glyph"));
   return {
     ...(description === undefined
       ? {}
@@ -6341,6 +6360,7 @@ async function projectFieldsOf(io: CliIo, values: Values) {
     ...(skills === undefined ? {} : { skillsAddress: skills }),
     ...(color === undefined ? {} : { color }),
     ...(symbol === undefined ? {} : { symbol }),
+    ...(glyph === undefined ? {} : { glyph }),
   };
 }
 
@@ -6373,7 +6393,7 @@ const editProject: Command = async (args, io) => {
   const patch = { ...(name === undefined ? {} : { name }), ...(await projectFieldsOf(io, values)) };
   if (Object.keys(patch).length === 0) {
     throw misuse(
-      "Say what to change: --name, --description, --visibility, --skills, --color or --symbol; none clears the description, the skills address, the colour or the symbol.",
+      "Say what to change: --name, --description, --visibility, --skills, --color, --symbol or --glyph; none clears the description, the skills address, the colour, the symbol or the icon.",
     );
   }
   const session = await open(io, values);

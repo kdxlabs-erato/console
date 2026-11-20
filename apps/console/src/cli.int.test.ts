@@ -779,12 +779,23 @@ describe("the command line", () => {
     expect(made.out).toContain("Project made: Operations (ops)");
     const shown = await as(["project", "ops"]);
     expect(shown.out).toContain("visibility: private  role: owner  skills: the organization's");
-    expect(shown.out).toContain("color: teal  symbol: OP  image: none");
+    expect(shown.out).toContain("color: teal  symbol: OP  glyph: none  image: none");
     expect(shown.out).toContain("Runs the place.");
     const edited = await as(["project", "edit", "ops", "--name", "Ops", "--symbol", "none"]);
     expect(edited.code, edited.err).toBe(EXIT.ok);
     expect(edited.out).toContain("project ops: Ops");
     expect(edited.out).toContain("symbol: none");
+    // An icon of the console's pack for the mark, by its name; a name that is none of the
+    // pack's is answered with the pack's names, before anything is sent.
+    const iconed = await as(["project", "edit", "ops", "--glyph", "flag"]);
+    expect(iconed.code, iconed.err).toBe(EXIT.ok);
+    expect(iconed.out).toContain("glyph: flag");
+    const unknown = await as(["project", "edit", "ops", "--glyph", "no-such-icon"]);
+    expect(unknown.code).toBe(EXIT.usage);
+    expect(unknown.err).toContain("No icon of the pack is called no-such-icon");
+    expect(unknown.err).toContain("calendar");
+    expect((await as(["project", "ops"])).out).toContain("glyph: flag");
+    expect((await as(["project", "edit", "ops", "--glyph", "none"])).out).toContain("glyph: none");
     const pictured = await as(["project", "icon", "ops", "mark.png"]);
     expect(pictured.code, pictured.err).toBe(EXIT.ok);
     expect(pictured.out).toContain("image: image/png");

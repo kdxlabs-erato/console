@@ -202,7 +202,7 @@ export {
   TRANSCRIPT_INLINE_BYTES,
   TRANSCRIPT_PAGE_LIMIT,
 } from "./limits.js";
-export { projectColorOf, projectSymbolOf } from "./marks.js";
+export { projectColorOf, projectGlyphOf, projectSymbolOf } from "./marks.js";
 export {
   type OnboardingInput,
   onboardingOf,

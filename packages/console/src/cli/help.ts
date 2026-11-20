@@ -392,7 +392,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
   },
   project: {
     usage:
-      'project <key>  |  project new <key> "<name>" [--description <markdown>|--file <path>] [--visibility workspace|private] [--skills <address>|none] [--color <name>] [--symbol <text>]  |  project edit <key> [--name "<name>"] [the same flags; none clears]  |  project icon <key> <file>  |  project icon <key> --remove  |  project pack-token <key> --connect  |  project pack-token <key> --stdin  |  project pack-token <key> --remove',
+      'project <key>  |  project new <key> "<name>" [--description <markdown>|--file <path>] [--visibility workspace|private] [--skills <address>|none] [--color <name>] [--symbol <text>] [--glyph <name>]  |  project edit <key> [--name "<name>"] [the same flags; none clears]  |  project icon <key> <file>  |  project icon <key> --remove  |  project pack-token <key> --connect  |  project pack-token <key> --stdin  |  project pack-token <key> --remove',
     overview:
       "project <key>  |  project new <key> <name> [flags]  |  project edit <key> [flags]  |  project icon <key> <file>|--remove  |  project pack-token <key> --connect|--stdin|--remove",
     synopsis:
@@ -403,6 +403,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       `key: ${KEY}, up to ${MAX_PROJECT_KEY_LENGTH} characters; it does not change once made`,
       `name: one line, up to ${MAX_PROJECT_NAME_LENGTH} characters; description: up to ${MAX_PROJECT_DESCRIPTION_LENGTH}`,
       `color: ${COLORS}; symbol: up to ${MAX_PROJECT_SYMBOL_LENGTH} characters without spaces, shown on the colour; left out, the pages choose both from the key and the name`,
+      "glyph: the name of an icon of the console's pack (calendar, flag, pack), shown on the colour in the symbol's place; a name that is none of the pack's is answered with the pack's names",
       `image: a PNG, a JPEG, a GIF or a WebP of at most ${MAX_PROJECT_ICON_BYTES} bytes`,
       `at most ${MAX_PROJECTS_PER_WORKSPACE} projects in the workspace`,
     ],

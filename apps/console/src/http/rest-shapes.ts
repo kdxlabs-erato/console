@@ -178,6 +178,7 @@ export function restProject(project: ProjectView): RestProject {
     skillsAddress: project.skillsAddress ?? null,
     color: project.color ?? null,
     symbol: project.symbol ?? null,
+    glyph: project.glyph ?? null,
     icon: project.icon ?? null,
     packToken:
       project.packToken === undefined ? null : { setAt: project.packToken.setAt.toISOString() },

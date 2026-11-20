@@ -870,7 +870,10 @@ export async function findDecisionReachable(
 ): Promise<
   | {
       readonly decision: DecisionRecord;
-      readonly project: Pick<ProjectRecord, "id" | "key" | "name" | "color" | "symbol" | "icon">;
+      readonly project: Pick<
+        ProjectRecord,
+        "id" | "key" | "name" | "color" | "symbol" | "glyph" | "icon"
+      >;
       /** Whether the person may answer it: anyone who may work in the project, or whom it reaches past the project. */
       readonly mayAnswer: boolean;
     }
@@ -900,6 +903,7 @@ export async function findDecisionReachable(
       name: projects.name,
       color: projects.color,
       symbol: projects.symbol,
+      glyph: projects.glyph,
       iconSha256: projects.iconSha256,
       iconContentType: projects.iconContentType,
       member: sql<boolean>`${person.role === "admin" ? sql`true` : memberOfProject(person.id)}`,
@@ -920,6 +924,7 @@ export async function findDecisionReachable(
       name: reach.name,
       color: reach.color ?? undefined,
       symbol: reach.symbol ?? undefined,
+      glyph: reach.glyph ?? undefined,
       icon: projectIconOf(reach),
     },
     mayAnswer: reach.member === true || reach.answerable === true,

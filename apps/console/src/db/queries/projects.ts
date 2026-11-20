@@ -39,7 +39,9 @@ export interface ProjectRecord {
   /** The project's mark: a colour by name and a symbol, each or none for the ones chosen from the key and the name. */
   readonly color: ColorName | undefined;
   readonly symbol: string | undefined;
-  /** The project's own image for its mark, or none: then the mark is the symbol on the colour. */
+  /** An icon of the console's pack shown in the symbol's place (ADR-0142), by its name, or none. */
+  readonly glyph: string | undefined;
+  /** The project's own image for its mark, or none: then the mark is the symbol or the icon on the colour. */
   readonly icon: ProjectIcon | undefined;
   /** The pack token the project reads a private pack with (ADR-0028), sealed, and when it was set; none for a public pack. */
   readonly packToken: { readonly sealed: string; readonly setAt: Date } | undefined;
@@ -105,6 +107,7 @@ export interface ProjectInput {
   readonly skillsAddress?: string | null | undefined;
   readonly color?: ColorName | null | undefined;
   readonly symbol?: string | null | undefined;
+  readonly glyph?: string | null | undefined;
 }
 
 /** Only what changes; a key that is absent leaves the field as it is. */
@@ -125,6 +128,7 @@ const projectColumns = {
   skillsAddress: projects.skillsAddress,
   color: projects.color,
   symbol: projects.symbol,
+  glyph: projects.glyph,
   iconSha256: projects.iconSha256,
   iconContentType: projects.iconContentType,
   packToken: projects.packToken,
@@ -143,6 +147,7 @@ type ProjectRow = {
   readonly skillsAddress: string | null;
   readonly color: ColorName | null;
   readonly symbol: string | null;
+  readonly glyph: string | null;
   readonly iconSha256: string | null;
   readonly iconContentType: string | null;
   readonly packToken: string | null;
@@ -179,6 +184,7 @@ const toProject = (row: ProjectRow): ProjectRecord => ({
   skillsAddress: row.skillsAddress ?? undefined,
   color: row.color ?? undefined,
   symbol: row.symbol ?? undefined,
+  glyph: row.glyph ?? undefined,
   icon: iconOf(row),
   packToken:
     row.packToken !== null && row.packTokenSetAt !== null
@@ -295,7 +301,7 @@ export async function findProjectRefs(
   database: Database,
   workspaceId: string,
   ids: readonly string[],
-): Promise<Pick<ProjectRecord, "id" | "key" | "name" | "color" | "symbol" | "icon">[]> {
+): Promise<Pick<ProjectRecord, "id" | "key" | "name" | "color" | "symbol" | "glyph" | "icon">[]> {
   if (ids.length === 0) {
     return [];
   }
@@ -306,6 +312,7 @@ export async function findProjectRefs(
       name: projects.name,
       color: projects.color,
       symbol: projects.symbol,
+      glyph: projects.glyph,
       iconSha256: projects.iconSha256,
       iconContentType: projects.iconContentType,
     })
@@ -317,6 +324,7 @@ export async function findProjectRefs(
     name: row.name,
     color: row.color ?? undefined,
     symbol: row.symbol ?? undefined,
+    glyph: row.glyph ?? undefined,
     icon: projectIconOf(row),
   }));
 }
@@ -409,6 +417,7 @@ export async function createProject(
         skillsAddress: project.skillsAddress ?? null,
         color: project.color ?? null,
         symbol: project.symbol ?? null,
+        glyph: project.glyph ?? null,
         createdAt: now,
         updatedAt: now,
       })
@@ -463,9 +472,10 @@ export async function updateProject(
         patch.skillsAddress === undefined ? current.skillsAddress : patch.skillsAddress,
       color: patch.color === undefined ? current.color : patch.color,
       symbol: patch.symbol === undefined ? current.symbol : patch.symbol,
+      glyph: patch.glyph === undefined ? current.glyph : patch.glyph,
     };
     const changed = (
-      ["name", "description", "visibility", "skillsAddress", "color", "symbol"] as const
+      ["name", "description", "visibility", "skillsAddress", "color", "symbol", "glyph"] as const
     ).filter((field) => next[field] !== current[field]);
     if (changed.length === 0) {
       return readView(tx, projectId, person);

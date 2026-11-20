@@ -776,6 +776,8 @@ export const projects = pgTable(
     /** The project's mark: a colour by name, and a symbol; null for the ones chosen from its key and its name. */
     color: text({ enum: COLOR_NAMES }),
     symbol: text(),
+    /** An icon of the console's pack shown in the symbol's place (ADR-0142), by its name; null for none. */
+    glyph: text(),
     /** The project's own image for its mark: the hash the blob store keeps it by, and its media type; null for none. */
     iconSha256: text(),
     iconContentType: text(),

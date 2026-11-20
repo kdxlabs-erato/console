@@ -2,6 +2,7 @@ import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 import {
   COLOR_NAMES,
   type ColorName,
+  type IconName,
   MAX_PROJECT_DESCRIPTION_LENGTH,
   MAX_PROJECT_ICON_BYTES,
   MAX_PROJECT_KEY_LENGTH,
@@ -14,6 +15,7 @@ import {
   type ProjectRole,
   type ProjectVisibility,
   projectColorOf,
+  projectGlyphOf,
   projectIconPath,
   projectSymbolOf,
   type RestMember,
@@ -24,13 +26,15 @@ import {
   type RestProjectPatch,
 } from "../api.js";
 import { useWords } from "../i18n/index.js";
+import { Icon, IconPicker } from "./icon.js";
 import { Picker } from "./picker.js";
 import { peopleSearch } from "./searches.js";
 import { Badge, Button, cx, PersonChip, PersonOption, personName, Time } from "./ui.js";
 
 /**
- * A project's mark: its symbol on its colour, so that projects tell apart at a glance; its own
- * image over the symbol where it has one, so that the mark is never empty while the image loads.
+ * A project's mark: its symbol on its colour, so that projects tell apart at a glance, or an
+ * icon of the pack in the symbol's place where it names one (ADR-0142); its own image over
+ * either where it has one, so that the mark is never empty while the image loads.
  */
 export function ProjectMark(props: {
   readonly project: {
@@ -38,7 +42,9 @@ export function ProjectMark(props: {
     readonly name: string;
     readonly color: ColorName | null;
     readonly symbol: string | null;
-    /** The project's own image, when it has one; the symbol on the colour otherwise. */
+    /** The icon of the pack shown in the symbol's place, by its name, where the project names one. */
+    readonly glyph?: string | null | undefined;
+    /** The project's own image, when it has one; the symbol or the icon on the colour otherwise. */
     readonly icon?: { readonly sha256: string } | null | undefined;
   };
   readonly size?: "sm" | "md" | "lg";
@@ -54,6 +60,7 @@ export function ProjectMark(props: {
   const [shown, setShown] = useState<string | undefined>(undefined);
   const [failed, setFailed] = useState<string | undefined>(undefined);
   const pictured = src !== undefined && failed !== src;
+  const glyph = projectGlyphOf(props.project);
   return (
     <span
       className={cx(
@@ -64,7 +71,8 @@ export function ProjectMark(props: {
       )}
       aria-hidden="true"
     >
-      {(!pictured || shown !== src) && projectSymbolOf(props.project)}
+      {(!pictured || shown !== src) &&
+        (glyph === undefined ? projectSymbolOf(props.project) : <Icon name={glyph} />)}
       {pictured && (
         <img
           className="sc-mark-image"
@@ -140,6 +148,9 @@ export function ProjectForm(props: ProjectFormProps) {
   const [skillsAddress, setSkillsAddress] = useState(project?.skillsAddress ?? "");
   const [color, setColor] = useState<ColorName | "">(project?.color ?? "");
   const [symbol, setSymbol] = useState(project?.symbol ?? "");
+  const [glyph, setGlyph] = useState<IconName | null>(
+    project === undefined ? null : (projectGlyphOf(project) ?? null),
+  );
   /** The image for the mark: a file chosen, `null` for none any more, nothing to keep the project's. */
   const [icon, setIcon] = useState<File | null | undefined>(undefined);
   // The image chosen, as an address the mark can show before it is saved: the file's own bytes,
@@ -177,6 +188,7 @@ export function ProjectForm(props: ProjectFormProps) {
     name: name.trim() === "" ? "?" : name.trim(),
     color: color === "" ? null : color,
     symbol: symbol.trim() === "" ? null : symbol.trim(),
+    glyph,
     icon: icon instanceof File ? { sha256: "chosen" } : kept,
   };
 
@@ -189,6 +201,9 @@ export function ProjectForm(props: ProjectFormProps) {
       skillsAddress: skillsAddress.trim() === "" ? null : skillsAddress.trim(),
       color: preview.color,
       symbol: preview.symbol,
+      // Said only where it is chosen or was: a console older than the field refuses nothing it
+      // was not sent, and a project that never had an icon is sent none.
+      ...(glyph !== null || (project?.glyph ?? null) !== null ? { glyph } : {}),
     };
     props.onSubmit(
       project === undefined ? { key: key.trim(), ...settings, name: name.trim() } : settings,
@@ -278,6 +293,10 @@ export function ProjectForm(props: ProjectFormProps) {
       </div>
       <div className="sc-field-row sc-mark-row">
         <ProjectMark project={preview} size="lg" iconSrc={chosenSrc} />
+        <div className="sc-field">
+          <span className="sc-field-label">{form.icon}</span>
+          <IconPicker value={glyph} label={form.icon} onChange={setGlyph} />
+        </div>
         <label className="sc-field">
           <span className="sc-field-label">{form.symbol}</span>
           <input
