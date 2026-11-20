@@ -22,6 +22,11 @@ describe("the Korean particles of two forms", () => {
     expect(asObject('"로고를 남길까"')).toBe('"로고를 남길까"를');
     expect(asSubject('"새 노트북"')).toBe('"새 노트북"이');
     expect(asObject("목표 (1분기)")).toBe("목표 (1분기)를");
+    // A decision's question ends with its mark, and is said by the word before it.
+    expect(asObject('"이 안으로 승인?"')).toBe('"이 안으로 승인?"을');
+    expect(asObject("로고를 남길까요?")).toBe("로고를 남길까요?를");
+    expect(asSubject("출시!")).toBe("출시!가");
+    expect(asSubject("마감？")).toBe("마감？이");
   });
 
   it("reads a digit by its name", () => {

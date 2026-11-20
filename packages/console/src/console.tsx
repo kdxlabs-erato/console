@@ -1576,7 +1576,8 @@ function ProjectPage(props: {
         <div className="sc-page-head">
           <h1 className="sc-page-title">{words.feed.title}</h1>
         </div>
-        <section className="sc-panel" aria-label={words.feed.list}>
+        {/* The feed names its own region; the pane it stands on is no second one of that name. */}
+        <div className="sc-panel">
           <components.EventFeed
             events={data.events}
             href={(event) => {
@@ -1598,7 +1599,7 @@ function ProjectPage(props: {
             }}
             empty={<EmptyState title={words.feed.empty} />}
           />
-        </section>
+        </div>
       </>
     );
   }

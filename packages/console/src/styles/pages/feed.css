@@ -76,9 +76,12 @@
   margin-inline-start: 0;
 }
 
+/* Each row is a grid of its own, so the hour's column is given a width every row shares: an
+   hour is written as the language writes one, a figure more or less from row to row, and the
+   sentences beside it start on one line down the feed all the same. */
 .sc-feed-item {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(4.25rem, auto) minmax(0, 1fr);
   align-items: baseline;
   gap: var(--sc-space-3);
   padding: var(--sc-space-1) 0;

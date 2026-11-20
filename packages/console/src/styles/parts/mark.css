@@ -36,14 +36,41 @@
   font-size: var(--sc-text-xl);
 }
 
+/* A mark with what says it: its symbol, its colour, its image. The mark stands in a column of
+   its own and the fields beside it, one under the other, each as wide as the pane leaves, so
+   that a file's name has room on a phone too. What follows the fields, the way to take the
+   image away, stands under them and never under the mark, whose column it would widen. */
 .sc-mark-row {
-  grid-template-columns: auto minmax(7rem, 1fr) minmax(9rem, 1fr) minmax(16rem, 2fr);
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: end;
 }
 
-@media (max-width: 40rem) {
+.sc-mark-row > * {
+  grid-column: 2;
+}
+
+.sc-mark-row > :first-child {
+  grid-column: 1;
+}
+
+.sc-mark-row > .sc-button {
+  justify-self: start;
+}
+
+/* Where the pane holds them, the three fields stand on the mark's row, the image with the room
+   a file's name needs. The four columns take thirty-eight rem, which a pane has from a window
+   of fifty-two on: between a phone and that, a row of four ran past its pane. */
+@media (min-width: 52rem) {
   .sc-mark-row {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(7rem, 1fr) minmax(9rem, 1fr) minmax(16rem, 2fr);
+  }
+
+  .sc-mark-row > * {
+    grid-column: auto;
+  }
+
+  .sc-mark-row > .sc-button {
+    grid-column: 2 / -1;
   }
 }
 

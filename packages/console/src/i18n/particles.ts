@@ -18,8 +18,11 @@ const DIGIT_ENDINGS: readonly Ending[] = [
   "vowel",
 ];
 
-/** What closes a word without being read: a quote, a bracket, a full stop, a space. */
-const CLOSERS = /["'”’)\]}>.\s]+$/u;
+/**
+ * What closes a word without being read: a quote, a bracket, a full stop, a space, and the mark
+ * a question or a call ends with, since a decision's question is said by its last word.
+ */
+const CLOSERS = /["'”’)\]}>.?!？！\s]+$/u;
 
 /**
  * How a word ends when it is read aloud. A Hangul syllable says so itself, a digit by its

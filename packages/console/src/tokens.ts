@@ -1,7 +1,8 @@
 // The console's design tokens (ADR-0054, docs/specs/plugins.md, "The look"): the `--sc-*` names
 // the stylesheet's root sets, which the console's page reads as computed and sends to a plugin's
 // frame, so that a custom console's look reaches its plugins' pages. Kept in step with
-// styles/console.css: a token added there is added here.
+// styles/tokens.css: a token added to its root is added here, in the order it stands there,
+// and tokens.test.ts fails where the two differ.
 
 export const CONSOLE_TOKENS: readonly string[] = [
   "--sc-color-bg",
@@ -68,6 +69,7 @@ export const CONSOLE_TOKENS: readonly string[] = [
   "--sc-tracking-tight",
   "--sc-tracking-wide",
   "--sc-tracking-code",
+  "--sc-label-case",
   "--sc-weight-normal",
   "--sc-weight-medium",
   "--sc-weight-bold",
@@ -88,7 +90,9 @@ export const CONSOLE_TOKENS: readonly string[] = [
   "--sc-border",
   "--sc-hairline",
   "--sc-border-strong",
+  "--sc-gutter-wide",
   "--sc-gutter",
+  "--sc-width-page",
   "--sc-width-prose",
   "--sc-width-aside",
   "--sc-column-width",

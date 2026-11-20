@@ -100,8 +100,10 @@
 }
 
 /* Where there is room a row stands on columns every row shares: the colour, the name, the key,
-   the colour's name, and what is done to it, each under the same thing above. */
-@media (min-width: 40rem) {
+   the colour's name, and what is done to it, each under the same thing above. The columns
+   take some thirty-nine rem with the row's own padding, which a page has from a window of
+   forty-eight on: narrower, a row wraps as its words need, and never runs past the page. */
+@media (min-width: 48rem) {
   .sc-category-form {
     display: grid;
     grid-template-columns: auto minmax(8rem, 1fr) 8rem 9rem auto auto;
