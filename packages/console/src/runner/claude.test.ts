@@ -599,8 +599,17 @@ describe("the claude driver", () => {
     const events = (await collect(session.events)).filter((event) => event.type === "event");
     expect(events.slice(1).map((event) => [event.kind, event.text, event.data])).toEqual([
       ["assistant", "Two of them, side by side.", undefined],
-      ["tool_call", expect.stringContaining("Find the routes"), { tool: "Agent", id: "toolu_a1" }],
-      ["tool_call", expect.stringContaining("Read the spec"), { tool: "Task", id: "toolu_a2" }],
+      // The call that starts a sub-agent says so, with what it calls it.
+      [
+        "tool_call",
+        expect.stringContaining("Find the routes"),
+        { tool: "Agent", id: "toolu_a1", starts: "Explore: Find the routes" },
+      ],
+      [
+        "tool_call",
+        expect.stringContaining("Read the spec"),
+        { tool: "Task", id: "toolu_a2", starts: "Read the spec" },
+      ],
       ["thinking", "Where are they?", { parent: "toolu_a1", subagent: "Explore: Find the routes" }],
       [
         "assistant",
@@ -748,6 +757,13 @@ describe("the claude driver", () => {
       undefined,
       undefined,
       undefined,
+    ]);
+    // A call says that it starts a sub-agent in the same bounded name, before anything of the
+    // sub-agent arrives; a call that starts none says nothing of the kind.
+    expect(events.slice(0, 3).map((event) => event.data?.starts)).toEqual([
+      `${"k".repeat(79)}${String.fromCodePoint(0x2026)}`,
+      undefined,
+      "Agent",
     ]);
   });
 

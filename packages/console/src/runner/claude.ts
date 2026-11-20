@@ -361,7 +361,14 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
             type: "event",
             kind: "tool_call",
             text: inputOf(block.input, state.cut),
-            data: { tool, id: id ?? null, ...whose },
+            // A call that starts a sub-agent says so, with what it calls it: a page then knows
+            // of the sub-agent before its first line arrives.
+            data: {
+              tool,
+              id: id ?? null,
+              ...(subagent === undefined ? {} : { starts: subagent }),
+              ...whose,
+            },
           });
         }
       }
