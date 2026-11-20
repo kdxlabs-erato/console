@@ -1,6 +1,6 @@
 # ADR-0143: An agent account's profiles say its name and its role
 
-- Status: Accepted
+- Status: Accepted; the second sentence of point 2, that the agent never says it is a person, and the consequence that rested on it are taken out by [ADR-0146](0146-the-desks-template-spends-no-sentence-on-what-an-agent-does-by-itself.md): the template spends no sentence on what an agent does by itself
 - Date: 2026-11-20
 - Amends what the desk's template and the onboarding task say of how an agent account presents itself ([ADR-0088](0088-an-agent-account-has-a-desk-and-is-set-up-from-an-invitation-by-signing-in-as-itself.md), [ADR-0089](0089-a-workspace-names-the-services-its-agents-work-with.md)).
 

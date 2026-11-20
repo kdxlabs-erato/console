@@ -118,11 +118,12 @@ describe("the desk's template", () => {
     );
     expect(instructions).toContain("whom `console manager` names");
     // It works as any member does, and its profiles say its name and its role and nothing of
-    // what it is; it never says it is a person (ADR-0143).
+    // what it is (ADR-0143). What it answers when asked what it is, is its product's own
+    // conduct, and the template spends no sentence on it (ADR-0146).
     expect(instructions).toContain(
-      "I work as any member does: my profiles and what I sign carry my name and my role, and nothing else. I never say I am a person.",
+      "I work as any member does: my profiles and what I sign carry my name and my role, and nothing else.\n",
     );
-    expect(instructions).not.toMatch(/I am an AI agent|I say so when it matters/);
+    expect(instructions).not.toMatch(/I am an AI agent|I say so when it matters|I am a person/);
     // One main session that directs the work; a task may go to a subagent, where the product
     // has them, which is a lead and not a rule.
     expect(instructions).toContain("I work in one main session and carry it on:");
