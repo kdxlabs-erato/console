@@ -114,7 +114,12 @@ import {
   updateInstallConsent,
   updateInstallSettings,
 } from "../db/queries/plugins.js";
-import { createProject, findProjectFor, type ProjectView } from "../db/queries/projects.js";
+import {
+  createProject,
+  findProjectFor,
+  type ProjectView,
+  seesProject,
+} from "../db/queries/projects.js";
 import { listRuns } from "../db/queries/runs.js";
 import { findTeam } from "../db/queries/teams.js";
 import { readWorkspaceSettings, type WorkspaceRecord } from "../db/queries/workspaces.js";
@@ -393,28 +398,37 @@ const runsJobs = (entry: Entry, install: PluginInstallRecord | undefined): boole
   install.consent.includes("jobs");
 
 /**
- * What is said of a job that failed twice running or more (ADR-0128): since when, and where the
- * reason is, in words a page shows a person as they are; the command names the way to read it
- * beside the jobs it prints. One failure is not said here, since a host away for a moment or a deploy in the way
- * fails a run and the next goes well; a job that keeps failing does its plugin's work no more,
- * and until this was said nobody saw it. Gone with the job's next run that goes well; not said
- * of a job the code no longer declares, nor of a plugin whose jobs are not run.
+ * The jobs that failed twice running or more (ADR-0128). One failure is not among them, since a
+ * host away for a moment or a deploy in the way fails a run and the next goes well; a job that
+ * keeps failing does its plugin's work no more, and until it was said nobody saw it. Gone with
+ * the job's next run that goes well; not said of a job the code no longer declares, nor of a
+ * plugin whose jobs are not run.
  */
 function jobsFailing(
   entry: Entry,
   install: PluginInstallRecord | undefined,
   rows: readonly PluginJobRecord[],
-): string[] {
+): PluginJobRecord[] {
   if (!runsJobs(entry, install)) {
     return [];
   }
   const declared = entry.description?.jobs ?? {};
-  return rows
-    .filter((row) => Object.hasOwn(declared, row.name) && failsRepeatedly(row))
-    .map(
-      (row) =>
-        `the job ${row.name} has failed since ${(row.failedSince ?? new Date(0)).toISOString().replace(/\.\d{3}Z$/, "Z")}: plugin.failed among its events says why`,
-    );
+  return rows.filter((row) => Object.hasOwn(declared, row.name) && failsRepeatedly(row));
+}
+
+/**
+ * What is said of such a job: since when, and where the reason is, in words a page shows a
+ * person as they are; the command names the way to read it beside the jobs it prints. The
+ * reason is the `plugin.failed` event, written in the plugin's board project where it has one
+ * and read by whoever may see that project (`pluginEventReadableBy`): `hidden` names the
+ * project to a reader who may not, so that nobody is sent to an event they cannot read. The
+ * reason itself is never said here: it is what the plugin's code said, about a project's work.
+ */
+function saidOfFailing(row: PluginJobRecord, hidden: string | undefined): string {
+  const since = (row.failedSince ?? new Date(0)).toISOString().replace(/\.\d{3}Z$/, "Z");
+  return hidden === undefined
+    ? `the job ${row.name} has failed since ${since}: plugin.failed among its events says why`
+    : `the job ${row.name} has failed since ${since}: why is said in its board project ${hidden}, which you are not in; a member of it or an administrator reads plugin.failed among its events`;
 }
 
 export class Plugins {
@@ -809,6 +823,15 @@ export class Plugins {
       install?.boardProjectId === undefined
         ? undefined
         : await findProjectBrief(this.options.database, workspace.id, install.boardProjectId);
+    // Whether this reader may read why a job fails is asked only where one does.
+    const failing = jobsFailing(entry, install, jobs);
+    const hidden =
+      failing.length > 0 &&
+      board !== undefined &&
+      install?.boardProjectId !== undefined &&
+      !(await seesProject(this.options.database, workspace.id, install.boardProjectId, person))
+        ? board.key
+        : undefined;
     return {
       key: entry.key,
       name: manifest?.name ?? { en: entry.key },
@@ -820,7 +843,7 @@ export class Plugins {
       problems: [
         ...entry.problems,
         ...recordsBehind(manifest, install),
-        ...jobsFailing(entry, install, jobs),
+        ...failing.map((row) => saidOfFailing(row, hidden)),
       ],
       roles: held,
       declaredRoles: Object.entries(manifest?.roles ?? {}).map(([key, role]) => ({

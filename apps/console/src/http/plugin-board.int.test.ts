@@ -1503,6 +1503,31 @@ describe("a plugin on the board", () => {
       failedSince: firstFailureAt,
     });
     expect((await detail(member)).problems).toEqual([problem]);
+    // The reason is an event of the plugin's board project, which is private. A member who is
+    // not listed in it cannot read the event, and is told where the reason is and who reads it,
+    // not sent to read it; an administrator reads every event, and is told as before.
+    const unlisted = await h.request(projectPath(BOARD, "members", bobId), {
+      method: "DELETE",
+      headers: { cookie: admin, origin: SIGN_IN_URL },
+    });
+    expect(unlisted.status, await unlisted.clone().text()).toBe(204);
+    try {
+      const unreadable = await h.request(`${pluginPath("leave", "events")}?kind=plugin.failed`, {
+        headers: { cookie: member },
+      });
+      expect(restEventsSchema.parse(await unreadable.json()).items).toEqual([]);
+      expect((await detail(member)).problems).toEqual([
+        `the job broken has failed since ${since}: why is said in its board project ${BOARD}, which you are not in; a member of it or an administrator reads plugin.failed among its events`,
+      ]);
+      expect((await detail()).problems).toEqual([problem]);
+    } finally {
+      const relisted = await h.request(
+        projectPath(BOARD, "members"),
+        json({ personId: bobId, role: "member" }, admin),
+      );
+      expect(relisted.status, await relisted.clone().text()).toBe(201);
+    }
+    expect((await detail(member)).problems).toEqual([problem]);
     const listed = restPluginsSchema.parse(
       await (await h.request(REST_ROUTES.plugins, { headers: { cookie: admin } })).json(),
     );
