@@ -17,11 +17,21 @@
 }
 
 /* A file field: as tall as any other field, what it holds on one line with its button, and
-   the button the browser gives it drawn as a small button of the console's own. */
+   the button the browser gives it drawn as a small button of the console's own. A browser
+   lays the button and the words beside it out on a line of its own making, at the top of the
+   field whatever the field's display says, so what stands above and below the button is the
+   field's padding: half of what the button, by its line, its padding and its border as the
+   rule below gives them, leaves of the field's height within its border. */
 .sc-input[type="file"] {
-  display: flex;
-  align-items: center;
-  padding-block: 0;
+  display: block;
+  padding-block: calc(
+    (
+      var(--sc-control-size) -
+      2px -
+      (var(--sc-text-xs) * var(--sc-leading-snug) + 2 * (var(--sc-space-1) + 1px) + 2px)
+    ) /
+    2
+  );
   color: var(--sc-color-text-muted);
   line-height: var(--sc-leading-snug);
   cursor: pointer;
