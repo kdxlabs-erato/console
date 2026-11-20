@@ -51,7 +51,7 @@ import type { BlobStore } from "../ports/blob-store.js";
 import type { Clock } from "../ports/clock.js";
 import { createAgentGuards } from "./agent-guards.js";
 import { errorBody } from "./app.js";
-import type { Access, AccessCaller } from "./auth.js";
+import { type Access, type AccessCaller, foreignOrigin } from "./auth.js";
 import {
   downloadResponse,
   type KeptPictureType,
@@ -366,6 +366,10 @@ export function registerAgentRunnerRest(
   // a name, which the worker raises then. A wake and nothing else: what tells, stops or starts
   // an agent is its supervisors' to send.
   app.post(`${OWN}/wakes`, tooLarge, async (c) => {
+    // A browser's session changes something from the console's own pages alone, as everywhere.
+    if (!access.presentsToken(c) && !access.fromOwnPages(c)) {
+      return foreignOrigin(c);
+    }
     const caller = await own(c);
     if (caller instanceof Response) {
       return caller;
@@ -455,6 +459,9 @@ export function registerAgentRunnerRest(
   });
 
   app.delete(`${OWN}/wakes/:key`, async (c) => {
+    if (!access.presentsToken(c) && !access.fromOwnPages(c)) {
+      return foreignOrigin(c);
+    }
     const caller = await own(c);
     if (caller instanceof Response) {
       return caller;

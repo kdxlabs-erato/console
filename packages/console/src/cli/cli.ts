@@ -68,7 +68,13 @@ import {
   personDeskFiles,
 } from "../runner/desk.js";
 import { ownRunnerModules } from "../runner/modules.js";
-import { createRunner, GIT_TOKEN_SECRET, type RunnerState } from "../runner/runner.js";
+import {
+  createRunner,
+  GIT_TOKEN_SECRET,
+  type Runner,
+  type RunnerEnd,
+  type RunnerState,
+} from "../runner/runner.js";
 import type { ServiceCommand } from "../runner/types.js";
 import {
   hostOfLogin,
@@ -4640,6 +4646,52 @@ const machineLine = (text: string): string => {
   return line.length === 0 ? "unknown" : line;
 };
 
+/**
+ * Keeps a runner going across its `runner.json` (ADR-0144): a runner that ended for its file is
+ * followed by another, begun with the file as it is now, in this process. Where the file stopped
+ * reading in between, the agent having written it again in the turn that was under way, the next
+ * runner begins with the file as it last read, so that there is always one: it then says what is
+ * wrong with the file to the agent, whose session it is the only way to. Answers how the last
+ * runner ended, once one ended for anything else or whoever runs the command asked it to stop.
+ */
+export async function keepRunning<Config>(input: {
+  readonly first: Config;
+  /** The desk's file as it stands now, or what is wrong with it in a few words. */
+  readonly read: () => Promise<
+    | { readonly ok: true; readonly config: Config }
+    | { readonly ok: false; readonly problem: string }
+  >;
+  readonly start: (config: Config) => Pick<Runner, "run" | "stop">;
+  /** Resolves when whoever runs the command asks it to stop. */
+  readonly stopped: Promise<void>;
+  readonly say: (line: string) => void;
+}): Promise<RunnerEnd> {
+  let good = input.first;
+  let running = input.start(good);
+  let asked = false;
+  void input.stopped.then(() => {
+    asked = true;
+    running.stop();
+  });
+  for (;;) {
+    const how = await running.run();
+    if (how !== "changed" || asked) {
+      return how;
+    }
+    const next = await input.read();
+    if (next.ok) {
+      good = next.config;
+    } else {
+      input.say(`${next.problem}: the runner starts again with the runner.json it last read`);
+    }
+    running = input.start(good);
+    // Asked to stop while the file was read: the runner just begun ends at once.
+    if (asked) {
+      running.stop();
+    }
+  }
+}
+
 // The runner of an agent account (ADR-0085, docs/specs/runner.md): started in the account's
 // desk, on the command signed in as the account itself. It keeps the agent's session going,
 // feeds it what the console sends and reports what it does, until it is stopped.
@@ -4802,38 +4854,24 @@ const runner: Command = async (args, io) => {
           : `the machine is not kept from sleeping by the runner (${awake.problem}): set it never to sleep when idle`,
       ),
     );
-  let running = runnerOf(first);
-  let asked = false;
-  void host.untilStopped().then(() => {
-    asked = true;
-    running.stop();
+  const how = await keepRunning({
+    first,
+    read: async () => {
+      const next = await readConfig();
+      return next.ok ? { ok: true, config: next } : next;
+    },
+    start: runnerOf,
+    stopped: host.untilStopped(),
+    say: said,
   });
-  for (;;) {
-    const how = await running.run();
-    if (how === "updated") {
-      // The service that keeps a runner starts it again whenever it ends; one started by hand is
-      // started again by hand.
-      io.stdout(
-        "The command was updated: the runner ended, and the service that keeps it starts it again with the new one. Started by hand: console runner\n",
-      );
-    }
-    if (how !== "changed" || asked) {
-      return EXIT.ok;
-    }
-    // Its runner.json changed (ADR-0144): the next runner begins with the file as it is now, in
-    // this process, with the conversation the last one kept. A file that stopped reading in
-    // between is waited for: the runner that ended read it, and so will the next look.
-    let next = await readConfig();
-    while (!next.ok && !asked) {
-      said(`${next.problem}: waiting for a runner.json that reads`);
-      await io.sleep(5000);
-      next = await readConfig();
-    }
-    if (!next.ok || asked) {
-      return EXIT.ok;
-    }
-    running = runnerOf(next);
+  if (how === "updated") {
+    // The service that keeps a runner starts it again whenever it ends; one started by hand is
+    // started again by hand.
+    io.stdout(
+      "The command was updated: the runner ended, and the service that keeps it starts it again with the new one. Started by hand: console runner\n",
+    );
   }
+  return EXIT.ok;
 };
 
 // Configuring, as the person (ADR-0021): what an administrator or an owner does on the pages,
@@ -5139,6 +5177,14 @@ const agentSecret = async (args: readonly string[], io: CliIo): Promise<number> 
   return EXIT.ok;
 };
 
+const OWN_WAKE_FLAGS: OptionSpec = {
+  file: { type: "string" },
+  in: { type: "string" },
+  at: { type: "string" },
+  key: { type: "string" },
+  cancel: { type: "boolean" },
+};
+
 const OWN_WAKE_USAGE =
   'Say when, or nothing for now: console agent wake me ["<words>"] [--in <minutes> | --at <HH:MM>] [--key <name>]  |  agent wake me --cancel [--key <name>]';
 
@@ -5192,10 +5238,14 @@ export function ownWakeMoment(
     }
     const wanted = Number(clock[1]) * 60 + Number(clock[2]);
     // The next time the clock says so: later today, or tomorrow where that hour has passed.
-    const ahead = (wanted - minutesOfDayIn(zone, now) + 24 * 60) % (24 * 60) || 24 * 60;
+    const day = 24 * 60;
+    const ahead = (wanted - minutesOfDayIn(zone, now) + day) % day || day;
     const at = new Date(now.getTime() + ahead * 60_000);
     at.setSeconds(0, 0);
-    return at;
+    // Where the zone's clock is put forward or back before then, the moment is off by that
+    // much: moved by what the clock says there, once.
+    const off = ((wanted - minutesOfDayIn(zone, at) + day + day / 2) % day) - day / 2;
+    return off === 0 ? at : new Date(at.getTime() + off * 60_000);
   }
   return undefined;
 }
@@ -5204,13 +5254,7 @@ export function ownWakeMoment(
 // prepared its machine or signed something in there to say so and for the agent to go on; or
 // kept for a moment to come, for an agent that has something to look at again.
 const ownWake = async (args: readonly string[], io: CliIo): Promise<number> => {
-  const { values, positionals } = parse(args, {
-    file: { type: "string" },
-    in: { type: "string" },
-    at: { type: "string" },
-    key: { type: "string" },
-    cancel: { type: "boolean" },
-  });
+  const { values, positionals } = parse(args, OWN_WAKE_FLAGS);
   const [, words, ...rest] = positionals;
   if (rest.length > 0) {
     throw misuse(OWN_WAKE_USAGE);
@@ -5282,9 +5326,18 @@ const agentSignal = async (
   args: readonly string[],
   io: CliIo,
 ): Promise<number> => {
-  // An account's own wake is another command under the same word: console agent wake me.
-  if (kind === "wake" && args.find((word) => !word.startsWith("-")) === "me") {
-    return ownWake(args, io);
+  // An account's own wake is another command under the same word: console agent wake me,
+  // wherever `me` stands among its flags.
+  if (kind === "wake") {
+    let whom: string | undefined;
+    try {
+      whom = parse(args, OWN_WAKE_FLAGS).positionals[0];
+    } catch {
+      whom = undefined;
+    }
+    if (whom === "me") {
+      return ownWake(args, io);
+    }
   }
   const { values, positionals } = parse(args, { file: { type: "string" } });
   const [given, words, ...rest] = positionals;
@@ -5871,6 +5924,8 @@ async function handOver(
   client: ConsoleClient,
   url: string,
   handle: string,
+  /** Where the runner's own lines are. */
+  log: string,
 ): Promise<void> {
   let began = false;
   for (let tries = 0; tries < FIRST_SESSION_TRIES && !began; tries += 1) {
@@ -5894,7 +5949,7 @@ async function handOver(
         ]),
     `That is the machine prepared: stop here. What comes next, its sign-ins, its tokens, its desk's repository, its profile and its messenger, is @${handle}'s own, done in its own session: do none of it for it.`,
     `What you change on this machine afterwards, say to it: console agent wake me "<what changed>"`,
-    awakeWords(machine.platform, await heldAwake(machine)),
+    awakeWords(machine.platform, await heldAwake(machine), log),
   ];
   io.stdout(`${lines.join("\n")}\n`);
 }
@@ -6026,7 +6081,7 @@ const agentSetup = async (args: readonly string[], io: CliIo): Promise<number> =
   }
   const log = await settleService(io, machine, desk, url, me.person.login, "load");
   if (log !== undefined && (await awaitRunner(io, client, handle, heardBefore, log))) {
-    await handOver(io, machine, client, url, handle);
+    await handOver(io, machine, client, url, handle, log);
   }
   return EXIT.ok;
 };

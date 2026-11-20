@@ -1,6 +1,6 @@
 import { and, asc, eq, lte, ne, sql } from "drizzle-orm";
 import { DomainError } from "../../errors.js";
-import { type Database, drizzleOf } from "../client.js";
+import { type Database, drizzleOf, type Transaction } from "../client.js";
 import { agentWakes, people } from "../schema.js";
 import { type PersonRecord, personColumns, toPerson } from "./people.js";
 
@@ -108,35 +108,55 @@ export async function cancelOwnWake(
 }
 
 /**
- * The wakes of a workspace's active agent accounts whose moment has come, taken out as they are
- * read, the earliest first: each is raised once, by the pass that took it. One of an account
- * that is out stays until the account is back in, or goes with it.
+ * The wakes of a workspace's active agent accounts whose moment has come, the earliest first.
+ * Read, and not taken: each is taken in the transaction that raises it (`takeOwnWake`). One of
+ * an account that is out stays until the account is back in, or goes with it.
  */
-export async function takeDueWakes(
+export async function dueOwnWakes(
   database: Database,
   workspaceId: string,
   now: Date,
 ): Promise<{ readonly account: PersonRecord; readonly wake: OwnWakeRecord }[]> {
-  return drizzleOf(database).transaction(async (tx) => {
-    const due = await tx
-      .select({ wake: agentWakes, account: personColumns(people) })
-      .from(agentWakes)
-      .innerJoin(people, eq(people.id, agentWakes.personId))
-      .where(
-        and(
-          eq(people.workspaceId, workspaceId),
-          eq(people.kind, "agent"),
-          eq(people.status, "active"),
-          lte(agentWakes.at, now),
-        ),
-      )
-      .orderBy(asc(agentWakes.at))
-      .for("update", { of: agentWakes, skipLocked: true });
-    for (const one of due) {
-      await tx
-        .delete(agentWakes)
-        .where(and(eq(agentWakes.personId, one.wake.personId), eq(agentWakes.key, one.wake.key)));
-    }
-    return due.map((one) => ({ account: toPerson(one.account), wake: toWake(one.wake) }));
-  });
+  const due = await drizzleOf(database)
+    .select({ wake: agentWakes, account: personColumns(people) })
+    .from(agentWakes)
+    .innerJoin(people, eq(people.id, agentWakes.personId))
+    .where(
+      and(
+        eq(people.workspaceId, workspaceId),
+        eq(people.kind, "agent"),
+        eq(people.status, "active"),
+        lte(agentWakes.at, now),
+      ),
+    )
+    .orderBy(asc(agentWakes.at), asc(agentWakes.key));
+  return due.map((one) => ({ account: toPerson(one.account), wake: toWake(one.wake) }));
+}
+
+/** A wake that was due is there no more as it was read: taken away, or kept anew for another moment. */
+export class OwnWakeGone extends Error {}
+
+/**
+ * Takes a wake that is due, in the transaction that raises it: the row as it was read, by its
+ * name and its moment. One the account took away or kept anew since is not this one, and
+ * nothing is raised for it (`OwnWakeGone`).
+ */
+export async function takeOwnWake(
+  tx: Transaction,
+  personId: string,
+  wake: Pick<OwnWakeRecord, "key" | "at">,
+): Promise<void> {
+  const taken = await tx
+    .delete(agentWakes)
+    .where(
+      and(
+        eq(agentWakes.personId, personId),
+        eq(agentWakes.key, wake.key),
+        eq(agentWakes.at, wake.at),
+      ),
+    )
+    .returning({ key: agentWakes.key });
+  if (taken.length === 0) {
+    throw new OwnWakeGone();
+  }
 }

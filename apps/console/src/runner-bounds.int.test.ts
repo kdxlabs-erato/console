@@ -9,13 +9,19 @@ import {
   restConnectionSchema,
   restErrorSchema,
   restEventsSchema,
+  restOwnWakesSchema,
   restRunnerHeartbeatSchema,
   restSignalSchema,
+  restSignalsSchema,
   restTranscriptBatchSchema,
 } from "@skillcdn/console/api";
+import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { drizzleOf } from "./db/client.js";
+import { workspaces } from "./db/schema.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "./db/testing.js";
 import { DEFAULT_QUOTAS } from "./http/quotas.js";
+import { BoardWakes } from "./jobs/board-wakes.js";
 import { createFixtureProvider } from "./testing/fixture-provider.js";
 import { createHarness, type Harness, SIGN_IN_URL } from "./testing/harness.js";
 
@@ -255,6 +261,59 @@ describe("what an agent account's runner writes within an hour (ADR-0132)", () =
     later(51);
     expect((await own()).status).toBe(201);
     expect((await own()).status).toBe(429);
+  });
+
+  it("holds a wake kept for later to the same hour: one that is due while the hour is full stays kept, and is raised when it has room", async () => {
+    later(120);
+    const mine = async () =>
+      restSignalsSchema
+        .parse(
+          await (
+            await h.request(`${agentPath("mira", "signals")}?limit=100`, {
+              headers: { cookie: alice },
+            })
+          ).json(),
+        )
+        .items.filter((signal) => signal.by?.login === "carol" && signal.key?.startsWith("soon"))
+        .map((signal) => signal.key)
+        .reverse();
+    const keptNow = async () =>
+      restOwnWakesSchema
+        .parse(
+          await (await h.request(agentPath("me", "wakes"), { headers: bearer(command) })).json(),
+        )
+        .items.map((wake) => wake.key);
+    const [workspace] = await drizzleOf(testDatabase.database).select().from(workspaces).limit(1);
+    const wakes = new BoardWakes({
+      database: testDatabase.database,
+      workspaceId: async () => workspace?.id ?? "",
+      clock: { now: () => new Date(Date.now() + moved) },
+      logger: pino({ level: "silent" }),
+      ownWakesPerHour: 2,
+    });
+    // Four kept for a moment from now, under four names: as many as an account may arm at once.
+    const soon = new Date(Date.now() + moved + 60_000).toISOString();
+    for (const key of ["soon-1", "soon-2", "soon-3", "soon-4"]) {
+      const kept = await send(bearer(command), "POST", agentPath("me", "wakes"), { at: soon, key });
+      expect(kept.status).toBe(201);
+    }
+    later(2);
+    await wakes.sweep();
+    await wakes.sweep();
+    // Two are raised, which is what the hour takes; the other two stay kept, and are no signal.
+    expect(await mine()).toEqual(["soon-1", "soon-2"]);
+    expect(await keptNow()).toEqual(["soon-3", "soon-4"]);
+    // One raised at once in that hour is refused too: the bound is one, however a wake is raised.
+    expect(
+      (await send(bearer(command), "POST", agentPath("me", "wakes"), { text: "Now." })).status,
+    ).toBe(429);
+    // An hour on, the two that waited are raised, once each.
+    later(61);
+    await wakes.sweep();
+    await wakes.sweep();
+    expect(await mine()).toEqual(["soon-1", "soon-2", "soon-3", "soon-4"]);
+    expect(await keptNow()).toEqual([]);
+    await wakes.close();
   });
 
   it("tells the feed so many changes of an account's state within the hour, keeps how it stands meanwhile, and tells it once the hour has room", async () => {

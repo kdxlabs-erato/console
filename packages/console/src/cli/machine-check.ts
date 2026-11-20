@@ -197,8 +197,13 @@ export async function heldAwake(machine: SetupMachine): Promise<boolean | undefi
   return ran.code === 0 ? /\(caffeinate\)/.test(ran.out) : undefined;
 }
 
-/** What is left to whoever keeps the machine so that it stays awake and comes back, a sentence by platform. */
-export function awakeWords(platform: string, held: boolean | undefined): string {
+/**
+ * What a setup says of sleep, a sentence by platform: that the machine is held awake where the
+ * system said so, that it is not where it said that, and where it cannot be asked, what the
+ * runner does and where it says whether that holds; then what is left to whoever keeps the
+ * machine. `log` is where the runner's own lines are.
+ */
+export function awakeWords(platform: string, held: boolean | undefined, log?: string): string {
   const back =
     platform === "linux"
       ? ""
@@ -206,11 +211,13 @@ export function awakeWords(platform: string, held: boolean | undefined): string 
   if (held === false) {
     return `The machine is not held awake by the runner: set it never to sleep when idle (System Settings, Energy; or sudo pmset -a sleep 0, which takes an administrator), or the agent is not heard from once it sleeps.${back}`;
   }
-  const also =
+  if (held === true) {
+    return `The machine is kept from sleeping while the runner runs; a sleep someone asks for, or a lid that is closed, still ends that.${back}`;
+  }
+  const where = log === undefined ? "its own lines" : `its own lines (${log})`;
+  const otherwise =
     platform === "win32"
-      ? " Where it sleeps all the same: powercfg /change standby-timeout-ac 0."
-      : platform === "linux"
-        ? " Where a desktop suspends it all the same, turn that off in its power settings."
-        : "";
-  return `The machine is kept from sleeping while the runner runs; a sleep someone asks for, or a lid that is closed, still ends that.${also}${back}`;
+      ? " Where they say it is not, or the machine sleeps all the same: powercfg /change standby-timeout-ac 0."
+      : " Where they say it is not, turn sleeping when idle off in the system's power settings.";
+  return `The runner asks the system to keep the machine from sleeping while it runs, and ${where} say whether that holds.${otherwise}${back}`;
 }

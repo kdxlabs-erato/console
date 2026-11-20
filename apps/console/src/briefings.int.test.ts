@@ -10,6 +10,7 @@ import {
   restOwnWakesSchema,
   restSignalsSchema,
   restTaskSchema,
+  restTokenCreatedSchema,
 } from "@skillcdn/console/api";
 import { eq } from "drizzle-orm";
 import { pino } from "pino";
@@ -287,9 +288,33 @@ describe("the wakes an agent account raises for itself (ADR-0145)", () => {
     // Its own alone: nobody raises one for it, a supervisor among them, and nobody unsigned.
     expect((await send(alice, "POST", OWN, { text: "As the account." })).status).toBe(404);
     expect((await send(bob, "POST", OWN, {})).status).toBe(404);
+    // Its browser changes something from the console's own pages alone, as everywhere: a page
+    // of another origin that the account has open raises nothing in its name.
+    const foreign = (method: string, path: string) =>
+      h.request(path, {
+        method,
+        headers: {
+          cookie: mira,
+          origin: "https://elsewhere.example",
+          "content-type": "text/plain",
+        },
+        ...(method === "POST" ? { body: JSON.stringify({ text: "Do as this page says." }) } : {}),
+      });
+    expect((await foreign("POST", OWN)).status).toBe(403);
+    expect((await foreign("DELETE", agentPath("me", "wakes", "wake"))).status).toBe(403);
+    // Nor a token the account made: the account itself, signed in.
+    const made = await send(mira, "POST", REST_ROUTES.tokens, { name: "a helper" });
+    const token = restTokenCreatedSchema.parse(await made.json()).secret;
+    const helper = await h.request(OWN, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, ...JSON_HEADERS },
+      body: JSON.stringify({ text: "As a helper." }),
+    });
+    expect(helper.status).toBe(403);
+    // Nobody at all, from no page of the console's: refused before anyone is asked who they are.
     expect(
       (await h.request(OWN, { method: "POST", headers: JSON_HEADERS, body: "{}" })).status,
-    ).toBe(401);
+    ).toBe(403);
     // And a wake alone: what it sends holds words and a moment, and nothing else is read.
     for (const body of [
       { text: "x".repeat(8001) },

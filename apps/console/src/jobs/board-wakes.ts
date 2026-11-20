@@ -1,7 +1,8 @@
+import { MAX_OWN_WAKES_PER_HOUR } from "@skillcdn/console/api";
 import type { Database } from "../db/client.js";
 import { drizzleOf } from "../db/client.js";
-import { sendSignal } from "../db/queries/agent-runners.js";
-import { takeDueWakes } from "../db/queries/agent-wakes.js";
+import { RunnerError, sendSignal } from "../db/queries/agent-runners.js";
+import { dueOwnWakes, OwnWakeGone, takeOwnWake } from "../db/queries/agent-wakes.js";
 import {
   accountsToBrief,
   boardWakesOf,
@@ -89,6 +90,7 @@ export class BoardWakes {
   readonly #logger: Logger;
   readonly #tries: number;
   readonly #unsettledWarningMs: number;
+  readonly #ownWakesPerHour: number;
   /** When the job last said that the feed stands unsettled, on this process's own clock. */
   #warnedOfUnsettled: number | undefined;
   /** The event the last failed pass stopped at, and how many passes in a row have: kept by this process. */
@@ -105,6 +107,8 @@ export class BoardWakes {
     readonly tries?: number | undefined;
     /** For how long the feed may stand unsettled before the job says so; `UNSETTLED_WARNING_MS` when left out. */
     readonly unsettledWarningMs?: number | undefined;
+    /** How many wakes an account raises for itself within an hour, those kept for later among them; `MAX_OWN_WAKES_PER_HOUR` when left out. */
+    readonly ownWakesPerHour?: number | undefined;
   }) {
     this.#database = options.database;
     this.#workspaceId = options.workspaceId;
@@ -112,6 +116,7 @@ export class BoardWakes {
     this.#logger = options.logger;
     this.#tries = options.tries ?? WAKE_TRIES;
     this.#unsettledWarningMs = options.unsettledWarningMs ?? UNSETTLED_WARNING_MS;
+    this.#ownWakesPerHour = options.ownWakesPerHour ?? MAX_OWN_WAKES_PER_HOUR;
   }
 
   /** One pass. Resolves when it is done, or given up on: a failed pass is the next one's work. */
@@ -329,25 +334,44 @@ export class BoardWakes {
 
   /**
    * The wakes agent accounts kept for themselves whose moment has come (ADR-0145): each raised
-   * once, as a signal of the account's record sent by the account, through the agent it was
-   * kept through. One taken and not raised, a pass that ended in between, is not raised again.
+   * once, as a signal of the account's record sent by the account, and taken in the
+   * transaction that raises it. The hour's bound on an account's own wakes holds here as it
+   * does for one raised at once: a wake that is due while the hour is full stays kept, and is
+   * raised by a later pass, when the hour has room. One that cannot be raised costs no other.
    */
   async #own(workspaceId: string, now: Date): Promise<number> {
     const database = this.#database;
-    const due = await takeDueWakes(database, workspaceId, now);
-    for (const { account, wake } of due) {
-      await sendSignal(database, {
-        account,
-        kind: "wake",
-        by: { id: account.id, ...(wake.agent === undefined ? {} : { agent: wake.agent }) },
-        source: "person",
-        key: wake.key,
-        text: wake.text.length === 0 ? OWN_WAKE_WORDS : wake.text,
-        set: undefined,
-        now,
-      });
+    /** The accounts whose hour is full: nothing more of theirs is tried in this pass. */
+    const full = new Set<string>();
+    let raised = 0;
+    for (const { account, wake } of await dueOwnWakes(database, workspaceId, now)) {
+      if (full.has(account.id)) {
+        continue;
+      }
+      try {
+        await sendSignal(database, {
+          account,
+          kind: "wake",
+          by: { id: account.id, ...(wake.agent === undefined ? {} : { agent: wake.agent }) },
+          source: "person",
+          key: wake.key,
+          text: wake.text.length === 0 ? OWN_WAKE_WORDS : wake.text,
+          set: undefined,
+          perHour: this.#ownWakesPerHour,
+          within: (tx) => takeOwnWake(tx, account.id, wake),
+          now,
+        });
+        raised += 1;
+      } catch (error) {
+        if (error instanceof RunnerError) {
+          full.add(account.id);
+        } else if (!(error instanceof OwnWakeGone)) {
+          // Kept as it was, and tried by the next pass: nothing of the wake but that it failed.
+          this.#logger.warn({ err: error }, "a wake an account kept for itself was not raised");
+        }
+      }
     }
-    return due.length;
+    return raised;
   }
 
   start(intervalMs: number = BOARD_WAKES_INTERVAL_MS): void {

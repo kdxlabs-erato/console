@@ -78,16 +78,32 @@ export function awakePlanOf(platform: string, pid: number): AwakePlan | undefine
 /** How holding the machine awake went: what holds it, or why nothing does. */
 export type Awake = { readonly by: string } | { readonly problem: string };
 
+/** A helper as it is started: what it says of itself once, and that the runner does not wait for it. */
+export interface AwakeHelper {
+  once(event: "error", listener: () => void): unknown;
+  once(event: "exit", listener: (code: number | null) => void): unknown;
+  unref(): void;
+}
+
+/** Starts a helper on this machine, with nothing of it read or written. */
+const startHelper = (
+  plan: AwakePlan,
+  env: Readonly<Record<string, string | undefined>>,
+): AwakeHelper =>
+  spawn(plan.command, [...plan.args], { env: { ...env }, stdio: "ignore", windowsHide: true });
+
 /**
  * Starts what holds the machine awake while this process runs, and answers how it went once the
  * helper is seen to stay: one that ends at once, or is not there to start, holds nothing, and
- * the runner says so. The helper ends by itself when the process it watches is gone.
+ * the runner says so. The helper ends by itself when the process it watches is gone. `start`
+ * is what starts it, for a test to hand in one that touches no machine.
  */
 export function holdAwake(
   platform: string,
   pid: number,
   env: Readonly<Record<string, string | undefined>>,
   settleMs = 4000,
+  start: typeof startHelper = startHelper,
 ): Promise<Awake> {
   const plan = awakePlanOf(platform, pid);
   if (plan === undefined) {
@@ -102,11 +118,7 @@ export function holdAwake(
       }
     };
     try {
-      const helper = spawn(plan.command, [...plan.args], {
-        env: { ...env },
-        stdio: "ignore",
-        windowsHide: true,
-      });
+      const helper = start(plan, env);
       helper.once("error", () => settle({ problem: `${plan.command} could not be started` }));
       helper.once("exit", (code) =>
         settle({

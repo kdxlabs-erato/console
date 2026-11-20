@@ -100,7 +100,14 @@ describe("the look at a machine before a setup", () => {
     expect(awakeWords("darwin", false)).toContain(
       "The machine is not held awake by the runner: set it never to sleep when idle",
     );
+    // Where the system cannot be asked, nothing is claimed: what the runner does, and where its
+    // own lines say whether that holds.
+    const unasked = awakeWords("linux", undefined, "the account's journal");
+    expect(unasked).toContain(
+      "The runner asks the system to keep the machine from sleeping while it runs, and its own lines (the account's journal) say whether that holds.",
+    );
+    expect(unasked).not.toContain("is kept from sleeping");
+    expect(unasked).not.toContain("automatic login");
     expect(awakeWords("win32", undefined)).toContain("powercfg /change standby-timeout-ac 0");
-    expect(awakeWords("linux", undefined)).not.toContain("automatic login");
   });
 });

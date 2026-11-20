@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MAX_SUMMARY_LENGTH } from "../limits.js";
-import { type CliIo, EXIT, ownWakeMoment, runCli } from "./cli.js";
+import { type CliIo, EXIT, keepRunning, ownWakeMoment, runCli } from "./cli.js";
 import { NO_LINE_TO_RUN } from "./command-words.js";
 import { type CredentialStore, type Credentials, CredentialsError } from "./credentials.js";
 import type { DirectorySettings, DirectoryStore } from "./directory.js";
@@ -4401,6 +4401,7 @@ describe("configuring, as the person", () => {
             kept: kept({ key: "deploy", at: "2026-11-20T05:30:00.000Z", text: "" }),
           },
         },
+        { status: 201, body: { signal: null, kept: kept() } },
         {
           status: 429,
           body: {
@@ -4450,11 +4451,26 @@ describe("configuring, as the person", () => {
     ).toBe(EXIT.ok);
     expect(calls.at(-1)?.body).toEqual({ at: "2026-11-20T05:30:00.000Z", key: "deploy" });
     expect(clock.out()).toContain("Take it away: console agent wake me --cancel --key deploy.");
+    // `me` is the account wherever it stands among the flags.
+    const flagged = harness(at);
+    expect(await runCli(["agent", "wake", "--in", "30", "me"], flagged.io)).toBe(EXIT.ok);
+    expect(calls.at(-1)?.key).toBe("POST /api/v1/agents/me/wakes");
+    expect(calls.at(-1)?.body).toEqual({ at: "2026-11-20T03:40:20.000Z" });
     // An hour that has passed today is tomorrow's.
     expect(ownWakeMoment({ at: "09:00" }, "Asia/Seoul", new Date(NOW))?.toISOString()).toBe(
       "2026-11-21T00:00:00.000Z",
     );
     expect(ownWakeMoment({}, "Asia/Seoul", new Date(NOW))).toBeUndefined();
+    // Across a night on which a zone's clock is put back, the hour asked for is the hour the
+    // clock says then: 09:00 in New York on the first of November 2026, asked the evening
+    // before, is fourteen hours of the world's clock on, not thirteen.
+    expect(
+      ownWakeMoment(
+        { at: "09:00" },
+        "America/New_York",
+        new Date("2026-11-01T00:00:00.000Z"),
+      )?.toISOString(),
+    ).toBe("2026-11-01T14:00:00.000Z");
     // What the console refuses is said as it says it.
     const many = harness(at);
     expect(await runCli(["agent", "wake", "me"], many.io)).toBe(EXIT.failed);
@@ -5408,6 +5424,121 @@ describe("configuring, as the person", () => {
   });
 });
 
+describe("a runner kept going across its runner.json (ADR-0144)", () => {
+  /** Runners that end as told, in order, each noting the file it was begun with. */
+  const runnersOf = (ends: readonly ("stopped" | "updated" | "changed")[]) => {
+    const begun: string[] = [];
+    const stops: number[] = [];
+    let at = 0;
+    return {
+      begun,
+      stops,
+      start: (config: string) => {
+        const mine = at;
+        at += 1;
+        begun.push(config);
+        let stop: (() => void) | undefined;
+        let asked = false;
+        return {
+          run: () =>
+            new Promise<"stopped" | "updated" | "changed">((resolve) => {
+              const how = asked ? "stopped" : ends[mine];
+              if (how !== undefined) {
+                resolve(how);
+              }
+              stop = () => resolve("stopped");
+            }),
+          stop: () => {
+            stops.push(mine);
+            asked = true;
+            stop?.();
+          },
+        };
+      },
+    };
+  };
+  const never = new Promise<void>(() => undefined);
+
+  it("begins the next runner with the file as it is, and ends when one ends for anything else", async () => {
+    const runners = runnersOf(["changed", "changed", "updated"]);
+    const files = ["second", "third"];
+    const said: string[] = [];
+    const how = await keepRunning({
+      first: "first",
+      read: async () => ({ ok: true, config: files.shift() ?? "none" }),
+      start: runners.start,
+      stopped: never,
+      say: (line) => said.push(line),
+    });
+    expect(how).toBe("updated");
+    expect(runners.begun).toEqual(["first", "second", "third"]);
+    expect(said).toEqual([]);
+  });
+
+  it("begins the next runner with the file as it last read where it reads no more, so that there is always one", async () => {
+    // The agent wrote its file again in the turn that was under way, wrongly this time: the
+    // runner that ended for the first change is followed by one all the same, which is the
+    // only way the agent is told what is wrong with its file.
+    const runners = runnersOf(["changed", "changed", "stopped"]);
+    const reads = [
+      { ok: false as const, problem: "runner.json is not readable JSON" },
+      { ok: true as const, config: "mended" },
+    ];
+    const said: string[] = [];
+    const how = await keepRunning({
+      first: "first",
+      read: async () => reads.shift() ?? { ok: true as const, config: "none" },
+      start: runners.start,
+      stopped: never,
+      say: (line) => said.push(line),
+    });
+    expect(how).toBe("stopped");
+    expect(runners.begun).toEqual(["first", "first", "mended"]);
+    expect(said).toEqual([
+      "runner.json is not readable JSON: the runner starts again with the runner.json it last read",
+    ]);
+  });
+
+  it("stops the runner that runs when it is asked to, and one begun while it was asked", async () => {
+    let ask: () => void = () => undefined;
+    const stopped = new Promise<void>((resolve) => {
+      ask = resolve;
+    });
+    // The second runner runs until it is stopped.
+    const runners = runnersOf(["changed"]);
+    const kept = keepRunning({
+      first: "first",
+      read: async () => ({ ok: true, config: "second" }),
+      start: runners.start,
+      stopped,
+      say: () => undefined,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(runners.begun).toEqual(["first", "second"]);
+    ask();
+    expect(await kept).toBe("stopped");
+    expect(runners.stops).toEqual([1]);
+    // Asked while the file was being read: the runner begun after is stopped at once.
+    let askLate: () => void = () => undefined;
+    const late = runnersOf(["changed"]);
+    const ended = await keepRunning({
+      first: "first",
+      read: async () => {
+        askLate();
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return { ok: true, config: "second" };
+      },
+      start: late.start,
+      stopped: new Promise<void>((resolve) => {
+        askLate = resolve;
+      }),
+      say: () => undefined,
+    });
+    expect(ended).toBe("stopped");
+    expect(late.begun).toEqual(["first", "second"]);
+  });
+});
+
 describe("the runner on the command line (ADR-0085)", () => {
   const MIRA = {
     ...ME,
@@ -5968,6 +6099,7 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
     );
     expect(out).toContain("That is the machine prepared: stop here.");
     expect(out).toContain('say to it: console agent wake me "<what changed>"');
+    // Asked of the system, which said that the runner's helper holds it.
     expect(out).toContain("The machine is kept from sleeping while the runner runs");
     expect(out.trimEnd().endsWith("where the machine is to come back by itself.")).toBe(true);
   });

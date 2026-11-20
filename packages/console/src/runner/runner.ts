@@ -486,12 +486,15 @@ export function createRunner(options: RunnerOptions): Runner {
   let updatedTo: string | undefined;
   /**
    * The desk's `runner.json`, where it is another than the one the runner was started with:
-   * since when it was seen so, whether the runner ends for it, and what was last said of one
-   * that does not read.
+   * how it was last seen, a file that reads or what is wrong with one that does not, and since
+   * when it is seen so; whether the runner ends for it; and what is wrong with it that the
+   * agent was told of.
    */
-  let changedAt: number | undefined;
+  let sighted:
+    | { readonly what: "changed" | { readonly problem: string }; readonly at: number }
+    | undefined;
   let reconfigure = false;
-  let unreadable: string | undefined;
+  let toldOf: string | undefined;
   /** How each wake source stands, by its name: what the heartbeat says of them. */
   const sources = new Map<
     string,
@@ -1710,51 +1713,66 @@ export function createRunner(options: RunnerOptions): Runner {
 
   /**
    * Looks whether the desk's `runner.json` is another than the one the runner was started with
-   * (ADR-0144). One that reads is taken once it was seen twice, a heartbeat's interval apart, so
-   * that a file being written is not read halfway: the runner then ends between two turns, and
-   * whoever started it starts the next with the file as it is. One that does not read changes
-   * nothing: the runner goes on with what it has, and the agent, whose file it is, is told what
-   * is wrong with it, once for each thing that is.
+   * (ADR-0144). How it stands is taken once it was seen the same way twice, a heartbeat's
+   * interval apart, so that a file being written is not read halfway. One that reads has the
+   * runner end between two turns, for whoever started it to start the next with the file as it
+   * is; the look goes on until then, and a file put back, or one that stopped reading, ends
+   * nothing. One that does not read changes nothing: the runner goes on with what it has, and
+   * the agent, whose file it is, is told what is wrong with it, once for each thing that is,
+   * in the session that is open or in the next one.
    */
   const lookForChange = async (): Promise<void> => {
-    if (options.reconfigured === undefined || reconfigure) {
+    if (options.reconfigured === undefined) {
       return;
     }
     const now = await options.reconfigured().catch(() => "same" as const);
     if (now === "same") {
-      changedAt = undefined;
-      unreadable = undefined;
+      if (reconfigure) {
+        log("runner.json is as the runner was started with it again: the runner goes on");
+      }
+      sighted = undefined;
+      reconfigure = false;
+      toldOf = undefined;
       sayOver("config", "runner.json is as the runner was started with it again");
       return;
     }
-    if (changedAt === undefined) {
-      changedAt = options.now();
+    const same =
+      sighted !== undefined &&
+      (now === "changed"
+        ? sighted.what === "changed"
+        : sighted.what !== "changed" && sighted.what.problem === now.problem);
+    if (!same) {
+      // Another state than the one before: counted from now, and nothing ends for the old one.
+      sighted = { what: now, at: options.now() };
+      reconfigure = false;
       return;
     }
-    if (options.now() - changedAt < timing.heartbeatMs - Math.min(1000, timing.heartbeatMs / 2)) {
+    const since = sighted?.at ?? options.now();
+    if (options.now() - since < timing.heartbeatMs - Math.min(1000, timing.heartbeatMs / 2)) {
       return;
     }
     if (now === "changed") {
-      reconfigure = true;
-      unreadable = undefined;
-      log(
-        "runner.json changed since the runner started: the runner ends once no turn is under way, and starts again with it",
-      );
+      if (!reconfigure) {
+        reconfigure = true;
+        log(
+          "runner.json changed since the runner started: the runner ends once no turn is under way, and starts again with it",
+        );
+      }
       return;
     }
-    if (unreadable === now.problem) {
-      return;
-    }
-    unreadable = now.problem;
     sayOnce(
       "config",
       `${now.problem}: the runner goes on with the runner.json it was started with`,
     );
-    if (session !== undefined && !session.first) {
-      await sayToAgent(
+    // Told once it can be: a session that opens later is told then.
+    if (toldOf !== now.problem && session !== undefined && !session.first) {
+      const told = await sayToAgent(
         session,
-        `The desk's runner.json changed and does not read: ${now.problem}. The runner goes on with the one it was started with. Put the file right, and the runner takes it by itself once your turn is over.`,
+        `The desk's runner.json does not read: ${now.problem}. The runner goes on with the one it was started with. Put the file right, and the runner takes it by itself once your turn is over.`,
       );
+      if (told) {
+        toldOf = now.problem;
+      }
     }
   };
 
@@ -1826,6 +1844,11 @@ export function createRunner(options: RunnerOptions): Runner {
       const began = options.now();
       try {
         await source.run(host, abort.signal);
+        // Ended with no error, a connection the other side closed say: it listens no more
+        // until it says so again. What it said of why it waits stands.
+        if (!stopped && sources.get(source.name)?.state === "connected") {
+          sourceStands(source.name, "waiting");
+        }
       } catch (error) {
         if (!stopped) {
           log(`the wake source ${source.name} ended (${codeOf(error)}); started again`);

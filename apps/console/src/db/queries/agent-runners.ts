@@ -433,6 +433,12 @@ export async function sendSignal(
      * out, as what a supervisor, the board and the schedule send is.
      */
     readonly perHour?: number | undefined;
+    /**
+     * What is done with the signal, in its transaction, once the hour's bound let it through:
+     * a wake kept for later is taken as it is raised, so that it is raised once and stays kept
+     * where the hour refused it. Where it throws, nothing is sent.
+     */
+    readonly within?: ((tx: Transaction) => Promise<void>) | undefined;
     readonly now: Date;
   },
 ): Promise<SignalRecord> {
@@ -470,6 +476,7 @@ export async function sendSignal(
         );
       }
     }
+    await input.within?.(tx);
     const chosen =
       kind === "set" && input.set !== undefined
         ? {

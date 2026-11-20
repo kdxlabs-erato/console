@@ -2203,7 +2203,7 @@ describe("the runner", () => {
     await until("the agent to be told", () => session.sent.length === 2);
     // Under a header that carries the session's mark, as everything the runner says is.
     expect(session.sent[1]?.text).toMatch(
-      /^\[console [a-z0-9]{6} · runner\]\nThe desk's runner\.json changed and does not read: runner\.json is not readable JSON\. The runner goes on with the one it was started with\./,
+      /^\[console [a-z0-9]{6} · runner\]\nThe desk's runner\.json does not read: runner\.json is not readable JSON\. The runner goes on with the one it was started with\./,
     );
     await sleep(150);
     // Once for what is wrong with it, however long it stays so, in the session and in the log.
@@ -2221,6 +2221,92 @@ describe("the runner", () => {
     );
     runner.stop();
     expect(await done).toBe("stopped");
+  });
+
+  it("ends for nothing where a runner.json that changed was put back, or stopped reading, before the turn ended", async () => {
+    let now: "same" | "changed" | { readonly problem: string } = "same";
+    const { console, product, done, log, runner } = setup({ reconfigured: async () => now });
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    session.emit(...STARTED);
+    // Changed in a turn, and seen so twice: the runner would end when the turn does.
+    now = "changed";
+    await until("the change to be seen", () =>
+      log.some((line) => line.startsWith("runner.json changed since the runner started")),
+    );
+    // Written again in the same turn, wrongly: nothing ends for a file that does not read, and
+    // the agent, whose file it is, is told in the session it has.
+    now = { problem: "runner.json names the wake source pager, which this command does not have" };
+    await until("the agent to be told", () => session.sent.length === 2);
+    expect(session.sent[1]?.text).toContain("names the wake source pager");
+    session.emit({ type: "event", kind: "assistant", text: "Begun." }, { type: "turn_completed" });
+    await sleep(120);
+    expect(console.ended).toEqual([]);
+    // Put back as it was: said, and the runner goes on.
+    now = "same";
+    await until("the file to be said the same again", () =>
+      log.includes("runner.json is as the runner was started with it again"),
+    );
+    await sleep(120);
+    expect(console.ended).toEqual([]);
+    runner.stop();
+    expect(await done).toBe("stopped");
+  });
+
+  it("tells its agent of a runner.json that does not read in the session that opens later, where none was open", async () => {
+    const problem = { problem: "runner.json is not readable JSON" };
+    const { console, product, log, runner, done } = setup({ reconfigured: async () => problem });
+    // No session is open: the runner's own line says it, and nothing else can.
+    await until("the line", () =>
+      log.some((line) => line.includes("goes on with the runner.json it was started with")),
+    );
+    expect(product.sessions).toHaveLength(0);
+    // Something wakes the agent: once its session was handed that, it is told of its file,
+    // after what woke it and once.
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length >= 1);
+    session.emit(
+      ...STARTED,
+      { type: "event", kind: "assistant", text: "Begun." },
+      { type: "turn_completed" },
+    );
+    await until("the agent to be told", () => session.sent.length >= 2);
+    expect(session.sent[0]?.text).toContain("Begin.");
+    expect(session.sent[1]?.text).toContain("The desk's runner.json does not read");
+    await sleep(120);
+    expect(session.sent).toHaveLength(2);
+    runner.stop();
+    await done;
+  });
+
+  it("says a wake source waits once it ended without an error, until it listens again (ADR-0144)", async () => {
+    let runs = 0;
+    const source: WakeSource = {
+      name: "chat",
+      async run(host, signal) {
+        runs += 1;
+        host.stands("connected");
+        // The other side closes the connection: the source ends, with nothing wrong.
+        await host.wait(runs === 1 ? 30 : 60_000, signal);
+      },
+    };
+    const { console, runner, done } = setup({ sources: [source] });
+    await until("the source to listen again", () => {
+      const said = console.beats.flatMap((beat) => beat.sources ?? []).map((one) => one.state);
+      return said.lastIndexOf("connected") > said.indexOf("waiting") && said.includes("waiting");
+    });
+    const said = console.beats.flatMap((beat) => beat.sources ?? []).map((one) => one.state);
+    // Connected, then waiting while it is started again, then connected: never said to listen
+    // while it does not.
+    const first = said.indexOf("connected");
+    const waited = said.indexOf("waiting", first);
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(waited).toBeGreaterThan(first);
+    expect(said.at(-1)).toBe("connected");
+    runner.stop();
+    await done;
   });
 
   it("lets go of what its wake sources raise once the console takes no more wakes within the hour, says so once, and raises again after a while", async () => {
