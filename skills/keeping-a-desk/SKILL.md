@@ -5,7 +5,7 @@ license: MIT
 compatibility: A shell with git and the console command (npm install -g @skillcdn/console, Node.js 24 or newer), and an agent that reads and writes files. For pages, npm; a browser the agent can drive is optional. The agent never sees a token.
 metadata:
   author: skillcdn
-  version: "1.3"
+  version: "1.4"
 skillcdn:
   translations:
     ko:
@@ -73,7 +73,7 @@ Choose the shape from what the member wants to find again, not from a form:
 Only where the member asked to see something. Paths below are under the desk's `web/`, and `<package>/` is `node_modules/@skillcdn/console/` there, whose `README.md` is [the package's](/packages/console/README.md).
 
 1. **The shell.** `console desk . --web`, run in the desk, writes `web/` where it holds nothing: one empty page of the member's own, on the version of the package the command is. `src/main.tsx` mounts `page` from `src/page.tsx` beside it; the page's key is `mine`, its address `/pages/mine`, and `/` opens on it. Then `npm install` and `npm run build`, which says nothing of its own where it went well and leaves `dist/index.html`; `README.md` says how the pages are built, served and stopped.
-2. **A page** is one entry of the `pages` handed to `createConsole` in `src/main.tsx`: a key, which is its address (`/pages/<key>`), a label, which is its tab, and a function that renders it. What the member asks to see first goes on the empty page; another page is another entry. What the function is given: `<package>/README.md`, "Pages of your own"; what the readers of a collection answer and what the small parts take: the same file, "A desk's pages". Those two sections are read before the page is written, and the package's types are not dug through.
+2. **A page** is one entry of the `pages` handed to `createConsole` in `src/main.tsx`: a key, which is its address (`/pages/<key>`), a label, which is its tab, and a function that renders it. What the member asks to see first goes on the empty page; another page is another entry. What the function is given: `<package>/README.md`, "Pages of your own"; what the readers of a collection answer and what the small parts take: the same file, "A desk's pages". Those two sections are read before the page is written, and the package's types are not dug through. The file is long, some 70,000 characters, and the rest of it is not about a desk: find the headings first, `grep -n "^### " <package>/README.md`, and read from each of the two to the heading after it, not the file whole.
 3. **What a page reads.** The desk's own files, with `fetch` at `/records/<path>`, each read when it is asked for; and the board, as the member, through the client the page is given. Nothing of another origin, and no token. `console serve dist --records ../records` serves both: JSON, pictures, video, sound and PDF are shown in place, anything else is a download ([records.md](/docs/specs/records.md#serving)).
 4. **What a page is built from:** the console's parts, each named with the component that renders it in `<package>/src/styles/README.md`, "The catalogue" ([in the repository](/packages/console/src/styles/README.md)). A page places parts and writes no colour, border or type of its own, so that it looks as the console does. For figures there are the charts, each exported from `@skillcdn/console`, with their props in `<package>/README.md`, "Charts":
    - `Stat`, and `Stats` for a row of them: a figure with its label and, where given, its change and a sparkline.

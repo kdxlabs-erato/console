@@ -5,7 +5,7 @@ license: MIT
 compatibility: Needs a shell with the console command on the PATH (npm install -g @skillcdn/console, Node.js 24 or newer), signed in by a person. Nothing else; the command needs no key of its own and the agent never sees a token.
 metadata:
   author: skillcdn
-  version: "1.39"
+  version: "1.40"
 skillcdn:
   translations:
     ko:
@@ -22,7 +22,8 @@ Beside this skill: the board's rules, which `console take` prints with the task,
 
 ## How the person is involved
 
-- **Questions:** only which task, when the request names none: "Which task should I take? Its number, or say that any ready one may be."; and which project, for a project's work asked in a directory that names none, where the person works in several: "Which project is this for? `console projects` lists them by key." Nothing else is asked in chat: what the task leaves open is asked on the board, where its people answer.
+- **Questions:** only which task, when the request names none: "Which task should I take? Its number, or say that any ready one may be."; and which project, for a project's work asked in a directory that names none, where the person works in several: "Which project is this for? `console projects` lists them by key." Nothing else of the task is asked in chat: what the task leaves open is asked on the board, where its people answer.
+- **A pack skill's own questions:** a skill of the pack the work is done with has a "How the person is involved" of its own, and work that is on the board skips none of it. What that skill asks before it begins, its inputs (what is sold and at what price, which account, which language), is asked as the skill says, in one message, in chat where the person who gave the work is in the conversation. What they answer is written on the task before anything is made, `console comment <number>` with their words as theirs, so that the board holds what the work was built on. What that skill has a person approve on the way, a plan, a cost, a step that is not taken back, is a decision on the board (phase 4), with the skill's choices as its options; an answer the person gives in chat is written on it as theirs. With nobody in the conversation the inputs are asked on the board too: one decision for what the work cannot begin without, what the skill would assume among its options, and the work that does not depend on the answer goes on.
 - **Checkpoints:** on the board, as decisions (phase 4). A decision raised is named in chat in one line, with its id.
 - **Go-ahead:** the task's body is the go-ahead. What it says the agent may decide alone is decided within that; anything else that changes scope, cost or a trade-off is a decision.
 - **Changes mid-run:** a person changes the task or answers a decision on the board; the run takes it from there and says so in its next report.
@@ -97,7 +98,7 @@ A choice the body does not settle, a trade-off, a cost, a change of scope: `cons
 
 ### Phase 6: Write down what the next agent needs
 
-What was learned and will be needed again (how a thing is set up, why a choice was made, a how-to) goes on a page of the project's documents: `console write <path> --title "<title>" --file notes.md`, at a path where the next agent looks for it (`console docs` shows the folders), and linked from the last report by its path; a picture for the page is attached with `console attach <path> <file>` and placed in the body as `![words](its name)`. A run that learned nothing of the kind writes none.
+What was learned and will be needed again (how a thing is set up, why a choice was made, a how-to) goes on a page of the project's documents: `console write <path> --title "<title>" --file notes.md`, at a path where the next agent looks for it (`console docs` shows the folders), and linked from the last report by its path; a picture for the page is attached with `console attach <path> <file>` and placed in the body as `![words](its name)`. A file that only carries words to a command, `notes.md` here, a report's or a task's body, is removed once the command took it, wherever it was written, and is never committed: the board holds the words from then on. A run that learned nothing of the kind writes none.
 
 ### Phase 7: Finish
 
@@ -126,7 +127,7 @@ The last report says where the result is, with the check that ran and its result
 An agent account works the board as this skill says, as itself: the command is signed in as the account, a run and a report are its own, and no person's name stands beside them. [running-an-agent](/skills/running-an-agent/SKILL.md) says how one is run and what reaches it; in the work of a task three things differ.
 
 - **A wake names the work, with its project**, and the command that reads it. Its desk names no project, so every command of the board said there carries `--project <key>`; a task in a repository is worked in that repository's checkout.
-- **Nobody is in chat.** What this skill asks a person in chat, an agent account settles from the task or asks on the board. A decision is addressed to whoever can decide it; where the task does not say who, to its manager, whom `console manager` names, with the administrators who stand in. A review's verdict reaches it as a comment, a tell or a change of the task, and is never its own.
+- **Nobody is in chat.** What this skill asks a person in chat, and what a skill of the pack asks before it begins, an agent account settles from the task or asks on the board. A decision is addressed to whoever can decide it; where the task does not say who, to its manager, whom `console manager` names, with the administrators who stand in. A review's verdict reaches it as a comment, a tell or a change of the task, and is never its own.
 - **It does not wait, and does not finish around a decision.** It raises the decision and goes on with other work, without waiting for the answer at all. The run that asked stays open, since the console ends no run that waits. The wake that brings the answer names the decision; the account then goes on with that run, naming it (`--run <id>`), and finishes the task when nothing of it waits on anyone. Stuck, waiting for what does not come or going round with another agent, it tells its manager, at the messenger or as a comment on the task, instead of going on.
 
 ## Beside this skill
