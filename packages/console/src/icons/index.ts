@@ -55,6 +55,14 @@ export function findIcons(
   return [...found.filter(begins), ...found.filter((name) => !begins(name))];
 }
 
+/**
+ * Where a choice stands among a picker's choices while nothing is searched: none first, then
+ * the glyphs in the order the pack shows them. A picker opens with the choice in hand there.
+ */
+export function iconPlace(value: IconName | null): number {
+  return value === null ? 0 : 1 + ICON_GROUP_LIST.flatMap((group) => group.icons).indexOf(value);
+}
+
 /** One section of a picker's choices: how many it holds, and how many stand on a row. */
 export interface IconSection {
   readonly size: number;

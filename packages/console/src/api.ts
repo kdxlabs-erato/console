@@ -100,6 +100,7 @@ export {
   type IconName,
   type IconSection,
   iconElement,
+  iconPlace,
   iconStep,
   isIconName,
 } from "./icons/index.js";

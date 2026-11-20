@@ -9,6 +9,7 @@ import {
   ICON_NAMES,
   type IconSection,
   iconElement,
+  iconPlace,
   iconStep,
   isIconName,
 } from "./index.js";
@@ -104,6 +105,14 @@ describe("moving among a picker's choices with the keys", () => {
     { size: 10, columns: 4 },
     { size: 3, columns: 4 },
   ];
+
+  it("begins at the choice in hand: none first, then the glyphs in the pack's order", () => {
+    expect(iconPlace(null)).toBe(0);
+    const shown = ICON_GROUP_LIST.flatMap((group) => group.icons);
+    expect(iconPlace(shown[0] ?? "plus")).toBe(1);
+    expect(iconPlace("calendar")).toBe(1 + shown.indexOf("calendar"));
+    expect(iconPlace(shown.at(-1) ?? "plus")).toBe(shown.length);
+  });
 
   it("goes from the field to the first choice, and back up out of it", () => {
     expect(iconStep(sections, -1, "ArrowDown")).toBe(0);

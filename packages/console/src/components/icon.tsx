@@ -16,6 +16,7 @@ import {
   ICON_GROUP_LIST,
   type IconName,
   type IconSection,
+  iconPlace,
   iconStep,
   isIconName,
 } from "../icons/index.js";
@@ -134,6 +135,11 @@ export function IconPicker(props: IconPickerProps) {
       ];
   const choices = sections.flatMap((section) => section.icons);
 
+  /** Opens the pack with the choice in hand, so that it is in sight and the keys go on from it. */
+  const show = () => {
+    setActive(iconPlace(props.value));
+    setOpen(true);
+  };
   const close = (refocus: boolean) => {
     setOpen(false);
     setQuery("");
@@ -227,11 +233,11 @@ export function IconPicker(props: IconPickerProps) {
         aria-expanded={open}
         aria-label={`${props.label}: ${props.value ?? none}`}
         disabled={props.disabled}
-        onClick={() => (open ? close(false) : setOpen(true))}
+        onClick={() => (open ? close(false) : show())}
         onKeyDown={(event) => {
           if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
             event.preventDefault();
-            setOpen(true);
+            show();
           }
         }}
       >
