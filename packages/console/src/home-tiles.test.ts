@@ -22,9 +22,11 @@ import {
   type PlacedTile,
   resized,
   rowsOf,
+  sameArrangement,
   sizesAt,
   standsComposed,
   startingSizeAt,
+  tidied,
   waitToGiveWay,
 } from "./home-tiles.js";
 import type { RestHome, RestPlugin, RestProject } from "./schemas.js";
@@ -365,19 +367,183 @@ describe("the front page's grid (ADR-0061)", () => {
     expect(arranged(tiles, COMPOSED_HOME, 8).some(({ tile }) => tile.id === TODAY)).toBe(true);
   });
 
-  it("starts arranging from the page as composed, each tile on the cells nearest it", () => {
+  it("starts arranging from the page closed up, the projects icons as they were (ADR-0139)", () => {
     const tiles = homeTiles([hr, hello], [project(1), project(2), project(3)]);
-    expect(places(arranged(tiles, null, 8))).toEqual({
-      [BALANCE]: [0, 0, "medium"],
-      [TODAY]: [4, 0, "medium"],
-      [P1]: [4, 3, "icon"],
-      [P2]: [5, 3, "icon"],
-      [P3]: [6, 3, "icon"],
-      "widget:hello:latest": [0, 4, "wide"],
+    // The composed page draws the lead four cells by four, which is no size of its own: put on
+    // the cells nearest that, at the medium it was told, it left the two rows under it empty,
+    // and thirteen cells in all. Closed up, one cell stands empty beside the last icon.
+    const placed = arranged(tiles, null, 8);
+    expect(places(placed)).toEqual({
+      [BALANCE]: [0, 0, "small"],
+      [TODAY]: [2, 0, "medium"],
+      [P1]: [6, 0, "icon"],
+      [P2]: [7, 0, "icon"],
+      [P3]: [6, 1, "icon"],
+      "widget:hello:latest": [0, 2, "wide"],
     });
+    expect(emptyCells(placed, 8)).toBe(1);
     for (const columns of [12, 8, 6, 4] as const) {
-      expect(holdsTogether(arranged(tiles, null, columns), columns)).toBe(true);
+      const at = arranged(tiles, null, columns);
+      expect(holdsTogether(at, columns)).toBe(true);
+      // A project is never made a card to close a row, and every widget has a size of its own.
+      for (const { tile, size } of at) {
+        expect(tile.kind === "project" ? ["icon"] : sizesAt(tile, columns)).toContain(size);
+      }
+      // What the person took off stays off.
+      expect(
+        arranged(tiles, { hidden: [TODAY], layouts: {} }, columns).some(
+          ({ tile }) => tile.id === TODAY,
+        ),
+      ).toBe(false);
     }
+  });
+
+  it("closes the rows the widgets take, and leaves the projects' own row to end short (ADR-0139)", () => {
+    // A notice that leads, large, and two widgets that come small too: what an organization with
+    // a plugin for its people has on its front page.
+    const people = plugin("people", [
+      {
+        key: "notices",
+        name: { en: "Notices" },
+        place: "home:top",
+        size: "half",
+        sizes: ["medium", "large", "full"],
+        defaultSize: "large",
+      },
+      {
+        key: "leave",
+        name: { en: "My leave" },
+        place: "home:top",
+        size: "third",
+        sizes: ["small", "medium", "large"],
+        defaultSize: "medium",
+      },
+      {
+        key: "away",
+        name: { en: "Away today" },
+        place: "home:top",
+        size: "third",
+        sizes: ["small", "medium", "large"],
+        defaultSize: "medium",
+      },
+    ]);
+    const NOTICES = "widget:people:notices";
+    const LEAVE = "widget:people:leave";
+    const AWAY = "widget:people:away";
+    const tiles = homeTiles([people], [project(1), project(2), project(3)]);
+    // Twelve columns: the composed page draws the lead six cells wide, which is no size. On the
+    // nearest cells it stood four wide with a band of two empty columns beside it, and another
+    // at the page's edge. Closed up, the lead takes the size that fills the row with the two
+    // beside it, as the composed page stands them, and the projects their own row below.
+    const wide = arranged(tiles, null, 12);
+    expect(places(wide)).toEqual({
+      [NOTICES]: [0, 0, "full"],
+      [LEAVE]: [8, 0, "medium"],
+      [AWAY]: [8, 2, "medium"],
+      [P1]: [0, 4, "icon"],
+      [P2]: [1, 4, "icon"],
+      [P3]: [2, 4, "icon"],
+    });
+    // Eight columns close at the sizes the composed page told, with nothing changed.
+    expect(places(arranged(tiles, null, 8))).toEqual({
+      [NOTICES]: [0, 0, "large"],
+      [LEAVE]: [4, 0, "medium"],
+      [AWAY]: [4, 2, "medium"],
+      [P1]: [0, 4, "icon"],
+      [P2]: [1, 4, "icon"],
+      [P3]: [2, 4, "icon"],
+    });
+    // Six columns: the composed page itself stands the two small widgets beside the lead, in the
+    // columns it leaves, where three icons left five of eight cells empty and the widgets stood
+    // under it, each three cells wide, which is no size either. Arranging starts on those cells.
+    const six = composed(tiles, null, 6);
+    expect(boxesOf(six)).toEqual({
+      [NOTICES]: [0, 0, 4, 4, "large"],
+      [LEAVE]: [4, 0, 2, 2, "small"],
+      [AWAY]: [4, 2, 2, 2, "small"],
+      [P1]: [0, 4, 1, 1, "icon"],
+      [P2]: [1, 4, 1, 1, "icon"],
+      [P3]: [2, 4, 1, 1, "icon"],
+    });
+    expect(coversWhole(six, 6)).toBe(true);
+    for (const columns of [6, 4] as const) {
+      expect(places(arranged(tiles, null, columns))).toEqual(
+        places(composed(tiles, null, columns)),
+      );
+    }
+    // One widget beside the lead leaves rows, and the projects take them before going below.
+    const two = homeTiles(
+      [{ ...people, widgets: people.widgets.slice(0, 2) } as RestPlugin],
+      [1, 2, 3, 4, 5].map(project),
+    );
+    expect(composed(two, null, 6).map(({ x, y, w, h, size }) => [x, y, w, h, size])).toEqual([
+      [0, 0, 4, 4, "large"],
+      [4, 0, 2, 2, "small"],
+      [4, 2, 1, 1, "icon"],
+      [5, 2, 1, 1, "icon"],
+      [4, 3, 1, 1, "icon"],
+      [5, 3, 1, 1, "icon"],
+      [0, 4, 1, 1, "icon"],
+    ]);
+    // A widget that comes in no size as wide as the columns left stands under the lead as before.
+    const hrOnSix = composed(homeTiles([hr], [project(1)]), null, 6);
+    expect(boxesOf(hrOnSix)).toEqual({
+      [BALANCE]: [0, 0, 4, 2, "medium"],
+      [P1]: [4, 0, 1, 1, "icon"],
+      [TODAY]: [0, 2, 6, 2, "medium"],
+    });
+  });
+
+  it("closes up a page a person kept with gaps, when they ask, and keeps their projects as they are (ADR-0109, ADR-0139)", () => {
+    const people = plugin("people", [
+      {
+        key: "notices",
+        name: { en: "Notices" },
+        place: "home:top",
+        size: "half",
+        sizes: ["medium", "large", "full"],
+        defaultSize: "large",
+      },
+      {
+        key: "leave",
+        name: { en: "My leave" },
+        place: "home:top",
+        size: "third",
+        sizes: ["small", "medium", "large"],
+        defaultSize: "medium",
+      },
+    ]);
+    const NOTICES = "widget:people:notices";
+    const LEAVE = "widget:people:leave";
+    const tiles = homeTiles([people], [project(1), project(2)]);
+    // The page as a console of before began arranging it, kept by Done: a band of two empty
+    // columns beside the lead, and a project the person made a card.
+    const kept = layout(12, [
+      { tile: NOTICES, x: 0, y: 0, size: "large" },
+      { tile: LEAVE, x: 6, y: 0, size: "medium" },
+      { tile: P1, x: 6, y: 2, size: "small" },
+      { tile: P2, x: 8, y: 2, size: "icon" },
+    ]);
+    const standing = arranged(tiles, kept, 12);
+    expect(places(standing)).toEqual({
+      [NOTICES]: [0, 0, "large"],
+      [LEAVE]: [6, 0, "medium"],
+      [P1]: [6, 2, "small"],
+      [P2]: [8, 2, "icon"],
+    });
+    const closed = tidied(standing, 12);
+    expect(holdsTogether(closed, 12)).toBe(true);
+    expect(places(closed)).toEqual({
+      [NOTICES]: [0, 0, "full"],
+      [LEAVE]: [8, 0, "large"],
+      [P1]: [0, 4, "small"],
+      [P2]: [2, 4, "icon"],
+    });
+    expect(sameArrangement(closed, standing)).toBe(false);
+    // Closed up once, there is nothing more to close, and the way to it is not offered.
+    expect(sameArrangement(tidied(closed, 12), closed)).toBe(true);
+    expect(sameArrangement(closed, closed.slice(1))).toBe(false);
+    expect(tidied([], 12)).toEqual([]);
   });
 
   it("closes up a width nobody arranged when another was, from the sizes the tiles come in (ADR-0082)", () => {

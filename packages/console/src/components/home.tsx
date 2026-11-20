@@ -37,8 +37,10 @@ import {
   type PlacedTile,
   resized,
   rowsOf,
+  sameArrangement,
   sizesAt,
   standsComposed,
+  tidied,
   waitToGiveWay,
 } from "../home-tiles.js";
 import { useWords } from "../i18n/index.js";
@@ -751,13 +753,20 @@ export function HomeGrid(props: HomeGridProps) {
   };
   /** The page as composed again, every tile back on it: kept by Done like any change, let go by Cancel. */
   const reset = () => setDraft(COMPOSED_HOME);
+  // The page closed up (ADR-0139), worked out while it is arranged alone: it tries the sizes the
+  // widgets come in, and the way to it is offered only where it would change something.
+  const closed = useMemo(
+    () => (editing ? tidied(placed, columns) : placed),
+    [editing, placed, columns],
+  );
+  const gaps = editing && !sameArrangement(closed, placed);
 
   const nameOfTile = (tile: HomeTile): string =>
     tile.kind === "project" ? tile.project.name : nameOf(tile.widget.name);
   // Moved in the page, a frame would load again: the tiles keep the order they came in for as
   // long as the page is open, and each stands where its style says.
-  // Someone who has arranged nothing sees the page composed, edge to edge; arranging it puts the
-  // same tiles on the grid's cells, where they move from (ADR-0082).
+  // Someone who has arranged nothing sees the page composed, edge to edge (ADR-0082); arranging
+  // it puts the same tiles on the grid's cells, closed up, where they move from (ADR-0139).
   const composing = !editing && nobodyArranged(working);
   const boxes: readonly ComposedTile[] = useMemo(
     () =>
@@ -811,6 +820,14 @@ export function HomeGrid(props: HomeGridProps) {
               onClick={reset}
             >
               {words.reset}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy || !gaps}
+              onClick={() => change(closed)}
+            >
+              {words.tidy}
             </Button>
             <Button size="sm" variant="ghost" disabled={busy} onClick={cancel}>
               {allWords.common.cancel}

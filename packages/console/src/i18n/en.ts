@@ -1577,6 +1577,8 @@ export const en = {
     hint: "Drag to move. Pick a size at the top right; × takes a tile off this page.",
     /** Puts the page back as it is composed for someone who has arranged nothing, kept by Done (ADR-0109). */
     reset: "Reset to default",
+    /** Closes the page up where it has gaps: the tiles in their order from the top, a widget at another of its sizes where a row closes with it (ADR-0139). */
+    tidy: "Close the gaps",
     done: "Done",
     add: "Add",
     remove: "Remove from this page",

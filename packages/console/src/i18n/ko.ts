@@ -1490,6 +1490,7 @@ export const ko: Messages = {
     edit: "화면 편집",
     hint: "끌어서 옮기세요. 크기는 오른쪽 위에서 고르고, ×로 화면에서 뺍니다.",
     reset: "기본 배치로",
+    tidy: "빈칸 정리",
     done: "완료",
     add: "추가",
     remove: "화면에서 제거",

@@ -492,10 +492,15 @@ a.sc-tile-glance:focus-visible {
   font-size: var(--sc-text-sm);
 }
 
+/* The ways out of arranging and the ways to put the page right, four of them: on a phone they
+   take a second line, so that the one that keeps the page is never past its edge. */
 .sc-home-bar-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--sc-space-2);
   align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .sc-home-tray {

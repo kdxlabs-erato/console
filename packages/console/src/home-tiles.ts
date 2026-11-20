@@ -364,13 +364,19 @@ function packed(
  * fewest tiles leave the size they would rather have, then so that the page is the shortest. The
  * projects take one size together, so that they line up as a row of the same tiles; a widget
  * takes any of its own. A page that cannot close leaves the fewest cells empty it can.
+ *
+ * Where the page is the one a person is about to arrange, or has arranged (ADR-0139), the
+ * projects are `kept` as they are: an icon stays an icon, since a page that closed by turning
+ * the projects into cards would be another page than the one they looked at. What is empty is
+ * then counted in the rows the widgets take alone: the projects' last row may end short, as on
+ * the composed page (ADR-0108), and a row of icons under the widgets is no gap to close.
  */
-function closedUp(wanted: readonly Wanted[], columns: number): PlacedTile[] {
+function closedUp(wanted: readonly Wanted[], columns: number, kept = false): PlacedTile[] {
   const projects = wanted.flatMap((entry, at) => (entry.tile.kind === "project" ? [at] : []));
   // The choices: for each widget its sizes, the one it would rather have first; for the projects
   // together, each its own, then each of the sizes a project comes in, all alike.
   const choices: { readonly at: readonly number[]; readonly options: HomeTileSize[][] }[] = [];
-  if (projects.length > 0) {
+  if (projects.length > 0 && !kept) {
     const own = projects.map((at) => wanted[at]?.size ?? "icon");
     const alike = PROJECT_ALIKE_SIZES.filter(
       (size) => HOME_TILE_CELLS[size].columns <= columns,
@@ -400,11 +406,30 @@ function closedUp(wanted: readonly Wanted[], columns: number): PlacedTile[] {
     if (choice === undefined) {
       const placed = packed(wanted, sizes, columns);
       const rows = rowsOf(placed, columns);
-      const filled = placed.reduce((cells, { size }) => {
+      // The rows what is empty is counted in: the page's, or those the widgets take.
+      const counted = kept
+        ? Math.max(
+            0,
+            ...placed
+              .filter(({ tile }) => tile.kind === "widget")
+              .map((tile) => tile.y + footprintOf(tile.size, columns).h),
+          )
+        : rows;
+      const filled = placed.reduce((cells, { size, y }) => {
         const { w, h } = footprintOf(size, columns);
-        return cells + w * h;
+        return cells + w * Math.max(0, Math.min(y + h, counted) - y);
       }, 0);
-      const score = [rows * columns - filled, changed, rows];
+      // A page being arranged closes by giving a widget more room before it takes any away: the
+      // cells the widgets lose of the sizes they had count before how many of them changed, so
+      // that the lead does not shrink to a strip where it could have grown to the row's end.
+      const lost = kept
+        ? placed.reduce((cells, { size }, at) => {
+            const had = footprintOf(preferred[at] as HomeTileSize, columns);
+            const has = footprintOf(size, columns);
+            return cells + Math.max(0, had.w * had.h - has.w * has.h);
+          }, 0)
+        : 0;
+      const score = [counted * columns - filled, lost, changed, rows];
       if (best === undefined || lessThan(score, best.score)) {
         best = { placed, score };
       }
@@ -442,18 +467,18 @@ export function arranged(
   const hidden = new Set(home?.hidden ?? []);
   const { entries, placed: keepsPlaces } = keptAt(home, columns);
   if (nobodyArranged(home)) {
-    // Arranging starts from the page as it was composed, each tile on the cells nearest it: a
-    // project on the very cell it stood on (ADR-0108), a lead alone on its own (ADR-0110).
-    const taken = new Set<number>();
-    return composed(tiles, home, columns).map(({ tile, size, x, y }) => {
-      const shape = footprintOf(size, columns);
-      const near = { x: Math.round(x), y: Math.round(y) };
-      const place = fits(taken, near, shape, columns)
-        ? near
-        : nearestRoom(taken, shape, near, columns);
-      occupy(taken, place, shape, columns);
-      return { tile, size, ...place };
-    });
+    // Arranging starts from the page closed up (ADR-0139): the tiles in the page's order, each
+    // widget at the size the composed page told it where the rows close with it, and at another
+    // of its own where they do not, the projects icons as they were. Put on the cells nearest
+    // where the composed page drew them, a tile drawn wider than any size it comes in left a
+    // band of empty cells beside it, and Done kept the bands. Where the composed page stands on
+    // whole cells, a lead alone with the projects beside it (ADR-0110), the projects alone
+    // (ADR-0108), this is the very same page.
+    const told = new Map(composed(tiles, home, columns).map(({ tile, size }) => [tile.id, size]));
+    const wanted = tiles
+      .filter((tile) => !hidden.has(tile.id))
+      .map((tile) => ({ tile, size: told.get(tile.id) ?? startingSizeAt(tile, columns) }));
+    return closedUp(wanted, columns, true);
   }
   if (!keepsPlaces) {
     const wanted: Wanted[] = [];
@@ -505,6 +530,34 @@ export function arranged(
     }
   }
   return placed;
+}
+
+/**
+ * A page being arranged, closed up (ADR-0139): its tiles in the order they are read, from the
+ * top, each widget at the size it has where the rows close with it and at another of its own
+ * where they do not, the projects as they are. What a person asks for when a page they kept has
+ * gaps they did not mean: from a tile that left, or from the page as it was first arranged.
+ */
+export function tidied(placed: readonly PlacedTile[], columns: number): PlacedTile[] {
+  return closedUp(
+    inReadingOrder(placed).map(({ tile, size }) => ({ tile, size })),
+    columns,
+    true,
+  );
+}
+
+/** Whether two arrangements stand every tile on the same cells at the same size. */
+export function sameArrangement(a: readonly PlacedTile[], b: readonly PlacedTile[]): boolean {
+  const at = new Map(b.map((tile) => [tile.tile.id, tile]));
+  return (
+    a.length === b.length &&
+    a.every((tile) => {
+      const other = at.get(tile.tile.id);
+      return (
+        other !== undefined && other.x === tile.x && other.y === tile.y && other.size === tile.size
+      );
+    })
+  );
 }
 
 /** How many rows the page takes. */
@@ -608,19 +661,54 @@ export function composed(
    * The projects beside a tile in the page's corner, so wide and so high: one to a cell in the
    * columns it leaves, no lower than it reaches, then across the page below it. The row after them.
    */
-  const putProjectsBeside = (w: number, h: number): number => {
+  const putProjectsBeside = (w: number, h: number, from = 0): number => {
     const across = columns - w;
-    const beside = Math.min(projects.length, across * h);
+    const beside = Math.min(projects.length, across * (h - from));
     projects.forEach((tile, nth) => {
       const below = nth - beside;
       if (below < 0) {
-        put(tile, w + (nth % across), Math.floor(nth / across), 1, 1);
+        put(tile, w + (nth % across), from + Math.floor(nth / across), 1, 1);
       } else {
         put(tile, below % columns, h + Math.floor(below / columns), 1, 1);
       }
     });
     const left = projects.length - beside;
     return h + Math.ceil(left / columns);
+  };
+  /**
+   * The widgets after the lead that stand beside it where it stands at a size of its own and
+   * leaves columns (ADR-0139): in their order, each at the largest of its sizes those columns
+   * hold, one under the other, no lower than the lead reaches, and none after the first that
+   * has no such size. How many stand there, and how far down they reach.
+   */
+  const putWidgetsBeside = (
+    list: readonly HomeTile[],
+    w: number,
+    h: number,
+  ): { readonly stood: number; readonly down: number } => {
+    const across = columns - w;
+    const area = (size: HomeTileSize) => HOME_TILE_CELLS[size].columns * HOME_TILE_CELLS[size].rows;
+    let down = 0;
+    let stood = 0;
+    for (const tile of list) {
+      const [size] = sizesAt(tile, columns)
+        .filter((candidate) => {
+          const cells = footprintOf(candidate, columns);
+          return cells.w === across && cells.h <= h - down;
+        })
+        .sort(
+          (a, b) =>
+            area(b) - area(a) || Number(b === tile.defaultSize) - Number(a === tile.defaultSize),
+        );
+      if (size === undefined) {
+        break;
+      }
+      const shape = footprintOf(size, columns);
+      boxes.push({ tile, size, x: w, y: down, ...shape });
+      down += shape.h;
+      stood += 1;
+    }
+    return { stood, down };
   };
   /** Widgets two to a row across the page, one alone as wide as the page. */
   const putInPairs = (list: readonly HomeTile[], from: number): number => {
@@ -665,6 +753,7 @@ export function composed(
     y = putInPairs([...others.slice(MOST_BESIDE), ...bottom], y);
   } else {
     let projectsPut = false;
+    let below = others;
     if (lead !== undefined) {
       // Nothing beside it, the lead is drawn at the size it is told, on that size's cells, and
       // never stretched to the page's width and four rows (ADR-0110).
@@ -672,12 +761,20 @@ export function composed(
       const shape = footprintOf(size, columns);
       boxes.push({ tile: lead, size, x: 0, y: 0, ...shape });
       y = shape.h;
-      if (shape.w < columns && projects.length > 0) {
-        y = putProjectsBeside(shape.w, shape.h);
-        projectsPut = true;
+      if (shape.w < columns) {
+        // In the columns it leaves stand the widgets that come in a size as wide as those
+        // columns, then the projects in the rows the widgets leave (ADR-0139): on a grid of six,
+        // two small widgets beside a large lead, where the projects alone left most of those
+        // columns empty and the widgets stood under the lead, each drawn at no size of its own.
+        const { stood, down } = putWidgetsBeside(others, shape.w, shape.h);
+        below = others.slice(stood);
+        if (projects.length > 0 && (stood === 0 || down < shape.h)) {
+          y = putProjectsBeside(shape.w, shape.h, down);
+          projectsPut = true;
+        }
       }
     }
-    y = putInPairs(others, y);
+    y = putInPairs(below, y);
     if (!projectsPut) {
       y += putProjects(0, y, columns);
     }
