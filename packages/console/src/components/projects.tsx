@@ -136,6 +136,20 @@ export function keyOf(name: string): string {
     .slice(0, MAX_PROJECT_KEY_LENGTH);
 }
 
+/**
+ * What a save says of a project's icon: the one chosen where the form changed it, and nothing
+ * where it did not. A console older than the field refuses nothing it was not sent, a project
+ * that never had an icon is sent none, and an icon this page's pack does not have, one of a
+ * newer console's, which the form shows as none, stays the project's when something else is
+ * saved.
+ */
+export function glyphChange(
+  before: IconName | null,
+  chosen: IconName | null,
+): { readonly glyph?: IconName | null } {
+  return chosen === before ? {} : { glyph: chosen };
+}
+
 export function ProjectForm(props: ProjectFormProps) {
   const words = useWords();
   const form = words.projects.form;
@@ -148,9 +162,10 @@ export function ProjectForm(props: ProjectFormProps) {
   const [skillsAddress, setSkillsAddress] = useState(project?.skillsAddress ?? "");
   const [color, setColor] = useState<ColorName | "">(project?.color ?? "");
   const [symbol, setSymbol] = useState(project?.symbol ?? "");
-  const [glyph, setGlyph] = useState<IconName | null>(
-    project === undefined ? null : (projectGlyphOf(project) ?? null),
-  );
+  /** The icon the project has, where this page's pack has it: what the form begins with, and what a save is held against. */
+  const glyphBefore: IconName | null =
+    project === undefined ? null : (projectGlyphOf(project) ?? null);
+  const [glyph, setGlyph] = useState<IconName | null>(glyphBefore);
   /** The image for the mark: a file chosen, `null` for none any more, nothing to keep the project's. */
   const [icon, setIcon] = useState<File | null | undefined>(undefined);
   // The image chosen, as an address the mark can show before it is saved: the file's own bytes,
@@ -201,9 +216,7 @@ export function ProjectForm(props: ProjectFormProps) {
       skillsAddress: skillsAddress.trim() === "" ? null : skillsAddress.trim(),
       color: preview.color,
       symbol: preview.symbol,
-      // Said only where it is chosen or was: a console older than the field refuses nothing it
-      // was not sent, and a project that never had an icon is sent none.
-      ...(glyph !== null || (project?.glyph ?? null) !== null ? { glyph } : {}),
+      ...glyphChange(glyphBefore, glyph),
     };
     props.onSubmit(
       project === undefined ? { key: key.trim(), ...settings, name: name.trim() } : settings,

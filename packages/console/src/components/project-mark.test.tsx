@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { RestProject } from "../api.js";
-import { ProjectForm, ProjectMark } from "./projects.js";
+import { glyphChange, ProjectForm, ProjectMark } from "./projects.js";
 
 // A project's mark with an icon of the pack in its symbol's place (ADR-0142), and the form that
 // chooses it.
@@ -63,6 +63,17 @@ describe("the project form's icon", () => {
     expect(html).toContain('aria-label="Icon: flag"');
     // The mark as it will be shows the icon already.
     expect(html).toMatch(/class="sc-mark sc-mark-lg[^"]*"[^>]*><svg class="sc-icon/);
+  });
+
+  it("says an icon in a save only where the form changed it, so that one this pack lacks is not cleared", () => {
+    // Chosen, changed and taken away: said.
+    expect(glyphChange(null, "flag")).toEqual({ glyph: "flag" });
+    expect(glyphChange("flag", "calendar")).toEqual({ glyph: "calendar" });
+    expect(glyphChange("flag", null)).toEqual({ glyph: null });
+    // As it was: nothing is said, and the project keeps what it has. An icon of a newer pack
+    // reads here as none, and saving the project's name leaves it there.
+    expect(glyphChange("flag", "flag")).toEqual({});
+    expect(glyphChange(null, null)).toEqual({});
   });
 
   it("offers none for a new project", () => {
