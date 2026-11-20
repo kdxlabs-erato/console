@@ -4555,6 +4555,10 @@ const serve: Command = async (args, io) => {
       throw error;
     }
   }
+  // Whether the records are there is asked before anything listens: the line says what the
+  // command found when it began. Asked after, a directory made in the moment between, by a
+  // session that began keeping something as the pages came up, read as there all along.
+  const recordsThere = records === undefined ? false : await records.there();
   const listening = await listen(
     (bound) =>
       createServeHandler({
@@ -4572,7 +4576,7 @@ const serve: Command = async (args, io) => {
   const served =
     kept === undefined || records === undefined
       ? ""
-      : (await records.there())
+      : recordsThere
         ? ` The records in ${kept} are at ${listening.url}records/, read as they are when they are asked for.`
         : ` Nothing is kept in ${kept} yet: what comes to be kept there is at ${listening.url}records/ from then on, with no restart.`;
   io.stdout(
