@@ -4471,6 +4471,16 @@ describe("configuring, as the person", () => {
         new Date("2026-11-01T00:00:00.000Z"),
       )?.toISOString(),
     ).toBe("2026-11-01T14:00:00.000Z");
+    // And across a night on which it is put forward: 09:00 on the fourteenth of March 2027,
+    // asked the evening before, is twelve hours of the world's clock on, not thirteen.
+    const forward = (at: string, now: string) =>
+      ownWakeMoment({ at }, "America/New_York", new Date(now))?.toISOString();
+    expect(forward("09:00", "2027-03-14T01:00:00.000Z")).toBe("2027-03-14T13:00:00.000Z");
+    // An hour the clock skips that night is no hour of that day: asked at ten to two for ten
+    // past two, the moment is twenty minutes on, when the clock says ten past three, and never
+    // one that has passed.
+    expect(forward("02:10", "2027-03-14T06:50:00.000Z")).toBe("2027-03-14T07:10:00.000Z");
+    expect(forward("02:30", "2027-03-14T01:00:00.000Z")).toBe("2027-03-14T07:30:00.000Z");
     // What the console refuses is said as it says it.
     const many = harness(at);
     expect(await runCli(["agent", "wake", "me"], many.io)).toBe(EXIT.failed);

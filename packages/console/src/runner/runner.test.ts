@@ -2254,6 +2254,30 @@ describe("the runner", () => {
     expect(await done).toBe("stopped");
   });
 
+  it("ends for nothing where a runner.json it was to end for is put back as it was before the turn ends", async () => {
+    let now: "same" | "changed" = "same";
+    const { console, product, done, log, runner } = setup({ reconfigured: async () => now });
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    session.emit(...STARTED);
+    // Seen changed twice in a turn: the runner would end when the turn does.
+    now = "changed";
+    await until("the change to be seen", () =>
+      log.some((line) => line.startsWith("runner.json changed since the runner started")),
+    );
+    // Put back while the turn is still under way: said, and the turn's end ends nothing.
+    now = "same";
+    await until("the file to be said the same again", () =>
+      log.includes("runner.json is as the runner was started with it again: the runner goes on"),
+    );
+    session.emit({ type: "event", kind: "assistant", text: "Begun." }, { type: "turn_completed" });
+    await sleep(150);
+    expect(console.ended).toEqual([]);
+    runner.stop();
+    expect(await done).toBe("stopped");
+  });
+
   it("tells its agent of a runner.json that does not read in the session that opens later, where none was open", async () => {
     const problem = { problem: "runner.json is not readable JSON" };
     const { console, product, log, runner, done } = setup({ reconfigured: async () => problem });

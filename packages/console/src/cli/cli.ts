@@ -5243,9 +5243,14 @@ export function ownWakeMoment(
     const at = new Date(now.getTime() + ahead * 60_000);
     at.setSeconds(0, 0);
     // Where the zone's clock is put forward or back before then, the moment is off by that
-    // much: moved by what the clock says there, once.
+    // much: moved by what the clock says there, once, where the clock then says the hour asked
+    // for and the moment is still to come. An hour the clock skips that night is no hour of
+    // that day: the moment stays the one counted, just past it.
     const off = ((wanted - minutesOfDayIn(zone, at) + day + day / 2) % day) - day / 2;
-    return off === 0 ? at : new Date(at.getTime() + off * 60_000);
+    const moved = new Date(at.getTime() + off * 60_000);
+    return off !== 0 && moved.getTime() > now.getTime() && minutesOfDayIn(zone, moved) === wanted
+      ? moved
+      : at;
   }
   return undefined;
 }

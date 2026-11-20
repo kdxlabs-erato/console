@@ -311,6 +311,7 @@ describe("the wakes an agent account raises for itself (ADR-0145)", () => {
       body: JSON.stringify({ text: "As a helper." }),
     });
     expect(helper.status).toBe(403);
+    expect(restErrorSchema.parse(await helper.json()).error.code).toBe("agent.own_command");
     // Nobody at all, from no page of the console's: refused before anyone is asked who they are.
     expect(
       (await h.request(OWN, { method: "POST", headers: JSON_HEADERS, body: "{}" })).status,
