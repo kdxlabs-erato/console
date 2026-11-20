@@ -7,7 +7,7 @@ import {
   type ProjectVisibility,
 } from "@skillcdn/console/api";
 import { and, asc, count, eq, inArray, type SQL, sql } from "drizzle-orm";
-import { memberOfProject, projectVisibleTo } from "../../auth/policy.js";
+import { administers, memberOfProject, projectVisibleTo } from "../../auth/policy.js";
 import { DomainError } from "../../errors.js";
 import { type Database, drizzleOf, type Transaction } from "../client.js";
 import { decisions, people, projectMembers, projects, runs, teams, workspaces } from "../schema.js";
@@ -196,13 +196,18 @@ export function visibleTo(person: PersonRecord): SQL {
   return projectVisibleTo(person);
 }
 
-/** The role `person` has in a project they may see: an owner, as listed or as an administrator, or a member. */
+/**
+ * The role `person` has in a project they may see: an owner, as listed or as an administrator,
+ * or a member. Whether they may see it is asked of the policy, in the query that read the row
+ * (`projectVisibleTo`); a row read without that condition gets no role here where the project
+ * is private and they are not listed, so that a query that forgot it shows nothing.
+ */
 function roleOf(
   person: PersonRecord,
   project: { readonly visibility: ProjectVisibility },
   listed: ProjectRole | null,
 ): ProjectRole | undefined {
-  if (person.role === "admin") {
+  if (administers(person)) {
     return "owner";
   }
   if (listed !== null) {
@@ -239,6 +244,8 @@ function toView(row: ViewRow, person: PersonRecord): ProjectView | undefined {
 /**
  * The project `key` names as `person` sees it, or nothing when there is no such project or
  * the person may not see it: both are the same answer, so that nothing is learned either way.
+ * Whether they may see it is the policy's to say, in the query, as a listing has it say: the
+ * role read off the row after it is what they are in a project they see, and decides nothing.
  */
 export async function findProjectFor(
   database: Database,
@@ -247,7 +254,9 @@ export async function findProjectFor(
   person: PersonRecord,
 ): Promise<ProjectView | undefined> {
   const [row] = await selectViews(drizzleOf(database), person)
-    .where(and(eq(projects.workspaceId, workspaceId), eq(projects.key, key)))
+    .where(
+      and(eq(projects.workspaceId, workspaceId), eq(projects.key, key), projectVisibleTo(person)),
+    )
     .limit(1);
   return row === undefined ? undefined : toView(row, person);
 }
@@ -333,7 +342,9 @@ async function readView(
   projectId: string,
   person: PersonRecord,
 ): Promise<ProjectView> {
-  const [row] = await selectViews(tx, person).where(eq(projects.id, projectId)).limit(1);
+  const [row] = await selectViews(tx, person)
+    .where(and(eq(projects.id, projectId), projectVisibleTo(person)))
+    .limit(1);
   const view = row === undefined ? undefined : toView(row, person);
   if (view === undefined) {
     throw new ProjectError("project.not_found");
