@@ -9,7 +9,7 @@
 // table in it, and naming a table takes a lock on it before any right on the table is asked for.
 // What every role holds through PUBLIC is taken from PUBLIC, which only a schema's owner may do;
 // where the console's role may not, provisioning is refused with what the owner runs.
-import { randomBytes } from "node:crypto";
+import { createHash, createHmac, pbkdf2Sync, randomBytes } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -104,18 +104,38 @@ function refusedForWantOfRight(error: unknown): boolean {
   return false;
 }
 
-/** A literal quoted for a statement that cannot take it as a parameter: a password. */
+/** A literal quoted for a statement that cannot take it as a parameter: a role's verifier, a setting. */
 function literal(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
+}
+
+/** How many rounds a verifier's key is derived with: what PostgreSQL derives its own with. */
+const SCRAM_ITERATIONS = 4096;
+
+/**
+ * A password as PostgreSQL keeps one (SCRAM-SHA-256, RFCs 5802 and 7677): a salt, and two keys
+ * derived from the password, by which the server tells that a login knows it and from which the
+ * password cannot be had. A plugin's role is given its password in this form, never as it is: a
+ * server that logs its statements (`log_statement` of `ddl` or more) writes the statement down
+ * whole, and what stands in it then is no credential. The password is drawn here from letters,
+ * digits, `-` and `_`, which the preparation the protocol asks of a password leaves as they are.
+ */
+export function scramVerifier(password: string, salt: Buffer = randomBytes(16)): string {
+  const salted = pbkdf2Sync(password, salt, SCRAM_ITERATIONS, 32, "sha256");
+  const clientKey = createHmac("sha256", salted).update("Client Key").digest();
+  const storedKey = createHash("sha256").update(clientKey).digest();
+  const serverKey = createHmac("sha256", salted).update("Server Key").digest();
+  return `SCRAM-SHA-256$${SCRAM_ITERATIONS}:${salt.toString("base64")}$${storedKey.toString("base64")}:${serverKey.toString("base64")}`;
 }
 
 /**
  * What a statement that gave the plugin's role its password failed with, as a refusal that names
  * the role and gives the database's code and words, and nothing of the statement: the ORM's error
- * quotes the statement whole, the password in it, in its message, beside it and in its stack, and
- * whatever is thrown here goes on to the log and to the plugin's `plugin.failed` event. The words
- * are the driver's own error's, beneath the ORM's: its message and its detail, which say why
- * without quoting the statement, and are cleared of the password all the same. Nothing of what was
+ * quotes the statement whole, what it gave as the password in it, in its message, beside it and
+ * in its stack, and whatever is thrown here goes on to the log and to the plugin's
+ * `plugin.failed` event. The words are the driver's own error's, beneath the ORM's: its message
+ * and its detail, which say why without quoting the statement, and are cleared of what was given
+ * (`password`, which is the verifier the statement carried) all the same. Nothing of what was
  * thrown is kept as the refusal's cause.
  */
 export function roleRefusal(
@@ -280,15 +300,18 @@ export class PluginSqlService {
     const taken = ROLE_POWERS.filter(([column]) => role?.[column] === true).map(
       ([, without]) => without,
     );
+    // The statement carries what the server keeps of the password, not the password: a server
+    // that logs its statements writes this one down, and so does whatever the ORM throws.
+    const verifier = scramVerifier(password);
     const statement =
       role !== undefined
-        ? `alter role ${quoted(name)} with login noinherit ${taken.join(" ")} connection limit ${PLUGIN_SQL_CONNECTIONS} password ${literal(password)}`
-        : `create role ${quoted(name)} with login noinherit nocreatedb nocreaterole nosuperuser connection limit ${PLUGIN_SQL_CONNECTIONS} password ${literal(password)}`;
+        ? `alter role ${quoted(name)} with login noinherit ${taken.join(" ")} connection limit ${PLUGIN_SQL_CONNECTIONS} password ${literal(verifier)}`
+        : `create role ${quoted(name)} with login noinherit nocreatedb nocreaterole nosuperuser connection limit ${PLUGIN_SQL_CONNECTIONS} password ${literal(verifier)}`;
     try {
       await db.execute(sql.raw(statement));
     } catch (error) {
-      // The statement carries the password, and what the ORM throws quotes it whole.
-      throw roleRefusal(name, role === undefined ? "made" : "changed", error, password);
+      // What the ORM throws quotes the statement whole, the verifier in it.
+      throw roleRefusal(name, role === undefined ? "made" : "changed", error, verifier);
     }
     await db.execute(sql.raw(`alter role ${quoted(name)} set search_path = ${quoted(name)}`));
     await db.execute(

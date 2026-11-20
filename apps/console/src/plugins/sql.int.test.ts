@@ -398,8 +398,21 @@ describe("a plugin's schema", () => {
       sql`select rolcreatedb as createdb from pg_roles where rolname = 'plugin_tallytest'`,
     );
     expect(powers.rows).toEqual([{ createdb: false }]);
+    // The role was given what the server keeps of its password, never the password, so the
+    // statement a server may log holds no credential; this query signs in with the password
+    // itself, which is the proof that the two belong together.
     const counted = await service.query("tallytest", "select count(*)::int as n from things", []);
     expect(counted.rows).toEqual([{ n: 3 }]);
+    // Where the tests' database user may read what the server keeps, it is that form.
+    const reader = await drizzleOf(testDatabase.database).execute<{ able: boolean }>(
+      sql`select rolsuper as able from pg_roles where rolname = current_user`,
+    );
+    if (reader.rows[0]?.able === true) {
+      const kept = await drizzleOf(testDatabase.database).execute<{ kept: string }>(
+        sql`select rolpassword as kept from pg_authid where rolname = 'plugin_tallytest'`,
+      );
+      expect(kept.rows[0]?.kept).toMatch(/^SCRAM-SHA-256\$4096:/);
+    }
     expect(await service.applyMigrations("tallytest", migrations)).toBe(0);
   });
 

@@ -1,9 +1,9 @@
-import { randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { DrizzleQueryError } from "drizzle-orm";
 import { DatabaseError } from "pg";
 import { describe, expect, it } from "vitest";
 import { errorForLog } from "../logger.js";
-import { CONSOLE_SCHEMAS, closingStatement, roleRefusal, sqlNameOf } from "./sql.js";
+import { CONSOLE_SCHEMAS, closingStatement, roleRefusal, scramVerifier, sqlNameOf } from "./sql.js";
 
 // What a refusal of `storage:sql` tells the database's owner to run (ADR-0133): the statement is
 // read by a person and run as it is written, so its names are quoted as PostgreSQL reads them.
@@ -25,6 +25,46 @@ describe("the statement the database's owner runs", () => {
     expect(closingStatement(["public"], 'Ops"; DROP ROLE x; --')).toBe(
       'GRANT USAGE, CREATE ON SCHEMA "public" TO "Ops""; DROP ROLE x; --"; REVOKE ALL ON SCHEMA "public" FROM PUBLIC;',
     );
+  });
+});
+
+describe("what a role is given in place of its password", () => {
+  const keysOf = (verifier: string): { stored: Buffer; server: Buffer } => {
+    const [stored = "", server = ""] = (verifier.split("$")[2] ?? "").split(":");
+    return { stored: Buffer.from(stored, "base64"), server: Buffer.from(server, "base64") };
+  };
+
+  it("is what the server keeps of a password: the example exchange of RFC 7677 holds against it", () => {
+    // The RFC's own example: the user `user`, the password and the salt it names, 4096 rounds.
+    const salt = Buffer.from("W22ZaJ0SNY7soEsUEjb6gQ==", "base64");
+    const verifier = scramVerifier(["pen", "cil"].join(""), salt);
+    expect(verifier.startsWith("SCRAM-SHA-256$4096:W22ZaJ0SNY7soEsUEjb6gQ==$")).toBe(true);
+    const { stored, server } = keysOf(verifier);
+    const nonce = "rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0";
+    const exchange = [
+      "n=user,r=rOprNGfwEbeRWgbNEkqO",
+      `r=${nonce},s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096`,
+      `c=biws,r=${nonce}`,
+    ].join(",");
+    // The proof the RFC's client sent proves the password to a server that holds these keys.
+    const proof = Buffer.from("dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ=", "base64");
+    const signature = createHmac("sha256", stored).update(exchange).digest();
+    const clientKey = Buffer.from(proof.map((byte, index) => byte ^ (signature[index] ?? 0)));
+    expect(createHash("sha256").update(clientKey).digest().equals(stored)).toBe(true);
+    // And the server proves itself to that client with the signature the RFC's server sent.
+    expect(createHmac("sha256", server).update(exchange).digest("base64")).toBe(
+      "6rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4=",
+    );
+  });
+
+  it("holds nothing of the password, and a salt of its own each time", () => {
+    const password = randomBytes(32).toString("base64url");
+    const one = scramVerifier(password);
+    expect(one).toMatch(
+      /^SCRAM-SHA-256\$4096:[A-Za-z0-9+/]{22}==\$[A-Za-z0-9+/]{43}=:[A-Za-z0-9+/]{43}=$/,
+    );
+    expect(one).not.toContain(password);
+    expect(scramVerifier(password)).not.toBe(one);
   });
 });
 

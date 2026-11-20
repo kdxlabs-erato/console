@@ -310,16 +310,23 @@ describe("where the database refuses the statement that gives a plugin's role it
     };
   }
 
-  /** That no password drawn is in anything said of the failure, and that the failure is said. */
+  /**
+   * That nothing a statement gave a role as its password is in anything said of the failure, and
+   * that the failure is said. What a statement gives is what the server keeps of a password, its
+   * salt and its keys, and never the password drawn: the server may log the statement.
+   */
   function expectSaidWithoutPassword(
     said: Awaited<ReturnType<typeof provisionRefused>>,
     role: string,
     words: string,
   ) {
-    // Two passwords were drawn, one a pass, and were sent in the statements that failed.
+    // Two passwords were drawn, one a pass, and what the server keeps of each was sent in the
+    // statements that failed.
     expect(said.drawn).toHaveLength(2);
     for (const drawn of said.drawn) {
-      expect(drawn).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(drawn).toMatch(
+        /^SCRAM-SHA-256\$4096:[A-Za-z0-9+/]{22}==\$[A-Za-z0-9+/]{43}=:[A-Za-z0-9+/]{43}=$/,
+      );
     }
     expect(said.refused).toMatchObject({
       code: "plugin.unavailable",
