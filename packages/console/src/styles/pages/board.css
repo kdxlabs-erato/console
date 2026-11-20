@@ -96,11 +96,6 @@
   color: var(--sc-color-text);
 }
 
-.sc-column-toggle svg {
-  width: 1rem;
-  height: 1rem;
-}
-
 /* A folded column is a strip: the way to open it on top, its name down its length, its count. */
 /* A folded column is its header alone, the height of a header and as wide as its name: the way
    to open it, the name and the count in a row, at the top of the board. */
@@ -284,11 +279,6 @@
     opacity var(--sc-transition),
     background var(--sc-transition),
     color var(--sc-transition);
-}
-
-.sc-card-menu-button svg {
-  width: 1rem;
-  height: 1rem;
 }
 
 /* Shown on the card under the pointer or with the focus, while the menu is open, and on the card

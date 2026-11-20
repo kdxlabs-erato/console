@@ -26,6 +26,10 @@ import {
   formatBytes,
   GOAL_STATES,
   GoalStateBadge,
+  ICON_GROUP_LIST,
+  Icon,
+  type IconName,
+  IconPicker,
   KindMark,
   KOREAN,
   LanguageContext,
@@ -128,6 +132,12 @@ interface PartProps {
   /** What the part lies on in a real page: a pane, as most do, or the field itself, as a pane does. */
   readonly ground?: "pane" | "field";
   readonly children: ReactNode;
+}
+
+/** The picker with a choice of its own, so that choosing is seen. */
+function IconChoice() {
+  const [value, setValue] = useState<IconName | null>("calendar");
+  return <IconPicker value={value} label="Icon" onChange={setValue} />;
 }
 
 /** One part's section: its name, its classes, what it is for, and the part itself below. */
@@ -1574,6 +1584,54 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
           <ProjectMark project={ledger} size="sm" />
           Ledger
         </span>
+      </Specimen>
+    </Part>
+
+    <Part
+      name="icon"
+      classes="sc-icon*"
+      use="A glyph of the icon pack by its name, in the colour of the text it stands in; and the way to choose one."
+    >
+      <Specimen
+        label="The sizes: xs a caret, sm in a line of text, md by itself, lg in an empty state"
+        row
+      >
+        <Icon name="calendar" size="xs" />
+        <Icon name="calendar" size="sm" />
+        <Icon name="calendar" size="md" />
+        <Icon name="calendar" size="lg" />
+      </Specimen>
+      <Specimen label="In a line of text, in the text's colour" row>
+        <span>
+          <Icon name="clock" size="sm" /> Due on Friday
+        </span>
+        <span className="sc-muted">
+          <Icon name="lock" size="sm" /> Only those listed
+        </span>
+        <Button variant="secondary" size="sm">
+          <Icon name="plus" size="sm" /> Add a task
+        </Button>
+      </Specimen>
+      {ICON_GROUP_LIST.map((group) => (
+        <Specimen key={group.key} label={`The pack: ${group.key}`}>
+          <div className="dev-icons">
+            {group.icons.map((name) => (
+              <div key={name} className="dev-icon">
+                <span className="dev-row">
+                  <Icon name={name} size="sm" />
+                  <Icon name={name} size="md" />
+                  <Icon name={name} size="lg" />
+                </span>
+                <code className="sc-muted">{name}</code>
+              </div>
+            ))}
+          </div>
+        </Specimen>
+      ))}
+      <Specimen label="Choosing one: the field, and the pack under it">
+        <div className="dev-narrow">
+          <IconChoice />
+        </div>
       </Specimen>
     </Part>
 

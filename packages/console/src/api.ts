@@ -89,6 +89,21 @@ export {
   nameOf,
 } from "./documents.js";
 export {
+  findIcons,
+  GLYPHS,
+  type GlyphShape,
+  type GlyphTag,
+  ICON_GRID,
+  ICON_GROUP_LIST,
+  ICON_NAMES,
+  type IconGroup,
+  type IconName,
+  type IconSection,
+  iconElement,
+  iconStep,
+  isIconName,
+} from "./icons/index.js";
+export {
   DEFAULT_DAY_START,
   DEFAULT_PAGE_LIMIT,
   DEFAULT_TOKEN_DAYS,

@@ -1,0 +1,191 @@
+/* A glyph of the icon pack: lines on one grid, in the colour of the text it stands in. The
+   stroke is the pack's own, said on the grid: a glyph drawn small is given a little more of it
+   and one drawn large a little less, so that a line stays about as heavy as the letters beside
+   it at every size. */
+.sc-icon {
+  display: inline-block;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: middle;
+}
+
+/* The smallest: a caret beside a word. */
+.sc-icon-xs {
+  width: 0.75rem;
+  height: 0.75rem;
+  stroke-width: 1.875;
+}
+
+/* In a line of text, as tall as its letters with what rises above them. */
+.sc-icon-sm {
+  width: 1rem;
+  height: 1rem;
+  stroke-width: 1.75;
+}
+
+/* By itself: in a button, a tile, a row's head. */
+.sc-icon-md {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* In an empty state, or on a card. */
+.sc-icon-lg {
+  width: 2rem;
+  height: 2rem;
+  stroke-width: 1.25;
+}
+
+/* A glyph as a project's mark: on the mark's colour, in the mark's line, a little over half its
+   side; on the smallest mark, beside a name, a little more of the side and of the stroke, so
+   that it still reads at the height of a letter. */
+.sc-mark > .sc-icon {
+  width: 62%;
+  height: 62%;
+}
+
+.sc-mark-sm > .sc-icon {
+  width: 72%;
+  height: 72%;
+  stroke-width: 2;
+}
+
+/* Choosing a glyph: the field that shows the choice, and the pack that opens under it. */
+.sc-icon-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.sc-icon-picker-field {
+  display: flex;
+  align-items: center;
+  gap: var(--sc-space-2);
+  font-family: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.sc-icon-picker-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sc-icon-picker-caret {
+  color: var(--sc-color-text-faint);
+  transition: transform var(--sc-transition);
+}
+
+.sc-icon-picker-field[aria-expanded="true"] > .sc-icon-picker-caret {
+  transform: rotate(180deg);
+}
+
+/* The pack: as wide as its field on a phone, where the field is as wide as the pane leaves, and
+   as wide as seven or eight glyphs need from there on, begun where the field begins. */
+.sc-icon-picker-panel {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + var(--sc-space-1));
+  right: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-space-2);
+  max-height: 22rem;
+  padding: var(--sc-space-2);
+  border: var(--sc-border);
+  border-radius: var(--sc-radius-lg);
+  background: var(--sc-color-bg-raised);
+  box-shadow: var(--sc-shadow-menu);
+  font-size: var(--sc-text-sm);
+}
+
+/* A pane is a layer of its own, and the one after it is drawn over it: the pane whose pack is
+   open stands over the panes beside it, so that the pack is never cut where its pane ends. */
+.sc-panel:has(.sc-icon-picker-panel) {
+  z-index: 2;
+}
+
+/* Where the window has no room below the field, and more above, the pack stands above it. */
+.sc-icon-picker-panel-above {
+  top: auto;
+  bottom: calc(100% + var(--sc-space-1));
+}
+
+@media (min-width: 52rem) {
+  .sc-icon-picker-panel {
+    right: auto;
+    width: 21.5rem;
+    min-width: 100%;
+  }
+}
+
+.sc-icon-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-space-3);
+  min-height: 0;
+  padding: var(--sc-space-1);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.sc-icon-picker-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-space-1);
+}
+
+.sc-icon-picker-none {
+  display: flex;
+}
+
+.sc-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2.25rem, 1fr));
+  gap: var(--sc-space-1);
+}
+
+/* One choice: a glyph in a square a finger finds, the one in hand raised, the one chosen in the accent. */
+.sc-icon-tile {
+  display: grid;
+  place-items: center;
+  min-height: 2.25rem;
+  border-radius: var(--sc-radius-md);
+  color: var(--sc-color-text-muted);
+  cursor: pointer;
+  transition:
+    background var(--sc-transition),
+    color var(--sc-transition);
+}
+
+.sc-icon-tile-none {
+  flex: 1;
+  justify-items: start;
+  padding-inline: var(--sc-space-2);
+}
+
+.sc-icon-tile-active {
+  background: var(--sc-color-bg-inset);
+  color: var(--sc-color-text);
+}
+
+.sc-icon-tile-chosen {
+  background: var(--sc-color-accent-subtle);
+  color: var(--sc-color-accent);
+}
+
+.sc-icon-tile-chosen.sc-icon-tile-active {
+  outline: var(--sc-focus-ring);
+  outline-offset: -2px;
+}
+
+.sc-icon-picker-note {
+  padding: var(--sc-space-2);
+}

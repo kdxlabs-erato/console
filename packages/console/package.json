@@ -39,6 +39,10 @@
       "types": "./dist/charts.d.ts",
       "default": "./dist/charts.js"
     },
+    "./icons": {
+      "types": "./dist/icons/index.d.ts",
+      "default": "./dist/icons/index.js"
+    },
     "./cli": {
       "types": "./dist/cli/cli.d.ts",
       "default": "./dist/cli/cli.js"

@@ -38,12 +38,6 @@
   color: var(--sc-color-text);
 }
 
-.sc-menu-caret {
-  flex: none;
-  width: 0.75rem;
-  height: 0.75rem;
-}
-
 .sc-menu-panel {
   position: absolute;
   top: calc(100% + var(--sc-space-2));

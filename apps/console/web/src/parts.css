@@ -182,3 +182,17 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* The icon pack: every glyph over its name, in a grid. */
+.dev-icons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  gap: var(--sc-space-4) var(--sc-space-3);
+}
+
+.dev-icon {
+  display: grid;
+  gap: var(--sc-space-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

@@ -18,6 +18,7 @@ import {
 } from "../api.js";
 import { useWords } from "../i18n/index.js";
 import type { BoardFilter } from "../router.js";
+import { Icon } from "./icon.js";
 import { Picker } from "./picker.js";
 import { listSearch } from "./searches.js";
 import { isPlainClick } from "./shell.js";
@@ -317,11 +318,7 @@ function CardMenu(props: {
         aria-expanded={open}
         onClick={toggle}
       >
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <circle cx="8" cy="3" r="1.5" fill="currentColor" />
-          <circle cx="8" cy="8" r="1.5" fill="currentColor" />
-          <circle cx="8" cy="13" r="1.5" fill="currentColor" />
-        </svg>
+        <Icon name="more-vertical" />
       </button>
       {place !== null &&
         typeof document !== "undefined" &&
@@ -611,16 +608,7 @@ export function Board(props: BoardProps) {
                   title={folded ? words.board.unfold(name) : words.board.fold(name)}
                   onClick={() => toggle(state)}
                 >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path
-                      d={folded ? "M6 4l4 4-4 4" : "M10 4l-4 4 4 4"}
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                  <Icon name={folded ? "chevron-right" : "chevron-left"} size="sm" />
                 </button>
               )}
             </header>

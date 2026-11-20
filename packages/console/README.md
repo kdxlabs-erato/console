@@ -18,6 +18,7 @@
 | The `console` command | The agent's side of the console: a thin client of the REST API, shipped as the package's `bin`, which a person signs in once with a token. Also as a function at `@skillcdn/console/cli`. | exported |
 | The components: the board, a task, a run, a decision, the live feed | Each takes its data as props and nothing from the network. | exported |
 | The charts | A figure, a list of bars, a chart over time, a sparkline, a share and a table of figures, parts of the console's look for a page of your own and a plugin's: the components here, and the measures they are placed by on their own at `@skillcdn/console/charts`, which depends on nothing. | exported |
+| The icon pack | Some eighty glyphs drawn on one grid, for the console's pages, a page of your own, a plugin's and a prototype: `Icon` draws one by its name, `IconPicker` chooses one, and the glyphs as data with `iconElement`, for a bundle without React, are on their own at `@skillcdn/console/icons`, which depends on nothing. | exported |
 | `createConsole(config)` | The default console assembled from the components, with the places a team may replace named. The UI the image serves is this, with the default configuration. | exported |
 | The serving of a build | `@skillcdn/console/web`: the files of a build, the page for every other path, under one policy. What the image serves the default UI with, and what `console serve` serves a console of your own with. Node only. | exported |
 | The contract of a plugin | `@skillcdn/console/plugin`: the manifest's schema, `definePlugin` and its definers, the types of `ctx`; `@skillcdn/console/plugin/web`: the frame's side of the bridge; `@skillcdn/console/plugin/testing`: a `ctx` for a plugin's tests; and `console-plugin`, the second `bin`, which writes a plugin from a template and checks one as a console would. A console runs them, an agent works one through `console plugin <key>`, and a person sees its pages in frames the console's page embeds, `PluginFrame` here, on the front page's `HomeGrid` among the projects, with the plugins' settings on `/settings/plugins` ([docs/specs/plugins.md](https://github.com/skillcdn/console/blob/main/docs/specs/plugins.md)). | exported |
@@ -182,6 +183,23 @@ Choose by what the figures are, before anything else: one number that matters is
 - **`FigureTable`** is rows by columns: `caption` (shown with `captionShown`), `columns` (the heads, the first the head of the rows' names), `rows` (each a `label`, text or what the page shows for a name, its `values`, a number written as the language writes it and words as they are, and an `id` as a bar's row has), `foot` (what the rows come to) and `language`.
 - **The colours** are six, `--sc-series-1` to `--sc-series-6`, which the classes `sc-series-1` to `sc-series-6` draw in (`seriesClass(index)` names one, from nought): blue, coral, raspberry, teal, violet, green, the coral second so that a chart of two series shows the two that stand furthest apart. Any two of them are told apart, also by a reader who does not tell red from green, and each stands out on a light ground and on a dark one, so a console re-skinned by its tokens keeps them or sets six of its own that pass the same checks. What is past the sixth wears the neutral, `sc-series-rest`. A series is its colour wherever it is shown; words never wear one.
 - **The measures** are `@skillcdn/console/charts`, with no dependency, for a bundle that draws the parts itself, a plugin's plain one say: `chartLayout(points, series)` (the scale, where each mark of it and zero stand, and where each amount stands, each a share of a hundred), `chartScale`, `columnOf`, `barLengths`, `shareParts`, `sparkPoints`, `labelStep` and `labelledPoints`, `seriesClass`, and `chartMeasure`, a share as an attribute says it (`"62.5%"`). A measure is an attribute of an SVG and never a style, so a chart is as wide as the box the stylesheet gives it, and is drawn the same in a plugin's frame, whose policy lets no style be set on an element. The components lean on React and these alone: a bundle that takes `Chart` from this package takes a few kilobytes and not the console.
+
+### Icons
+
+One pack for every page ([ADR-0142](https://github.com/skillcdn/console/blob/main/docs/adr/0142-the-console-has-one-icon-pack-drawn-on-one-grid-and-used-by-name.md)): glyphs drawn on a grid of twenty with one stroke, in the colour of the text they stand in. `/parts#icon` of `pnpm dev` shows them all under their names.
+
+```tsx
+import { Icon, IconPicker } from "@skillcdn/console";
+
+<Icon name="calendar" />                       // beside words: hidden from a screen reader
+<Icon name="lock" size="sm" label="Private" /> // alone: a picture with a name
+<IconPicker value={glyph} label="Icon" onChange={setGlyph} />
+```
+
+- **`Icon`** takes a `name` of the pack (`IconName`; `ICON_NAMES` lists them, `isIconName` checks one that came from elsewhere) and a `size`: `xs` a caret beside a word, `sm` in a line of text, `md` by itself, `lg` in an empty state or on a card. It is drawn as elements from the pack's data, and a name the pack lacks draws an empty box. An icon stands beside the words of a button, and seldom for them.
+- **`IconPicker`** is the field that chooses one, or none: the pack under it in its groups (`ICON_GROUP_LIST`), found by a glyph's name or by the words the reader's language pack gives it (`findIcons`), worked whole with the keys. A project's settings choose the mark's icon with it.
+- **Without React**, `@skillcdn/console/icons` has the same pack with no dependency: `iconElement("calendar", { size: "sm" })` makes the element for a plugin's plain bundle or a prototype, and `GLYPHS` is the data, each glyph its shapes as an element's name with its measures. The classes (`sc-icon`, `sc-icon-sm`) are in `console.css`, which a plugin's frame already has; without it the element still draws at twenty pixels in the text's colour.
+- **A glyph is added or redrawn** as a file under `icons/` in the console's repository, which `pnpm icons` writes into the package; its README there has the grid's rules. A name stays what it shows once it is published.
 
 ### A desk's pages
 

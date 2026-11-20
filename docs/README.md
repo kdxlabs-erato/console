@@ -14,6 +14,7 @@ The map of the documents: what each one is for and when it changes. The rules fo
 | [`../deploy/README.md`](../deploy/README.md) | Building, configuring and releasing the image; the contract with whoever operates it. | Living. |
 | `apps/console/README.md`, `packages/console/README.md` | What the workspace is for, its surface, how to work on it, the data model, and under "Rules" the rules for changing it. | Living. |
 | [`../packages/console/src/styles/README.md`](../packages/console/src/styles/README.md) | The rules for the pages and the catalogue of the parts they are built from. | Living. A part added, changed or taken out changes its row. |
+| [`../packages/console/icons/README.md`](../packages/console/icons/README.md) | For whoever draws the icon pack: the grid's rules, how a glyph is changed or added, and where it is looked at. | Living. A rule of the grid changed changes it. |
 | [`../AGENTS.md`](../AGENTS.md) | The working agreement: the rules for changing the code, for agents and people. | Living. Short. |
 | `CLAUDE.md` at the root | Imports `AGENTS.md` for Claude Code, and holds nothing else; `.claude/rules/` points it at the rules of a workspace and of the pages when it opens a file there. | Fixed. |
 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md), [`../SECURITY.md`](../SECURITY.md) | How to contribute, and how to report a vulnerability. | Living. |

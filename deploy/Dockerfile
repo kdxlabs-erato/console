@@ -56,6 +56,7 @@ COPY --from=build --chown=node:node /repo/examples/agent-desk/AGENTS.md ./packs/
 COPY --from=build --chown=node:node /repo/examples/person-desk/AGENTS.md ./packs/skillcdn/console/examples/person-desk/
 COPY --from=build --chown=node:node /repo/packages/console/README.md ./packs/skillcdn/console/packages/console/
 COPY --from=build --chown=node:node /repo/packages/console/src/styles/README.md ./packs/skillcdn/console/packages/console/src/styles/
+COPY --from=build --chown=node:node /repo/packages/console/icons/README.md ./packs/skillcdn/console/packages/console/icons/
 # What the image is distributed under travels with it.
 COPY --from=build --chown=node:node /repo/LICENSE.md ./
 ENV WEB_ROOT=/app/web \

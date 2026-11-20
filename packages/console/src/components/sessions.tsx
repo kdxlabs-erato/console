@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { RestSession } from "../api.js";
 import { useWords } from "../i18n/index.js";
+import { Icon } from "./icon.js";
 import { Badge, Button, cx, Time } from "./ui.js";
 
 // The browsers a person is signed in on (board #309), on a page of the settings of their own: each
@@ -26,19 +27,7 @@ const HANDHELD: ReadonlySet<string> = new Set(["iOS", "Android"]);
 function DeviceIcon(props: { readonly handheld: boolean }) {
   return (
     <span className="sc-session-icon">
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        {props.handheld ? (
-          <>
-            <rect x="5.5" y="2.5" width="9" height="15" rx="2" />
-            <path d="M9 14.75h2" />
-          </>
-        ) : (
-          <>
-            <rect x="2.5" y="3.5" width="15" height="10" rx="1.5" />
-            <path d="M7 16.5h6M10 13.5v3" />
-          </>
-        )}
-      </svg>
+      <Icon name={props.handheld ? "handheld" : "desktop"} />
     </span>
   );
 }

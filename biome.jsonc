@@ -10,8 +10,14 @@
     "ignoreUnknown": true,
     // Two files are written by the code and held to it by a test, so they are left as written:
     // the REST contract's snapshot, and the runner.json of the example desk, which is what the
-    // desk's template writes.
-    "includes": ["**", "!scripts/rest-schemas.snapshot.json", "!examples/agent-desk/runner.json"]
+    // desk's template writes. The glyphs of the icon pack are drawings, left as the designer
+    // exported them: `pnpm check:icons` holds them to the pack's own rules.
+    "includes": [
+      "**",
+      "!scripts/rest-schemas.snapshot.json",
+      "!examples/agent-desk/runner.json",
+      "!packages/console/icons/*.svg"
+    ]
   },
   "formatter": {
     "indentStyle": "space",

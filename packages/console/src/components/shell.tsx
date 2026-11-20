@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { RestPerson } from "../api.js";
 import { useWords } from "../i18n/index.js";
+import { Icon } from "./icon.js";
 import { Avatar, cx, personName } from "./ui.js";
 
 // The frame every page sits in (ADR-0010): a header that names the workspace and the project the
@@ -299,16 +300,7 @@ function TabGroup(props: { readonly item: NavItem; readonly onNavigate: (href: s
         }}
       >
         <span className="sc-tab-label">{item.label}</span>
-        <svg className="sc-menu-caret" viewBox="0 0 16 16" aria-hidden="true">
-          <path
-            d="M4 6l4 4 4-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <Icon name="chevron-down" size="xs" className="sc-menu-caret" />
       </button>
       <div
         id={id}
@@ -392,16 +384,7 @@ function PersonMenu(props: {
       <summary className="sc-menu-summary" aria-label={words.shell.menu(personName(person))}>
         <Avatar person={person} size="sm" />
         <span className="sc-person-login">{personName(person)}</span>
-        <svg className="sc-menu-caret" viewBox="0 0 16 16" aria-hidden="true">
-          <path
-            d="M4 6l4 4 4-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <Icon name="chevron-down" size="xs" className="sc-menu-caret" />
       </summary>
       <div className="sc-menu-panel">
         <p className="sc-menu-who">

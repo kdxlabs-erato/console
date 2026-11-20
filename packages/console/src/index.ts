@@ -153,6 +153,13 @@ export {
   ProjectTile,
   type ProjectTileProps,
 } from "./components/home.js";
+export {
+  Icon,
+  IconPicker,
+  type IconPickerProps,
+  type IconProps,
+  type IconSize,
+} from "./components/icon.js";
 export { Markdown, type MarkdownProps } from "./components/markdown.js";
 export { MyDecisions, type MyDecisionsProps } from "./components/my-decisions.js";
 export {
