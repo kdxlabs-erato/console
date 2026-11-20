@@ -4091,6 +4091,13 @@ describe("projects", () => {
     });
     const html = home([project(), ops]);
     expect(html).toContain('href="/projects/web"');
+    // The page nobody arranged is drawn from its composed tiles, and its grid is not hidden as
+    // an empty page's is: only a page with nothing on it shows what stands for none.
+    expect(html).toMatch(/<ul class="sc-home-grid"[^>]*data-columns="\d+"(?![^>]*hidden)[^>]*>/);
+    const nothing = home([], { empty: <p>Nothing here</p> });
+    expect(nothing).toContain("Nothing here");
+    expect(nothing).toMatch(/<ul class="sc-home-grid"[^>]*hidden/);
+    expect(html).not.toContain("Nothing here");
     expect(html).toContain("The web &lt;app&gt;");
     expect(html).not.toContain("<app>");
     expect(html).toContain("2 decisions waiting");

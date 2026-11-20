@@ -864,13 +864,15 @@ export function HomeGrid(props: HomeGridProps) {
           ))}
         </div>
       )}
-      {shown.length === 0 && !editing && (props.empty ?? null)}
+      {/* What stands on the page, composed or arranged: the tiles drawn, not the arranged ones,
+          which are not worked out while the page stands composed. */}
+      {boxes.length === 0 && !editing && (props.empty ?? null)}
       <ul
         ref={grid}
         className="sc-home-grid"
         aria-label={allWords.projects.list}
         data-columns={columns}
-        hidden={shown.length === 0 && !editing}
+        hidden={boxes.length === 0 && !editing}
         style={
           {
             "--sc-home-columns": columns,
