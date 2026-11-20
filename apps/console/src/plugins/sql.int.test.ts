@@ -375,6 +375,66 @@ describe("a plugin's schema", () => {
     });
   }, 20_000);
 
+  it("gives a connection back to the pool as a new one: nothing a statement set or took for its session outlasts it", async () => {
+    const console_ = drizzleOf(testDatabase.database);
+    const free = async (key: number): Promise<boolean> => {
+      const got = await console_.execute<{ got: boolean }>(
+        sql`select pg_try_advisory_xact_lock(${key}) as got`,
+      );
+      return got.rows[0]?.got === true;
+    };
+    // A lock taken for the session is let go with the statement's connection: the pool hands
+    // that very connection to the next call, and without the reset the lock stayed for as long
+    // as the plugin kept asking, a migration's lock or another plugin's among them.
+    await service.query("tallytest", "select pg_advisory_lock(424242)", []);
+    expect(await free(424242)).toBe(true);
+    // A timeout the role set to nothing is the role's own again at the next call.
+    await service.query("tallytest", "set statement_timeout = 0", []);
+    const timeout = await service.query("tallytest", "show statement_timeout", []);
+    expect(timeout.rows).toEqual([{ statement_timeout: "10s" }]);
+    // So is a transaction's connection, once the transaction ended.
+    const tx = await service.begin("tallytest");
+    await service.query("tallytest", "select pg_advisory_lock(424243)", [], tx);
+    await service.query("tallytest", "set statement_timeout = 0", [], tx);
+    await service.commit(tx);
+    expect(await free(424243)).toBe(true);
+    expect((await service.query("tallytest", "show statement_timeout", [])).rows).toEqual([
+      { statement_timeout: "10s" },
+    ]);
+    // A statement that opened a transaction and left it open has a connection that cannot be
+    // reset: it is ended, and no session of the role stands inside a transaction afterwards.
+    await service.query("tallytest", "begin", []);
+    const inside = async (): Promise<number> => {
+      const seen = await console_.execute<{ n: number }>(
+        sql`select count(*)::int as n from pg_stat_activity where usename = 'plugin_tallytest' and state like 'idle in transaction%'`,
+      );
+      return seen.rows[0]?.n ?? -1;
+    };
+    await expect.poll(inside, { timeout: 5_000 }).toBe(0);
+    // The pool goes on with a connection of its own making.
+    expect((await service.query("tallytest", "select 1 as one", [])).rows).toEqual([{ one: 1 }]);
+  }, 20_000);
+
+  it("takes one statement at a time, and runs none of a text that holds several", async () => {
+    const before = await service.query("tallytest", "select count(*)::int as n from things", []);
+    // With no parameters such a text once ran whole, a `begin` in it too, and answered nothing
+    // a caller could read. The server now takes it for no statement at all.
+    await expect(
+      service.query("tallytest", "insert into things (name) values ('stray'); select 1", []),
+    ).rejects.toMatchObject({ code: "plugin.invalid_args" });
+    await expect(
+      service.query("tallytest", "begin; select pg_advisory_xact_lock(424244)", []),
+    ).rejects.toMatchObject({ code: "plugin.invalid_args" });
+    const after = await service.query("tallytest", "select count(*)::int as n from things", []);
+    expect(after.rows).toEqual(before.rows);
+    // In a transaction of the plugin's too.
+    const tx = await service.begin("tallytest");
+    await expect(service.query("tallytest", "select 1; select 2", [], tx)).rejects.toMatchObject({
+      code: "plugin.invalid_args",
+    });
+    await service.rollback(tx);
+  });
+
   it("runs a transaction as a unit, committed or rolled back", async () => {
     const tx = await service.begin("tallytest");
     await service.query("tallytest", "insert into things (name) values ($1)", ["two"], tx);
@@ -399,20 +459,13 @@ describe("a plugin's schema", () => {
     );
     expect(powers.rows).toEqual([{ createdb: false }]);
     // The role was given what the server keeps of its password, never the password, so the
-    // statement a server may log holds no credential; this query signs in with the password
-    // itself, which is the proof that the two belong together.
+    // statement a server may log holds no credential. This query signs in with the password
+    // itself, on a connection made after the role changed, which proves the two belong
+    // together wherever the server asks for a password, as the tests' own does: had the server
+    // taken what it was given for a password and kept its own of that, the password itself
+    // would sign nobody in.
     const counted = await service.query("tallytest", "select count(*)::int as n from things", []);
     expect(counted.rows).toEqual([{ n: 3 }]);
-    // Where the tests' database user may read what the server keeps, it is that form.
-    const reader = await drizzleOf(testDatabase.database).execute<{ able: boolean }>(
-      sql`select rolsuper as able from pg_roles where rolname = current_user`,
-    );
-    if (reader.rows[0]?.able === true) {
-      const kept = await drizzleOf(testDatabase.database).execute<{ kept: string }>(
-        sql`select rolpassword as kept from pg_authid where rolname = 'plugin_tallytest'`,
-      );
-      expect(kept.rows[0]?.kept).toMatch(/^SCRAM-SHA-256\$4096:/);
-    }
     expect(await service.applyMigrations("tallytest", migrations)).toBe(0);
   });
 

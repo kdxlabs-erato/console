@@ -19,7 +19,7 @@ import {
   PluginRefusal,
 } from "@skillcdn/console/plugin";
 import { sql } from "drizzle-orm";
-import { Client, Pool, type PoolClient } from "pg";
+import { Client, Pool, type PoolClient, type QueryConfig } from "pg";
 import { type Database, drizzleOf, sslOf } from "../db/client.js";
 import type { Logger } from "../logger.js";
 
@@ -408,6 +408,45 @@ export class PluginSqlService {
     );
   }
 
+  /**
+   * Gives a connection of the plugin's role back to its pool as a new one would be (`DISCARD
+   * ALL`): what a statement set for its session, its timeout among it, is the role's own again,
+   * and what it took for its session, an advisory lock, a temporary table, a listen, is let go.
+   * The pool hands the connection it was given last to the next call, so without this a lock
+   * taken for a session was held for as long as the plugin kept asking, and a timeout set to
+   * nothing stayed set. A connection that cannot be reset, inside a transaction a statement of
+   * the plugin's opened and left, is ended, and the server lets go of all it held.
+   */
+  private async giveBack(client: PoolClient): Promise<void> {
+    try {
+      await client.query("discard all");
+      client.release();
+    } catch (error) {
+      client.release(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  /**
+   * Sends one statement of a plugin's, as a statement with its parameters whether it has any
+   * or not: the server then takes a text that holds several for none of them, and refuses it
+   * before any ran. Sent as plain text, a text with no parameters ran every statement in it,
+   * a `begin` that left the pool's connection inside a transaction among them, and answered a
+   * list no caller could read.
+   */
+  private one(
+    client: PoolClient,
+    text: string,
+    params: readonly unknown[],
+  ): Promise<{ rows: unknown[]; rowCount: number | null }> {
+    // The driver reads `queryMode`; its types do not name it yet.
+    const statement: QueryConfig & { readonly queryMode: "extended" } = {
+      text,
+      values: [...params],
+      queryMode: "extended",
+    };
+    return client.query(statement);
+  }
+
   /** Runs a statement as the plugin's role, in a transaction of the plugin's where `tx` names one. */
   async query(
     key: string,
@@ -427,9 +466,14 @@ export class PluginSqlService {
         if (open === undefined) {
           throw new PluginRefusal("plugin.not_found", "the transaction is not open");
         }
-        return this.bounded(await open.client.query(text, [...params]));
+        return this.bounded(await this.one(open.client, text, params));
       }
-      return this.bounded(await this.pool(key).query(text, [...params]));
+      const client = await this.pool(key).connect();
+      try {
+        return this.bounded(await this.one(client, text, params));
+      } finally {
+        await this.giveBack(client);
+      }
     } catch (error) {
       if (error instanceof PluginRefusal) {
         throw error;
@@ -470,7 +514,7 @@ export class PluginSqlService {
       open.client.release(error instanceof Error ? error : new Error(String(error)));
       throw this.refusal(error);
     }
-    open.client.release();
+    await this.giveBack(open.client);
   }
 
   commit(id: string): Promise<void> {
@@ -524,7 +568,8 @@ export class PluginSqlService {
             `the migration ${name} failed: ${error instanceof Error ? error.message : String(error)}`,
           );
         } finally {
-          client.release();
+          // A migration is the plugin's own text: what it set or took for its session goes too.
+          await this.giveBack(client);
         }
         applied += 1;
       }
