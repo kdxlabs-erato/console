@@ -4498,6 +4498,21 @@ describe("configuring, as the person", () => {
     });
     expect(await runCli(["agent", "wake", "me"], old.io)).toBe(EXIT.failed);
     expect(old.err()).toContain("This console does not take an account's own wake yet");
+    // A person who asks is told what the console says, that this is an agent account's own, and
+    // not that the console is an old one.
+    const person = harness({
+      fetch: fakeConsole({
+        "GET /api/v1/me": { body: ME },
+        "POST /api/v1/agents/me/wakes": {
+          status: 404,
+          body: { error: { code: "agent.not_found", message: "No such agent account." } },
+        },
+      }).fetch,
+      env: SIGNED_IN,
+    });
+    expect(await runCli(["agent", "wake", "me"], person.io)).toBe(EXIT.failed);
+    expect(person.err()).toContain("No such agent account.");
+    expect(person.err()).not.toContain("does not take an account's own wake yet");
   });
 
   it("says how an agent account stands, and what its runner said, where the console answers it (ADR-0085)", async () => {

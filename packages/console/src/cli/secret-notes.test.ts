@@ -15,6 +15,8 @@ describe("what is said of a secret's value as it is kept", () => {
     expect(secretNotes("git.token", "anything-at-all", "forge")).toEqual([]);
     expect(secretNotes("git.token", "anything-at-all")).toEqual([]);
     expect(secretNotes("mail.password", "two words")).toEqual([]);
+    // A key of several lines is a key: only a token is held to one word.
+    expect(secretNotes("ssh.key", "line one\nline two\n")).toEqual([]);
   });
 
   it("says that a value is not of the shape its name says, and never the value", () => {

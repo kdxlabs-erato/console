@@ -5227,7 +5227,7 @@ const ownWake = async (args: readonly string[], io: CliIo): Promise<number> => {
     try {
       return await ask();
     } catch (error) {
-      if (error instanceof ApiError && error.status === 404 && error.code !== "wake.not_found") {
+      if (error instanceof ApiError && error.status === 404 && error.code === "not_found") {
         throw failed(
           "This console does not take an account's own wake yet: it does from 0.5.2 on.",
         );

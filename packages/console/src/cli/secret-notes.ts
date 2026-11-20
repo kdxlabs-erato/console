@@ -43,7 +43,8 @@ export function secretNotes(
   gitHost?: string | undefined,
 ): readonly string[] {
   const notes: string[] = [];
-  const token = /(?:^|\.)(?:token|app_token|key)$/.test(name);
+  // A token by its name. A key is not asked this: one of several lines is a key all the same.
+  const token = /(?:^|[._])token$/.test(name);
   if (token && /\s/.test(value)) {
     notes.push(
       "The value holds a space or a line break, which a token does not: check that it was copied whole and alone.",
