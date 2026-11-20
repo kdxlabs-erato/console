@@ -2085,6 +2085,10 @@ export const en = {
           made: {
             title: "The invitation is made",
             say: "On the agent's machine, in its own OS account, say this to its product:",
+            // The line said to the product: the command and the install as written, the words between
+            // them in the language of whoever reads the page, since they say it.
+            line: (command: string, install: string) =>
+              `Run: ${command} (before it: ${install}), then do what it prints`,
             orRun: "Or run the command there yourself:",
             guide: "The guide, for a person to read",
             once: "The code is shown this once. It is good until",

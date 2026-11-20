@@ -1,3 +1,4 @@
+import { en } from "./i18n/en.js";
 import type { RestAgentSetup, RestWorkspace } from "./schemas.js";
 import {
   agentAddressOf,
@@ -27,10 +28,12 @@ export function setupCommandOf(origin: string, code: string): string {
 
 /**
  * The sentence said to the agent's product on its machine. It carries the command as written,
- * so that the product runs it and reads the guide from the command's own words.
+ * so that the product runs it and reads the guide from the command's own words. In English, as
+ * the guide is and as the command prints it; a page says it in the language of whoever reads
+ * it, from their pack, where this one is the English pack's.
  */
 export function setupSentenceOf(command: string): string {
-  return `Run: ${command} (before it: ${SETUP_INSTALL}), then do what it prints`;
+  return en.agents.page.settings.machine.made.line(command, SETUP_INSTALL);
 }
 
 /** Whose part of a setup something is (ADR-0088): whoever prepares the machine, the agent, its manager. */

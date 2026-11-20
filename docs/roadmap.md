@@ -634,6 +634,7 @@ Goal: the last line of 0.5 before its patch is released: the packages at SkillCD
 Goal: the next patch of 0.5: the packages at SkillCDN 0.5.3, and what a week of the consoles at 0.5.1 left on the board done.
 
 - [x] The packages at SkillCDN 0.5.3 (board #581): a part of a long skill after the first begins under the skill's name, its source and its license alone, and the console's own words at the end of a part stay, the line above them being as it was. The image is built on the release of its HTTP framework that holds a body sent in many small pieces to its limit.
+- [x] The line an agent account's invitation gives to say to the agent's product is in the language of whoever reads the page, the command and the install as written (board #584); the command and the guide say it in English, as they say everything.
 
 ## After milestone 16
 

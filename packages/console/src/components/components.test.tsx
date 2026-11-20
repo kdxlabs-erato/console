@@ -3279,6 +3279,24 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
       `<pre class="sc-code">Run: ${command} (before it: npm i -g @skillcdn/console), then do what it prints</pre>`,
     );
     expect(made).toContain(`<pre class="sc-code">${command}</pre>`);
+    // The sentence is said by whoever reads the page, so it is in their language: the command
+    // and the install as written, the words between them from the pack.
+    const madeInKorean = renderToStaticMarkup(
+      <LanguageContext.Provider value={KOREAN}>
+        <AgentInvitationPanel
+          invitation={invitation}
+          made={{ invitation, code: "ABCD-EFGH", command }}
+          guideHref={href}
+          onInvite={nothing}
+          onRevoke={nothing}
+        />
+      </LanguageContext.Provider>,
+    );
+    expect(madeInKorean).toContain(
+      `<pre class="sc-code">실행: ${command} (그 전에: npm i -g @skillcdn/console), 그다음 출력되는 대로 진행하세요</pre>`,
+    );
+    expect(madeInKorean).toContain(`<pre class="sc-code">${command}</pre>`);
+    expect(madeInKorean).not.toContain("then do what it prints");
     expect(made).toContain('href="/setup/ABCD-EFGH"');
     expect(made).toContain("The code is shown this once.");
     expect(made).toContain(">Make it again</button>");

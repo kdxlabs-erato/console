@@ -1976,6 +1976,8 @@ export const ko: Messages = {
           made: {
             title: "초대를 만들었습니다",
             say: "에이전트의 머신에서, 에이전트의 OS 계정으로, 에이전트의 제품에 이렇게 말하세요:",
+            line: (command, install) =>
+              `실행: ${command} (그 전에: ${install}), 그다음 출력되는 대로 진행하세요`,
             orRun: "또는 그 머신에서 명령을 직접 실행하세요:",
             guide: "사람이 읽는 가이드",
             once: "코드는 지금 한 번만 보입니다. 유효 기한:",

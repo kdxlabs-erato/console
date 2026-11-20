@@ -7,7 +7,7 @@ import {
   type RestAgentSetup,
 } from "../api.js";
 import { useWords } from "../i18n/index.js";
-import { type SetupGuide, setupSentenceOf } from "../setup-guide.js";
+import { SETUP_INSTALL, type SetupGuide } from "../setup-guide.js";
 import { AvatarPicture, Badge, Button, Callout, CopyButton, cx, personName, Time } from "./ui.js";
 
 // The way a machine is led to an agent account (ADR-0088): the invitation as a supervisor sees
@@ -107,7 +107,7 @@ export function AgentInvitationPanel(props: AgentInvitationPanelProps) {
       {made !== undefined ? (
         <Callout tone="warning" title={words.made.title}>
           <p>{words.made.say}</p>
-          <Line text={setupSentenceOf(made.command)} />
+          <Line text={words.made.line(made.command, SETUP_INSTALL)} />
           <p>{words.made.orRun}</p>
           <Line text={made.command} />
           <p>
