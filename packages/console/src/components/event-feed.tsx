@@ -286,7 +286,12 @@ export function EventFeed(props: EventFeedProps) {
   const newestFirst = [...props.events].reverse();
   const { shown, rest, more } = usePaged(newestFirst);
   if (props.events.length === 0) {
-    return <div className="sc-feed">{props.empty ?? null}</div>;
+    // Named as the feed with events is, so that a feed with nothing in it is still found.
+    return (
+      <section className="sc-feed" aria-label={words.feed.list}>
+        {props.empty ?? null}
+      </section>
+    );
   }
   return (
     <>
