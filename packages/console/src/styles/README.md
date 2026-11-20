@@ -67,7 +67,7 @@ A part is a file under `parts/` and a row here, with the classes that are its ow
 | `progress` | `sc-progress*` | `ProgressBar` | How much of something is done and at work, as a bar with its count. |
 | `count` | `sc-column-count`, `sc-nav-count` | | A number beside a title or a tab. |
 | `text` | `sc-muted`, `sc-lead`, `sc-time`, `sc-loading`, `sc-project-key`, `sc-card-number`, `sc-feed-agent`, `sc-visually-hidden` | `Time`, `Day` | The tones of a line of text: quiet (`sc-muted`), the sentence under a title (`sc-lead`), a moment, a key or a number in the mono face, the agent a person acted through, and what only a screen reader is told. |
-| `prose` | `sc-prose*` | `Markdown` | What people and agents wrote, rendered: headings, lists, tables, code, pictures. |
+| `prose` | `sc-prose*` | `Markdown` | What people and agents wrote, rendered: headings, lists, tables, code, pictures. What an agent said in a session is read by it too, with a picture named there left a link and never fetched (`picturesAsLinks`). |
 | `code` | `sc-code*`, `sc-copyable*` | `CopyButton` | A code or a command shown to be read or copied. |
 | `panel` | `sc-panel*` | | A pane of the page: every section of a page is one. `-form` keeps a pane to the width a form is read at; `-form-lead` is a form that stands over a list, as wide as the list under it, with what it holds kept to a form's width. |
 | `page` | `sc-page*`, `sc-section*` | | A page's head (`sc-page-head` with its title, its lead and its actions) and a section's (`sc-section-head`, `sc-section-title`). |

@@ -7,11 +7,14 @@ import { useRemotePictureSrc } from "./remote-pictures.js";
 // What people and agents write is untrusted. It is rendered as React elements, never as HTML:
 // raw HTML in the source stays text, links are limited to a few schemes and open elsewhere,
 // and a picture from elsewhere, named over https, is read through the console (ADR-0048),
-// lazily and without a referrer. A link whose destination is a document's path (ADR-0009)
-// leads to the document's page, when the page knows where.
+// lazily and without a referrer, or, where the page says so, not read at all and left a link
+// (ADR-0141). A link whose destination is a document's path (ADR-0009) leads to the document's
+// page, when the page knows where.
 
 const SAFE_LINK = /^(https?:|mailto:)/i;
 const SAFE_IMAGE = /^https:\/\//i;
+/** Where a picture left unread may lead whoever opens it: a page, over the web. */
+const SAFE_PICTURE_LINK = /^https?:\/\//i;
 
 export interface MarkdownProps {
   readonly source: string;
@@ -28,6 +31,12 @@ export interface MarkdownProps {
    * left out, such a picture is only seen where it is.
    */
   readonly onOpenPicture?: ((picture: Picture, opener: HTMLElement) => void) | undefined;
+  /**
+   * Whether a picture named in the text is left unread: shown as its words, a link to where it
+   * is for whoever chooses to open it, and nothing fetched by the page showing the text. For
+   * what an agent's session wrote, which nobody looked at before it is shown (ADR-0141).
+   */
+  readonly picturesAsLinks?: boolean | undefined;
 }
 
 export function Markdown(props: MarkdownProps) {
@@ -63,6 +72,17 @@ export function Markdown(props: MarkdownProps) {
             return <span>{children}</span>;
           },
           img({ src, alt, title }) {
+            if (props.picturesAsLinks === true) {
+              const where = typeof src === "string" ? src : "";
+              const words = alt === undefined || alt.length === 0 ? where : alt;
+              return SAFE_PICTURE_LINK.test(where) ? (
+                <a href={where} target="_blank" rel="noopener noreferrer nofollow ugc">
+                  {words}
+                </a>
+              ) : (
+                <span className="sc-prose-image-text">{words}</span>
+              );
+            }
             const named = typeof src === "string" ? props.fileSrc?.(src) : undefined;
             const url =
               named ?? (typeof src === "string" && SAFE_IMAGE.test(src) ? remote(src) : undefined);

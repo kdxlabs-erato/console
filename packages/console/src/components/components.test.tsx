@@ -31,14 +31,18 @@ import {
   AgentSessionList,
   AgentStateBadge,
   afterTold,
+  atWorkOf,
   ChatPane,
+  clockOf,
   FOLLOW_SLACK,
   followsAfter,
   followsEnd,
   NO_WHOLE,
   pastedName,
   SignalComposer,
+  saidLine,
   sameLine,
+  subAgentOf,
   subagentOf,
   type TalkHands,
   TalkWaiting,
@@ -2267,7 +2271,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     expect(talkOf([])).toEqual([]);
   });
 
-  it("labels what a sub-agent did with its name, and folds what it said, which is not the agent's word", () => {
+  it("reads what a sub-agent did under the call that started it, and labels what names a call the session does not hold", () => {
     const whose = { parent: "toolu_a1", subagent: "Explore" };
     const seen = renderToStaticMarkup(
       <TranscriptView
@@ -2280,7 +2284,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
             data: { tool: "Agent", id: "toolu_a1" },
           }),
           event(3, { kind: "thinking", text: "Where are they?", data: whose }),
-          event(4, { text: "Looking in the routes.\nThen the tests.", data: whose }),
+          event(4, { text: "Looking in the **routes**.\n\nThen the tests.", data: whose }),
           event(5, {
             kind: "tool_call",
             text: "ls src",
@@ -2291,7 +2295,8 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
             text: "rest.ts",
             data: { id: "s1", error: false, ...whose },
           }),
-          // What the runner knew of only by the call: labelled, without a name.
+          // What the runner knew of only by the call, which the events do not hold: where it
+          // stood, labelled, without a name.
           event(7, { text: "From another.", data: { parent: "toolu_a2" } }),
           // A name is text as everything of an event is, and is shown to a length.
           event(8, {
@@ -2301,39 +2306,66 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
           }),
           event(9, { kind: "tool_result", text: "Found.", data: { id: "toolu_a1", error: false } }),
           event(10, { kind: "error", text: "A request failed.", data: whose }),
+          event(11, {
+            kind: "error",
+            text: "Another failed.",
+            data: { parent: "toolu_a9", subagent: "Plan" },
+          }),
         ]}
         fileHref={(id) => id}
       />,
     );
     // The agent's own word stands as it did, beside its picture.
     expect(seen).toContain('<li class="sc-talk-item sc-talk-said" data-n="1">');
-    // The call that started the sub-agent is the session's own: no label on it.
-    expect(seen).toMatch(
-      /data-n="2"><details class="sc-talk-tool-fold"><summary class="sc-talk-tool-head"><code class="sc-talk-tool-name">Agent<\/code><span class="sc-talk-tool-line">[^<]*<\/span><time/,
-    );
-    // What the sub-agent thought, said and called: steps, each under its name.
-    const label = '<span class="sc-badge sc-badge-neutral">Sub-agent: Explore</span>';
+    // The call that started the sub-agent is the sub-agent's row: what it is, what its events
+    // call it where the call did not say, how it ended and how much it did.
     expect(seen).toContain(
-      `<li class="sc-talk-item sc-talk-step sc-talk-thought" data-n="3"><details class="sc-talk-tool-fold"><summary class="sc-talk-tool-head"><span class="sc-talk-kind">Thought</span><span class="sc-talk-tool-line">Where are they?</span>${label}`,
+      '<li class="sc-talk-item sc-talk-step sc-talk-tool" data-n="2"><details class="sc-talk-tool-fold"><summary class="sc-talk-tool-head sc-talk-agent-head"><span class="sc-talk-who sc-talk-agent-name" title="Explore">Explore</span><span class="sc-badge sc-badge-neutral">Done</span>',
     );
     expect(seen).toContain(
-      `<li class="sc-talk-item sc-talk-step sc-talk-thought" data-n="4"><details class="sc-talk-tool-fold"><summary class="sc-talk-tool-head"><span class="sc-talk-kind">Said</span><span class="sc-talk-tool-line">Looking in the routes.</span>${label}`,
+      '<span class="sc-muted sc-talk-agent-facts"><span class="sc-talk-kind">Sub-agent</span>1 tool call · 0:00</span>',
     );
-    expect(seen).toContain(
-      '<pre class="sc-talk-text">Looking in the routes.\nThen the tests.</pre>',
+    // What it thought, said and called stand inside the row, a line each, with no label: whose
+    // they are is said once, by the row.
+    const inside = seen.slice(
+      seen.indexOf('<ol class="sc-talk sc-talk-steps" aria-label="What the sub-agent did">'),
+      seen.indexOf('data-n="7"'),
+    );
+    expect(inside).toContain(
+      '<li class="sc-talk-item sc-talk-step sc-talk-thought" data-n="3"><details class="sc-talk-tool-fold"><summary class="sc-talk-tool-head"><span class="sc-talk-kind">Thought</span><span class="sc-talk-tool-line">Where are they?</span><time',
+    );
+    expect(inside).toContain(
+      '<li class="sc-talk-item sc-talk-step sc-talk-thought" data-n="4"><details class="sc-talk-tool-fold"><summary class="sc-talk-tool-head"><span class="sc-talk-kind">Said</span><span class="sc-talk-tool-line">Looking in the routes.</span><time',
+    );
+    // What it said is not the agent's word to whoever reads, and is Markdown as the agent's is.
+    expect(inside).toContain(
+      '<div class="sc-prose"><p>Looking in the <strong>routes</strong>.</p>\n<p>Then the tests.</p></div>',
     );
     expect(seen).not.toContain('<li class="sc-talk-item sc-talk-said" data-n="4">');
-    expect(seen).toContain(
-      `<code class="sc-talk-tool-name">Bash</code><span class="sc-talk-tool-line">ls src</span>${label}`,
+    expect(inside).toContain(
+      '<code class="sc-talk-tool-name">Bash</code><span class="sc-talk-tool-line">ls src</span><time',
     );
+    expect(inside).not.toContain("sc-badge");
+    // A row's line for what was said shows its first line without the marks of its Markdown.
+    expect(saidLine("\n## A *heading*\nMore.")).toBe("A *heading*");
+    expect(saidLine("- The `form` has **one** step.")).toBe("The form has one step.");
+    expect(saidLine("> 1. quoted")).toBe("1. quoted");
+    expect(saidLine("12. Twelfth")).toBe("Twelfth");
+    expect(saidLine("")).toBe("");
+    // A note of the sub-agent stands inside too, and says nothing of whose it is there.
+    expect(inside).toContain('data-n="10"');
+    expect(inside).not.toContain("sc-talk-fact");
+    // What the sub-agent answered is the row's own, after what it did.
+    expect(inside).toContain('<pre class="sc-talk-code sc-talk-code-answer">Found.</pre>');
+    // An event of a call the events do not hold stays where it stood, under a label.
     expect(seen).toContain(
       '<span class="sc-talk-tool-line">From another.</span><span class="sc-badge sc-badge-neutral">Sub-agent</span>',
     );
     expect(seen).toContain(`Sub-agent: &lt;b&gt;${"n".repeat(37)}</span>`);
     expect(seen).not.toContain("<b>");
-    // A note of a sub-agent says whose it is as a fact, and never the id of the call.
-    expect(seen).toContain('<span class="sc-talk-fact">sub-agent Explore</span>');
-    expect(seen).not.toContain("toolu_a1</span>");
+    // Such a note says whose it is as a fact, and never the id of the call.
+    expect(seen).toContain('<span class="sc-talk-fact">sub-agent Plan</span>');
+    expect(seen).not.toContain("toolu_a9</span>");
     expect(subagentOf(event(1, { data: { parent: 7, subagent: "x" } }))).toBeUndefined();
     expect(subagentOf(event(1, { data: { subagent: "x" } }))).toBeUndefined();
     expect(subagentOf(event(1, { data: { parent: "p", subagent: 7 } }))).toBe("");
@@ -2342,15 +2374,182 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     const korean = renderToStaticMarkup(
       <LanguageContext.Provider value={KOREAN}>
         <TranscriptView
-          events={[event(1, { text: "보는 중.", data: whose })]}
+          events={[
+            event(1, { text: "보는 중.", data: whose }),
+            event(2, {
+              kind: "tool_call",
+              text: "{}",
+              data: { tool: "Agent", id: "a", starts: "Explore: 경로 찾기" },
+            }),
+            event(3, {
+              kind: "tool_call",
+              text: "ls",
+              data: { tool: "Bash", id: "b", parent: "a" },
+            }),
+            event(4, { kind: "tool_result", text: "ok", data: { id: "a", error: true } }),
+          ]}
           fileHref={(id) => id}
         />
       </LanguageContext.Provider>,
     );
     expect(korean).toContain(">서브 에이전트: Explore<");
+    expect(korean).toContain(
+      '<span class="sc-talk-who sc-talk-agent-name" title="Explore: 경로 찾기">Explore: 경로 찾기</span><span class="sc-badge sc-badge-danger">실패</span>',
+    );
+    expect(korean).toContain('<span class="sc-talk-kind">서브 에이전트</span>도구 호출 1회 · 0:00');
+    expect(korean).toContain('aria-label="서브 에이전트가 한 일"');
   });
 
-  it("shows a session as a conversation, what an agent's product printed as text and never as markup", () => {
+  it("reads the events of sub-agents that ran side by side each under its own call, a runner of before by what its events name", () => {
+    const at = (seconds: number) => new Date(Date.parse(WHEN) + seconds * 1000).toISOString();
+    const of = (parent: string, subagent?: string) =>
+      subagent === undefined ? { parent } : { parent, subagent };
+    const events = [
+      event(1, { kind: "person", text: "Go.", at: at(0), data: { signal: 1 } }),
+      // Two started at once: one by a runner that says so (`starts`), one a runner of before wrote.
+      event(2, {
+        kind: "tool_call",
+        text: "{}",
+        at: at(10),
+        data: { tool: "Agent", id: "a1", starts: "Explore: Find the routes" },
+      }),
+      event(3, { kind: "tool_call", text: "{}", at: at(10), data: { tool: "Task", id: "a2" } }),
+      // What they did arrives interleaved.
+      event(4, { kind: "thinking", text: "Where?", at: at(12), data: of("a1", "x") }),
+      event(5, {
+        kind: "tool_call",
+        text: "ls",
+        at: at(13),
+        data: { tool: "Bash", id: "s1", ...of("a2", "Read the spec") },
+      }),
+      event(6, {
+        kind: "tool_call",
+        text: "cat a",
+        at: at(14),
+        data: { tool: "Read", id: "s2", ...of("a1") },
+      }),
+      event(7, { kind: "tool_result", text: "a", at: at(15), data: { id: "s1", ...of("a2") } }),
+      event(8, { kind: "tool_result", text: "b", at: at(20), data: { id: "s2", ...of("a1") } }),
+      event(9, {
+        kind: "tool_call",
+        text: "grep x",
+        at: at(22),
+        data: { tool: "Grep", id: "s3", ...of("a1") },
+      }),
+      // An answer with no id looks for a call that waits in its own sub-agent's line, finds
+      // none there, and never joins another's: the first one's Grep waits, and is left alone.
+      event(10, { kind: "tool_result", text: "c", at: at(25), data: of("a2") }),
+      event(11, { kind: "assistant", text: "Read.", at: at(26), data: of("a2") }),
+      // An event of a call the events do not hold stays in the session's own line.
+      event(12, { kind: "assistant", text: "Elsewhere.", at: at(27), data: of("gone") }),
+      event(13, { kind: "tool_result", text: "Spec read.", at: at(40), data: { id: "a2" } }),
+      event(14, { kind: "assistant", text: "One is back.", at: at(41) }),
+    ];
+    const shape = (items: ReturnType<typeof talkOf>): unknown[] =>
+      items.map((one) =>
+        one.type === "tool"
+          ? [
+              `tool ${one.call?.n ?? "-"}/${one.result?.n ?? "-"}`,
+              ...(one.steps === undefined ? [] : [shape([...one.steps])]),
+            ]
+          : `${one.type} ${one.event.n}`,
+      );
+    const talk = talkOf(events);
+    expect(shape(talk)).toEqual([
+      "told 1",
+      ["tool 2/-", ["thought 4", ["tool 6/8"], ["tool 9/-"]]],
+      ["tool 3/13", [["tool 5/7"], ["tool -/10"], "said 11"]],
+      "said 12",
+      "said 14",
+    ]);
+    // What the record says of each: its name, how it stands, how long, how many tools, what at.
+    const now = Date.parse(at(100));
+    const [, first, second] = talk;
+    expect(first && subAgentOf(first, { now, live: true })).toEqual({
+      n: 2,
+      name: "Explore: Find the routes",
+      startedAt: at(10),
+      state: "running",
+      seconds: 90,
+      calls: 2,
+      at: { at: "tool", tool: "Grep" },
+    });
+    // A runner of before named it on its events alone; done, it ran until its answer.
+    expect(second && subAgentOf(second, { now, live: true })).toEqual({
+      n: 3,
+      name: "Read the spec",
+      startedAt: at(10),
+      state: "done",
+      seconds: 30,
+      calls: 1,
+      at: undefined,
+    });
+    // A session that is not open has none running: it is ended, where the last thing it did was.
+    expect(first && subAgentOf(first, { now, live: false })).toMatchObject({
+      state: "ended",
+      seconds: 12,
+      at: undefined,
+    });
+    expect(subAgentOf({ type: "said", event: event(1) }, { now, live: true })).toBeUndefined();
+    expect(talk[0] && subAgentOf(talk[0], { now, live: true })).toBeUndefined();
+    // The foot's list: those at work in the turn under way, in the order they were started.
+    expect(atWorkOf(events, now).map((one) => [one.name, one.calls, one.seconds])).toEqual([
+      ["Explore: Find the routes", 2, 90],
+    ]);
+    expect(atWorkOf(events.slice(0, 3), now).map((one) => [one.name, one.at])).toEqual([
+      ["Explore: Find the routes", { at: "working" }],
+    ]);
+    // What the agent itself is at is the call that started them, whatever they do meanwhile.
+    expect(workingOf(events.slice(0, 9))).toEqual({ at: "tool", tool: "Task" });
+    // A turn that ended ends every sub-agent still open in it, there; one started after is another turn's.
+    const done = event(15, {
+      kind: "status",
+      text: "The turn completed.",
+      at: at(60),
+      data: { turn: "completed" },
+    });
+    const ended = talkOf([...events, done])[1];
+    expect(ended && subAgentOf(ended, { now, live: true })).toMatchObject({
+      state: "ended",
+      seconds: 50,
+      at: undefined,
+    });
+    expect(atWorkOf([...events, done], now)).toEqual([]);
+    const next = [
+      ...events,
+      done,
+      event(16, { kind: "wake", text: "", at: at(70), data: { signal: 2 } }),
+      event(17, {
+        kind: "tool_call",
+        text: "{}",
+        at: at(80),
+        data: { tool: "Agent", id: "a1", starts: "Plan" },
+      }),
+      event(18, { kind: "thinking", text: "Hm.", at: at(85), data: of("a1") }),
+    ];
+    // An id used again is another call, with a sub-agent of its own.
+    expect(atWorkOf(next, now).map((one) => [one.n, one.name, one.at])).toEqual([
+      [17, "Plan", { at: "thinking" }],
+    ]);
+    expect(shape(talkOf(next)).slice(-2)).toEqual(["wake 16", ["tool 17/-", ["thought 18"]]]);
+    // A failed answer, and one whose call was refused: neither is at work.
+    const failed = talkOf([
+      event(1, { kind: "tool_call", text: "{}", at: at(0), data: { id: "f", starts: "x" } }),
+      event(2, { kind: "tool_result", text: "no", at: at(7), data: { id: "f", error: true } }),
+      event(3, { kind: "tool_call", text: "{}", at: at(8), data: { id: "r", starts: "y" } }),
+      event(4, { kind: "permission", text: "", at: at(9), data: { id: "r", answer: "denied" } }),
+    ]);
+    expect(failed.map((one) => subAgentOf(one, { now, live: true })?.state)).toEqual([
+      "failed",
+      "ended",
+    ]);
+    expect(clockOf(0)).toBe("0:00");
+    expect(clockOf(67)).toBe("1:07");
+    expect(clockOf(3725)).toBe("1:02:05");
+    expect(clockOf(Number.NaN)).toBe("0:00");
+  });
+
+  it("shows a session as a conversation, and nothing an agent's product printed as HTML", () => {
     const picture = {
       id: "0199c4d8-0000-7000-8000-0000000000f1",
       name: "screen.png",
@@ -2423,11 +2622,11 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     expect(seen).toContain(
       "Not shown to the agent as a picture, since its product takes none: handed over as a file in its desk (screen.png).",
     );
-    // What the agent said, beside its picture, as text that keeps its lines.
+    // What the agent said, beside its picture: Markdown, whose raw HTML stays text and whose
+    // link that would run something leads nowhere.
     expect(seen).toContain('<li class="sc-talk-item sc-talk-said" data-n="2">');
-    expect(seen).toContain(
-      '<pre class="sc-talk-text">&lt;script&gt;alert(1)&lt;/script&gt;\n  [x](javascript:alert(1))</pre>',
-    );
+    expect(seen).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(seen).toContain("<span>x</span>");
     expect(seen).not.toContain("<script>");
     expect(seen).not.toContain('href="javascript:');
     expect(seen).toMatch(
@@ -2733,7 +2932,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     ).toEqual([true, true, true, true, false, true]);
   });
 
-  it("draws a sub-agent's line once too: its label is read off the line's own events, and the account's picture is none of it", () => {
+  it("draws a sub-agent's row again when what it did changed, and each of its lines only when that line did", () => {
     const hands: TalkHands = {
       fileHref: (id) => id,
       signalFileHref: undefined,
@@ -2754,6 +2953,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
         of: "session",
         reading: undefined,
         today: "2026-11-14",
+        live: true,
         ...over,
       });
     const whose = { parent: "a1", subagent: "Explore" };
@@ -2763,46 +2963,150 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
       event(3, { kind: "assistant", text: "Looking.", data: whose }),
       event(4, { kind: "tool_call", text: "ls", data: { tool: "Bash", id: "s1", ...whose } }),
       event(5, { kind: "assistant", text: "Mine." }),
+      event(6, { kind: "assistant", text: "Whose?", data: { parent: "gone" } }),
     ];
     const before = linesOf(session);
-    const same = (a: typeof before, b: typeof before) =>
+    type Lines = typeof before;
+    const same = (a: Lines, b: Lines) =>
       a.map((line, index) => {
         const other = b[index];
         return other !== undefined && sameLine(line, other);
       });
-    // More of the sub-agent arrives: the lines there were say the same, the sub-agent's among
-    // them, but for the call that was answered.
+    // The session's own line holds the sub-agent's row and what the agent said; what the
+    // sub-agent did is the row's, a line each, each told that it stands inside.
+    expect(before.map((line) => line.key)).toEqual([1, 5, 6]);
+    const stepsOf = (lines: Lines): Lines => [...(lines[0]?.steps ?? [])];
+    expect(stepsOf(before).map((line) => [line.key, line.inside])).toEqual([
+      [2, true],
+      [3, true],
+      [4, true],
+    ]);
+    expect(before.map((line) => [line.live, line.inside, line.steps?.length])).toEqual([
+      [true, undefined, 3],
+      [undefined, undefined, undefined],
+      [undefined, undefined, undefined],
+    ]);
+    // More of the sub-agent arrives: its row is drawn again, since it counts what it did; the
+    // lines there were say the same, but for the call that was answered; no other line is drawn.
     const after = linesOf([
       ...session,
-      event(6, { kind: "tool_result", text: "a b", data: { id: "s1", ...whose } }),
-      event(7, { kind: "assistant", text: "Found.", data: whose }),
+      event(7, { kind: "tool_result", text: "a b", data: { id: "s1", ...whose } }),
+      event(8, { kind: "assistant", text: "Found.", data: whose }),
     ]);
-    expect(after.map((line) => line.key)).toEqual([1, 2, 3, 4, 5, 7]);
-    expect(same(before, after)).toEqual([true, true, true, false, true]);
+    expect(after.map((line) => line.key)).toEqual([1, 5, 6]);
+    expect(same(before, after)).toEqual([false, true, true]);
+    expect(stepsOf(after).map((line) => line.key)).toEqual([2, 3, 4, 8]);
+    expect(same(stepsOf(before), stepsOf(after))).toEqual([true, true, false]);
+    // Nothing arrives: the row and all of it say the same, however often the events are read.
+    expect(same(before, linesOf([...session]))).toEqual([true, true, true]);
+    // Something of the session's own arrives: the row is not drawn again.
+    expect(same(before, linesOf([...session, event(7, { text: "More." })]))).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    // A session that is no longer one whose agent is at work draws the row, which then runs no more.
+    expect(same(before, linesOf(session, { live: false }))).toEqual([false, true, true]);
+    // The turn ended with the sub-agent open: its row is drawn again, to say so.
+    const ended = linesOf([
+      ...session,
+      event(7, { kind: "status", text: "", data: { turn: "completed" } }),
+    ]);
+    expect(same(before, ended).slice(0, 3)).toEqual([false, true, true]);
     // What a sub-agent said is a step with no picture beside it: another picture of the account
-    // draws the account's own word again, and no line of the sub-agent's.
-    expect(before.map((line) => line.agent)).toEqual([
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      mira,
-    ]);
-    expect(same(before, linesOf(session, { agent: { ...mira } }))).toEqual([
-      true,
-      true,
-      true,
-      true,
-      false,
-    ]);
+    // draws the account's own word again, and no line of a sub-agent's.
+    expect(before.map((line) => line.agent)).toEqual([undefined, mira, undefined]);
+    expect(stepsOf(before).map((line) => line.agent)).toEqual([undefined, undefined, undefined]);
+    const pictured = linesOf(session, { agent: { ...mira } });
+    expect(same(before, pictured)).toEqual([true, false, true]);
     // Whose an event is, is a fact of the event: another fact is another event, and its line
-    // is drawn again, and that line alone.
-    const renamed = session.map((one) =>
-      one.n === 3
-        ? event(3, { kind: "assistant", text: "Looking.", data: { ...whose, subagent: "Plan" } })
-        : one,
+    // is drawn again, and that line alone of the sub-agent's.
+    const renamed = linesOf(
+      session.map((one) =>
+        one.n === 3
+          ? event(3, { kind: "assistant", text: "Looking.", data: { ...whose, subagent: "Plan" } })
+          : one,
+      ),
     );
-    expect(same(before, linesOf(renamed))).toEqual([true, true, false, true, true]);
+    expect(same(stepsOf(before), stepsOf(renamed))).toEqual([true, false, true]);
+    // A text read whole inside the row is that line's, and the row's with it.
+    const whole = { of: "session", texts: { 3: "Looking, at length." } };
+    const read = linesOf(session, { whole });
+    expect(same(stepsOf(before), stepsOf(read))).toEqual([true, false, true]);
+    expect(same(before, read)).toEqual([false, true, true]);
+  });
+
+  it("shows what the agent said as Markdown that is never HTML, with no picture fetched", () => {
+    const said = [
+      "## What I found",
+      "",
+      "- The **form** has one step.",
+      "- See [the task](https://console.acme.example/projects/web/tasks/412) and `messages.ts`.",
+      "",
+      "| File | Lines |",
+      "|---|---|",
+      "| form.tsx | 120 |",
+      "",
+      "```ts",
+      "const one = 1;",
+      "```",
+      "",
+      "![the page](https://img.example/page.png) ![](https://img.example/bare.png) ![inline](data:image/png;base64,AAAA)",
+      "",
+      '<img src="https://img.example/raw.png" onerror="alert(1)"> [x](javascript:alert(1))',
+    ].join("\n");
+    const seen = renderToStaticMarkup(
+      <TranscriptView
+        agent={mira}
+        events={[
+          event(1, { kind: "person", text: "**Not** Markdown.", data: { signal: 1 } }),
+          event(2, { text: said, whole: 90_000 }),
+          event(3, { kind: "thinking", text: "A *thought* stays text." }),
+          event(4, { kind: "tool_call", text: "# not a heading", data: { tool: "Bash", id: "t" } }),
+          event(5, { kind: "tool_result", text: "**out**", data: { id: "t", error: false } }),
+        ]}
+        fileHref={(id) => id}
+        onReadWhole={async () => "whole"}
+      />,
+    );
+    // What the agent said: headings, a list, a table and code, as elements.
+    expect(seen).toContain(
+      '<li class="sc-talk-item sc-talk-said" data-n="2"><span class="sc-avatar',
+    );
+    expect(seen).toContain(
+      '<div class="sc-talk-prose"><div class="sc-prose"><h2>What I found</h2>',
+    );
+    expect(seen).toContain("<li>The <strong>form</strong> has one step.</li>");
+    expect(seen).toContain("<th>File</th>");
+    expect(seen).toContain('<pre><code class="language-ts">const one = 1;\n</code></pre>');
+    // A link opens elsewhere, and says nothing of where it came from.
+    expect(seen).toContain(
+      '<a href="https://console.acme.example/projects/web/tasks/412" target="_blank" rel="noopener noreferrer nofollow ugc">the task</a>',
+    );
+    // A picture is not fetched: its words, as a link for whoever chooses to open it; one that
+    // is no address on the web is its words alone.
+    expect(seen).not.toContain("<img");
+    expect(seen).toContain(
+      '<a href="https://img.example/page.png" target="_blank" rel="noopener noreferrer nofollow ugc">the page</a>',
+    );
+    expect(seen).toContain(
+      '<a href="https://img.example/bare.png" target="_blank" rel="noopener noreferrer nofollow ugc">https://img.example/bare.png</a>',
+    );
+    expect(seen).toContain('<span class="sc-prose-image-text">inline</span>');
+    expect(seen).not.toContain("/api/v1/pictures");
+    // Raw HTML stays text, and a link that would run something leads nowhere.
+    expect(seen).toContain("&lt;img src=");
+    expect(seen).not.toContain('onerror="alert');
+    expect(seen).not.toContain('href="javascript:');
+    expect(seen).toContain("<span>x</span>");
+    // A text the row keeps the beginning of is rendered as far as it goes, with the way to the rest.
+    expect(seen).toContain("The beginning of 88 KB.");
+    expect(seen).toContain(">Read it whole<");
+    // What it was told, a thought, a tool's call and its answer stay text as they were written.
+    expect(seen).toContain('<pre class="sc-talk-text">**Not** Markdown.</pre>');
+    expect(seen).toContain('<pre class="sc-talk-text">A *thought* stays text.</pre>');
+    expect(seen).toContain('<pre class="sc-talk-code"># not a heading</pre>');
+    expect(seen).toContain('<pre class="sc-talk-code sc-talk-code-answer">**out**</pre>');
   });
 
   it("reads off a session's events whether a turn is under way, and what the agent is at", () => {
@@ -2984,6 +3288,71 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
         </ol>,
       ),
     ).toContain(">Working<");
+    // Where sub-agents run, the row says how many, and names each under it with what it is at
+    // and how many tools it called; how long it has run is counted by the page.
+    const at = (name: string, n: number, over: object = {}) => ({
+      n,
+      name,
+      startedAt: new Date(Date.now() - 65_000).toISOString(),
+      state: "running" as const,
+      seconds: 65,
+      calls: 4,
+      at: { at: "tool" as const, tool: "Bash" },
+      ...over,
+    });
+    const agents = renderToStaticMarkup(
+      <ol>
+        <TalkWorking
+          working={{ at: "tool", tool: "Agent" }}
+          agent={mira}
+          agents={[
+            at("Explore: Find the routes", 3),
+            at("", 4, { calls: 1, at: { at: "thinking" } }),
+            at("<b>Plan</b>", 5, { calls: 0, at: undefined }),
+          ]}
+        />
+      </ol>,
+    );
+    expect(agents).toContain(
+      '<li class="sc-talk-item sc-talk-working sc-talk-working-agents" role="status">',
+    );
+    expect(agents).toContain("<span>3 sub-agents at work</span>");
+    expect(agents).not.toContain("Running Agent");
+    expect(agents).toContain('<ul class="sc-talk-agents" aria-live="off">');
+    expect(agents).toMatch(
+      /<li class="sc-talk-agents-row"><span class="sc-talk-who sc-talk-agent-name">Explore: Find the routes<\/span><span class="sc-talk-agents-facts">Running Bash · 4 tool calls · 1:0\d<\/span><\/li>/,
+    );
+    // One the record gives no name is called what it is; a name is text.
+    expect(agents).toMatch(/sc-talk-agent-name">Sub-agent<\/span>[^/]*>Thinking · 1 tool call · /);
+    expect(agents).toContain("&lt;b&gt;Plan&lt;/b&gt;");
+    expect(agents).toMatch(/>Working · 0 tool calls · /);
+    expect(
+      renderToStaticMarkup(
+        <ol>
+          <TalkWorking working={{ at: "tool", tool: "Agent" }} agents={[at("One", 1)]} />
+        </ol>,
+      ),
+    ).toContain("<span>1 sub-agent at work</span>");
+    // With none at work the row is as it was; and with no turn under way there is no row.
+    expect(
+      renderToStaticMarkup(
+        <ol>
+          <TalkWorking working={{ at: "thinking" }} agents={[]} />
+        </ol>,
+      ),
+    ).toContain('<li class="sc-talk-item sc-talk-working" role="status">');
+    expect(renderToStaticMarkup(<TalkWorking working={undefined} agents={[at("One", 1)]} />)).toBe(
+      "",
+    );
+    const koreanAgents = renderToStaticMarkup(
+      <LanguageContext.Provider value={KOREAN}>
+        <ol>
+          <TalkWorking working={{ at: "working" }} agents={[at("One", 1), at("Two", 2)]} />
+        </ol>
+      </LanguageContext.Provider>,
+    );
+    expect(koreanAgents).toContain("<span>서브 에이전트 2개 작업 중</span>");
+    expect(koreanAgents).toMatch(/>Bash 실행 중 · 도구 호출 4회 · /);
     const pane = renderToStaticMarkup(
       <ChatPane label="What the agent is doing" composer={<form>box</form>}>
         <p>conversation</p>

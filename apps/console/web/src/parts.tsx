@@ -1692,6 +1692,12 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
           fileSrc={(source) => (source === "figure.svg" ? FIGURE : undefined)}
         />
       </Specimen>
+      <Specimen label="What an agent said in a session: a picture named in it is not read, and stays a link to it">
+        <Markdown
+          source="The form at a phone's width, **after** the change: ![a picture of the sign-up form](https://preview.acme.test/sign-up-390.png)"
+          picturesAsLinks
+        />
+      </Specimen>
     </Part>
 
     <Part

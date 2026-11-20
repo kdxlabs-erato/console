@@ -1974,6 +1974,13 @@ export const en = {
         toolFailed: "Failed",
         toolRefused: "Refused",
         toolRunning: "running",
+        /** A sub-agent's row: what it is, how much it did, and how it stands. */
+        agent: {
+          label: "Sub-agent",
+          calls: (count: number) => (count === 1 ? "1 tool call" : `${count} tool calls`),
+          states: { running: "Running", done: "Done", failed: "Failed", ended: "Stopped" },
+          steps: "What the sub-agent did",
+        },
         /** Who stopped a turn with no words of their own, so that what waited was read. */
         interrupted: (who: string) => `${who} interrupted, so that what waited is read now.`,
         unread: "The session ended before the agent read this.",
@@ -1991,6 +1998,9 @@ export const en = {
           thinking: "Thinking",
           working: "Working",
           tool: (name: string) => `Running ${name}`,
+          /** How many sub-agents are at work, over the list of them. */
+          agents: (count: number) =>
+            count === 1 ? "1 sub-agent at work" : `${count} sub-agents at work`,
         },
         /** When what was told and not taken yet is read, by why it waits; and the way to have it read now. */
         waiting: {

@@ -1501,8 +1501,9 @@ export const SESSION_SCRIPT: readonly {
     after: 2,
   },
   { kind: "tool_result", text: " 12 passed", data: { id: "call-6", error: false }, after: 19 },
-  // A task given to a sub-agent: what it thought, called and said names the call that started
-  // it (ADR-0131), and the page shows each as a step under the sub-agent's name.
+  // A task given to a sub-agent, as a runner of before wrote it: what it thought, called and
+  // said names the call that started it (ADR-0131), and the page reads each under that call
+  // (ADR-0141). The turn under way at the script's end has those a runner of now writes.
   {
     kind: "tool_call",
     text: '{"subagent_type":"Explore","description":"Check the other forms","prompt":"Look whether any other form still names a second step."}',
@@ -1562,9 +1563,29 @@ export const SESSION_SCRIPT: readonly {
     after: 4,
     picture: { name: "sign-up-390.png", picture: "form", colour: "pink" },
   },
+  // What the agent says is Markdown, and the page reads it so (ADR-0141): a heading, a list, a
+  // table, code and a link, as an agent writes a summary.
   {
     kind: "assistant",
-    text: "The errors are beside their fields, on a phone too, and the tests pass. I wrote it on the task and moved on to what waits.\n\n- Two messages went with the questions they were about.\n- The email's message was above the form; it is under its field now.",
+    text: [
+      "## The field errors are done",
+      "",
+      "The errors are beside their fields, on a phone too, and the tests pass. I wrote it on the task and moved on to what waits.",
+      "",
+      "- Two messages went with the questions they were about.",
+      "- The email's message was above the form; it is under its field **now**.",
+      "",
+      "| File | What changed |",
+      "|---|---|",
+      "| `src/sign-up/messages.ts` | The two messages of the second step are out. |",
+      "| `src/sign-up/form.tsx` | The email's field is handed its problem. |",
+      "",
+      "```tsx",
+      '<Field name="email" problem={problems.email} />',
+      "```",
+      "",
+      "The page as it is now: [preview.acme.example/sign-up](https://preview.acme.example/sign-up).",
+    ].join("\n"),
     after: 6,
   },
   { kind: "status", text: "The turn completed.", data: { turn: "completed" }, after: 1 },
@@ -1613,5 +1634,172 @@ export const SESSION_SCRIPT: readonly {
     text: '{"command":"console task {link} --project website"}',
     data: { tool: "Bash", id: "call-9" },
     after: 2,
+  },
+  {
+    kind: "tool_result",
+    text: `#{link} "${CONFIRMATION_LINK}"\nstate: in_progress\n\nDana: the link in the mail opens the sign-in page, not the confirmation.`,
+    data: { id: "call-9", error: false },
+    after: 2,
+  },
+  {
+    kind: "assistant",
+    text: "The link opens the wrong page. Three things to look at, side by side: the mail's template, where the token is made, and what the link does in a browser.",
+    after: 4,
+  },
+  // Sub-agents side by side, as a runner of now writes them: each call says what it starts
+  // (`starts`), and the turn is under way with one done, one failed and two at work.
+  {
+    kind: "tool_call",
+    text: '{"subagent_type":"Explore","description":"Read the mail template","prompt":"Find the template of the confirmation mail and say which address its link is made of."}',
+    data: { tool: "Agent", id: "call-a", starts: "Explore: Read the mail template" },
+    after: 2,
+  },
+  {
+    kind: "tool_call",
+    text: '{"subagent_type":"general-purpose","description":"Open the link in a browser","prompt":"Sign up on the preview with a new address and follow the link in the mail."}',
+    data: { tool: "Agent", id: "call-b", starts: "general-purpose: Open the link in a browser" },
+    after: 0,
+  },
+  {
+    kind: "tool_call",
+    text: '{"subagent_type":"Explore","description":"Find where the token is made","prompt":"Find where the confirmation token is made and where it is read again."}',
+    data: { tool: "Agent", id: "call-c", starts: "Explore: Find where the token is made" },
+    after: 0,
+  },
+  {
+    kind: "thinking",
+    text: "The mails are under src/mail. The confirmation is one of them.",
+    data: { parent: "call-a", subagent: "Explore: Read the mail template" },
+    after: 2,
+  },
+  {
+    kind: "tool_call",
+    text: '{"pattern":"confirm","path":"src"}',
+    data: {
+      tool: "Grep",
+      id: "call-c1",
+      parent: "call-c",
+      subagent: "Explore: Find where the token is made",
+    },
+    after: 1,
+  },
+  {
+    kind: "tool_call",
+    text: '{"file_path":"src/mail/confirmation.tsx"}',
+    data: {
+      tool: "Read",
+      id: "call-a1",
+      parent: "call-a",
+      subagent: "Explore: Read the mail template",
+    },
+    after: 1,
+  },
+  {
+    kind: "tool_call",
+    text: '{"url":"https://preview.acme.example/sign-up"}',
+    data: {
+      tool: "Navigate",
+      id: "call-b1",
+      parent: "call-b",
+      subagent: "general-purpose: Open the link in a browser",
+    },
+    after: 1,
+  },
+  {
+    kind: "tool_result",
+    text: "src/mail/confirmation.tsx:8\nsrc/sign-up/confirm.ts:3\nsrc/sign-up/confirm.ts:21\nsrc/routes.ts:44",
+    data: {
+      id: "call-c1",
+      error: false,
+      parent: "call-c",
+      subagent: "Explore: Find where the token is made",
+    },
+    after: 1,
+  },
+  {
+    kind: "tool_result",
+    text: 'export function ConfirmationMail({ token }: Props) {\n  const link = ORIGIN + "/sign-in?token=" + token;\n  ...\n}',
+    data: {
+      id: "call-a1",
+      error: false,
+      parent: "call-a",
+      subagent: "Explore: Read the mail template",
+    },
+    after: 1,
+  },
+  {
+    kind: "tool_result",
+    text: "The browser could not be reached: no browser is attached to this session.",
+    data: {
+      id: "call-b1",
+      error: true,
+      parent: "call-b",
+      subagent: "general-purpose: Open the link in a browser",
+    },
+    after: 2,
+  },
+  {
+    kind: "assistant",
+    text: 'The template makes the link of `/sign-in`, where the route that reads the token is `/confirm`:\n\n```tsx\nconst link = ORIGIN + "/sign-in?token=" + token;\n```',
+    data: { parent: "call-a", subagent: "Explore: Read the mail template" },
+    after: 3,
+  },
+  {
+    kind: "tool_result",
+    text: "The link is made in src/mail/confirmation.tsx, line 8, of /sign-in; the token is read at /confirm.",
+    data: { id: "call-a", error: false },
+    after: 1,
+  },
+  {
+    kind: "tool_result",
+    text: "I could not open the link: no browser is attached to this session.",
+    data: { id: "call-b", error: true },
+    after: 2,
+  },
+  {
+    kind: "thinking",
+    text: "confirm.ts makes the token at line 3 and reads it at line 21. The route is in routes.ts.",
+    data: { parent: "call-c", subagent: "Explore: Find where the token is made" },
+    after: 2,
+  },
+  {
+    kind: "tool_call",
+    text: '{"file_path":"src/sign-up/confirm.ts"}',
+    data: {
+      tool: "Read",
+      id: "call-c2",
+      parent: "call-c",
+      subagent: "Explore: Find where the token is made",
+    },
+    after: 1,
+  },
+  {
+    kind: "tool_result",
+    text: "export function makeToken(person: Person): string {\n  ...\n}",
+    data: {
+      id: "call-c2",
+      error: false,
+      parent: "call-c",
+      subagent: "Explore: Find where the token is made",
+    },
+    after: 1,
+  },
+  {
+    kind: "tool_call",
+    text: '{"file_path":"src/routes.ts"}',
+    data: {
+      tool: "Read",
+      id: "call-c3",
+      parent: "call-c",
+      subagent: "Explore: Find where the token is made",
+    },
+    after: 2,
+  },
+  // One more, started a moment ago: at work, with nothing of its own on the record yet.
+  {
+    kind: "tool_call",
+    text: '{"subagent_type":"Explore","description":"Look for a test of the link","prompt":"Is there a test that follows the link of the confirmation mail?"}',
+    data: { tool: "Agent", id: "call-d", starts: "Explore: Look for a test of the link" },
+    after: 3,
   },
 ];

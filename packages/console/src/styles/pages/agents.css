@@ -717,6 +717,40 @@
   padding: var(--sc-space-1) var(--sc-space-3) var(--sc-space-3);
 }
 
+/* A sub-agent's row: what it is called, how it stands and when on one line, and under them what
+   it is and how much it did. Opened, what it did stands inside it, the whole width of it. */
+.sc-talk-agent-head {
+  flex-wrap: wrap;
+  align-items: baseline;
+  row-gap: 0.125rem;
+}
+
+/* A name is read whole where it fits in two lines, and cut after them. */
+.sc-talk-agent-name {
+  display: -webkit-box;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.sc-talk-agent-head > .sc-talk-agent-facts {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--sc-space-2);
+  order: 1;
+  white-space: normal;
+}
+
+.sc-talk-steps > .sc-talk-step {
+  margin-inline-start: 0;
+}
+
 .sc-talk-code {
   max-height: 24rem;
   padding: var(--sc-space-2) var(--sc-space-3);
@@ -862,6 +896,40 @@
     opacity: 1;
     transform: translateY(-0.1875rem);
   }
+}
+
+/* The sub-agents at work, under the sign that the agent is: a line each, in from its picture,
+   the name first and what it is at after it, under the name where the row is narrow. */
+.sc-talk-working-agents {
+  flex-wrap: wrap;
+  row-gap: var(--sc-space-1);
+}
+
+.sc-talk-agents {
+  display: grid;
+  flex: 1 0 100%;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sc-space-1);
+  max-width: 40rem;
+  margin: 0;
+  padding: 0 0 0 calc(1.5rem + var(--sc-space-3));
+  list-style: none;
+}
+
+.sc-talk-agents-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--sc-space-3);
+  min-width: 0;
+}
+
+.sc-talk-agents-row > .sc-talk-agent-name {
+  flex: 1 1 10rem;
+}
+
+.sc-talk-agents-facts {
+  flex: none;
 }
 
 /* The pictures of an event: small, side by side, each opening large over the page. */

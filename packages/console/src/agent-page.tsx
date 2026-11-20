@@ -21,6 +21,7 @@ import {
   AgentSecretList,
   AgentSessionList,
   AgentStateBadge,
+  atWorkOf,
   ChatPane,
   SignalComposer,
   TalkWaiting,
@@ -121,6 +122,11 @@ function SessionTranscript(props: {
   readonly signals?: readonly RestSignal[] | undefined;
   /** What stands at the conversation's foot, from what the session's events say. */
   readonly foot?: ((read: SessionRead) => ReactNode) | undefined;
+  /**
+   * Whether the agent is at work in the session, where the page around knows how it stands: a
+   * sub-agent the record does not end is then running. Left out, an open session's is.
+   */
+  readonly working?: boolean | undefined;
   /** Told when the console says the session is over. */
   readonly onEnded?: (() => void) | undefined;
 }) {
@@ -264,6 +270,7 @@ function SessionTranscript(props: {
         signalFiles={filesOf}
         signalFileHref={(number, fileId) => client.signalFileUrl(handle, number, fileId)}
         onReadWhole={async (n) => (await client.transcriptText(handle, session.id, n)).text}
+        live={props.working ?? open}
         empty={session.away ? null : <p className="sc-field-hint">{words.empty}</p>}
         foot={props.foot?.({ events, taken })}
       />
@@ -428,7 +435,11 @@ function AgentLive(props: {
               : "call";
     return (
       <>
-        <TalkWorking working={working} agent={agent.person} />
+        <TalkWorking
+          working={working}
+          agent={agent.person}
+          agents={working === undefined ? undefined : atWorkOf(events, Date.now())}
+        />
         <TalkWaiting
           signals={waiting}
           why={why}
@@ -519,6 +530,7 @@ function AgentLive(props: {
                   session={session}
                   agent={agent.person}
                   signals={signals ?? []}
+                  working={session.ended === null && state === "running"}
                   foot={({ events, taken }) => foot(events, taken)}
                   onEnded={() => {
                     sessions.again();

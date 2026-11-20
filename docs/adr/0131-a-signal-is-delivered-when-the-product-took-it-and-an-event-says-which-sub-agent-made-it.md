@@ -1,6 +1,6 @@
 # ADR-0131: A signal is delivered when the product took it, and an event says which sub-agent made it
 
-- Status: Accepted
+- Status: Accepted; point 6, how the page shows a sub-agent's events, is superseded by [ADR-0141](0141-what-an-agent-said-is-read-as-markdown-and-a-sub-agent-under-the-call-that-started-it.md), which reads them under the call that started the sub-agent and adds the fact `starts` to that call
 - Date: 2026-11-15
 - Amends point 5 of [ADR-0085](0085-a-runner-on-the-agents-machine-is-told-by-signals-and-runs-one-session-at-a-time.md), where `delivered` was the last signal handed to the product, and point 5 of [ADR-0086](0086-a-session-leaves-a-transcript-that-is-kept-for-good.md), where a secret is taken out of an event; builds on [ADR-0098](0098-a-message-is-on-the-record-where-the-agent-took-it-and-an-interrupt-may-carry-no-words.md). The contract is in [specs/runner.md](../specs/runner.md).
 

@@ -1865,6 +1865,12 @@ export const ko: Messages = {
         toolFailed: "실패",
         toolRefused: "거절됨",
         toolRunning: "실행 중",
+        agent: {
+          label: "서브 에이전트",
+          calls: (count) => `도구 호출 ${count}회`,
+          states: { running: "실행 중", done: "완료", failed: "실패", ended: "중단됨" },
+          steps: "서브 에이전트가 한 일",
+        },
         interrupted: (who) =>
           `${who} 님이 에이전트가 하던 일을 멈추고, 기다리던 말을 바로 읽게 했습니다.`,
         unread: "에이전트가 읽기 전에 세션이 끝났습니다.",
@@ -1880,6 +1886,7 @@ export const ko: Messages = {
           thinking: "생각하는 중",
           working: "작업 중",
           tool: (name) => `${name} 실행 중`,
+          agents: (count) => `서브 에이전트 ${count}개 작업 중`,
         },
         waiting: {
           call: "지금 하는 도구 호출이 끝나면 읽습니다.",

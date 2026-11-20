@@ -1,0 +1,38 @@
+# ADR-0141: What an agent said is read as Markdown, and a sub-agent under the call that started it
+
+- Status: Accepted
+- Date: 2026-11-20
+- Supersedes point 6 of [ADR-0131](0131-a-signal-is-delivered-when-the-product-took-it-and-an-event-says-which-sub-agent-made-it.md), "the page shows a sub-agent's event as a step, with a label", and its rejection of reading a sub-agent's events under the call that started it; adds a fact to its point 4. Amends point 2 of [ADR-0086](0086-a-session-leaves-a-transcript-that-is-kept-for-good.md) where it says an event is "shown as text": what the agent said is shown as Markdown rendered to elements, and nothing of an event is HTML, as before. The contract is in [specs/runner.md](../specs/runner.md).
+
+## Context
+
+An agent account was run on a machine of its own for the first time, and its supervisor read its sessions on its page. Two things made them hard to read.
+
+An agent writes Markdown. What it said, a summary with a heading, a list of what changed, a table, a command in a code block, stood on the page as the characters it is written in: the marks of a table as rows of bars, a code block between its fences. The page showed everything a product printed as text, which is the right rule for what a tool was called with and what it answered, and the wrong reading of what the agent wrote for a person.
+
+An agent gives work to sub-agents, several at once, as its desk tells it to. The record says whose an event is ([ADR-0131](0131-a-signal-is-delivered-when-the-product-took-it-and-an-event-says-which-sub-agent-made-it.md), point 4), and the page showed each event where it arrived, with a label. Three sub-agents at work made one line of their steps in the order they happened to arrive, and nothing on the page said how many were running, which, since when, or that one had ended. The interfaces of the agent products show this as a matter of course: the sub-agents at work, each with what it is at, how many tools it called and how long it has run.
+
+ADR-0131 rejected reading a sub-agent's events under its call for two reasons: no part drew it, and the events arrive among the session's own. The first is answered below with what the conversation already draws. The second is what makes the flat line unreadable once two run side by side.
+
+## Decision
+
+1. **What the agent said is read as Markdown, rendered to elements.** The session's own word and a sub-agent's alike, by the component that renders what people and agents write on the board (`Markdown`): raw HTML in the text stays text, a link leads only to the web and opens elsewhere, and nothing is run. What the agent was told, a thought, a tool's call and what it answered, a status and an error stay text in a block that keeps its spaces and its lines: they are what a product printed, not what was written for a reader.
+2. **A picture named in what the agent said is not fetched.** It is shown as its words, a link to where it is for whoever chooses to open it. On the board a picture named over https is read through the console ([ADR-0048](0048-a-picture-from-elsewhere-is-read-through-the-console-from-a-public-address-and-kept-a-while.md)), which is right for what a person wrote and someone looked at; a session's text is shown as it arrives, to whoever watches, and an address an agent was led to write would be asked for by the console the moment it is shown. The pictures of a session are the ones its tools returned, which the runner hands in and the console keeps.
+3. **The call that starts a sub-agent says so.** A fact of its own on the call's event, `starts`: what the call calls the sub-agent, the same bounded name its events carry as `subagent`. A page then knows that a sub-agent runs before the first of its events arrives. A driver says it where its product does: the `claude` driver, from the call's input. The other two say nothing, as before.
+4. **A sub-agent's events are read under the call that started it.** An event that names a call the session's events hold (`parent`) is a step of that call, in a line of the call's own, and not a thing of the line the call stands in: what two sub-agents did side by side is read as two lines, each in its order. The call is the sub-agent's row; opened, it shows what the sub-agent was started with, its steps, and what it answered. An event that names a call the events read do not hold stays where it stood, labelled, as before. A record written before `starts` reads the same way, from the first event that names the call.
+5. **How a sub-agent stands is read off the record alone.** Done or failed by its call's answer; ended where the turn or the session it ran in ended first; at work otherwise, in a session whose agent is at work. With it: when it started, how long it ran, to its answer, to where it was ended, or so far; how many tools it called; and what it is at, its last tool that was not answered, a thought, or the work between. Nothing is stored for it and no route answers it.
+6. **While a turn is under way, the page says how many sub-agents are at work**, at the conversation's foot where it says what the agent is at, with each under it: its name, what it is at, its count and its time. The time is counted by the page; the record is not read again for it. What the agent itself is at is the call that started them, whatever they do meanwhile.
+7. **No part is added.** The row and the list are made of what the conversation already draws, a step's row, a badge, a quiet line, placed by the page's own classes. The conversation is still drawn by its page and not by a part; folding it into one is the design pass that [ADR-0106](0106-a-look-is-a-part-with-a-file-and-a-row-and-a-page-places-its-parts.md) leaves to its time.
+
+## Consequences
+
+- **A summary reads as the agent wrote it**: a heading, a list, a table, code. A text the row keeps only the beginning of is rendered as far as it goes, with the way to the rest as before, and may end inside a table or a block.
+- **A line of what the agent said is no longer kept as it was typed.** Two lines with no empty line between them are one paragraph, as Markdown has it. What must be read character for character is what a tool printed, which stays text.
+- **A session with sub-agents is as long as its own line**, with a row for each sub-agent, closed until opened. A supervisor sees at the foot who is at work without scrolling for it.
+- **The record is unchanged for a runner of before**, and its sessions are read the same way from what they hold. A runner of now writes one fact more on one kind of event, which is data as every fact is: bounded, shown as text, needing no column and no change of a schema.
+- **A sub-agent whose call was answered at once and that goes on working**, where a product runs one in the background, reads as done from the answer on, with what it does after still under its row. No recorded stream of such a run was at hand; the reading is from the product's documentation, and is what to look at when one is.
+- **Rejected:**
+  - rendering everything a product printed as Markdown: a tool's output is not written in it, and a file's content would be read as marks;
+  - fetching a picture named in what the agent said through the console, as the board does: the console would ask an address for it that nobody chose, with whatever the address carries;
+  - a count of sub-agents in the runner's heartbeat, so that the list of accounts could show it: the heartbeat says how the account stands every thirty seconds, and a sub-agent lives for less; the record says it as it happens;
+  - a part for the conversation, made here: a part is a decision of design, and this change needed none.

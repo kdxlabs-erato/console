@@ -1,6 +1,7 @@
 import {
   type FormEvent,
   memo,
+  type NamedExoticComponent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -25,15 +26,19 @@ import {
 import { today } from "../dates.js";
 import { useWords } from "../i18n/index.js";
 import { isPicture } from "./files.js";
+import { Markdown } from "./markdown.js";
 import { Lightbox, type PictureState, PictureThumb, usePicture } from "./pictures.js";
 import { Avatar, Badge, Button, Callout, cx, formatBytes, personName, Time } from "./ui.js";
 
 // The parts of an agent account's page (ADR-0085, ADR-0086): how it stands, what it is doing as
 // it happens, read as a conversation in a pane that follows its end, what a supervisor says to
 // it, shown as waiting until the agent takes it, what changes how it stands, its sessions, and
-// what its runner said of itself. Everything an agent's product printed is shown as text, in a
-// block that keeps its spaces and its lines, and is never made markup; a picture is shown by its
-// address at the console, and any other file is offered to save.
+// what its runner said of itself. What the agent said is read as Markdown, rendered to elements
+// and never to HTML, with no picture fetched from elsewhere; everything else its product printed,
+// a thought, a tool's call and its answer, a note, is shown as text, in a block that keeps its
+// spaces and its lines (ADR-0141). What a sub-agent did is read under the call that started it.
+// A picture of the session is shown by its address at the console, and any other file is offered
+// to save.
 
 /** How an agent stands, in a word, with the tone of it. */
 const STATE_TONES: Readonly<Record<AgentState, "success" | "neutral" | "warning" | "danger">> = {
@@ -113,6 +118,11 @@ export interface TranscriptViewProps {
   /** The account whose session this is: its picture stands beside what it said. */
   readonly agent?: RestPerson | undefined;
   /**
+   * Whether the session is one whose agent is at work: a sub-agent the record neither answers
+   * nor ends is then running, and its row counts its time. Left out, no sub-agent is.
+   */
+  readonly live?: boolean | undefined;
+  /**
    * The files that came with a signal, by its number, where the page has read the account's
    * record: what a supervisor sent that is no picture is offered to save from there.
    */
@@ -141,7 +151,8 @@ const TOOL = "tool";
 /**
  * One thing of a session as a person reads it: what the agent was told, what woke it, what it
  * said and thought, a tool's call with what it answered and what was asked of it, and a note for
- * everything else, a status, an error, an event that was sealed.
+ * everything else, a status, an error, an event that was sealed. A call that started a sub-agent
+ * holds what that sub-agent did, as things of its own (ADR-0141).
  */
 export type TalkItem =
   | {
@@ -154,10 +165,25 @@ export type TalkItem =
       readonly call: RestTranscriptEvent | undefined;
       readonly result: RestTranscriptEvent | undefined;
       readonly permission: RestTranscriptEvent | undefined;
+      /**
+       * What the sub-agent this call started did, in order: the events that name the call as
+       * their parent, read as a conversation of their own. Nothing for a call that started none.
+       */
+      readonly steps?: readonly TalkItem[] | undefined;
+      /** When the turn or the session it ran in ended, where that came before its answer. */
+      readonly endedAt?: string | undefined;
     };
 
 /** The most characters of a sub-agent's name that a label shows. */
 const MAX_SUBAGENT_LABEL = 40;
+/** The most characters of a sub-agent's name that its own row shows: what a runner writes of one. */
+const MAX_SUBAGENT_NAME = 80;
+
+/** The call an event names as the one that started the sub-agent it is of, or nothing. */
+const parentOf = (event: RestTranscriptEvent | undefined): string | undefined => {
+  const parent = event?.data.parent;
+  return typeof parent === "string" && parent.length > 0 ? parent : undefined;
+};
 
 /**
  * Whose an event is, where a sub-agent made it (ADR-0131): what the call that started the
@@ -165,8 +191,7 @@ const MAX_SUBAGENT_LABEL = 40;
  * event of the session's own, which is every event of a runner that does not say.
  */
 export function subagentOf(event: RestTranscriptEvent | undefined): string | undefined {
-  const parent = event?.data.parent;
-  if (typeof parent !== "string" || parent.length === 0) {
+  if (parentOf(event) === undefined) {
     return undefined;
   }
   const name = event?.data.subagent;
@@ -178,112 +203,340 @@ const idOf = (event: RestTranscriptEvent): string | undefined => {
   return typeof id === "string" && id.length > 0 ? id : undefined;
 };
 
+/** Whether an event is where a turn ended, or the session did: the record's own word for it. */
+const endsTurn = (event: RestTranscriptEvent): boolean =>
+  event.kind === "status" &&
+  event.sealed === null &&
+  (event.data.turn === "completed" || typeof event.data.ended === "string");
+
+type ToolItem = Extract<TalkItem, { type: "tool" }>;
+
+/** Things in the order they are read: the session's own, or one sub-agent's. */
+type TalkLineOf = TalkItem[];
+
+/** Where a tool thing stands: the line it is in, and its place there. */
+interface TalkPlace {
+  readonly line: TalkLineOf;
+  readonly at: number;
+}
+
 /**
  * The events of a session as the things a person reads, in order. A tool's call, what it
  * answered and what was asked before it ran are one thing, joined by the id the product gave
  * them; a call under an id whose call is done is another call, as an agent that numbers its
  * calls anew at every turn has it. What carries no id joins the call before it that waits.
+ *
+ * What a sub-agent did is read under the call that started it (ADR-0141): an event that names a
+ * call the session holds as its parent is a step of that call, in a line of the call's own, and
+ * not a thing of the line the call stands in. A call that says it starts a sub-agent (`starts`)
+ * has such a line from the first, empty; one a runner of before wrote has it from the first
+ * event that names it. An event that names a call the events do not hold stays where it stood.
+ * A turn or a session that ended ends every sub-agent still open in it.
  */
 export function talkOf(events: readonly RestTranscriptEvent[]): TalkItem[] {
-  const items: TalkItem[] = [];
-  type Tool = Extract<TalkItem, { type: "tool" }>;
-  /** The tool things by the id they are open under, as places among the items. */
-  const open = new Map<string, number>();
-  const toolAt = (at: number | undefined): Tool | undefined => {
-    const item = at === undefined ? undefined : items[at];
+  const top: TalkLineOf = [];
+  /** The tool things that still wait for something, by the id they are open under. */
+  const open = new Map<string, TalkPlace>();
+  /** The last call under each id, done or not: what a sub-agent's event names as its parent. */
+  const calls = new Map<string, TalkPlace>();
+  /** The line of each sub-agent, by the id of the call that started it. */
+  const lines = new Map<string, TalkLineOf>();
+  /** The calls that started a sub-agent and were not answered, as far as the events read say. */
+  let running: TalkPlace[] = [];
+  const toolAt = (place: TalkPlace | undefined): ToolItem | undefined => {
+    const item = place === undefined ? undefined : place.line[place.at];
     return item !== undefined && item.type === "tool" ? item : undefined;
   };
-  /** The last tool thing that still waits for what `field` names, where nothing names an id. */
-  const waiting = (field: "call" | "result"): number | undefined => {
-    for (let at = items.length - 1; at >= 0; at -= 1) {
-      const item = items[at];
+  /** The last tool thing of a line that still waits for an answer, where nothing names an id. */
+  const waiting = (line: TalkLineOf): TalkPlace | undefined => {
+    for (let at = line.length - 1; at >= 0; at -= 1) {
+      const item = line[at];
       if (item === undefined || item.type !== "tool") {
         return undefined;
       }
-      if (item[field] === undefined) {
-        return at;
+      if (item.result === undefined) {
+        return { line, at };
       }
     }
     return undefined;
   };
-  const put = (id: string | undefined, tool: Tool, at: number | undefined): void => {
-    if (at === undefined) {
-      items.push(tool);
-      if (id !== undefined) {
-        open.set(id, items.length - 1);
-      }
-    } else {
-      items[at] = tool;
+  const set = (place: TalkPlace, tool: ToolItem): void => {
+    place.line[place.at] = tool;
+  };
+  const push = (line: TalkLineOf, tool: ToolItem): TalkPlace => {
+    line.push(tool);
+    return { line, at: line.length - 1 };
+  };
+  /** The line of the sub-agent a call started, begun where it has none yet. */
+  const lineOf = (id: string, place: TalkPlace): TalkLineOf => {
+    const begun = lines.get(id);
+    if (begun !== undefined) {
+      return begun;
     }
+    const line: TalkLineOf = [];
+    lines.set(id, line);
+    const tool = toolAt(place);
+    if (tool !== undefined) {
+      set(place, { ...tool, steps: line });
+      running.push(place);
+    }
+    return line;
   };
   for (const event of events) {
+    // Whose line the event is of: the sub-agent's whose call it names, where the session holds
+    // that call, and the session's own otherwise.
+    const parent = parentOf(event);
+    const starter = parent === undefined ? undefined : calls.get(parent);
+    const line = parent === undefined || starter === undefined ? top : lineOf(parent, starter);
     // A sealed event says who sealed it and why, wherever it stood.
     if (event.sealed !== null) {
-      items.push({ type: "note", event });
+      line.push({ type: "note", event });
       continue;
     }
     if (event.kind === "person") {
-      items.push({ type: "told", event });
+      line.push({ type: "told", event });
     } else if (event.kind === "wake") {
-      items.push({ type: "wake", event });
+      line.push({ type: "wake", event });
     } else if (event.kind === "assistant") {
-      items.push({ type: "said", event });
+      line.push({ type: "said", event });
     } else if (event.kind === "thinking") {
-      items.push({ type: "thought", event });
+      line.push({ type: "thought", event });
     } else if (event.kind === "tool_call") {
       const id = idOf(event);
-      const at = id === undefined ? undefined : open.get(id);
-      const held = toolAt(at);
-      if (held !== undefined && held.call === undefined) {
-        put(id, { ...held, call: event }, at);
+      const held = id === undefined ? undefined : open.get(id);
+      const asked = toolAt(held);
+      let place: TalkPlace;
+      if (held !== undefined && asked !== undefined && asked.call === undefined) {
+        set(held, { ...asked, call: event });
+        place = held;
       } else {
-        put(id, { type: "tool", call: event, result: undefined, permission: undefined }, undefined);
+        place = push(line, { type: "tool", call: event, result: undefined, permission: undefined });
+        if (id !== undefined) {
+          open.set(id, place);
+        }
+      }
+      if (id !== undefined) {
+        // Another call under the id is another call, with a sub-agent of its own or none.
+        calls.set(id, place);
+        lines.delete(id);
+        if (typeof event.data.starts === "string") {
+          lineOf(id, place);
+        }
       }
     } else if (event.kind === "tool_result") {
       const id = idOf(event);
-      const at = id === undefined ? waiting("result") : open.get(id);
-      const held = toolAt(at);
-      if (held !== undefined && held.result === undefined) {
-        put(id, { ...held, result: event }, at);
+      const held = id === undefined ? waiting(line) : open.get(id);
+      const called = toolAt(held);
+      if (held !== undefined && called !== undefined && called.result === undefined) {
+        set(held, { ...called, result: event });
         if (id !== undefined) {
           open.delete(id);
         }
       } else {
-        items.push({ type: "tool", call: undefined, result: event, permission: undefined });
+        line.push({ type: "tool", call: undefined, result: event, permission: undefined });
       }
     } else if (event.kind === "permission") {
       const id = idOf(event);
-      const at = id === undefined ? undefined : open.get(id);
-      const held = toolAt(at);
-      if (held !== undefined && held.permission === undefined && held.result === undefined) {
-        put(id, { ...held, permission: event }, at);
+      const held = id === undefined ? undefined : open.get(id);
+      const called = toolAt(held);
+      if (
+        held !== undefined &&
+        called !== undefined &&
+        called.permission === undefined &&
+        called.result === undefined
+      ) {
+        set(held, { ...called, permission: event });
       } else {
-        put(id, { type: "tool", call: undefined, result: undefined, permission: event }, undefined);
+        const place = push(line, {
+          type: "tool",
+          call: undefined,
+          result: undefined,
+          permission: event,
+        });
+        if (id !== undefined) {
+          open.set(id, place);
+        }
       }
     } else {
-      items.push({ type: "note", event });
+      line.push({ type: "note", event });
+      // Where the session's own line says a turn ended, or the session did, nothing started in
+      // it goes on: a sub-agent that was not answered by then is ended there.
+      if (parent === undefined && endsTurn(event)) {
+        for (const place of running) {
+          const tool = toolAt(place);
+          if (tool !== undefined && tool.result === undefined && tool.endedAt === undefined) {
+            set(place, { ...tool, endedAt: event.at });
+          }
+        }
+        running = [];
+      }
     }
   }
-  return items;
+  return top;
 }
 
-/** What the agent is at while a turn is under way: thinking, at a tool, or at work between the two. */
+/**
+ * What the agent is at while a turn is under way: thinking, at a tool, or at work between the two.
+ */
 export type Working =
   | { readonly at: "thinking" | "working" }
   | { readonly at: "tool"; readonly tool: string | undefined };
+
+/** How a sub-agent stands: at work, done, failed, or ended with the turn or the session it ran in. */
+export type SubAgentState = "running" | "done" | "failed" | "ended";
+
+/** A sub-agent as the record alone says it (ADR-0141). */
+export interface SubAgent {
+  /** The number of the event that began it: what it is told apart by. */
+  readonly n: number;
+  /** What the call that started it calls it; empty where nothing says. */
+  readonly name: string;
+  readonly startedAt: string;
+  readonly state: SubAgentState;
+  /** How long it ran, or has run so far, in whole seconds. */
+  readonly seconds: number;
+  /** How many tools it called. */
+  readonly calls: number;
+  /** What it is at, while it runs. */
+  readonly at: Working | undefined;
+}
+
+/** The first event of a thing: what it is numbered and timed by. */
+const firstOf = (item: TalkItem): RestTranscriptEvent | undefined =>
+  item.type === "tool" ? (item.call ?? item.permission ?? item.result) : item.event;
+
+/** The moments a thing holds, as numbers; none for one that reads as no moment. */
+const momentsOf = (item: TalkItem): number[] =>
+  (item.type === "tool" ? [item.call, item.permission, item.result] : [item.event]).flatMap(
+    (event) => {
+      const at = event === undefined ? Number.NaN : Date.parse(event.at);
+      return Number.isFinite(at) ? [at] : [];
+    },
+  );
+
+/** Whether what was asked of a call was answered with anything but leave to run. */
+const refusedOf = (item: ToolItem): boolean => {
+  const answer = item.permission?.data.answer;
+  return typeof answer === "string" && answer.length > 0 && answer !== "allowed";
+};
+
+/** What a sub-agent is at, by its steps: its last tool that was not answered, a thought, or the work between. */
+function atOf(steps: readonly TalkItem[]): Working {
+  for (let at = steps.length - 1; at >= 0; at -= 1) {
+    const step = steps[at];
+    if (
+      step !== undefined &&
+      step.type === "tool" &&
+      step.call !== undefined &&
+      step.result === undefined &&
+      !refusedOf(step)
+    ) {
+      const tool = step.call.data[TOOL];
+      return { at: "tool", tool: typeof tool === "string" && tool.length > 0 ? tool : undefined };
+    }
+  }
+  return steps[steps.length - 1]?.type === "thought" ? { at: "thinking" } : { at: "working" };
+}
+
+/**
+ * The sub-agent a call started, read off the record alone (ADR-0141): what the call calls it, or
+ * what its events do where a runner of before wrote them; when it started; how it stands, done
+ * or failed by the call's answer, ended where its turn or its session ended first, and at work
+ * otherwise, which only an open session's is (`live`); how long it ran, to its answer, to where
+ * it was ended or to the last thing it did, and to `now` while it runs; how many tools it
+ * called; and what it is at. Nothing for a thing that is no call that started a sub-agent.
+ */
+export function subAgentOf(
+  item: TalkItem,
+  input: { readonly now: number; readonly live: boolean },
+): SubAgent | undefined {
+  if (item.type !== "tool" || item.steps === undefined) {
+    return undefined;
+  }
+  const first = firstOf(item);
+  if (first === undefined) {
+    return undefined;
+  }
+  const steps = item.steps;
+  const said = item.call?.data.starts;
+  const named = typeof said === "string" ? said : steps.map(firstOf).find(Boolean)?.data.subagent;
+  const name = typeof named === "string" ? named.trim().slice(0, MAX_SUBAGENT_NAME) : "";
+  const started = Date.parse(first.at);
+  const answered = item.result === undefined ? Number.NaN : Date.parse(item.result.at);
+  const cut = item.endedAt === undefined ? Number.NaN : Date.parse(item.endedAt);
+  const state: SubAgentState =
+    item.result !== undefined
+      ? item.result.data.error === true
+        ? "failed"
+        : "done"
+      : item.endedAt !== undefined || refusedOf(item) || !input.live
+        ? "ended"
+        : "running";
+  const until =
+    state === "running"
+      ? input.now
+      : item.result !== undefined
+        ? answered
+        : item.endedAt !== undefined
+          ? cut
+          : Math.max(started, ...steps.flatMap(momentsOf));
+  const seconds = Math.floor((until - started) / 1000);
+  return {
+    n: first.n,
+    name,
+    startedAt: first.at,
+    state,
+    seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 0,
+    calls: steps.filter((step) => step.type === "tool" && step.call !== undefined).length,
+    at: state === "running" ? atOf(steps) : undefined,
+  };
+}
+
+/** The sub-agents among things and under them, in the order they were started. */
+function subAgentsIn(
+  items: readonly TalkItem[],
+  input: { readonly now: number; readonly live: boolean },
+): SubAgent[] {
+  return items.flatMap((item) => {
+    const one = subAgentOf(item, input);
+    return one === undefined || item.type !== "tool"
+      ? []
+      : [one, ...subAgentsIn(item.steps ?? [], input)];
+  });
+}
+
+/**
+ * The sub-agents at work in the turn under way, read off a session's events alone, in the order
+ * they were started: those a call of this turn started that was not answered yet. None where the
+ * session has no event, or its last turn is over.
+ */
+export function atWorkOf(events: readonly RestTranscriptEvent[], now: number): readonly SubAgent[] {
+  let from = 0;
+  for (let at = events.length - 1; at >= 0; at -= 1) {
+    const event = events[at];
+    if (event !== undefined && parentOf(event) === undefined && endsTurn(event)) {
+      from = at + 1;
+      break;
+    }
+  }
+  return subAgentsIn(talkOf(events.slice(from)), { now, live: true }).filter(
+    (one) => one.state === "running",
+  );
+}
 
 /**
  * Whether a turn is under way, and what the agent is at, read off a session's events alone:
  * the record says where a turn ends (`turn: "completed"` on a status) and where the session
  * does, so whatever follows the last of those is a turn that is not done. Nothing where the
- * session has no event yet, or its last turn is over.
+ * session has no event yet, or its last turn is over. What a sub-agent does says nothing of
+ * what the agent itself is at, which is the call that started it: its events are passed over.
  */
 export function workingOf(events: readonly RestTranscriptEvent[]): Working | undefined {
   /** The calls that were answered, by the id the product gave them. */
   const answered = new Set<string>();
   for (let at = events.length - 1; at >= 0; at -= 1) {
     const event = events[at];
-    if (event === undefined || event.sealed !== null) {
+    if (event === undefined || event.sealed !== null || parentOf(event) !== undefined) {
       continue;
     }
     if (event.kind === "status") {
@@ -439,6 +692,21 @@ function firstLine(text: string, most = 160): string {
   return line.length > most ? `${line.slice(0, most)}…` : line;
 }
 
+/**
+ * The first line of what was said, for a row that shows one: without the marks its Markdown
+ * begins a heading, a quotation or an item of a list with, and those it sets code and weight
+ * off by, which a line alone would show bare.
+ */
+export function saidLine(text: string): string {
+  const line = text.split("\n").find((one) => one.trim().length > 0) ?? "";
+  return firstLine(
+    line
+      .replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d{1,9}[.)]\s+)/, "")
+      .replaceAll("**", "")
+      .replaceAll("`", ""),
+  );
+}
+
 /** A fact of an event as a word, or nothing where it is none. */
 const word = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined;
@@ -451,6 +719,48 @@ const word = (value: unknown): string | undefined =>
  */
 export function wordOf(words: Readonly<Record<string, string>>, name: string): string {
   return Object.hasOwn(words, name) ? (words[name] ?? name) : name;
+}
+
+/** A length of time as a clock says it, from whole seconds: `0:07`, `12:40`, `1:02:05`. */
+export function clockOf(seconds: number): string {
+  const whole = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  const two = (value: number): string => String(value).padStart(2, "0");
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  return hours > 0
+    ? `${hours}:${two(minutes)}:${two(whole % 60)}`
+    : `${minutes}:${two(whole % 60)}`;
+}
+
+/**
+ * How long something has run since a moment, as a clock that ticks by itself: the page counts
+ * the seconds, and the record is not read again for them.
+ */
+function RunningFor(props: { readonly since: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <>{clockOf((now - Date.parse(props.since)) / 1000)}</>;
+}
+
+/** What an agent or a sub-agent is at, in the page's words: a thought, a tool by its name, or the work between. */
+function workingWord(
+  words: {
+    readonly thinking: string;
+    readonly working: string;
+    readonly tool: (name: string) => string;
+  },
+  working: Working | undefined,
+): string {
+  if (working === undefined) {
+    return words.working;
+  }
+  if (working.at === "tool") {
+    return working.tool === undefined ? words.working : words.tool(working.tool);
+  }
+  return words[working.at];
 }
 
 /**
@@ -489,17 +799,34 @@ export interface TalkLineProps {
    * is said once, on the first line of it. The first line is read against today.
    */
   readonly after: string | undefined;
+  /**
+   * What the sub-agent the line's call started did, a line each, for a call that started one
+   * (ADR-0141): drawn inside the line, each again only when it changed.
+   */
+  readonly steps?: readonly TalkStep[] | undefined;
+  /**
+   * For a call that started a sub-agent: whether the session is one whose agent is at work, so
+   * that a sub-agent the record does not end is running. Said on no other line.
+   */
+  readonly live?: boolean | undefined;
+  /** Whether the line stands under the sub-agent that made it: whose it is, is then not said again. */
+  readonly inside?: boolean | undefined;
 }
+
+/** A line of a conversation with the number it is told apart by. */
+export type TalkStep = TalkLineProps & { readonly key: number };
 
 /** Whether two things of a session are the same events: a thing is made anew each time the events are read through. */
 function sameItem(a: TalkItem, b: TalkItem): boolean {
   if (a.type === "tool" || b.type === "tool") {
+    // What a sub-agent did is compared as the lines it is drawn in, and not here.
     return (
       a.type === "tool" &&
       b.type === "tool" &&
       a.call === b.call &&
       a.result === b.result &&
-      a.permission === b.permission
+      a.permission === b.permission &&
+      a.endedAt === b.endedAt
     );
   }
   return a.type === b.type && a.event === b.event;
@@ -530,6 +857,23 @@ function sameFiles(
   );
 }
 
+/** Whether the lines of two sub-agents would be drawn the same: as many, each the same line. */
+function sameSteps(
+  a: readonly TalkStep[] | undefined,
+  b: readonly TalkStep[] | undefined,
+): boolean {
+  if (a === undefined || b === undefined) {
+    return a === b;
+  }
+  return (
+    a.length === b.length &&
+    a.every((line, index) => {
+      const other = b[index];
+      return other !== undefined && line.key === other.key && sameLine(line, other);
+    })
+  );
+}
+
 /** Whether a line would be drawn the same: then it is not drawn again. */
 export function sameLine(a: TalkLineProps, b: TalkLineProps): boolean {
   return (
@@ -542,7 +886,10 @@ export function sameLine(a: TalkLineProps, b: TalkLineProps): boolean {
     a.wholeAnswer === b.wholeAnswer &&
     a.reading === b.reading &&
     a.today === b.today &&
-    a.after === b.after
+    a.after === b.after &&
+    a.live === b.live &&
+    a.inside === b.inside &&
+    sameSteps(a.steps, b.steps)
   );
 }
 
@@ -566,7 +913,8 @@ export function turnStarts(events: readonly RestTranscriptEvent[]): ReadonlyMap<
 /**
  * What each line of a conversation is given, in order, with the number it is told apart by:
  * its own events, and of everything the view holds only what the line itself shows, so that a
- * line's props say the same until the line would be drawn otherwise.
+ * line's props say the same until the line would be drawn otherwise. A call that started a
+ * sub-agent is given the lines of what that sub-agent did, made the same way.
  */
 export function talkLinesOf(input: {
   readonly items: readonly TalkItem[];
@@ -580,40 +928,56 @@ export function talkLinesOf(input: {
   /** The event whose whole text is being read, by its number. */
   readonly reading: number | undefined;
   readonly today: string;
-}): readonly (TalkLineProps & { readonly key: number })[] {
+  /** Whether the session is one whose agent is at work: left out, it is not. */
+  readonly live?: boolean | undefined;
+}): readonly TalkStep[] {
   const { whole, of, reading } = input;
-  let before: string | undefined;
-  return input.items.flatMap((one) => {
-    const main = one.type === "tool" ? one.call : one.event;
-    const answer = one.type === "tool" ? one.result : undefined;
-    const first = one.type === "tool" ? (main ?? one.permission ?? answer) : one.event;
-    if (first === undefined) {
-      return [];
-    }
-    const signal = one.type === "told" ? one.event.data.signal : undefined;
-    const after = before;
-    before = first.at;
-    return [
-      {
-        key: first.n,
-        one,
-        hands: input.hands,
-        // The account's picture stands beside what it said, and nowhere else: what a
-        // sub-agent said is a step, with no picture, and is not drawn again for one.
-        agent: one.type === "said" && subagentOf(one.event) === undefined ? input.agent : undefined,
-        began: one.type === "tool" ? undefined : input.began.get(one.event.n),
-        files: typeof signal === "number" ? input.signalFiles?.(signal) : undefined,
-        whole: main === undefined ? undefined : wholeOf(whole, of, main.n),
-        wholeAnswer: answer === undefined ? undefined : wholeOf(whole, of, answer.n),
-        reading:
-          reading !== undefined && (reading === main?.n || reading === answer?.n)
-            ? reading
-            : undefined,
-        today: input.today,
-        after,
-      },
-    ];
-  });
+  const linesOf = (
+    items: readonly TalkItem[],
+    inside: boolean,
+    from: string | undefined,
+  ): TalkStep[] => {
+    let before = from;
+    return items.flatMap((one) => {
+      const main = one.type === "tool" ? one.call : one.event;
+      const answer = one.type === "tool" ? one.result : undefined;
+      const first = firstOf(one);
+      if (first === undefined) {
+        return [];
+      }
+      const signal = one.type === "told" ? one.event.data.signal : undefined;
+      const after = before;
+      before = first.at;
+      const steps =
+        one.type === "tool" && one.steps !== undefined
+          ? { steps: linesOf(one.steps, true, first.at), live: input.live === true }
+          : {};
+      return [
+        {
+          key: first.n,
+          one,
+          hands: input.hands,
+          // The account's picture stands beside what it said, and nowhere else: what a
+          // sub-agent said is a step, with no picture, and is not drawn again for one.
+          agent:
+            one.type === "said" && subagentOf(one.event) === undefined ? input.agent : undefined,
+          began: one.type === "tool" ? undefined : input.began.get(one.event.n),
+          files: typeof signal === "number" ? input.signalFiles?.(signal) : undefined,
+          whole: main === undefined ? undefined : wholeOf(whole, of, main.n),
+          wholeAnswer: answer === undefined ? undefined : wholeOf(whole, of, answer.n),
+          reading:
+            reading !== undefined && (reading === main?.n || reading === answer?.n)
+              ? reading
+              : undefined,
+          today: input.today,
+          after,
+          ...steps,
+          ...(inside ? { inside: true } : {}),
+        },
+      ];
+    });
+  };
+  return linesOf(input.items, false, undefined);
 }
 
 /**
@@ -621,22 +985,34 @@ export function talkLinesOf(input: {
  * whole or what it is handed changed: a session of thousands of events draws one line for an
  * event that arrives, not all of them.
  */
-const TalkLine = memo(function TalkLine(props: TalkLineProps): ReactNode {
+const TalkLine: NamedExoticComponent<TalkLineProps> = memo(function Line(
+  props: TalkLineProps,
+): ReactNode {
   const all = useWords();
   const words = all.agents.page.live;
   const { one, hands } = props;
   const kinds: Readonly<Record<string, string>> = words.kinds;
-  /** The words of an event, whole where they were read whole, with the way to read the rest. */
+  /**
+   * The words of an event, whole where they were read whole, with the way to read the rest: as
+   * text that keeps its spaces and its lines, or, for what the agent said (`said`), as Markdown
+   * rendered to elements, with no picture fetched (ADR-0141).
+   */
   const text = (
     event: RestTranscriptEvent,
     className: string,
     read: string | undefined,
+    said = false,
   ): ReactNode => {
     const shown = read ?? event.text;
     const readWhole = hands.readWhole;
     return (
       <>
-        {shown.length > 0 && <pre className={className}>{shown}</pre>}
+        {shown.length > 0 &&
+          (said ? (
+            <Markdown source={shown} picturesAsLinks />
+          ) : (
+            <pre className={className}>{shown}</pre>
+          ))}
         {event.whole !== null && read === undefined && (
           <p className="sc-talk-cut">
             {words.cutAt(formatBytes(event.whole))}{" "}
@@ -687,8 +1063,82 @@ const TalkLine = memo(function TalkLine(props: TalkLineProps): ReactNode {
     const refused = answer !== undefined && answer !== "allowed";
     const line = firstLine(one.call?.text ?? one.permission?.text ?? one.result?.text ?? "");
     // Whose the call is, where a sub-agent made it: read off the line's own events, as
-    // everything a line shows is, so that it is drawn again only when they are others.
-    const sub = subagentOf(first);
+    // everything a line shows is, so that it is drawn again only when they are others. Under
+    // the sub-agent that made it, it is not said again.
+    const sub = props.inside === true ? undefined : subagentOf(first);
+    // A call that started a sub-agent is that sub-agent's row: what it is called, how much it
+    // did and how it stands; opened, what it was started with, what it did, a line each, and
+    // what it answered.
+    const started = subAgentOf(one, { now: 0, live: props.live === true });
+    if (started !== undefined) {
+      const steps = props.steps ?? [];
+      const calls = words.agent.calls(started.calls);
+      // What it is called: by the call, by its events, or as the tool that started it is.
+      const called = started.name.length === 0 ? (name ?? kinds.tool_call) : started.name;
+      return (
+        <li
+          className={cx(
+            "sc-talk-item",
+            "sc-talk-step",
+            "sc-talk-tool",
+            (started.state === "failed" || refused) && "sc-talk-tool-failed",
+          )}
+          data-n={first.n}
+        >
+          <details className="sc-talk-tool-fold">
+            <summary className="sc-talk-tool-head sc-talk-agent-head">
+              <span className="sc-talk-who sc-talk-agent-name" title={called}>
+                {called}
+              </span>
+              {sub !== undefined && <Badge>{words.subagent(sub)}</Badge>}
+              {refused ? (
+                <Badge tone="warning">{words.toolRefused}</Badge>
+              ) : started.state === "running" ? (
+                <Badge tone="success" kind="state" live>
+                  {words.agent.states.running}
+                </Badge>
+              ) : started.state === "failed" ? (
+                <Badge tone="danger">{words.agent.states.failed}</Badge>
+              ) : (
+                <Badge>{words.agent.states[started.state]}</Badge>
+              )}
+              {when(first)}
+              <span className="sc-muted sc-talk-agent-facts">
+                <span className="sc-talk-kind">{words.agent.label}</span>
+                {started.state === "running" ? (
+                  <>
+                    {workingWord(words.working, started.at)} · {calls} ·{" "}
+                    <RunningFor since={started.startedAt} />
+                  </>
+                ) : (
+                  `${calls} · ${clockOf(started.seconds)}`
+                )}
+              </span>
+            </summary>
+            <div className="sc-talk-tool-body">
+              {one.permission !== undefined && (
+                <p className="sc-talk-note-line">
+                  {kinds.permission}
+                  {answer === undefined ? "" : ` · ${wordOf(words.answers, answer)}`}
+                  {one.permission.text.length > 0 && ` · ${one.permission.text}`}
+                </p>
+              )}
+              {one.call !== undefined && text(one.call, "sc-talk-code", props.whole)}
+              {steps.length > 0 && (
+                <ol className="sc-talk sc-talk-steps" aria-label={words.agent.steps}>
+                  {steps.map(({ key, ...step }) => (
+                    <TalkLine key={key} {...step} />
+                  ))}
+                </ol>
+              )}
+              {one.result !== undefined &&
+                text(one.result, "sc-talk-code sc-talk-code-answer", props.wholeAnswer)}
+            </div>
+          </details>
+          {pictures(one.result)}
+        </li>
+      );
+    }
     return (
       <li
         className={cx(
@@ -819,19 +1269,19 @@ const TalkLine = memo(function TalkLine(props: TalkLineProps): ReactNode {
   if (one.type === "said") {
     const sub = subagentOf(event);
     // What a sub-agent said is a step of the work, and not the agent's word to whoever reads:
-    // folded as a thought is, under the sub-agent's name.
+    // folded as a thought is, under the sub-agent's name where it stands apart from its row.
     if (sub !== undefined) {
       return (
         <li className="sc-talk-item sc-talk-step sc-talk-thought" data-n={event.n}>
           <details className="sc-talk-tool-fold">
             <summary className="sc-talk-tool-head">
               <span className="sc-talk-kind">{kinds.assistant}</span>
-              <span className="sc-talk-tool-line">{firstLine(event.text)}</span>
-              <Badge>{words.subagent(sub)}</Badge>
+              <span className="sc-talk-tool-line">{saidLine(event.text)}</span>
+              {props.inside !== true && <Badge>{words.subagent(sub)}</Badge>}
               {when(event)}
             </summary>
             <div className="sc-talk-tool-body">
-              {text(event, "sc-talk-text", props.whole)}
+              {text(event, "sc-talk-text", props.whole, true)}
               {pictures(event)}
             </div>
           </details>
@@ -842,7 +1292,7 @@ const TalkLine = memo(function TalkLine(props: TalkLineProps): ReactNode {
       <li className="sc-talk-item sc-talk-said" data-n={event.n}>
         {props.agent !== undefined && <Avatar person={props.agent} size="sm" />}
         <div className="sc-talk-prose">
-          {text(event, "sc-talk-text", props.whole)}
+          {text(event, "sc-talk-text", props.whole, true)}
           {pictures(event)}
         </div>
         {when(event)}
@@ -850,7 +1300,7 @@ const TalkLine = memo(function TalkLine(props: TalkLineProps): ReactNode {
     );
   }
   if (one.type === "thought") {
-    const sub = subagentOf(event);
+    const sub = props.inside === true ? undefined : subagentOf(event);
     return (
       <li className="sc-talk-item sc-talk-step sc-talk-thought" data-n={event.n}>
         <details className="sc-talk-tool-fold">
@@ -883,14 +1333,16 @@ const TalkLine = memo(function TalkLine(props: TalkLineProps): ReactNode {
   }
   // A wake, a status, an error, and whatever a newer runner calls otherwise: a note between.
   // What the note's own words say already, how a session ended, is not said twice as a fact.
-  // The id of the call that started a sub-agent is for joining, and says nothing to a reader.
+  // The id of the call that started a sub-agent is for joining, and says nothing to a reader;
+  // whose a note is, is not said again under the sub-agent that made it.
   const facts = Object.entries(event.data).filter(
     ([name, fact]) =>
       fact !== null &&
       name !== "signal" &&
       name !== "kind" &&
       name !== "ended" &&
-      name !== "parent",
+      name !== "parent" &&
+      !(name === "subagent" && props.inside === true),
   );
   const lines = event.text.split("\n").filter((line) => line.trim().length > 0);
   return (
@@ -918,10 +1370,11 @@ const TalkLine = memo(function TalkLine(props: TalkLineProps): ReactNode {
  * A session as a conversation: what the agent was told at the right, as whoever said it wrote
  * it, with the files that came with it; what the agent said at the left, beside its picture; its
  * thoughts folded; a tool's call and what it answered as one row that opens, the steps of a turn
- * close together; a wake, a status and an error as notes between, and a line where a turn
- * ended, with how long it took. A picture opens large over the page. Everything an agent's
- * product printed is text, never markup. Each line is drawn once and again only when it
- * changed, however long the session is.
+ * close together; a sub-agent as one row that opens on what it did; a wake, a status and an
+ * error as notes between, and a line where a turn ended, with how long it took. A picture opens
+ * large over the page. What the agent said is Markdown rendered to elements; everything else its
+ * product printed is text, and nothing of either is ever HTML (ADR-0141). Each line is drawn
+ * once and again only when it changed, however long the session is.
  */
 export function TranscriptView(props: TranscriptViewProps) {
   const words = useWords().agents.page.live;
@@ -1001,6 +1454,7 @@ export function TranscriptView(props: TranscriptViewProps) {
     of,
     reading: reading !== undefined && reading.of === of ? reading.n : undefined,
     today: today(),
+    live: props.live,
   });
   return (
     <>
@@ -1115,33 +1569,56 @@ export function TalkWaiting(props: TalkWaitingProps) {
 
 /**
  * The sign that the agent is at work while a turn is under way: its picture, three dots, and
- * what it is at, a thought, a tool by its name, or the work between. A row of the
- * conversation's list; nothing where no turn is under way.
+ * what it is at, a thought, a tool by its name, or the work between. Where sub-agents run, it
+ * says how many, with each under it: its name, what it is at, how many tools it called and how
+ * long it has run, which the page counts by itself (ADR-0141). A row of the conversation's list;
+ * nothing where no turn is under way.
  */
 export function TalkWorking(props: {
   readonly working: Working | undefined;
   readonly agent?: RestPerson | undefined;
+  /** The sub-agents at work in the turn under way: `atWorkOf` says which. */
+  readonly agents?: readonly SubAgent[] | undefined;
 }) {
-  const words = useWords().agents.page.live.working;
+  const live = useWords().agents.page.live;
+  const words = live.working;
   const { working } = props;
   if (working === undefined) {
     return null;
   }
+  const agents = props.agents ?? [];
   return (
-    <li className="sc-talk-item sc-talk-working" role="status">
+    <li
+      className={cx(
+        "sc-talk-item",
+        "sc-talk-working",
+        agents.length > 0 && "sc-talk-working-agents",
+      )}
+      role="status"
+    >
       {props.agent !== undefined && <Avatar person={props.agent} size="sm" />}
       <span className="sc-talk-dots" aria-hidden="true">
         <span />
         <span />
         <span />
       </span>
-      <span>
-        {working.at === "tool"
-          ? working.tool === undefined
-            ? words.working
-            : words.tool(working.tool)
-          : words[working.at]}
-      </span>
+      <span>{agents.length > 0 ? words.agents(agents.length) : workingWord(words, working)}</span>
+      {agents.length > 0 && (
+        // A clock that ticks is not read out at every second.
+        <ul className="sc-talk-agents" aria-live="off">
+          {agents.map((one) => (
+            <li key={one.n} className="sc-talk-agents-row">
+              <span className="sc-talk-who sc-talk-agent-name">
+                {one.name.length === 0 ? live.agent.label : one.name}
+              </span>
+              <span className="sc-talk-agents-facts">
+                {workingWord(words, one.at)} · {live.agent.calls(one.calls)} ·{" "}
+                <RunningFor since={one.startedAt} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </li>
   );
 }
