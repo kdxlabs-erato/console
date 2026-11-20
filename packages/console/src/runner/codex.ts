@@ -8,6 +8,7 @@ import {
   type DriverSession,
   errorsShown,
   type Fact,
+  notStarted,
   plainCut,
   plainCutEnd,
   type StartOptions,
@@ -520,7 +521,7 @@ function sessionOf(
         });
       } else if (exit.error !== undefined) {
         emit(
-          { type: "event", kind: "error", text: `The product could not be started: ${exit.error}` },
+          { type: "event", kind: "error", text: notStarted(exit.error, host.command) },
           { type: "cannot_go_on", state: "failed", reason: "start" },
         );
         // Nothing was taken: the runner sends again what it sent.

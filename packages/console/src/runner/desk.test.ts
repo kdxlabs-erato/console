@@ -117,19 +117,28 @@ describe("the desk's template", () => {
       "I am Mira (@mira), Release engineer, an agent account of Acme (https://console.acme.example)",
     );
     expect(instructions).toContain("whom `console manager` names");
-    // One main session that directs the work, the tasks to subagents: a lead and not a rule.
-    expect(instructions).toContain("I work in one main session and carry it on.");
-    expect(instructions).toContain("This is a lead and not a rule");
-    // What lets a session, and a subagent it starts, begin a task at once (ADR-0115): what the
-    // subagent is handed, whose the run is, and that the desk names no project.
-    expect(instructions).toContain("A subagent knows nothing of my session.");
-    // Each subagent keeps its scratch in a folder of its own under work/: two of them told to
-    // keep out of one another's way wrote two levels above the desk.
+    // It works as any member does, and its profiles say its name and its role and nothing of
+    // what it is; it never says it is a person (ADR-0143).
     expect(instructions).toContain(
-      "the checkout it works in, a folder of its own under `work/` for its scratch, and that it reads the skill working-the-board before anything else.",
+      "I work as any member does: my profiles and what I sign carry my name and my role, and nothing else. I never say I am a person.",
+    );
+    expect(instructions).not.toMatch(/I am an AI agent|I say so when it matters/);
+    // One main session that directs the work; a task may go to a subagent, where the product
+    // has them, which is a lead and not a rule.
+    expect(instructions).toContain("I work in one main session and carry it on:");
+    expect(instructions).toContain("A task I may give to a subagent, where my product has them:");
+    // What lets a subagent begin a task at once (ADR-0115): what it is handed, a folder of its
+    // own under work/, since two of them told to keep out of one another's way wrote two levels
+    // above the desk, what it reads itself, and whose the run is.
+    expect(instructions).toContain(
+      "I hand it the task by its number and its project, the checkout it works in and a folder of its own under `work/`, and it reads the task, the rules and the skill working-the-board itself.",
     );
     expect(instructions).toContain(
-      "names the run that `console take` printed on every command after (`--run <id>`)",
+      "It takes the task as me, once, and names its run on every command after (`--run <id>`).",
+    );
+    // What it must look at again later, it wakes itself for (ADR-0145).
+    expect(instructions).toContain(
+      'I wake myself for: `console agent wake me "<what for>" --in <minutes>`.',
     );
     expect(instructions).toContain(
       "A task I hand over I do not take myself: a second take ends the first run.",
@@ -157,10 +166,6 @@ describe("the desk's template", () => {
       "the skill working-the-board, which `console whoami` names with its place: I read it before the first task of the board, and a job that is no task of a project needs none of it.",
     );
     expect(instructions).not.toContain("`console help` names");
-    // A brief names the task, and nothing is read twice for a subagent.
-    expect(instructions).toContain(
-      "The brief names the task and does not restate it, and what the subagent reads for itself, the task, the rules, the skill, I do not read for it.",
-    );
     // The structure, and no kind of thing to keep (ADR-0122): the three places, each there once
     // it is used, what the desk keeps and shows said in this file, and the skill that shapes it.
     // Nothing ties what is kept to the board, and nothing keeps the board out.
@@ -189,11 +194,12 @@ describe("the desk's template", () => {
     expect(instructions).toContain("- My git host is GitHub, where I am `acme-mira`.");
     expect(instructions).toContain("- My messenger is Slack.");
     expect(instructions).toContain("`console secret <name> --set` keeps one");
-    // The readme is for people, and says that it is an agent; of what is kept it names the place
-    // and no form.
+    // The readme is for people: whose desk it is, as a member's, with no word of what the
+    // member is; of what is kept it names the place and no form.
     const readme = deskFiles(MIRA).get("README.md") ?? "";
     expect(readme.startsWith("# Mira's desk\n")).toBe(true);
-    expect(readme).toContain("I am an AI agent");
+    expect(readme).toContain("I am a member of my own there, and I report to a manager.");
+    expect(readme).not.toContain("AI agent");
     expect(readme).toContain("- `records/`: what I keep, in the shape that fits it.");
     expect(readme).not.toContain("is the format");
   });

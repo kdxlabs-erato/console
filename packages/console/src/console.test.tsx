@@ -601,6 +601,9 @@ describe("createConsole", () => {
     signals: never,
     runnerHeartbeat: never,
     raiseWake: never,
+    raiseOwnWake: never,
+    ownWakes: never,
+    cancelOwnWake: never,
     signalStream: () => ({
       [Symbol.asyncIterator]: () => ({ next: async () => ({ done: true, value: undefined }) }),
     }),

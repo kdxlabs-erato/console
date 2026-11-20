@@ -186,6 +186,14 @@ export interface RunnerOptions {
         readonly socket: WakeHost["socket"];
       }
     | undefined;
+  /**
+   * How the desk's `runner.json` stands against the one this runner was started with (ADR-0144):
+   * the same, another that reads, or one that does not read, with what is wrong with it in a few
+   * words. Left out, the runner never ends for its file.
+   */
+  readonly reconfigured?:
+    | (() => Promise<"same" | "changed" | { readonly problem: string }>)
+    | undefined;
   /** The durations, for a test to shorten. */
   readonly timing?: Partial<{
     heartbeatMs: number;
@@ -201,8 +209,11 @@ export interface RunnerOptions {
   readonly bounds?: Partial<{ outboxBytes: number }>;
 }
 
-/** How a runner ended: stopped by whoever runs it, or by itself for an update of the command it runs from. */
-export type RunnerEnd = "stopped" | "updated";
+/**
+ * How a runner ended: stopped by whoever runs it, by itself for an update of the command it runs
+ * from, or by itself for a `runner.json` that changed, which the next runner is started with.
+ */
+export type RunnerEnd = "stopped" | "updated" | "changed";
 
 export interface Runner {
   /** Runs until it ends: resolves, with how, when the open session is ended and nothing is left to send. */
@@ -473,6 +484,19 @@ export function createRunner(options: RunnerOptions): Runner {
   let seenVersion: string | undefined;
   let seenAt = 0;
   let updatedTo: string | undefined;
+  /**
+   * The desk's `runner.json`, where it is another than the one the runner was started with:
+   * since when it was seen so, whether the runner ends for it, and what was last said of one
+   * that does not read.
+   */
+  let changedAt: number | undefined;
+  let reconfigure = false;
+  let unreadable: string | undefined;
+  /** How each wake source stands, by its name: what the heartbeat says of them. */
+  const sources = new Map<
+    string,
+    { state: "connected" | "waiting" | "failing"; since: number; why: string | undefined }
+  >();
   /**
    * The signals a product was handed and never took, since it did not start or was not signed
    * in, which are kept to be sent again; and, of those, the ones a reset gave one more try: a
@@ -844,6 +868,7 @@ export function createRunner(options: RunnerOptions): Runner {
         effort: settings.effort,
         resume,
         permissions: config.permissions,
+        browser: config.browser,
         // Whatever the driver shows a part of is cut once the secrets, as the store has them
         // now, are out of it: no part of one stands where a text was cut.
         cut: (text, most, more) => cutShown(redact, text, most, more),
@@ -1536,6 +1561,57 @@ export function createRunner(options: RunnerOptions): Runner {
     resume: driver.can.resume,
   });
 
+  /**
+   * Says something of the runner's own to the agent, in the open session, under a header that
+   * carries the session's mark: read after the tool call under way. The agent has a turn's work
+   * in it, so it is counted as a turn, and what the runner does between two turns, an update or
+   * a `runner.json` taken, waits for that turn to end. What the product says it took then is
+   * this message, which the record holds nothing of, and not the message of a signal that waits
+   * behind it. Whether it was said.
+   */
+  const sayToAgent = async (target: OpenSession, words: string): Promise<boolean> => {
+    try {
+      await target.driver.send({
+        text: `[console ${target.mark} · runner]\n${words}`,
+        images: [],
+        priority: "next",
+      });
+      target.turn = true;
+      target.handed.push({ written: true, write: () => undefined, signals: [] });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  /** The wake sources as the console is told of them: each by its name, how it stands, since when and why. */
+  const sourcesOf = () =>
+    [...sources].map(([name, one]) => {
+      const why = lineOf(one.why);
+      return {
+        name,
+        state: one.state,
+        since: new Date(one.since).toISOString(),
+        ...(why === null ? {} : { why }),
+      };
+    });
+
+  /** Notes how a wake source stands, and has the console told at once where that is news. */
+  const sourceStands = (
+    name: string,
+    state: "connected" | "waiting" | "failing",
+    why?: string,
+  ): void => {
+    const before = sources.get(name);
+    if (before?.state === state && before.why === why) {
+      return;
+    }
+    sources.set(name, { state, since: options.now(), why });
+    if (!stopped) {
+      push({ t: "heartbeat" });
+    }
+  };
+
   const beat = async (): Promise<void> => {
     const now = `${stands.state} ${stands.reason} ${session?.id ?? ""}`;
     said = now;
@@ -1555,6 +1631,7 @@ export function createRunner(options: RunnerOptions): Runner {
           model: choiceOf(session?.running.model),
           effort: choiceOf(session?.running.effort),
         },
+        sources: sourcesOf(),
       });
       settings = answer.settings;
       tooOldSaid = false;
@@ -1586,21 +1663,12 @@ export function createRunner(options: RunnerOptions): Runner {
               install === undefined
                 ? ""
                 : ` Update it: ${install}\nThe runner sees the update and is started again with it by itself, once no turn is under way.`;
-            try {
-              await target.driver.send({
-                text: `[console ${target.mark} · runner]\nThe console no longer takes this version of the command the runner runs from, and hears nothing of this session until it is updated.${update}\nWhere you cannot update it, say so to whom you report to.`,
-                images: [],
-                priority: "next",
-              });
-              // The agent has a turn's work in it, the install among it: counted as a turn, so
-              // that the update it makes is taken when that turn ends and never inside it. What
-              // the product says it took then is this message, which the record holds nothing
-              // of, and not the message of a signal that waits behind it.
-              target.turn = true;
-              target.handed.push({ written: true, write: () => undefined, signals: [] });
-            } catch {
-              // Not told: the runner's own line above says it to whoever reads its output.
-            }
+            // Not told where it could not be: the runner's own line above says it to whoever
+            // reads its output.
+            await sayToAgent(
+              target,
+              `The console no longer takes this version of the command the runner runs from, and hears nothing of this session until it is updated.${update}\nWhere you cannot update it, say so to whom you report to.`,
+            );
           }
         }
         return;
@@ -1638,6 +1706,56 @@ export function createRunner(options: RunnerOptions): Runner {
     log(
       `the command the runner runs from is ${now} now, and was ${options.version} when the runner started: the runner ends once no turn is under way, to be started again`,
     );
+  };
+
+  /**
+   * Looks whether the desk's `runner.json` is another than the one the runner was started with
+   * (ADR-0144). One that reads is taken once it was seen twice, a heartbeat's interval apart, so
+   * that a file being written is not read halfway: the runner then ends between two turns, and
+   * whoever started it starts the next with the file as it is. One that does not read changes
+   * nothing: the runner goes on with what it has, and the agent, whose file it is, is told what
+   * is wrong with it, once for each thing that is.
+   */
+  const lookForChange = async (): Promise<void> => {
+    if (options.reconfigured === undefined || reconfigure) {
+      return;
+    }
+    const now = await options.reconfigured().catch(() => "same" as const);
+    if (now === "same") {
+      changedAt = undefined;
+      unreadable = undefined;
+      sayOver("config", "runner.json is as the runner was started with it again");
+      return;
+    }
+    if (changedAt === undefined) {
+      changedAt = options.now();
+      return;
+    }
+    if (options.now() - changedAt < timing.heartbeatMs - Math.min(1000, timing.heartbeatMs / 2)) {
+      return;
+    }
+    if (now === "changed") {
+      reconfigure = true;
+      unreadable = undefined;
+      log(
+        "runner.json changed since the runner started: the runner ends once no turn is under way, and starts again with it",
+      );
+      return;
+    }
+    if (unreadable === now.problem) {
+      return;
+    }
+    unreadable = now.problem;
+    sayOnce(
+      "config",
+      `${now.problem}: the runner goes on with the runner.json it was started with`,
+    );
+    if (session !== undefined && !session.first) {
+      await sayToAgent(
+        session,
+        `The desk's runner.json changed and does not read: ${now.problem}. The runner goes on with the one it was started with. Put the file right, and the runner takes it by itself once your turn is over.`,
+      );
+    }
   };
 
   /** Waits so long, or until the runner stops. */
@@ -1697,10 +1815,12 @@ export function createRunner(options: RunnerOptions): Runner {
         }
       },
       log,
+      stands: (state, why) => sourceStands(source.name, state, why),
       fetch: wakes.fetch,
       socket: wakes.socket,
       wait: pause,
     };
+    sourceStands(source.name, "waiting");
     let wait = timing.reconnectMs;
     while (!stopped) {
       const began = options.now();
@@ -1709,6 +1829,7 @@ export function createRunner(options: RunnerOptions): Runner {
       } catch (error) {
         if (!stopped) {
           log(`the wake source ${source.name} ended (${codeOf(error)}); started again`);
+          sourceStands(source.name, "failing", codeOf(error));
         }
       }
       wait =
@@ -1812,17 +1933,26 @@ export function createRunner(options: RunnerOptions): Runner {
       log(
         `the runner is there: ${driver.product.name} ${probe.version ?? "of a version it did not say"}, signals after #${delivered}`,
       );
+      if (probe.version === undefined) {
+        // Said before a session fails on it: asked for its version, the product's command did not answer.
+        log(
+          `the command of ${driver.product.name} did not answer when asked for its version: it is not installed where the runner looks for programs, or does not start there`,
+        );
+      }
       let how: RunnerEnd = "stopped";
       try {
         for (;;) {
-          // An update is taken between two turns, and at once where none is under way.
-          if (updatedTo !== undefined && session?.turn !== true) {
-            how = "updated";
+          // An update is taken between two turns, and at once where none is under way; so is
+          // a runner.json that changed.
+          if ((updatedTo !== undefined || reconfigure) && session?.turn !== true) {
+            how = updatedTo !== undefined ? "updated" : "changed";
             if (session !== undefined) {
               record(
                 session,
                 "status",
-                `The command the runner runs from was updated, from ${options.version} to ${updatedTo}: the runner ends, to be started again with it.`,
+                updatedTo !== undefined
+                  ? `The command the runner runs from was updated, from ${options.version} to ${updatedTo}: the runner ends, to be started again with it.`
+                  : "The desk's runner.json changed: the runner ends, and starts again with it.",
               );
             }
             break;
@@ -1847,6 +1977,7 @@ export function createRunner(options: RunnerOptions): Runner {
               }
             } else {
               await lookForUpdate();
+              await lookForChange();
               // Said every thirty seconds, and at once when how the agent stands changed.
               const changed = said !== `${stands.state} ${stands.reason} ${session?.id ?? ""}`;
               if (changed || !queue.some((queued) => queued.t === "heartbeat")) {
@@ -1867,11 +1998,17 @@ export function createRunner(options: RunnerOptions): Runner {
         }
         // A session ended for an update goes on, in the runner started after, as one a
         // supervisor restarted does: with the same conversation.
-        await end(how === "updated" ? "restarted" : "exited");
+        await end(how === "stopped" ? "exited" : "restarted");
         abort.abort();
         await listening;
         await Promise.all(sourcing);
-        log(how === "updated" ? "the runner ended, for the update" : "the runner stopped");
+        log(
+          how === "updated"
+            ? "the runner ended, for the update"
+            : how === "changed"
+              ? "the runner ended, for its runner.json"
+              : "the runner stopped",
+        );
       }
       return how;
     },

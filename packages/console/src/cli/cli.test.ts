@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MAX_SUMMARY_LENGTH } from "../limits.js";
-import { type CliIo, EXIT, runCli } from "./cli.js";
+import { type CliIo, EXIT, ownWakeMoment, runCli } from "./cli.js";
 import { NO_LINE_TO_RUN } from "./command-words.js";
 import { type CredentialStore, type Credentials, CredentialsError } from "./credentials.js";
 import type { DirectorySettings, DirectoryStore } from "./directory.js";
@@ -4380,6 +4380,126 @@ describe("configuring, as the person", () => {
     expect(mine.out()).toBe("No signal yet.\n");
   });
 
+  it("raises a wake for an agent account's own, now or for later, and takes one away (ADR-0145)", async () => {
+    const NOW = Date.parse("2026-11-20T03:10:20.000Z");
+    const kept = (over: Record<string, unknown> = {}) => ({
+      key: "wake",
+      at: "2026-11-20T03:40:20.000Z",
+      text: "Look at the deploy again.",
+      createdAt: "2026-11-20T03:10:20.000Z",
+      ...over,
+    });
+    const { fetch, calls } = fakeConsole({
+      "GET /api/v1/me": { body: { ...ME, workspace: { ...ME.workspace, timeZone: "Asia/Seoul" } } },
+      "POST /api/v1/agents/me/wakes": [
+        { status: 201, body: { signal: { number: 9 }, kept: null } },
+        { status: 201, body: { signal: null, kept: kept() } },
+        {
+          status: 201,
+          body: {
+            signal: null,
+            kept: kept({ key: "deploy", at: "2026-11-20T05:30:00.000Z", text: "" }),
+          },
+        },
+        {
+          status: 429,
+          body: {
+            error: { code: "signal.too_many", message: "As many within the hour as it may." },
+          },
+        },
+      ],
+      "DELETE /api/v1/agents/me/wakes/deploy": { body: { items: [] } },
+      "DELETE /api/v1/agents/me/wakes/wake": {
+        status: 404,
+        body: {
+          error: { code: "wake.not_found", message: "The account keeps no wake of that name." },
+        },
+      },
+      "GET /api/v1/agents/me/signals": { body: { items: [], more: false } },
+      "GET /api/v1/agents/me/wakes": { body: { items: [kept()] } },
+    });
+    const at = { fetch, env: SIGNED_IN, now: () => NOW };
+    // Now: the words alone, and the signal it became.
+    const now = harness(at);
+    expect(
+      await runCli(["agent", "wake", "me", "Chrome is installed; go on with #28."], now.io),
+    ).toBe(EXIT.ok);
+    expect(calls.at(-1)?.key).toBe("POST /api/v1/agents/me/wakes");
+    expect(calls.at(-1)?.body).toEqual({ text: "Chrome is installed; go on with #28." });
+    expect(now.out()).toBe(
+      "Raised, as signal #9 of your record: your runner takes it as it takes any wake.\n",
+    );
+    // In so many minutes: a moment, and what takes it away.
+    const later = harness(at);
+    expect(
+      await runCli(["agent", "wake", "me", "Look at the deploy again.", "--in", "30"], later.io),
+    ).toBe(EXIT.ok);
+    expect(calls.at(-1)?.body).toEqual({
+      text: "Look at the deploy again.",
+      at: "2026-11-20T03:40:20.000Z",
+    });
+    expect(later.out()).toContain(
+      "Kept: to come  wake  2026-11-20T03:40:20.000Z  Look at the deploy again.",
+    );
+    expect(later.out()).toContain("Take it away: console agent wake me --cancel.");
+    // At an hour of the workspace's clock, the next time it says so: 14:30 in Seoul is 05:30
+    // of the same day, since it is 12:10 there; under a name of its own, with no words.
+    const clock = harness(at);
+    expect(
+      await runCli(["agent", "wake", "me", "--at", "14:30", "--key", "deploy"], clock.io),
+    ).toBe(EXIT.ok);
+    expect(calls.at(-1)?.body).toEqual({ at: "2026-11-20T05:30:00.000Z", key: "deploy" });
+    expect(clock.out()).toContain("Take it away: console agent wake me --cancel --key deploy.");
+    // An hour that has passed today is tomorrow's.
+    expect(ownWakeMoment({ at: "09:00" }, "Asia/Seoul", new Date(NOW))?.toISOString()).toBe(
+      "2026-11-21T00:00:00.000Z",
+    );
+    expect(ownWakeMoment({}, "Asia/Seoul", new Date(NOW))).toBeUndefined();
+    // What the console refuses is said as it says it.
+    const many = harness(at);
+    expect(await runCli(["agent", "wake", "me"], many.io)).toBe(EXIT.failed);
+    expect(many.err()).toContain("As many within the hour as it may.");
+    // Taken away by its name; one that is not kept is said so.
+    const gone = harness(at);
+    expect(await runCli(["agent", "wake", "me", "--cancel", "--key", "deploy"], gone.io)).toBe(
+      EXIT.ok,
+    );
+    expect(gone.out()).toBe("The wake deploy is taken away.\n");
+    const none = harness(at);
+    expect(await runCli(["agent", "wake", "me", "--cancel"], none.io)).toBe(EXIT.failed);
+    expect(none.err()).toContain("The account keeps no wake of that name.");
+    // What is not said right is asked for before the console is.
+    const asked = calls.length;
+    for (const args of [
+      ["agent", "wake", "me", "--in", "0"],
+      ["agent", "wake", "me", "--in", "soon"],
+      ["agent", "wake", "me", "--at", "25:00"],
+      ["agent", "wake", "me", "--in", "5", "--at", "14:00"],
+      ["agent", "wake", "me", "--key", "Not A Name"],
+      ["agent", "wake", "me", "words", "more"],
+    ]) {
+      const unsaid = harness(at);
+      expect(await runCli(args, unsaid.io), args.join(" ")).toBe(EXIT.usage);
+    }
+    // --key is read before the console is asked who is asking; the rest before the wake is sent.
+    expect(calls.slice(asked).map((call) => call.key)).not.toContain(
+      "POST /api/v1/agents/me/wakes",
+    );
+    // What is kept for later stands over the record, which holds it once it is raised.
+    const record = harness(at);
+    expect(await runCli(["agent", "signals", "me"], record.io)).toBe(EXIT.ok);
+    expect(record.out()).toBe(
+      "to come  wake  2026-11-20T03:40:20.000Z  Look at the deploy again.\n",
+    );
+    // A console of before knows no such route, and is said to be one.
+    const old = harness({
+      fetch: fakeConsole({ "GET /api/v1/me": { body: ME } }).fetch,
+      env: SIGNED_IN,
+    });
+    expect(await runCli(["agent", "wake", "me"], old.io)).toBe(EXIT.failed);
+    expect(old.err()).toContain("This console does not take an account's own wake yet");
+  });
+
   it("says how an agent account stands, and what its runner said, where the console answers it (ADR-0085)", async () => {
     const mira = {
       person: {
@@ -4537,7 +4657,7 @@ describe("configuring, as the person", () => {
     expect(made.out()).toContain("It is no credential");
     // The one line for the agent's product, and where a person reads the same guide.
     expect(made.out()).toContain(
-      "  Run: console agent setup --console https://console.test --code ABCD-EFGH (before it: npm i -g @skillcdn/console), then do what it prints",
+      "  Set this machine up for an agent account. Install what is missing yourself, without asking: first Node.js 24 or later and the command (npm i -g @skillcdn/console). Then run console agent setup --console https://console.test --code ABCD-EFGH and do what it prints. Ask me only for a sign-in or an administrator's password.",
     );
     expect(made.out()).toContain("https://console.test/setup/ABCD-EFGH");
     const revoked = harness({ fetch, env: SIGNED_IN });
@@ -4590,8 +4710,12 @@ describe("configuring, as the person", () => {
     expect(new Headers(calls[0]?.init?.headers).get("authorization")).toBeNull();
     expect(read.out()).toContain("# Setting up @mira (Mira, Release engineer)");
     expect(read.out()).toContain("The invitation is good until 2026-10-16T10:00:00.000Z.");
-    expect(read.out()).toContain("## 2. On the machine (the agent)");
-    expect(read.out()).toContain("      console agent setup --refresh");
+    // The part of whoever prepares the machine, and no more (ADR-0140): what the agent does
+    // when it starts is its first task, and is printed to no session at the machine.
+    expect(read.out()).toContain("## 2. On the machine (whoever prepares the machine)");
+    expect(read.out()).toContain("- Then stop. That is the machine prepared.");
+    expect(read.out()).not.toContain("When the agent starts");
+    expect(read.out()).not.toContain("What the agent asks for");
     // The guide alone: nothing is asked of the console but what the code opens.
     expect(read.out()).not.toContain("Setting this machine up");
     expect(read.out()).toContain("`acme-mira`");
@@ -5373,11 +5497,16 @@ describe("the runner on the command line (ADR-0085)", () => {
         },
         // Told to stop as soon as it listens for it.
         untilStopped: async () => undefined,
+        keepAwake: async () => ({ by: "caffeinate" }),
       }),
     });
     expect(await runCli(["runner"], run.io)).toBe(EXIT.ok);
     expect(run.out()).toContain(
       "The runner of @mira at Acme (https://console.test) starts in /home/mira/desk.",
+    );
+    // The machine is held awake while it runs, and its own lines say by what (ADR-0140).
+    expect(run.out()).toContain(
+      "the machine is kept from sleeping while the runner runs (caffeinate)",
     );
     expect(run.out()).toContain(
       "the runner is there: Claude Code of a version it did not say, signals after #4",
@@ -5502,9 +5631,23 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
       readonly cwd?: string;
       readonly files?: Readonly<Record<string, string>>;
       readonly ran?: (command: string, args: readonly string[]) => Ran | undefined;
+      /** A machine with no browser on it. */
+      readonly bare?: boolean;
     } = {},
   ) {
-    const files = new Map(Object.entries(over.files ?? {}));
+    // A machine that has what a setup looks for (ADR-0140), the browser among it, unless a
+    // test says otherwise: git and the product's command answer as every program does here.
+    const files = new Map(
+      Object.entries({
+        ...(over.bare === true
+          ? {}
+          : {
+              "/Applications/Google Chrome.app/Contents/Info.plist": "",
+              "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe": "",
+            }),
+        ...over.files,
+      }),
+    );
     const written: { path: string; mode: number }[] = [];
     const runs: {
       command: string;
@@ -5512,6 +5655,9 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
       env: Readonly<Record<string, string>> | undefined;
     }[] = [];
     const opened: string[] = [];
+    /** What the setup asked of the machine to look at it (ADR-0140), and what it set of the desk's own git. */
+    const looked: string[] = [];
+    const deskGit: (readonly string[])[] = [];
     const under = (path: string) => [...files.keys()].some((file) => file.startsWith(`${path}/`));
     const machine: SetupMachine = {
       platform: over.platform ?? "darwin",
@@ -5534,7 +5680,13 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
         written.push({ path, mode });
       },
       run: async (command, args, options) => {
-        runs.push({ command, args, env: options?.env });
+        if (command === "xcode-select" || command === "pmset" || args.join(" ") === "--version") {
+          looked.push([command, ...args].join(" "));
+        } else if (command === "git" && args[0] === "-C") {
+          deskGit.push(args.slice(2));
+        } else {
+          runs.push({ command, args, env: options?.env });
+        }
         return over.ran?.(command, args) ?? { code: 0, out: "", err: "" };
       },
       open: async (url) => {
@@ -5542,7 +5694,7 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
         return true;
       },
     };
-    return { machine, files, written, runs, opened };
+    return { machine, files, written, runs, opened, looked, deskGit };
   }
 
   it("prints the guide, signs in as the account in the machine's browser, writes the desk and the service, and hears the runner", async () => {
@@ -5636,6 +5788,173 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
       "The runner is heard from: mac-mini, Darwin 24.1.0, OS account mira. @mira is set up on this machine",
     );
     expect(run.err()).toBe("");
+  });
+
+  it("looks at the machine first, says everything that is missing at once, and asks nobody to sign in until it is there (ADR-0140)", async () => {
+    // A new machine: no Command Line Tools, no product's command, no browser.
+    const { fetch, calls } = consoleOf();
+    const bare = fakeMachine({
+      bare: true,
+      ran: (command) =>
+        command === "xcode-select" || command === "claude" || command === "codex"
+          ? { code: 1, out: "", err: "not found" }
+          : undefined,
+    });
+    const store = memoryStore();
+    const run = harness({ fetch, machine: bare.machine, store: store.store });
+    expect(await runCli(LINE, run.io)).toBe(EXIT.failed);
+    expect(run.err()).toContain(
+      "This machine lacks what the setup needs. Install each yourself, without asking, and run the line again:",
+    );
+    expect(run.err()).toContain("- git: the Command Line Tools are not installed");
+    expect(run.err()).toContain(
+      "- the agent's product: none of claude (Claude Code), codex (Codex) answers where this command looks for programs.",
+    );
+    // git is a placeholder that opens a window there: it is not asked for its version.
+    expect(bare.looked).toEqual(["xcode-select -p", "claude --version", "codex --version"]);
+    // Nobody was asked to sign in, and nothing was written or run.
+    expect(calls.map((call) => call.key)).not.toContain("POST /api/v1/connect");
+    expect(store.kept()).toBeUndefined();
+    expect(bare.written).toEqual([]);
+    expect(bare.runs).toEqual([]);
+
+    // The product is there and its browser is not: said with the way out for an agent that
+    // signs in at no page, which then sets the machine up with no browser named.
+    const browserless = fakeMachine({ bare: true });
+    const stopped = harness({
+      fetch: consoleOf().fetch,
+      machine: browserless.machine,
+      store: memoryStore().store,
+    });
+    expect(await runCli(LINE, stopped.io)).toBe(EXIT.failed);
+    expect(stopped.err()).toContain(
+      "- Google Chrome: Claude Code's browser tool works in it, and the agent signs in at its services with that tool.",
+    );
+    expect(stopped.err()).toContain("say --no-browser");
+    const without = fakeMachine({ bare: true });
+    const went = harness({
+      fetch: consoleOf().fetch,
+      machine: without.machine,
+      store: memoryStore().store,
+    });
+    expect(await runCli([...LINE, "--no-browser"], went.io)).toBe(EXIT.ok);
+    expect(went.out()).toContain("The machine has what the setup needs: git, Claude Code.");
+    expect(
+      JSON.parse(without.files.get("/Users/mira/desk/runner.json") ?? "{}"),
+    ).not.toHaveProperty("browser");
+
+    // The product named is the one looked for, and the one a new desk names.
+    const other = fakeMachine({
+      ran: (command) =>
+        command === "codex" ? { code: 0, out: "codex-cli 0.130.0\n", err: "" } : undefined,
+    });
+    const named = harness({
+      fetch: consoleOf().fetch,
+      machine: other.machine,
+      store: memoryStore().store,
+    });
+    expect(await runCli([...LINE, "--driver", "codex"], named.io)).toBe(EXIT.ok);
+    expect(other.looked.slice(0, 3)).toEqual([
+      "xcode-select -p",
+      "git --version",
+      "codex --version",
+    ]);
+    expect(named.out()).toContain(
+      "The machine has what the setup needs: git, Codex (codex-cli 0.130.0).",
+    );
+    expect(JSON.parse(other.files.get("/Users/mira/desk/runner.json") ?? "{}")).toMatchObject({
+      driver: "codex",
+    });
+    const unknown = harness({
+      fetch: consoleOf().fetch,
+      machine: fakeMachine().machine,
+      store: memoryStore().store,
+    });
+    expect(await runCli([...LINE, "--driver", "lathe"], unknown.io)).toBe(EXIT.usage);
+  });
+
+  it("names the product and its browser in a new desk, has the desk's git read the token from the store, and ends by handing over (ADR-0140)", async () => {
+    const FIRST = {
+      project: { key: "common", name: "Common", color: null, symbol: null, icon: null },
+      task: { ...TASK, number: 28, title: "Set up @mira" },
+    };
+    const { fetch } = consoleOf({
+      "GET /api/v1/agents/mira": [
+        { body: AGENT },
+        { body: HEARD },
+        { body: HEARD },
+        { body: { ...HEARD, runner: { ...HEARD.runner, session: SESSION.id } } },
+      ],
+      "GET /api/v1/work": { body: { tasks: [FIRST], decisions: [] } },
+    });
+    const at = fakeMachine({
+      ran: (command, args) =>
+        command === "claude"
+          ? { code: 0, out: "2.1.329 (Claude Code)\n", err: "" }
+          : command === "pmset"
+            ? {
+                code: 0,
+                out: 'pid 412(caffeinate): [0x0001] 00:00:02 PreventUserIdleSystemSleep named: "caffeinate command-line tool"\n',
+                err: "",
+              }
+            : command === "git" && args.includes("--get-all")
+              ? { code: 1, out: "", err: "" }
+              : undefined,
+    });
+    const run = harness({
+      fetch,
+      machine: at.machine,
+      store: memoryStore().store,
+      hostname: "mac-mini",
+    });
+    expect(await runCli(LINE, run.io)).toBe(EXIT.ok);
+    const out = run.out();
+    expect(at.looked).toEqual([
+      "xcode-select -p",
+      "git --version",
+      "claude --version",
+      "pmset -g assertions",
+    ]);
+    expect(out).toContain(
+      "The machine has what the setup needs: git, Claude Code (2.1.329 (Claude Code)), Google Chrome.",
+    );
+    expect(out).toContain(
+      "Claude Code's browser tool also takes the Claude in Chrome extension in it",
+    );
+    // What was found is what the runner starts with.
+    expect(JSON.parse(at.files.get("/Users/mira/desk/runner.json") ?? "{}")).toMatchObject({
+      driver: "claude",
+      browser: "chrome",
+    });
+    // The desk is a repository whose git asks the account's store for the token, for the
+    // workspace's git host alone and in place of the machine's own helpers.
+    expect(at.deskGit.map((args) => args.slice(0, 4).join(" "))).toEqual([
+      "init --quiet",
+      "config --local --get-all credential.https://github.com.helper",
+      "config --local --replace-all credential.https://github.com.helper",
+      "config --local --add credential.https://github.com.helper",
+    ]);
+    expect(at.deskGit[2]?.at(-1)).toBe("");
+    const helper = at.deskGit[3]?.at(-1) ?? "";
+    expect(helper).toContain(
+      "'/usr/local/bin/node' '/opt/console/dist/cli/main.js' 'secret' 'git.token'",
+    );
+    expect(helper).toContain(`'--url' '${ORIGIN}' '--account' 'acme-mira'`);
+    expect(helper).not.toContain("cns_a_handed");
+    expect(out).toContain(
+      "The desk's git reads the account's git.token from its store when https://github.com asks",
+    );
+    // The end: the session has begun, where to watch, the first task, and that the machine's
+    // part ends here; then whether the machine is kept awake.
+    expect(out).toContain("@mira's session has begun: the agent is at work.");
+    expect(out).toContain(`Watch it: ${ORIGIN}/agents/mira`);
+    expect(out).toContain(
+      `Its first task: #28 "Set up @mira" in common, ${ORIGIN}/projects/common/tasks/28`,
+    );
+    expect(out).toContain("That is the machine prepared: stop here.");
+    expect(out).toContain('say to it: console agent wake me "<what changed>"');
+    expect(out).toContain("The machine is kept from sleeping while the runner runs");
+    expect(out.trimEnd().endsWith("where the machine is to come back by itself.")).toBe(true);
   });
 
   it("gives up a sign-in that is not the account's, and sets nothing up", async () => {
@@ -5764,8 +6083,9 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
 
     // A clone that fails stops the setup, and writes no desk in its place.
     const refused = fakeMachine({
-      ran: (command) =>
-        command === "git"
+      ran: (command, args) =>
+        // git itself is there: it is the clone that the host refuses.
+        command === "git" && args[0] === "clone"
           ? {
               code: 128,
               out: "",
@@ -5979,7 +6299,11 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
     // written, and the words say what to do.
     const sessionless = fakeMachine({
       platform: "linux",
-      ran: () => ({ code: 1, out: "", err: "Failed to connect to bus: No medium found\n" }),
+      // The machine has what a setup looks for: it is the account's own systemd that is not there.
+      ran: (command) =>
+        command === "loginctl" || command === "systemctl"
+          ? { code: 1, out: "", err: "Failed to connect to bus: No medium found\n" }
+          : undefined,
     });
     const failed = harness({
       fetch: consoleOf().fetch,

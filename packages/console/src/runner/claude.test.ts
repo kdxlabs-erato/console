@@ -257,7 +257,18 @@ describe("the claude driver", () => {
       least: "dontAsk",
     });
     // The builds the driver was run against, and no other.
-    expect(plain.driver.product).toEqual({ name: "Claude Code", tried: ["2.1.321", "2.1.322"] });
+    expect(plain.driver.product).toEqual({
+      name: "Claude Code",
+      tried: ["2.1.321", "2.1.322", "2.1.329"],
+    });
+    // The browser its browser tool works in is asked for when the product starts, where the
+    // desk names it, and by its name alone (ADR-0140).
+    const bare = { cwd: "/d", env: {}, model: null, effort: null, resume: undefined };
+    expect(claudeArguments({ ...bare, browser: "chrome" })).toContain("--chrome");
+    expect(claudeArguments(bare)).not.toContain("--chrome");
+    expect(claudeArguments({ ...bare, browser: "--dangerously-anything" })).not.toContain(
+      "--dangerously-anything",
+    );
   });
 
   it("sends a message as one line under an id of its own, with its pictures as image blocks and the product's own priority", async () => {
@@ -888,7 +899,8 @@ describe("the claude driver", () => {
       {
         type: "event",
         kind: "error",
-        text: "The product could not be started: spawn claude ENOENT",
+        // A command that is not there is said as that, with where it is looked for.
+        text: "The product could not be started: its command claude was not found where the runner looks for programs. Install it, or put its folder on the PATH the runner is started with.",
       },
       { type: "cannot_go_on", state: "failed", reason: "start" },
       { type: "ended", how: "crashed" },

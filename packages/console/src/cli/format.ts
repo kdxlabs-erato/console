@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { argUsage } from "../plugin/args.js";
 import type {
   RestAgent,
+  RestAgentRunner,
   RestAgentSecret,
   RestArtifact,
   RestCategory,
@@ -15,6 +16,7 @@ import type {
   RestGoal,
   RestListing,
   RestMember,
+  RestOwnWake,
   RestPerson,
   RestPersonWork,
   RestPlugin,
@@ -213,6 +215,11 @@ export function formatAgent(agent: RestAgent): string {
                 `runs with: model ${runner.running.model ?? OWN_CHOICE}, effort ${runner.running.effort ?? OWN_CHOICE}`,
               ]),
           `signals: ${runner.delivered} of ${runner.latest} delivered`,
+          ...(runner.sources === undefined || runner.sources.length === 0
+            ? []
+            : [
+                `wake sources beside the console: ${runner.sources.map(formatWakeSource).join("; ")}`,
+              ]),
         ]),
     ...(agent.hours === undefined
       ? []
@@ -230,6 +237,22 @@ export function formatAgent(agent: RestAgent): string {
       ? "You supervise it: an administrator, or above it in the reporting line."
       : "You do not supervise it.",
   ].join("\n");
+}
+
+/** A wake source as its runner last said it stands (ADR-0144): listening and since when, or not, and why. */
+export function formatWakeSource(source: NonNullable<RestAgentRunner["sources"]>[number]): string {
+  const why = source.why === undefined ? "" : ` (${source.why})`;
+  return source.state === "connected"
+    ? `${source.name} connected since ${moment(source.since)}`
+    : `${source.name} ${source.state}${why} since ${moment(source.since)}`;
+}
+
+/** A wake an agent account keeps for later (ADR-0145): what it is called, when it is raised, and the first words of what it says. */
+export function formatOwnWakeLine(wake: RestOwnWake): string {
+  const words = wake.text.replaceAll(/\s+/g, " ").trim();
+  const said =
+    words.length === 0 ? "" : `  ${words.length > 120 ? `${words.slice(0, 119)}…` : words}`;
+  return `to come  ${wake.key}  ${moment(wake.at)}${said}`;
 }
 
 /** How an agent account stands (ADR-0085), in a few words: the state, why, and when its runner was last heard from. */

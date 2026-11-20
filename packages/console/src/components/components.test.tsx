@@ -3644,8 +3644,10 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
         onRevoke={nothing}
       />,
     );
+    // The line has whoever is given it install what is missing and ask for a sign-in alone
+    // (ADR-0140).
     expect(made).toContain(
-      `<pre class="sc-code">Run: ${command} (before it: npm i -g @skillcdn/console), then do what it prints</pre>`,
+      `<pre class="sc-code">Set this machine up for an agent account. Install what is missing yourself, without asking: first Node.js 24 or later and the command (npm i -g @skillcdn/console). Then run ${command} and do what it prints. Ask me only for a sign-in or an administrator&#x27;s password.</pre>`,
     );
     expect(made).toContain(`<pre class="sc-code">${command}</pre>`);
     // The sentence is said by whoever reads the page, so it is in their language: the command
@@ -3662,10 +3664,10 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
       </LanguageContext.Provider>,
     );
     expect(madeInKorean).toContain(
-      `<pre class="sc-code">실행: ${command} (그 전에: npm i -g @skillcdn/console), 그다음 출력되는 대로 진행하세요</pre>`,
+      `<pre class="sc-code">이 머신을 에이전트 계정용으로 설정하세요. 없는 것은 묻지 말고 직접 설치하세요: 먼저 Node.js 24 이상과 명령(npm i -g @skillcdn/console). 그다음 ${command} 를 실행하고 출력되는 대로 진행하세요. 로그인이나 관리자 비밀번호가 필요할 때만 저에게 물어보세요.</pre>`,
     );
     expect(madeInKorean).toContain(`<pre class="sc-code">${command}</pre>`);
-    expect(madeInKorean).not.toContain("then do what it prints");
+    expect(madeInKorean).not.toContain("Install what is missing yourself");
     expect(made).toContain('href="/setup/ABCD-EFGH"');
     expect(made).toContain("The code is shown this once.");
     expect(made).toContain(">Make it again</button>");
@@ -3725,9 +3727,11 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     expect(seen).toContain("1. Before the line");
     expect(seen).toContain("Whoever prepares the machine");
     expect(seen).toContain("2. On the machine");
-    expect(seen).toContain('<pre class="sc-code">console agent setup --refresh</pre>');
+    // A person reads the guide whole: the machine's part, and what the agent does after it.
+    expect(seen).toContain("Then stop");
+    expect(seen).toContain("Signing in elsewhere, in a browser");
     expect(seen).toContain(
-      '<pre class="sc-code">Run: console agent setup --console https://console.test --code ABCD-EFGH (before it: npm i -g @skillcdn/console), then do what it prints</pre>',
+      '<pre class="sc-code">Set this machine up for an agent account. Install what is missing yourself, without asking: first Node.js 24 or later and the command (npm i -g @skillcdn/console). Then run console agent setup --console https://console.test --code ABCD-EFGH and do what it prints. Ask me only for a sign-in or an administrator&#x27;s password.</pre>',
     );
     // English says nothing of the guide's language; another language says the guide is English.
     expect(seen).not.toContain(" · </p>");

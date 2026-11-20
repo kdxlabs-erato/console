@@ -5,13 +5,20 @@
 
 import {
   MAX_FILE_BYTES,
+  MAX_OWN_WAKE_DAYS,
+  MAX_OWN_WAKES,
   MAX_SIGNAL_ATTACHMENTS,
   MAX_SIGNALS_PAGE_LIMIT,
+  OWN_WAKE_KEY,
   REST_ROUTES,
+  type RestOwnWake,
+  type RestOwnWakeRaised,
+  type RestOwnWakes,
   type RestRunnerHeartbeat,
   type RestSignal,
   type RestSignals,
   restFileInputSchema,
+  restOwnWakeInputSchema,
   restRunnerHeartbeatInputSchema,
   restRunnerWakeSchema,
   restSignalInputSchema,
@@ -31,6 +38,13 @@ import {
   type SignalRecord,
   sendSignal,
 } from "../db/queries/agent-runners.js";
+import {
+  cancelOwnWake,
+  keepOwnWake,
+  listOwnWakes,
+  OwnWakeError,
+  type OwnWakeRecord,
+} from "../db/queries/agent-wakes.js";
 import type { Actor } from "../db/queries/events.js";
 import type { Logger } from "../logger.js";
 import type { BlobStore } from "../ports/blob-store.js";
@@ -98,6 +112,16 @@ export const restSignal = (signal: SignalRecord): RestSignal => ({
   })),
   at: signal.at.toISOString(),
 });
+
+/** A wake kept for later as the API answers it. */
+const restOwnWake = (wake: OwnWakeRecord): RestOwnWake => ({
+  key: wake.key,
+  at: wake.at.toISOString(),
+  text: wake.text,
+  createdAt: wake.createdAt.toISOString(),
+});
+
+const DAY_MS = 24 * 60 * 60_000;
 
 /** Who a signal is sent by: the member, and the agent they act as when with a token. */
 const actorOf = (caller: AccessCaller): Actor =>
@@ -335,6 +359,116 @@ export function registerAgentRunnerRest(
       return invalid(c, `before: a signal's number; limit: from 1 to ${MAX_SIGNALS_PAGE_LIMIT}.`);
     }
     return c.json(await recordOf(caller.person.id, page));
+  });
+
+  // A wake the account raises for itself (ADR-0145), signed in as itself: now, as a signal of its
+  // record sent by the account, so many within an hour; or kept for a moment to come, one under
+  // a name, which the worker raises then. A wake and nothing else: what tells, stops or starts
+  // an agent is its supervisors' to send.
+  app.post(`${OWN}/wakes`, tooLarge, async (c) => {
+    const caller = await own(c);
+    if (caller instanceof Response) {
+      return caller;
+    }
+    let json: unknown;
+    try {
+      json = await c.req.json();
+    } catch {
+      return invalid(c, "The request body is not readable JSON.");
+    }
+    const parsed = restOwnWakeInputSchema.safeParse(json);
+    if (!parsed.success) {
+      return invalid(c, problemOf(parsed.error.issues));
+    }
+    const now = clock.now();
+    const text = parsed.data.text ?? "";
+    if (parsed.data.at === undefined) {
+      try {
+        const sent = await sendSignal(database, {
+          account: caller.person,
+          kind: "wake",
+          by: actorOf(caller),
+          source: "person",
+          key: parsed.data.key,
+          text,
+          set: undefined,
+          perHour: quotas.ownWakesPerHour,
+          now,
+        });
+        const body: RestOwnWakeRaised = { signal: { number: sent.number }, kept: null };
+        return c.json(body, 201);
+      } catch (error) {
+        if (error instanceof RunnerError) {
+          c.header("retry-after", String(error.retryAfter));
+          return c.json(
+            errorBody(
+              "signal.too_many",
+              "The account raised as many wakes for itself within the hour as it may. What is raised later is taken.",
+            ),
+            429,
+          );
+        }
+        throw error;
+      }
+    }
+    const at = new Date(parsed.data.at);
+    if (
+      !(at.getTime() > now.getTime()) ||
+      at.getTime() > now.getTime() + MAX_OWN_WAKE_DAYS * DAY_MS
+    ) {
+      return invalid(c, `at: a moment to come, within ${MAX_OWN_WAKE_DAYS} days.`);
+    }
+    try {
+      const kept = await keepOwnWake(database, {
+        account: caller.person,
+        key: parsed.data.key ?? OWN_WAKE_KEY,
+        at,
+        text,
+        agent: actorOf(caller).agent,
+        most: MAX_OWN_WAKES,
+        now,
+      });
+      const body: RestOwnWakeRaised = { signal: null, kept: restOwnWake(kept) };
+      return c.json(body, 201);
+    } catch (error) {
+      if (error instanceof OwnWakeError) {
+        return c.json(
+          errorBody(
+            "wake.too_many",
+            `An account keeps at most ${MAX_OWN_WAKES} wakes for later. Take one away first.`,
+          ),
+          409,
+        );
+      }
+      throw error;
+    }
+  });
+
+  /** The wakes an account keeps for later, the soonest first. */
+  const wakesOf = async (accountId: string): Promise<RestOwnWakes> => ({
+    items: (await listOwnWakes(database, accountId)).map(restOwnWake),
+  });
+
+  app.get(`${OWN}/wakes`, async (c) => {
+    const caller = await own(c);
+    return caller instanceof Response ? caller : c.json(await wakesOf(caller.person.id));
+  });
+
+  app.delete(`${OWN}/wakes/:key`, async (c) => {
+    const caller = await own(c);
+    if (caller instanceof Response) {
+      return caller;
+    }
+    if (!(await cancelOwnWake(database, caller.person.id, c.req.param("key")))) {
+      return c.json(errorBody("wake.not_found", "The account keeps no wake of that name."), 404);
+    }
+    return c.json(await wakesOf(caller.person.id));
+  });
+
+  // What an account keeps for later is read by its supervisors too, beside its record.
+  app.get(`${REST_ROUTES.agents}/:handle/wakes`, async (c) => {
+    const found = await supervising(c, false);
+    return found instanceof Response ? found : c.json(await wakesOf(found.agent.id));
   });
 
   /**

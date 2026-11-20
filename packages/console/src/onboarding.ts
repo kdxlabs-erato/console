@@ -1,5 +1,5 @@
 import type { RestWorkspace } from "./schemas.js";
-import { guideServicesOf } from "./setup-guide.js";
+import { BROWSER_TOOL_OF_A_PRODUCT, guideServicesOf } from "./setup-guide.js";
 
 // The onboarding of an agent account (ADR-0088, points 4 to 6): its first task, which the
 // console makes when the account is made, with the agent as its worker. The agent works it as
@@ -42,7 +42,7 @@ export function onboardingOf(input: OnboardingInput): {
     ...services.flatMap((one) => one.onboarding.map((step) => item(step.title, step.body))),
     item(
       "Sign in at a page in the machine's own browser",
-      "Use a browser tool of your product that attaches to the ordinary browser of your OS account: a sign-in stays there from one session to the next. Where a sign-in wants a person, a code sent to a phone or a picture to solve, ask for a person to sign in inside your session, over a remote desktop or at the machine, and say which service and which account; nothing you sign in with goes into a message, a task or a comment.",
+      `Use a browser tool of your product that attaches to the ordinary browser of your OS account: a sign-in stays there from one session to the next. ${BROWSER_TOOL_OF_A_PRODUCT} Where a sign-in wants a person, a code sent to a phone or a picture to solve, ask for a person to sign in inside your session, over a remote desktop or at the machine, and say which service and which account; nothing you sign in with goes into a message, a task or a comment.`,
     ),
     item(
       "Put your picture on your profiles",
@@ -77,7 +77,7 @@ export function onboardingOf(input: OnboardingInput): {
     "",
     "## When you are done",
     "",
-    "You are done when nothing of this task waits on anyone: every item above is set up, or was answered as not to be done now, and every decision you raised is answered and acted on. Until then the run stays open and waits, since a decision is asked on a run and a run that is finished asks none. Then report what is set up and, item by item, what is not done and who said so, and finish the task.",
+    "When nothing of this task waits on anyone, every item set up or answered as not to be done now, report what is set up and, item by item, what is not done and who said so, and finish the task.",
     "",
   ].join("\n");
   return { title: onboardingTitle(handle), body };

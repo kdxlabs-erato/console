@@ -1482,7 +1482,7 @@ describe("the acp driver", () => {
       {
         type: "event",
         kind: "error",
-        text: "The product could not be started: spawn lathe ENOENT",
+        text: "The product could not be started: its command was not found where the runner looks for programs. Install it, or put its folder on the PATH the runner is started with.",
       },
       { type: "cannot_go_on", state: "failed", reason: "start" },
       { type: "ended", how: "crashed" },

@@ -99,10 +99,14 @@ export function slackWakeOf(payload: unknown): RaisedWake | undefined {
   }
   const thread = event.thread_ts ?? event.ts;
   const cut = words.length > MAX_WAKE_TEXT ? `${words.slice(0, MAX_WAKE_TEXT)}…` : words;
-  return {
-    key: `slack:${event.channel}:${thread}`,
-    text: `${direct ? "A direct message" : `A mention in the channel ${event.channel}`} at Slack, from the member ${event.user}, in the thread ${thread}:\n${cut}`,
-  };
+  // A direct message outside any thread is said as one: named a thread, it is answered in one,
+  // where whoever wrote it reads the conversation itself.
+  const where = !direct
+    ? `A mention in the channel ${event.channel} at Slack, from the member ${event.user}, in the thread ${thread}`
+    : event.thread_ts === undefined
+      ? `A direct message at Slack, from the member ${event.user}, in the conversation ${event.channel}`
+      : `A direct message at Slack, from the member ${event.user}, in the thread ${thread} of the conversation ${event.channel}`;
+  return { key: `slack:${event.channel}:${thread}`, text: `${where}:\n${cut}` };
 }
 
 export const slack: WakeSource = {
@@ -111,6 +115,7 @@ export const slack: WakeSource = {
     const token = await host.secret(SLACK_APP_TOKEN);
     if (token === undefined) {
       host.log(`the slack wake source finds no ${SLACK_APP_TOKEN} in the account's store`);
+      host.stands("waiting", `no ${SLACK_APP_TOKEN} in the account's store`);
       await host.wait(NO_TOKEN_WAIT_MS, signal);
       return;
     }
@@ -140,6 +145,7 @@ export const slack: WakeSource = {
     signal.addEventListener("abort", closing, { once: true });
     try {
       host.log("the slack wake source is connected");
+      host.stands("connected");
       for await (const text of socket.messages) {
         let json: unknown;
         try {

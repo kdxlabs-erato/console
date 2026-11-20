@@ -68,6 +68,9 @@ import {
   type RestMembers,
   type RestMePatch,
   type RestMyDecisions,
+  type RestOwnWakeInput,
+  type RestOwnWakeRaised,
+  type RestOwnWakes,
   type RestPackConnect,
   type RestPackConnectStarted,
   type RestPackTokenInput,
@@ -180,6 +183,8 @@ import {
   restMembersSchema,
   restMeSchema,
   restMyDecisionsSchema,
+  restOwnWakeRaisedSchema,
+  restOwnWakesSchema,
   restPackConnectSchema,
   restPackConnectStartedSchema,
   restPeopleSchema,
@@ -821,6 +826,12 @@ export interface ConsoleClient {
   signalStream(after: number, signal: AbortSignal): AsyncIterable<RestSignal>;
   /** Raises a wake of the runner's own, from a wake source on its machine: it comes back in order on the stream. */
   raiseWake(input: Omit<RestRunnerWake, "kind">): Promise<RestSignal>;
+  /** An agent account raises a wake for itself (ADR-0145), by its own command: now, or kept for a moment to come. */
+  raiseOwnWake(input: RestOwnWakeInput): Promise<RestOwnWakeRaised>;
+  /** The wakes an agent account keeps for later, the soonest first; for its supervisors, and as `me` for the account. */
+  ownWakes(handle: string, signal?: AbortSignal): Promise<RestOwnWakes>;
+  /** Takes a wake kept for later away, by what it is called; the account's own. */
+  cancelOwnWake(key: string): Promise<void>;
   /** The runner begins a session (ADR-0086): the one that was open is taken over. */
   beginAgentSession(input: RestAgentSessionInput): Promise<RestAgentSession>;
   /** The runner reports a batch of a session's events, in order; the same number sent again changes nothing. */
@@ -1751,6 +1762,18 @@ export function createClient(options: ClientOptions = {}): ConsoleClient {
         { kind: "wake", ...input },
         restSignalSchema,
       ),
+    raiseOwnWake: (input) =>
+      request("POST", `${base}${agentPath("me", "wakes")}`, input, restOwnWakeRaisedSchema),
+    ownWakes: (handle, signal) =>
+      request("GET", `${base}${agentPath(handle, "wakes")}`, undefined, restOwnWakesSchema, signal),
+    cancelOwnWake: async (key) => {
+      await request(
+        "DELETE",
+        `${base}${agentPath("me", "wakes", key)}`,
+        undefined,
+        restOwnWakesSchema,
+      );
+    },
     async *signalStream(after, signal) {
       let response: Response;
       try {

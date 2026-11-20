@@ -401,6 +401,8 @@ function setup(
     installed?: () => Promise<string | undefined>;
     /** The command that installs the console's version here. */
     updateCommand?: () => string | undefined;
+    /** How the desk's runner.json stands against the one the runner was started with; a runner that never looks where left out. */
+    reconfigured?: () => Promise<"same" | "changed" | { readonly problem: string }>;
     /** The most bytes that wait to be sent before the oldest are let go. */
     outboxBytes?: number;
   } = {},
@@ -434,6 +436,7 @@ function setup(
     version: "0.5.0",
     installed: over.installed,
     updateCommand: over.updateCommand,
+    reconfigured: over.reconfigured,
     now: () => Date.now(),
     random: () => 0.5,
     time: () => "14:02",
@@ -2101,6 +2104,123 @@ describe("the runner", () => {
     const session = await sessionOf(product);
     await until("the message", () => session.sent.length === 1);
     expect(session.sent[0]?.text).toContain("#1 · tell · Jane · 14:02]\nBegin.");
+  });
+
+  it("says with its heartbeat how each wake source stands, and why where one does not listen (ADR-0144)", async () => {
+    let tries = 0;
+    const source: WakeSource = {
+      name: "chat",
+      async run(host, signal) {
+        tries += 1;
+        if (tries === 1) {
+          const failure = new Error("Tom said: the password is hunter2");
+          failure.name = "chat.refused";
+          throw failure;
+        }
+        host.stands("waiting", "no chat.token in the account's store");
+        await host.wait(60, signal);
+        host.stands("connected");
+        await host.wait(60_000, signal);
+      },
+    };
+    const { console, runner, done } = setup({ sources: [source] });
+    await until("the source to be said connected", () =>
+      console.beats.some((beat) => beat.sources?.[0]?.state === "connected"),
+    );
+    const said = console.beats
+      .flatMap((beat) => beat.sources ?? [])
+      .map((one) => `${one.name} ${one.state}${one.why === undefined ? "" : `: ${one.why}`}`);
+    // Each change is said at once, by the module's name and a few words of the source's own,
+    // never by what anyone said.
+    // Before its first try it waits, which is said only where a heartbeat fell in between.
+    expect([...new Set(said)].filter((one) => one !== "chat waiting")).toEqual([
+      "chat failing: chat.refused",
+      "chat waiting: no chat.token in the account's store",
+      "chat connected",
+    ]);
+    expect(JSON.stringify(console.beats)).not.toContain("hunter2");
+    // Since when it stands so is a moment the console takes.
+    expect(console.beats.at(-1)?.sources?.[0]?.since).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    runner.stop();
+    await done;
+  });
+
+  it("starts the product with the browser its desk names for the product's browser tool (ADR-0140)", async () => {
+    const { console, product } = setup({ config: { browser: "chrome" } });
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    expect(session.options).toMatchObject({ browser: "chrome" });
+    const plain = setup();
+    plain.console.signal({ text: "Begin." });
+    expect((await sessionOf(plain.product)).options.browser).toBeUndefined();
+  });
+
+  it("ends for a runner.json that changed, between two turns, to be begun again with it (ADR-0144)", async () => {
+    let now: "same" | "changed" = "same";
+    const { console, product, done, log, saved } = setup({ reconfigured: async () => now });
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    session.emit(...STARTED);
+    await until("the transcript", () => console.events().length >= 2);
+    // Changed in the middle of a turn, by the agent itself as likely as not: seen twice, a
+    // heartbeat apart, and waited with until the turn ends.
+    now = "changed";
+    await until("the change to be seen", () =>
+      log.some((line) => line.startsWith("runner.json changed since the runner started")),
+    );
+    await sleep(80);
+    expect(console.ended).toEqual([]);
+    session.emit({ type: "event", kind: "assistant", text: "Begun." }, { type: "turn_completed" });
+    expect(await done).toBe("changed");
+    // The session ended as one a supervisor restarted: the conversation is kept for the next.
+    expect(console.ended).toEqual(["restarted"]);
+    expect(saved.at(-1)).toMatchObject({ delivered: 1, conversation: "c-1" });
+    const record = console.events().map(([, kind, text]) => `${kind}: ${text}`);
+    expect(record).toContain(
+      "status: The desk's runner.json changed: the runner ends, and starts again with it.",
+    );
+    expect(log.at(-1)).toBe("the runner ended, for its runner.json");
+    // A runner that is not told how to look never ends for its file.
+    const blind = setup();
+    await until("heartbeats", () => blind.console.beats.length >= 4);
+    blind.runner.stop();
+    expect(await blind.done).toBe("stopped");
+  });
+
+  it("goes on with what it has where runner.json does not read, and tells its agent what is wrong with it, once", async () => {
+    let now: "same" | { readonly problem: string } = "same";
+    const { console, product, done, log, runner } = setup({ reconfigured: async () => now });
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    session.emit(
+      ...STARTED,
+      { type: "event", kind: "assistant", text: "Begun." },
+      { type: "turn_completed" },
+    );
+    now = { problem: "runner.json is not readable JSON" };
+    await until("the agent to be told", () => session.sent.length === 2);
+    // Under a header that carries the session's mark, as everything the runner says is.
+    expect(session.sent[1]?.text).toMatch(
+      /^\[console [a-z0-9]{6} · runner\]\nThe desk's runner\.json changed and does not read: runner\.json is not readable JSON\. The runner goes on with the one it was started with\./,
+    );
+    await sleep(150);
+    // Once for what is wrong with it, however long it stays so, in the session and in the log.
+    expect(session.sent).toHaveLength(2);
+    expect(
+      log.filter((line) => line.includes("goes on with the runner.json it was started with")),
+    ).toEqual([
+      "runner.json is not readable JSON: the runner goes on with the runner.json it was started with",
+    ]);
+    expect(console.ended).toEqual([]);
+    // Put back as it was: said once, and nothing ends.
+    now = "same";
+    await until("the file to be said the same again", () =>
+      log.includes("runner.json is as the runner was started with it again"),
+    );
+    runner.stop();
+    expect(await done).toBe("stopped");
   });
 
   it("lets go of what its wake sources raise once the console takes no more wakes within the hour, says so once, and raises again after a while", async () => {

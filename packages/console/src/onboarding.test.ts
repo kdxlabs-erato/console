@@ -39,7 +39,20 @@ describe("the onboarding task of an agent account", () => {
     expect(own).toContain(
       "- **Make your desk there and push it.** Make the repository `acme-mira/desk`",
     );
-    expect(own).toContain("- **Join the messenger and say who you are.**");
+    // Its profile carries its name and its role, as any member's does, and no word of what it is
+    // (ADR-0143).
+    expect(own).toContain(
+      "- **Join the messenger and set your profile.** Accept the invitation to `acme.slack.com` that came to `mira@acme.example`, the address you sign in with, and set your name, your title and your picture as any member does",
+    );
+    expect(own).not.toMatch(/you are an agent|AI agent|not a person/i);
+    // The browser tool of the one product the package knows, said where the agent is told to use one.
+    expect(own).toContain(
+      'For Claude Code that tool works in Google Chrome with the Claude in Chrome extension, and is turned on by "browser": "chrome" in runner.json.',
+    );
+    // The wake source is taken by the runner by itself, and where to see that it is.
+    expect(own).toContain(
+      'add "slack" to "wake" in runner.json. The runner takes the change by itself once your turn is over: console agent <handle> then says the source is connected.',
+    );
     expect(own).toContain(
       "- **Put your picture on your profiles.** `console agent mira --avatar avatar.png` writes it as a file.",
     );
@@ -118,7 +131,7 @@ describe("the onboarding task of an agent account", () => {
       [
         "## When you are done",
         "",
-        "You are done when nothing of this task waits on anyone: every item above is set up, or was answered as not to be done now, and every decision you raised is answered and acted on. Until then the run stays open and waits, since a decision is asked on a run and a run that is finished asks none. Then report what is set up and, item by item, what is not done and who said so, and finish the task.",
+        "When nothing of this task waits on anyone, every item set up or answered as not to be done now, report what is set up and, item by item, what is not done and who said so, and finish the task.",
         "",
       ].join("\n"),
     );
@@ -129,7 +142,7 @@ describe("the onboarding task of an agent account", () => {
     // At a Workspace the account signs in with an address, which is its address everywhere.
     const named = onboardingOf({ handle: "mira", workspace: WORKSPACE }).body;
     expect(named).toContain(
-      "Accept the invitation to `acme.slack.com` that came to `mira@acme.example`, the address you sign in with, set your name",
+      "Accept the invitation to `acme.slack.com` that came to `mira@acme.example`, the address you sign in with, and set your name",
     );
     expect(named).toContain(
       "Where none has come to `mira@acme.example`, the address you sign in with: an invitation to `acme.slack.com` as a member, sent there",
@@ -170,7 +183,7 @@ describe("the onboarding task of an agent account", () => {
   it("names the organization's pack where the desk is made, for the skill that sets one up", () => {
     const { body } = onboardingOf({ handle: "mira", workspace: WORKSPACE });
     expect(body).toContain(
-      '- **Make your desk there and push it.** Make the repository `acme-mira/desk`, private, and push the desk to it. Where the organization\'s pack has a skill for setting a desk up, go by it: console skills --search "desk setup" --limit 5.',
+      "- **Make your desk there and push it.** Make the repository `acme-mira/desk`, private, and push the desk to it. The desk's git takes git.token from your store by itself, so nothing is typed and no helper of the machine keeps a copy. Where the organization's pack has a skill for setting a desk up, go by it: console skills --search \"desk setup\" --limit 5.",
     );
   });
 });

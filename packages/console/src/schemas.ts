@@ -47,6 +47,7 @@ import {
   MAX_RULES_LENGTH,
   MAX_RUNNER_LINE_LENGTH,
   MAX_RUNNER_OFFERS,
+  MAX_RUNNER_SOURCES,
   MAX_SEAL_REASON_LENGTH,
   MAX_SECRET_LENGTH,
   MAX_SERVICE_PARAMETERS,
@@ -110,6 +111,7 @@ import {
   TASK_PRIORITIES,
   TASK_STATES,
   TRANSCRIPT_KINDS,
+  WAKE_SOURCE_STATES,
   WEEK_STARTS,
 } from "./vocabulary.js";
 
@@ -814,6 +816,17 @@ const runnerProduct = z.object({
   version: z.nullable(runnerLine),
   tried: z.boolean(),
 });
+/** A wake source as its runner says it stands: by its module's name, since when, and why where it does not listen. */
+const runnerSource = z.object({
+  name: z.string().check(z.regex(/^[a-z][a-z0-9-]{0,39}$/)),
+  state: z.enum(WAKE_SOURCE_STATES),
+  since: instant,
+  why: z.optional(runnerLine),
+});
+/** What an account's own wake to come is called: a short name of lowercase letters, digits and hyphens. */
+const ownWakeKey = z.string().check(z.regex(/^[a-z0-9][a-z0-9-]{0,39}$/));
+/** A signal by its number alone: what an answer names one by where the record holds the rest. */
+const restSignalRef = z.object({ number: z.int().check(z.positive()) });
 /** What the product offers to choose from, and what the driver can do. */
 const runnerOffers = z.object({
   models: z.array(runnerChoice).check(z.maxLength(MAX_RUNNER_OFFERS)),
@@ -842,8 +855,43 @@ export const restRunnerHeartbeatInputSchema = z.object({
   offers: runnerOffers,
   /** What the open session runs with; `null` each where the product's own choice stands. */
   running: z.object({ model: z.nullable(runnerChoice), effort: z.nullable(runnerChoice) }),
+  /** The wake sources the runner keeps beside the console's own, and how each stands (ADR-0144); left out by a runner of before. */
+  sources: z.optional(z.array(runnerSource).check(z.maxLength(MAX_RUNNER_SOURCES))),
 });
 export type RestRunnerHeartbeatInput = z.infer<typeof restRunnerHeartbeatInputSchema>;
+
+/**
+ * A wake an agent account raises for itself (ADR-0145), by its own command: now, or at a moment
+ * to come, under a name of which one stands at a time. Its words are the account's own.
+ */
+export const restOwnWakeInputSchema = z.object({
+  text: z.optional(paragraphs(MAX_SIGNAL_LENGTH)),
+  /** When it is raised; left out, now. */
+  at: z.optional(instant),
+  /** What a wake to come is called: a second under the name takes the first one's place. */
+  key: z.optional(ownWakeKey),
+});
+export type RestOwnWakeInput = z.infer<typeof restOwnWakeInputSchema>;
+
+/** A wake an agent account keeps for later: what it is called, when it is raised, and its words. */
+export const restOwnWakeSchema = z.object({
+  key: z.string(),
+  at: instant,
+  text: z.string(),
+  createdAt: instant,
+});
+export type RestOwnWake = z.infer<typeof restOwnWakeSchema>;
+
+/** What raising one answers: the signal, for one raised now; the wake kept, for one to come. */
+export const restOwnWakeRaisedSchema = z.object({
+  signal: z.nullable(restSignalRef),
+  kept: z.nullable(restOwnWakeSchema),
+});
+export type RestOwnWakeRaised = z.infer<typeof restOwnWakeRaisedSchema>;
+
+/** `GET /api/v1/agents/<handle>/wakes`: the wakes the account keeps for later, the soonest first. */
+export const restOwnWakesSchema = z.object({ items: z.array(restOwnWakeSchema) });
+export type RestOwnWakes = z.infer<typeof restOwnWakesSchema>;
 
 /** What the heartbeat is answered: where the account's record of signals stands, what its supervisors chose, and how the console has the agent. */
 export const restRunnerHeartbeatSchema = z.object({
@@ -890,6 +938,21 @@ export const restAgentRunnerSchema = z.object({
   ),
   running: z.nullable(restAgentChoiceSchema),
   settings: restAgentChoiceSchema,
+  /**
+   * The wake sources its runner keeps beside the console's own, as it last said (ADR-0144);
+   * left out where the runner says none. The state is read as a word, so that one a newer
+   * runner says is shown as it came.
+   */
+  sources: z.optional(
+    z.array(
+      z.object({
+        name: z.string(),
+        state: z.string(),
+        since: instant,
+        why: z.optional(z.string()),
+      }),
+    ),
+  ),
 });
 export type RestAgentRunner = z.infer<typeof restAgentRunnerSchema>;
 

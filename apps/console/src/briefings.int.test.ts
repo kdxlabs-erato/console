@@ -1,10 +1,13 @@
 import {
   agentPath,
+  MAX_OWN_WAKES,
   projectPath,
   REST_ROUTES,
   restAgentSchema,
   restErrorSchema,
   restEventsSchema,
+  restOwnWakeRaisedSchema,
+  restOwnWakesSchema,
   restSignalsSchema,
   restTaskSchema,
 } from "@skillcdn/console/api";
@@ -253,5 +256,116 @@ describe("the briefings of an agent account (ADR-0085)", () => {
     expect((await at("2026-11-17T12:09:00.000Z")).map((signal) => signal.key)).toEqual([
       "secret:git.token",
     ]);
+  });
+});
+
+describe("the wakes an agent account raises for itself (ADR-0145)", () => {
+  const OWN = agentPath("me", "wakes");
+  const kept = async (cookie: string, path = OWN) =>
+    restOwnWakesSchema.parse(await (await get({ cookie }, path)).json()).items;
+  /** The account's own wakes on its record, the oldest first: who sent each, and what it says. */
+  const own = async () =>
+    restSignalsSchema
+      .parse(
+        await (await get({ cookie: alice }, `${agentPath("mira", "signals")}?limit=100`)).json(),
+      )
+      .items.filter((signal) => signal.kind === "wake" && signal.by?.login === "carol")
+      .map((signal) => ({ source: signal.source, key: signal.key, text: signal.text }))
+      .reverse();
+
+  it("raises one now, as a signal of its record that the account itself sent", async () => {
+    now = new Date("2026-11-18T01:00:00.000Z");
+    const raised = await send(mira, "POST", OWN, { text: "Chrome is installed; go on with #28." });
+    expect(raised.status).toBe(201);
+    const answer = restOwnWakeRaisedSchema.parse(await raised.json());
+    expect(answer.kept).toBeNull();
+    expect(answer.signal?.number).toBeGreaterThan(0);
+    // A wake, by the account, with its words as it said them: nothing a supervisor's signal is.
+    expect(await own()).toEqual([
+      { source: "person", key: null, text: "Chrome is installed; go on with #28." },
+    ]);
+    // Its own alone: nobody raises one for it, a supervisor among them, and nobody unsigned.
+    expect((await send(alice, "POST", OWN, { text: "As the account." })).status).toBe(404);
+    expect((await send(bob, "POST", OWN, {})).status).toBe(404);
+    expect(
+      (await h.request(OWN, { method: "POST", headers: JSON_HEADERS, body: "{}" })).status,
+    ).toBe(401);
+    // And a wake alone: what it sends holds words and a moment, and nothing else is read.
+    for (const body of [
+      { text: "x".repeat(8001) },
+      { at: "tomorrow" },
+      { key: "Not A Name" },
+      { at: "2026-11-18T00:59:00.000Z" },
+      { at: "2027-03-01T00:00:00.000Z" },
+      "wake",
+    ]) {
+      const refused = await send(mira, "POST", OWN, body);
+      expect(refused.status, JSON.stringify(body).slice(0, 40)).toBe(400);
+    }
+    expect(await own()).toHaveLength(1);
+  });
+
+  it("keeps one for a moment to come, one under a name, and the worker raises it when its moment has come", async () => {
+    now = new Date("2026-11-18T01:00:00.000Z");
+    const keep = (body: Record<string, unknown>) => send(mira, "POST", OWN, body);
+    const first = await keep({ text: "Look at the deploy.", at: "2026-11-18T01:30:00.000Z" });
+    expect(first.status).toBe(201);
+    expect(restOwnWakeRaisedSchema.parse(await first.json())).toEqual({
+      signal: null,
+      kept: {
+        key: "wake",
+        at: "2026-11-18T01:30:00.000Z",
+        text: "Look at the deploy.",
+        createdAt: "2026-11-18T01:00:00.000Z",
+      },
+    });
+    // A second under the same name takes the first one's place; another name stands beside it.
+    await keep({ text: "Look at the deploy again.", at: "2026-11-18T01:45:00.000Z" });
+    await keep({ at: "2026-11-18T03:00:00.000Z", key: "report" });
+    expect((await kept(mira)).map((wake) => [wake.key, wake.at, wake.text])).toEqual([
+      ["wake", "2026-11-18T01:45:00.000Z", "Look at the deploy again."],
+      ["report", "2026-11-18T03:00:00.000Z", ""],
+    ]);
+    // Its supervisors read what it keeps, and nobody else does.
+    expect(await kept(alice, agentPath("mira", "wakes"))).toHaveLength(2);
+    expect((await get({ cookie: bob }, agentPath("mira", "wakes"))).status).not.toBe(200);
+    // Nothing is on the record until its moment: a pass before it raises none.
+    const before = (await own()).length;
+    now = new Date("2026-11-18T01:44:00.000Z");
+    await wakes.sweep();
+    expect(await own()).toHaveLength(before);
+    // At its moment it is raised once, by the account, and is kept no longer.
+    now = new Date("2026-11-18T01:45:30.000Z");
+    await wakes.sweep();
+    await wakes.sweep();
+    expect((await own()).slice(before)).toEqual([
+      { source: "person", key: "wake", text: "Look at the deploy again." },
+    ]);
+    expect((await kept(mira)).map((wake) => wake.key)).toEqual(["report"]);
+    // One with no words says what it is; one taken away is never raised.
+    now = new Date("2026-11-18T03:00:00.000Z");
+    await wakes.sweep();
+    expect((await own()).at(-1)).toEqual({
+      source: "person",
+      key: "report",
+      text: "The moment you asked to be woken at has come.",
+    });
+    await keep({ text: "Never.", at: "2026-11-18T04:00:00.000Z", key: "never" });
+    expect((await send(mira, "DELETE", agentPath("me", "wakes", "never"))).status).toBe(200);
+    const again = await send(mira, "DELETE", agentPath("me", "wakes", "never"));
+    expect(again.status).toBe(404);
+    const raisedBefore = (await own()).length;
+    now = new Date("2026-11-18T04:01:00.000Z");
+    await wakes.sweep();
+    expect(await own()).toHaveLength(raisedBefore);
+    // So many are kept at a time, and one more under a name of its own is refused.
+    for (let index = 0; index < MAX_OWN_WAKES; index += 1) {
+      const one = await keep({ at: "2026-11-19T00:00:00.000Z", key: `later-${index}` });
+      expect(one.status).toBe(201);
+    }
+    const over = await keep({ at: "2026-11-19T00:00:00.000Z", key: "one-too-many" });
+    expect(over.status).toBe(409);
+    // One it keeps already is still changed.
+    expect((await keep({ at: "2026-11-19T01:00:00.000Z", key: "later-0" })).status).toBe(201);
   });
 });

@@ -68,6 +68,13 @@ export const MAX_SIGNAL_KEY_LENGTH = 200;
 /** A line a runner says of its machine, its product, a model or a level of effort; and how many of those a product offers. */
 export const MAX_RUNNER_LINE_LENGTH = 120;
 export const MAX_RUNNER_OFFERS = 50;
+/** How many wake sources a runner says it keeps beside the console's own. */
+export const MAX_RUNNER_SOURCES = 10;
+/** How many wakes an agent account keeps for itself for later at a time, and how far ahead one may be (ADR-0145). */
+export const MAX_OWN_WAKES = 20;
+export const MAX_OWN_WAKE_DAYS = 31;
+/** What a wake to come is called where the account names none. */
+export const OWN_WAKE_KEY = "wake";
 /** How many signals one page of an account's record carries when none is asked for, and the most it may. */
 /** How many files a supervisor sends with one tell, pictures among them, together within `MAX_FILE_BYTES`. */
 export const MAX_SIGNAL_ATTACHMENTS = 8;
@@ -96,6 +103,8 @@ export const MAX_TRANSCRIPT_FILES_PER_MINUTE = 60;
 export const MAX_TRANSCRIPT_EVENTS_PER_HOUR = 60_000;
 export const MAX_AGENT_SESSIONS_PER_HOUR = 60;
 export const MAX_RUNNER_WAKES_PER_HOUR = 600;
+/** How many wakes an agent account raises for itself within an hour, those kept for later among them when they are raised (ADR-0145). */
+export const MAX_OWN_WAKES_PER_HOUR = 30;
 export const MAX_AGENT_STATE_CHANGES_PER_HOUR = 20;
 /** How many events one page of a session carries when none is asked for, and the most it may. */
 export const TRANSCRIPT_PAGE_LIMIT = 100;

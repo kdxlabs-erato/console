@@ -202,6 +202,8 @@ export const ko: Messages = {
     "transcript.too_many": "세션이 한 시간에 받을 수 있는 이벤트를 모두 받았습니다.",
     "transcript.too_many_sessions": "계정이 한 시간에 시작할 수 있는 세션을 모두 시작했습니다.",
     "signal.too_many": "계정의 러너가 한 시간에 올릴 수 있는 깨움을 모두 올렸습니다.",
+    "wake.too_many": "계정이 나중을 위해 둘 수 있는 깨움을 모두 두었습니다.",
+    "wake.not_found": "계정에 그 이름의 깨움이 없습니다.",
     "transcript.unknown_file": "이벤트가 그 세션에 올리지 않은 사진을 가리킵니다.",
     "agent.not_found": "에이전트 계정을 찾을 수 없습니다.",
     "agent.handle_taken": "이미 다른 에이전트 계정이 쓰는 핸들입니다.",
@@ -2069,6 +2071,8 @@ export const ko: Messages = {
           untried: "드라이버가 시험되지 않은 버전",
           signals: "신호",
           delivered: (delivered: number, latest: number) => `${latest}개 중 ${delivered}개 전달됨`,
+          sources: "깨움 소스",
+          sourceStates: { connected: "연결됨", waiting: "대기 중", failing: "실패 중" },
         },
         machine: {
           title: "머신",
@@ -2086,7 +2090,7 @@ export const ko: Messages = {
             title: "초대를 만들었습니다",
             say: "에이전트의 머신에서, 에이전트의 OS 계정으로, 에이전트의 제품에 이렇게 말하세요:",
             line: (command, install) =>
-              `실행: ${command} (그 전에: ${install}), 그다음 출력되는 대로 진행하세요`,
+              `이 머신을 에이전트 계정용으로 설정하세요. 없는 것은 묻지 말고 직접 설치하세요: 먼저 Node.js 24 이상과 명령(${install}). 그다음 ${command} 를 실행하고 출력되는 대로 진행하세요. 로그인이나 관리자 비밀번호가 필요할 때만 저에게 물어보세요.`,
             orRun: "또는 그 머신에서 명령을 직접 실행하세요:",
             guide: "사람이 읽는 가이드",
             once: "코드는 지금 한 번만 보입니다. 유효 기한:",

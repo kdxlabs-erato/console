@@ -1,6 +1,7 @@
 import type { Database } from "../db/client.js";
 import { drizzleOf } from "../db/client.js";
 import { sendSignal } from "../db/queries/agent-runners.js";
+import { takeDueWakes } from "../db/queries/agent-wakes.js";
 import {
   accountsToBrief,
   boardWakesOf,
@@ -21,6 +22,7 @@ import {
   briefingsDue,
   clockIn,
   dayAfter,
+  OWN_WAKE_WORDS,
   secretWake,
   WRAP_BRIEFING,
 } from "./briefings.js";
@@ -213,6 +215,7 @@ export class BoardWakes {
           const scheduled = { now, today, clock: clockIn(settings.timeZone, now) };
           woke += await this.#brief(workspaceId, settings.weekStart, scheduled);
           woke += await this.#warn(workspaceId, scheduled);
+          woke += await this.#own(workspaceId, now);
         }
         return { woke, more, failed };
       });
@@ -322,6 +325,29 @@ export class BoardWakes {
       });
     }
     return ending.length;
+  }
+
+  /**
+   * The wakes agent accounts kept for themselves whose moment has come (ADR-0145): each raised
+   * once, as a signal of the account's record sent by the account, through the agent it was
+   * kept through. One taken and not raised, a pass that ended in between, is not raised again.
+   */
+  async #own(workspaceId: string, now: Date): Promise<number> {
+    const database = this.#database;
+    const due = await takeDueWakes(database, workspaceId, now);
+    for (const { account, wake } of due) {
+      await sendSignal(database, {
+        account,
+        kind: "wake",
+        by: { id: account.id, ...(wake.agent === undefined ? {} : { agent: wake.agent }) },
+        source: "person",
+        key: wake.key,
+        text: wake.text.length === 0 ? OWN_WAKE_WORDS : wake.text,
+        set: undefined,
+        now,
+      });
+    }
+    return due.length;
   }
 
   start(intervalMs: number = BOARD_WAKES_INTERVAL_MS): void {

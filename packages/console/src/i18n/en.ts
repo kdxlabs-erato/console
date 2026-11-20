@@ -246,6 +246,8 @@ export const en = {
     "transcript.too_many": "The session took as many events within the hour as one may.",
     "transcript.too_many_sessions": "The account began as many sessions within the hour as it may.",
     "signal.too_many": "The account's runner raised as many wakes within the hour as it may.",
+    "wake.too_many": "The account keeps as many wakes for later as it may.",
+    "wake.not_found": "The account keeps no wake of that name.",
     "transcript.unknown_file": "An event names a picture that was not handed in to its session.",
     "agent.not_found": "The agent account was not found.",
     "agent.handle_taken": "Another agent account has this handle.",
@@ -2186,6 +2188,8 @@ export const en = {
           untried: "a version the driver was not tried with",
           signals: "Signals",
           delivered: (delivered: number, latest: number) => `${delivered} of ${latest} delivered`,
+          sources: "Wake sources",
+          sourceStates: { connected: "connected", waiting: "waiting", failing: "failing" },
         },
         machine: {
           title: "Its machine",
@@ -2204,7 +2208,7 @@ export const en = {
             // The line said to the product: the command and the install as written, the words between
             // them in the language of whoever reads the page, since they say it.
             line: (command: string, install: string) =>
-              `Run: ${command} (before it: ${install}), then do what it prints`,
+              `Set this machine up for an agent account. Install what is missing yourself, without asking: first Node.js 24 or later and the command (${install}). Then run ${command} and do what it prints. Ask me only for a sign-in or an administrator's password.`,
             orRun: "Or run the command there yourself:",
             guide: "The guide, for a person to read",
             once: "The code is shown this once. It is good until",

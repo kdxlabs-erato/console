@@ -258,6 +258,46 @@ describe("an agent account's runner (ADR-0085)", () => {
     expect((await agentOf(bearer(command))).runner?.machine?.name).toBe("mac-mini");
   });
 
+  it("keeps how the runner's wake sources stand, as it last said, for its supervisors and itself (ADR-0144)", async () => {
+    const since = "2026-11-20T08:32:00.000Z";
+    // A runner of before says none, and the account's line holds none.
+    expect((await agentOf({ cookie: alice })).runner?.sources).toBeUndefined();
+    await heartbeat({
+      reason: "resumed",
+      sources: [
+        {
+          name: "slack",
+          state: "waiting",
+          since,
+          why: "no slack.app_token in the account's store",
+        },
+      ],
+    });
+    expect((await agentOf({ cookie: alice })).runner?.sources).toEqual([
+      { name: "slack", state: "waiting", since, why: "no slack.app_token in the account's store" },
+    ]);
+    await heartbeat({ reason: "resumed", sources: [{ name: "slack", state: "connected", since }] });
+    expect((await agentOf(bearer(command))).runner?.sources).toEqual([
+      { name: "slack", state: "connected", since },
+    ]);
+    // Whoever is no supervisor reads nothing of the runner, its sources among it.
+    expect((await agentOf({ cookie: bob })).runner).toBeNull();
+    // What it says is data: a name of a module, a state of the three, a moment, a line.
+    for (const sources of [
+      [{ name: "Slack!", state: "connected", since }],
+      [{ name: "slack", state: "listening", since }],
+      [{ name: "slack", state: "connected", since: "yesterday" }],
+      [{ name: "slack", state: "failing", since, why: "x".repeat(400) }],
+      Array.from({ length: 11 }, (_, index) => ({ name: `s${index}`, state: "connected", since })),
+    ]) {
+      const refused = await send(bearer(command), "PUT", RUNNER, beat({ sources }));
+      expect(refused.status, JSON.stringify(sources).slice(0, 60)).toBe(400);
+    }
+    // A runner that says none again, one of before among them, leaves none standing.
+    await heartbeat({ reason: "resumed" });
+    expect((await agentOf({ cookie: alice })).runner?.sources).toBeUndefined();
+  });
+
   it("takes a heartbeat as data: bounded, of the words it knows, and nothing else", async () => {
     const refused = async (body: unknown) => {
       const response = await send(bearer(command), "PUT", RUNNER, body);

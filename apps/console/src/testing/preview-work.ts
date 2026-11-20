@@ -798,6 +798,20 @@ async function seedAgents(
         efforts: [...OFFERS.claude.efforts],
       },
       running: { model: "opus", effort: "high" },
+      // A wake source that listens and one that waits, for the page that shows how each stands.
+      sources: [
+        {
+          name: "slack",
+          state: "connected",
+          since: new Date(Date.now() - 3_600_000).toISOString(),
+        },
+        {
+          name: "pager",
+          state: "waiting",
+          since: new Date(Date.now() - 600_000).toISOString(),
+          why: "no pager.token in the account's store",
+        },
+      ],
     });
     // One more that she has not read yet: it waits on the page beside the way to have it read now.
     await admin.sendSignal("mira", {

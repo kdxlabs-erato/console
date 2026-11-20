@@ -47,14 +47,17 @@ import {
   LIST_LIMIT,
   MAX_DECIDERS,
   MAX_OPTIONS,
+  MAX_OWN_WAKE_DAYS,
   MAX_RUNNER_LINE_LENGTH,
   MAX_SIGNALS_PAGE_LIMIT,
   MIN_OPTIONS,
+  OWN_WAKE_KEY,
 } from "../limits.js";
+import { onboardingTitle } from "../onboarding.js";
 import { capabilityWords } from "../plugin/capabilities.js";
 import { PLUGIN_LIST_LIMIT } from "../plugin/limits.js";
 import { checkRecords, RECORDS_DIR, RECORDS_INDEX_FILE, type RecordsFiles } from "../records.js";
-import { decisionHref, docHref, myDecisionHref, taskHref } from "../router.js";
+import { agentHref, decisionHref, docHref, myDecisionHref, taskHref } from "../router.js";
 import { fillRules, RULES_PATH, RULES_TITLE } from "../rules.js";
 import { DEFAULT_RUNNER_CONFIG, parseRunnerConfig } from "../runner/config.js";
 import {
@@ -157,6 +160,7 @@ import {
   formatMemberLine,
   formatMore,
   formatOptions,
+  formatOwnWakeLine,
   formatPersonLine,
   formatPersonWork,
   formatPlugin,
@@ -193,6 +197,7 @@ import {
 } from "./format.js";
 import { COMMAND_HELP, helpFor, ownSkillPath, usage } from "./help.js";
 import { describeInstall, type Install, updateCommandFor } from "./install.js";
+import { awakeWords, heldAwake, lookAtMachine, type MachineLook } from "./machine-check.js";
 import type { NoticeStore } from "./notices.js";
 import {
   type ConsolePack,
@@ -207,6 +212,7 @@ import {
   skillPathIn,
 } from "./pack.js";
 import { type RunnerHost, workPath } from "./runner-host.js";
+import { secretNotes } from "./secret-notes.js";
 import {
   createServeHandler,
   DEFAULT_SERVE_PORT,
@@ -4656,29 +4662,36 @@ const runner: Command = async (args, io) => {
       "A runner is an agent account's own, on the command signed in as the account itself: console login --self, approved in a browser signed in as the account.",
     );
   }
-  const written = await host.readText("runner.json");
-  const read =
-    written === undefined
-      ? { ok: true as const, config: DEFAULT_RUNNER_CONFIG }
-      : parseRunnerConfig(written);
-  if (!read.ok) {
-    throw failed(
-      `${read.problem}. Nothing of it is used: put it right, or remove it to run with the defaults.`,
-    );
-  }
   const modules = ownRunnerModules({ user: host.user });
-  const driverOf = modules.drivers.get(read.config.driver);
-  if (driverOf === undefined) {
-    throw failed(
-      `runner.json names the driver ${read.config.driver}, which this command does not have. It has: ${modules.drivers.names().join(", ")}.`,
-    );
-  }
-  const unknown = read.config.wake.find((name) => modules.wakeSources.get(name) === undefined);
-  if (unknown !== undefined) {
-    throw failed(
-      `runner.json names the wake source ${unknown}, which this command does not have. It has: ${modules.wakeSources.names().join(", ")}.`,
-    );
-  }
+  /**
+   * The desk's runner.json as it stands: its text, what it says, and the driver it names; or
+   * what is wrong with it in a few words. No file is the defaults.
+   */
+  const readConfig = async () => {
+    const written = await host.readText("runner.json");
+    const parsed =
+      written === undefined
+        ? { ok: true as const, config: DEFAULT_RUNNER_CONFIG }
+        : parseRunnerConfig(written);
+    if (!parsed.ok) {
+      return { ok: false as const, problem: parsed.problem };
+    }
+    const driverOf = modules.drivers.get(parsed.config.driver);
+    if (driverOf === undefined) {
+      return {
+        ok: false as const,
+        problem: `runner.json names the driver ${parsed.config.driver}, which this command does not have. It has: ${modules.drivers.names().join(", ")}`,
+      };
+    }
+    const unknown = parsed.config.wake.find((name) => modules.wakeSources.get(name) === undefined);
+    if (unknown !== undefined) {
+      return {
+        ok: false as const,
+        problem: `runner.json names the wake source ${unknown}, which this command does not have. It has: ${modules.wakeSources.names().join(", ")}`,
+      };
+    }
+    return { ok: true as const, config: parsed.config, driverOf, text: written ?? "" };
+  };
   // A header says the hour and the minute in the workspace's zone, or the machine's where it has none.
   const zone = me.workspace.timeZone ?? undefined;
   let clock: Intl.DateTimeFormat;
@@ -4697,80 +4710,130 @@ const runner: Command = async (args, io) => {
     });
   }
   const statePath = workPath("runner-state.json");
-  const running = createRunner({
-    client: session.client,
-    driver: driverOf({
-      spawn: host.spawn,
-      cwd: host.cwd,
-      command: read.config.product?.command,
-      args: read.config.product?.args,
-      version: io.version,
-    }),
-    config: read.config,
-    cwd: host.cwd,
-    machine: {
-      name: machineLine(io.hostname ?? ""),
-      os: machineLine(host.os),
-      user: machineLine(modules.boundaries.get("os-user")?.user() ?? host.user),
-    },
-    version: io.version ?? "0.0.0",
-    // A runner whose own version is not known has nothing to hold the package's against.
-    installed: io.version === undefined ? undefined : io.installedVersion,
-    // What installs the console's version here, the way this command was installed.
-    updateCommand: () => updateWords(io, io.consoleVersion?.()),
-    now: io.now,
-    random: host.random,
-    time: (iso) => clock.format(new Date(iso)),
-    files: {
-      write: (path, text) => host.writePrivate(workPath(path), text),
-      remove: (path) => host.remove(workPath(path)),
-    },
-    state: {
-      load: async () => runnerStateOf(await host.readText(statePath)),
-      save: (state) => host.writePrivate(statePath, `${JSON.stringify(state)}\n`),
-    },
-    log: (line) => io.stdout(`${new Date(io.now()).toISOString()} ${line}\n`),
-    // The autosave's git: in the desk, asking nobody at a terminal, its words read and let go.
-    // A step that reaches the git host is handed the account's token for it, as the clone of
-    // the desk was: answered from the environment of that one command, and only to the host
-    // the workspace keeps its desks at.
-    git: async (args, handed) => {
-      const origin = gitOriginOf(deskRemoteOf(me.workspace, me.person?.handle ?? ""));
-      const child = host.spawn("git", args, {
+  const person = me.person;
+  /** A runner for the desk's runner.json as it is read now: begun again whenever the file changed (ADR-0144). */
+  const runnerOf = (read: Extract<Awaited<ReturnType<typeof readConfig>>, { ok: true }>) => {
+    const { driverOf } = read;
+    return createRunner({
+      client: session.client,
+      driver: driverOf({
+        spawn: host.spawn,
         cwd: host.cwd,
-        env:
-          handed?.token === undefined || origin === undefined
-            ? { GIT_TERMINAL_PROMPT: "0" }
-            : gitTokenEnv(handed.token, origin),
-      });
-      child.end();
-      for await (const _ of child.lines) {
-        // Nothing of what git prints is kept.
-      }
-      return (await child.exited).code;
-    },
-    // The wake sources the desk names beside the console's own stream, which the runner listens to itself.
-    wakes: {
-      sources: read.config.wake.flatMap((name) => {
-        const source = modules.wakeSources.get(name);
-        return source === undefined || source.run === undefined ? [] : [source];
+        command: read.config.product?.command,
+        args: read.config.product?.args,
+        version: io.version,
       }),
-      fetch: (url, init) => io.fetch(url, { ...init, headers: { ...init.headers } }),
-      socket: (url) => host.socket(url),
-    },
-  });
-  io.stdout(
-    `The runner of @${me.person.handle ?? me.person.login} at ${me.workspace.name} (${session.url}) starts in ${host.cwd}. Stop with Ctrl+C.\n`,
-  );
-  void host.untilStopped().then(() => running.stop());
-  if ((await running.run()) === "updated") {
-    // The service that keeps a runner starts it again whenever it ends; one started by hand is
-    // started again by hand.
-    io.stdout(
-      "The command was updated: the runner ended, and the service that keeps it starts it again with the new one. Started by hand: console runner\n",
+      config: read.config,
+      reconfigured: async () => {
+        const now = await readConfig();
+        return !now.ok ? { problem: now.problem } : now.text === read.text ? "same" : "changed";
+      },
+      cwd: host.cwd,
+      machine: {
+        name: machineLine(io.hostname ?? ""),
+        os: machineLine(host.os),
+        user: machineLine(modules.boundaries.get("os-user")?.user() ?? host.user),
+      },
+      version: io.version ?? "0.0.0",
+      // A runner whose own version is not known has nothing to hold the package's against.
+      installed: io.version === undefined ? undefined : io.installedVersion,
+      // What installs the console's version here, the way this command was installed.
+      updateCommand: () => updateWords(io, io.consoleVersion?.()),
+      now: io.now,
+      random: host.random,
+      time: (iso) => clock.format(new Date(iso)),
+      files: {
+        write: (path, text) => host.writePrivate(workPath(path), text),
+        remove: (path) => host.remove(workPath(path)),
+      },
+      state: {
+        load: async () => runnerStateOf(await host.readText(statePath)),
+        save: (state) => host.writePrivate(statePath, `${JSON.stringify(state)}\n`),
+      },
+      log: (line) => io.stdout(`${new Date(io.now()).toISOString()} ${line}\n`),
+      // The autosave's git: in the desk, asking nobody at a terminal, its words read and let go.
+      // A step that reaches the git host is handed the account's token for it, as the clone of
+      // the desk was: answered from the environment of that one command, and only to the host
+      // the workspace keeps its desks at.
+      git: async (args, handed) => {
+        const origin = gitOriginOf(deskRemoteOf(me.workspace, me.person?.handle ?? ""));
+        const child = host.spawn("git", args, {
+          cwd: host.cwd,
+          env:
+            handed?.token === undefined || origin === undefined
+              ? { GIT_TERMINAL_PROMPT: "0" }
+              : gitTokenEnv(handed.token, origin),
+        });
+        child.end();
+        for await (const _ of child.lines) {
+          // Nothing of what git prints is kept.
+        }
+        return (await child.exited).code;
+      },
+      // The wake sources the desk names beside the console's own stream, which the runner listens to itself.
+      wakes: {
+        sources: read.config.wake.flatMap((name) => {
+          const source = modules.wakeSources.get(name);
+          return source === undefined || source.run === undefined ? [] : [source];
+        }),
+        fetch: (url, init) => io.fetch(url, { ...init, headers: { ...init.headers } }),
+        socket: (url) => host.socket(url),
+      },
+    });
+  };
+  const first = await readConfig();
+  if (!first.ok) {
+    throw failed(
+      `${first.problem}. Nothing of it is used: put it right, or remove it to run with the defaults.`,
     );
   }
-  return EXIT.ok;
+  io.stdout(
+    `The runner of @${person.handle ?? person.login} at ${me.workspace.name} (${session.url}) starts in ${host.cwd}. Stop with Ctrl+C.\n`,
+  );
+  // The machine is held awake while the runner runs, where the system has a way that needs no
+  // administrator (ADR-0140): said in the runner's own lines, either way.
+  const said = (line: string): void => io.stdout(`${new Date(io.now()).toISOString()} ${line}\n`);
+  void host
+    .keepAwake?.()
+    .then((awake) =>
+      said(
+        "by" in awake
+          ? `the machine is kept from sleeping while the runner runs (${awake.by})`
+          : `the machine is not kept from sleeping by the runner (${awake.problem}): set it never to sleep when idle`,
+      ),
+    );
+  let running = runnerOf(first);
+  let asked = false;
+  void host.untilStopped().then(() => {
+    asked = true;
+    running.stop();
+  });
+  for (;;) {
+    const how = await running.run();
+    if (how === "updated") {
+      // The service that keeps a runner starts it again whenever it ends; one started by hand is
+      // started again by hand.
+      io.stdout(
+        "The command was updated: the runner ended, and the service that keeps it starts it again with the new one. Started by hand: console runner\n",
+      );
+    }
+    if (how !== "changed" || asked) {
+      return EXIT.ok;
+    }
+    // Its runner.json changed (ADR-0144): the next runner begins with the file as it is now, in
+    // this process, with the conversation the last one kept. A file that stopped reading in
+    // between is waited for: the runner that ended read it, and so will the next look.
+    let next = await readConfig();
+    while (!next.ok && !asked) {
+      said(`${next.problem}: waiting for a runner.json that reads`);
+      await io.sleep(5000);
+      next = await readConfig();
+    }
+    if (!next.ok || asked) {
+      return EXIT.ok;
+    }
+    running = runnerOf(next);
+  }
 };
 
 // Configuring, as the person (ADR-0021): what an administrator or an owner does on the pages,
@@ -4947,6 +5010,15 @@ async function secretValue(io: CliIo, values: Values, prompt: string): Promise<s
   return value;
 }
 
+/**
+ * The kind of git host the workspace names, where it names one: what a token for git is held to
+ * the shape of. Asked for the secret that is one alone, since no other is held to a host's shape.
+ */
+const gitHostFor = async (client: ConsoleClient, name: string): Promise<string | undefined> =>
+  name === GIT_TOKEN_SECRET
+    ? ((await client.me().catch(() => undefined))?.workspace.services?.git?.kind ?? undefined)
+    : undefined;
+
 const SECRET_FLAGS: OptionSpec = {
   set: { type: "boolean" },
   remove: { type: "boolean" },
@@ -4984,11 +5056,13 @@ const secret: Command = async (args, io) => {
   if (on(values, "set")) {
     const expiresOn = expiryOf(io, values);
     const value = await secretValue(io, values, `Value of ${name} (typed unseen; Enter ends it): `);
+    const host = await gitHostFor(session.client, name);
     const kept = await session.client.setSecret(name, {
       value,
       ...(expiresOn === undefined ? {} : { expiresOn }),
     });
-    answer(io, session, kept, () => `Kept: ${formatSecretLine(kept)}`);
+    const notes = secretNotes(name, value, host);
+    answer(io, session, kept, () => [`Kept: ${formatSecretLine(kept)}`, ...notes].join("\n"));
     return EXIT.ok;
   }
   // The value alone, for whatever reads it next; the reading is on the account's record.
@@ -5051,15 +5125,140 @@ const agentSecret = async (args: readonly string[], io: CliIo): Promise<number> 
     values,
     `Value of ${name} for @${handle} (typed unseen; Enter ends it): `,
   );
+  const host = await gitHostFor(session.client, name);
   const kept = await session.client.seedAgentSecret(handle, name, {
     value,
     ...(expiresOn === undefined ? {} : { expiresOn }),
   });
-  answer(
-    io,
-    session,
-    kept,
-    () => `Seeded for @${handle}, which alone reads it back: ${formatSecretLine(kept)}`,
+  const notes = secretNotes(name, value, host);
+  answer(io, session, kept, () =>
+    [`Seeded for @${handle}, which alone reads it back: ${formatSecretLine(kept)}`, ...notes].join(
+      "\n",
+    ),
+  );
+  return EXIT.ok;
+};
+
+const OWN_WAKE_USAGE =
+  'Say when, or nothing for now: console agent wake me ["<words>"] [--in <minutes> | --at <HH:MM>] [--key <name>]  |  agent wake me --cancel [--key <name>]';
+
+/** The hour and the minute it is in a time zone, as minutes of its day; in the machine's own where the zone names none. */
+function minutesOfDayIn(zone: string | undefined, now: Date): number {
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      ...(zone === undefined ? {} : { timeZone: zone }),
+    }).formatToParts(now);
+  } catch {
+    parts = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(now);
+  }
+  const of = (type: string): number =>
+    Number(parts.find((part) => part.type === type)?.value ?? "0");
+  return of("hour") * 60 + of("minute");
+}
+
+/**
+ * When a wake for later is raised, as the flags say it: so many minutes from now, or the next
+ * time the workspace's clock says an hour and a minute; nothing where neither flag is given.
+ */
+export function ownWakeMoment(
+  given: { readonly in?: string | undefined; readonly at?: string | undefined },
+  zone: string | undefined,
+  now: Date,
+): Date | undefined {
+  if (given.in !== undefined && given.at !== undefined) {
+    throw misuse(OWN_WAKE_USAGE);
+  }
+  if (given.in !== undefined) {
+    const minutes = Number(given.in);
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > MAX_OWN_WAKE_DAYS * 24 * 60) {
+      throw misuse(
+        `Not a number of minutes, from 1 to ${MAX_OWN_WAKE_DAYS * 24 * 60}: ${given.in}`,
+      );
+    }
+    return new Date(now.getTime() + minutes * 60_000);
+  }
+  if (given.at !== undefined) {
+    const clock = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/.exec(given.at);
+    if (clock === null) {
+      throw misuse(`Not an hour and a minute, as 14:30: ${given.at}`);
+    }
+    const wanted = Number(clock[1]) * 60 + Number(clock[2]);
+    // The next time the clock says so: later today, or tomorrow where that hour has passed.
+    const ahead = (wanted - minutesOfDayIn(zone, now) + 24 * 60) % (24 * 60) || 24 * 60;
+    const at = new Date(now.getTime() + ahead * 60_000);
+    at.setSeconds(0, 0);
+    return at;
+  }
+  return undefined;
+}
+
+// A wake an agent account raises for itself (ADR-0145), by its own command: now, for whoever
+// prepared its machine or signed something in there to say so and for the agent to go on; or
+// kept for a moment to come, for an agent that has something to look at again.
+const ownWake = async (args: readonly string[], io: CliIo): Promise<number> => {
+  const { values, positionals } = parse(args, {
+    file: { type: "string" },
+    in: { type: "string" },
+    at: { type: "string" },
+    key: { type: "string" },
+    cancel: { type: "boolean" },
+  });
+  const [, words, ...rest] = positionals;
+  if (rest.length > 0) {
+    throw misuse(OWN_WAKE_USAGE);
+  }
+  const key = text(values, "key");
+  if (key !== undefined && !/^[a-z0-9][a-z0-9-]{0,39}$/.test(key)) {
+    throw misuse(
+      `Not a name for a wake, which is up to 40 lowercase letters, digits and hyphens: ${key}`,
+    );
+  }
+  const session = await open(io, values);
+  /** A console of before knows no such route: said as what it is. */
+  const asked = async <T>(ask: () => Promise<T>): Promise<T> => {
+    try {
+      return await ask();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404 && error.code !== "wake.not_found") {
+        throw failed(
+          "This console does not take an account's own wake yet: it does from 0.5.2 on.",
+        );
+      }
+      throw error;
+    }
+  };
+  if (on(values, "cancel")) {
+    const named = key ?? OWN_WAKE_KEY;
+    await asked(() => session.client.cancelOwnWake(named));
+    answer(io, session, { cancelled: named }, () => `The wake ${named} is taken away.`);
+    return EXIT.ok;
+  }
+  const said = ((await bodyOf(io, values, words)) ?? "").trim();
+  const me = await session.client.me();
+  const at = ownWakeMoment(
+    { in: text(values, "in"), at: text(values, "at") },
+    me.workspace.timeZone ?? undefined,
+    new Date(io.now()),
+  );
+  const raised = await asked(() =>
+    session.client.raiseOwnWake({
+      ...(said.length === 0 ? {} : { text: said }),
+      ...(at === undefined ? {} : { at: at.toISOString() }),
+      ...(key === undefined ? {} : { key }),
+    }),
+  );
+  answer(io, session, raised, () =>
+    raised.kept === null
+      ? `Raised, as signal #${raised.signal?.number ?? "?"} of your record: your runner takes it as it takes any wake.`
+      : `Kept: ${formatOwnWakeLine(raised.kept)}\nTake it away: console agent wake me --cancel${raised.kept.key === OWN_WAKE_KEY ? "" : ` --key ${raised.kept.key}`}. A second under the same name takes its place.`,
   );
   return EXIT.ok;
 };
@@ -5083,6 +5282,10 @@ const agentSignal = async (
   args: readonly string[],
   io: CliIo,
 ): Promise<number> => {
+  // An account's own wake is another command under the same word: console agent wake me.
+  if (kind === "wake" && args.find((word) => !word.startsWith("-")) === "me") {
+    return ownWake(args, io);
+  }
   const { values, positionals } = parse(args, { file: { type: "string" } });
   const [given, words, ...rest] = positionals;
   const needs = WORDED_SIGNALS[kind]?.needs === true;
@@ -5164,10 +5367,20 @@ const agentSignals = async (args: readonly string[], io: CliIo): Promise<number>
     ...(limit === undefined ? {} : { limit: Number(limit) }),
     ...(before === undefined ? {} : { before: Number(before) }),
   });
-  answer(io, session, found, () =>
-    found.items.length === 0
+  // What the account keeps for later (ADR-0145) stands over the record's first page: it is no
+  // signal yet. A console of before keeps none, and says nothing of it.
+  const kept =
+    before === undefined
+      ? await session.client
+          .ownWakes(handle)
+          .then((wakes) => wakes.items)
+          .catch(() => [])
+      : [];
+  answer(io, session, kept.length === 0 ? found : { ...found, kept }, () =>
+    found.items.length === 0 && kept.length === 0
       ? "No signal yet."
       : [
+          ...kept.map(formatOwnWakeLine),
           ...found.items.map((signal) => formatSignalLine(signal, found.delivered)),
           ...(found.more
             ? [
@@ -5229,6 +5442,8 @@ const SETUP_FLAGS: OptionSpec = {
   refresh: { type: "boolean" },
   "new-desk": { type: "boolean" },
   "no-service": { type: "boolean" },
+  driver: { type: "string" },
+  "no-browser": { type: "boolean" },
 };
 
 type Me = Awaited<ReturnType<ConsoleClient["me"]>>;
@@ -5328,6 +5543,8 @@ async function settleDesk(
   workspace: Me["workspace"],
   url: string,
   values: Values,
+  /** What a look at the machine found, for a setup that looked: the driver and the browser a new desk names. */
+  look?: Pick<MachineLook, "driver" | "browser"> | undefined,
 ): Promise<string> {
   const desk = await deskOf(machine, values);
   const handle = person.handle ?? "";
@@ -5359,6 +5576,7 @@ async function settleDesk(
       );
     }
     io.stdout(`The desk is cloned from ${remote} into ${desk}.\n`);
+    await settleDeskGit(io, machine, desk, url, person.login, deskRemoteOf(workspace, handle));
     return desk;
   }
   const written: string[] = [];
@@ -5366,6 +5584,15 @@ async function settleDesk(
     agent: { name: person.name ?? handle, handle, title: person.title ?? null },
     console: { url, workspace: workspace.name },
     services: deskServicesOf(workspace, handle),
+    // The product found on the machine, and its browser: what the runner starts with.
+    runner:
+      look === undefined
+        ? undefined
+        : {
+            ...DEFAULT_RUNNER_CONFIG,
+            ...(look.driver === undefined ? {} : { driver: look.driver }),
+            ...(look.browser === undefined ? {} : { browser: look.browser }),
+          },
   })) {
     const file = machine.path(desk, path);
     if (!(await machine.exists(file))) {
@@ -5374,9 +5601,59 @@ async function settleDesk(
     }
   }
   io.stdout(
-    `A new desk is written at ${desk} (${written.join(", ")}). It is the agent's from now on: to edit, to make a repository of, and to push to its git host.\n`,
+    `A new desk is written at ${desk} (${written.join(", ")}). It is the agent's from now on: to edit and to push to its git host.\n`,
   );
+  await settleDeskGit(io, machine, desk, url, person.login, deskRemoteOf(workspace, handle));
   return desk;
+}
+
+/**
+ * The desk's own git settings (ADR-0140): a repository where it is none yet, and for the host
+ * the workspace keeps its desks at, a credential helper that reads the account's token from its
+ * store when git asks, in place of whatever the machine has configured. The agent then pushes
+ * with nothing typed, and no copy of the token is left in a keychain or a file. Nothing where
+ * the workspace names no git host, the command does not know how it was started, or git is not
+ * there; what did not succeed is said and the setup goes on.
+ */
+async function settleDeskGit(
+  io: CliIo,
+  machine: SetupMachine,
+  desk: string,
+  url: string,
+  login: string,
+  remote: string | undefined,
+): Promise<void> {
+  const origin = gitOriginOf(remote);
+  if (origin === undefined || machine.self === undefined) {
+    return;
+  }
+  const git = (args: readonly string[]): Promise<Ran> => machine.run("git", ["-C", desk, ...args]);
+  if (!(await machine.exists(machine.path(desk, ".git")))) {
+    if ((await git(["init", "--quiet"])).code !== 0) {
+      return;
+    }
+  }
+  // The helper as git's own shell runs it: every word in single quotes, a path with its
+  // slashes forward, which that shell takes on every system.
+  const word = (text: string): string => `'${text.replaceAll("\\", "/").replaceAll("'", "'\\''")}'`;
+  const read = [...machine.self, "secret", GIT_TOKEN_SECRET, "--url", url, "--account", login]
+    .map(word)
+    .join(" ");
+  const helper = `!f() { test "$1" = get && printf 'username=x-access-token\\npassword=%s\\n' "$(${read})"; }; f`;
+  const key = `credential.${origin}.helper`;
+  const kept = await git(["config", "--local", "--get-all", key]);
+  if (kept.code === 0 && kept.out.includes(GIT_TOKEN_SECRET)) {
+    return;
+  }
+  // An empty helper first: whatever the machine has configured for that host is left out.
+  const cleared = await git(["config", "--local", "--replace-all", key, ""]);
+  const added =
+    cleared.code === 0 ? await git(["config", "--local", "--add", key, helper]) : cleared;
+  io.stdout(
+    added.code === 0
+      ? `The desk's git reads the account's ${GIT_TOKEN_SECRET} from its store when ${origin} asks: nothing is typed, and no copy is kept elsewhere.\n`
+      : `The desk's git was not set to read the account's token from its store (${lastWords(added)}); the agent hands it to git itself.\n`,
+  );
 }
 
 /**
@@ -5561,7 +5838,7 @@ async function awaitRunner(
   handle: string,
   heardBefore: string | null,
   log: string,
-): Promise<void> {
+): Promise<boolean> {
   for (let tries = 0; tries < RUNNER_HEARD_TRIES; tries += 1) {
     await io.sleep(RUNNER_HEARD_PAUSE_MS);
     const found = await client.agent(handle).catch(() => undefined);
@@ -5569,14 +5846,57 @@ async function awaitRunner(
     const said = found?.runner?.machine ?? null;
     if (heard !== null && heard !== heardBefore && said !== null) {
       io.stdout(
-        `The runner is heard from: ${said.name}, ${said.os}, OS account ${said.user}. @${handle} is set up on this machine, and its page shows it.\n`,
+        `The runner is heard from: ${said.name}, ${said.os}, OS account ${said.user}. @${handle} is set up on this machine.\n`,
       );
-      return;
+      return true;
     }
   }
   io.stdout(
-    `The runner is not heard from yet. Its own lines are in ${log}; the account's page says when it is.\n`,
+    `The runner is not heard from yet. Its own lines are in ${log}: read them, since they say what it lacks; the account's page says when it is heard from.\n`,
   );
+  return false;
+}
+
+/** How often, and how many times, a setup looks whether the agent's first session has begun. */
+const FIRST_SESSION_PAUSE_MS = 2000;
+const FIRST_SESSION_TRIES = 30;
+
+/**
+ * What a setup ends with (ADR-0140): whether the agent's first session has begun, where to
+ * watch it, and that the machine's part ends here, since everything after is the agent's own.
+ */
+async function handOver(
+  io: CliIo,
+  machine: SetupMachine,
+  client: ConsoleClient,
+  url: string,
+  handle: string,
+): Promise<void> {
+  let began = false;
+  for (let tries = 0; tries < FIRST_SESSION_TRIES && !began; tries += 1) {
+    const found = await client.agent(handle).catch(() => undefined);
+    began = (found?.runner?.session ?? null) !== null;
+    if (!began) {
+      await io.sleep(FIRST_SESSION_PAUSE_MS);
+    }
+  }
+  const plate = await client.work().catch(() => undefined);
+  const first = plate?.tasks.find((one) => one.task.title === onboardingTitle(handle));
+  const lines = [
+    began
+      ? `@${handle}'s session has begun: the agent is at work.`
+      : `No session has begun yet: one begins when something wakes @${handle}.`,
+    `Watch it: ${url}${agentHref(handle)}`,
+    ...(first === undefined
+      ? []
+      : [
+          `Its first task: #${first.task.number} "${first.task.title}" in ${first.project.key}, ${url}${taskHref(first.project.key, first.task.number)}`,
+        ]),
+    `That is the machine prepared: stop here. What comes next, its sign-ins, its tokens, its desk's repository, its profile and its messenger, is @${handle}'s own, done in its own session: do none of it for it.`,
+    `What you change on this machine afterwards, say to it: console agent wake me "<what changed>"`,
+    awakeWords(machine.platform, await heldAwake(machine)),
+  ];
+  io.stdout(`${lines.join("\n")}\n`);
 }
 
 // Derives a machine again (ADR-0088): by the account's own command, in its desk, when the
@@ -5671,13 +5991,33 @@ const agentSetup = async (args: readonly string[], io: CliIo): Promise<number> =
   io.stdout(
     `\nSetting this machine up for @${handle}, in the OS account ${machine.user}${io.hostname === undefined ? "" : ` on ${io.hostname}`}.\n`,
   );
+  // The machine first (ADR-0140): everything that is missing is said at once, before anyone is
+  // asked to sign in, and nothing is set up on a machine the runner could not work on.
+  const driver = text(values, "driver");
+  if (
+    driver !== undefined &&
+    ownRunnerModules({ user: machine.user }).drivers.get(driver) === undefined
+  ) {
+    throw misuse(
+      `Not a driver this command has: ${driver}. It has: ${ownRunnerModules({ user: machine.user }).drivers.names().join(", ")}.`,
+    );
+  }
+  const look = await lookAtMachine(machine, { driver, browser: !on(values, "no-browser") });
+  if (look.missing.length > 0) {
+    throw failed(
+      `This machine lacks what the setup needs. Install each yourself, without asking, and run the line again:\n${look.missing.map((line) => `- ${line}`).join("\n")}`,
+    );
+  }
+  io.stdout(
+    `The machine has what the setup needs: git${look.product === undefined ? "" : `, ${look.product}`}${look.browser === undefined ? "" : ", Google Chrome"}.\n${look.notes.map((line) => `${line}\n`).join("")}`,
+  );
   const client = await signInAsAccount(io, machine, url, setup);
   const me = await client.me();
   if (me.person === null) {
     throw failed("The console does not know this sign-in any more. Run the line again.");
   }
   const heardBefore = (await client.agent(handle).catch(() => undefined))?.state?.heardAt ?? null;
-  const desk = await settleDesk(io, machine, client, me.person, me.workspace, url, values);
+  const desk = await settleDesk(io, machine, client, me.person, me.workspace, url, values, look);
   if (on(values, "no-service")) {
     io.stdout(
       `No service is written, as asked. Start the runner yourself and keep it running: ${runnerByHand(desk, url, me.person.login, machine.platform)}\n`,
@@ -5685,8 +6025,8 @@ const agentSetup = async (args: readonly string[], io: CliIo): Promise<number> =
     return EXIT.ok;
   }
   const log = await settleService(io, machine, desk, url, me.person.login, "load");
-  if (log !== undefined) {
-    await awaitRunner(io, client, handle, heardBefore, log);
+  if (log !== undefined && (await awaitRunner(io, client, handle, heardBefore, log))) {
+    await handOver(io, machine, client, url, handle);
   }
   return EXIT.ok;
 };

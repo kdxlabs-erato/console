@@ -166,6 +166,15 @@ export const SIGNAL_SOURCES = ["person", "board", "schedule", "messenger", "cons
 export type SignalSource = (typeof SIGNAL_SOURCES)[number];
 
 /**
+ * How a wake source a runner keeps beside the console's own stands (ADR-0144): `connected`,
+ * listening; `waiting`, not listening yet, for what it needs or for its turn to connect;
+ * `failing`, ended and started again.
+ */
+export const WAKE_SOURCE_STATES = ["connected", "waiting", "failing"] as const;
+
+export type WakeSourceState = (typeof WAKE_SOURCE_STATES)[number];
+
+/**
  * How a runner's session ended (ADR-0085, ADR-0086): a supervisor stopped the agent, restarted
  * it or reset it; the product's process died, or exited by itself; or a session begun after it
  * took it over, which is the console's word and never the runner's.

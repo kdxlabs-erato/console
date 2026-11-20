@@ -417,6 +417,8 @@ export const agentRunners = pgTable(
       resume: boolean;
     }>(),
     running: jsonb().$type<{ model: string | null; effort: string | null }>(),
+    /** The wake sources its runner keeps beside the console's own, as it last said (ADR-0144); null where it says none. */
+    sources: jsonb().$type<{ name: string; state: string; since: string; why?: string }[]>(),
     /** What its supervisors or the account chose for it to run with; null each for the product's own. */
     model: text(),
     effort: text(),
@@ -437,6 +439,30 @@ export const agentRunners = pgTable(
       sql`${table.state} is null or ${table.state} in (${sql.raw(literals(AGENT_STATES))})`,
     ),
     index("agent_runners_heard_idx").on(table.heardAt),
+  ],
+);
+
+/**
+ * A wake an agent account keeps for itself for later (ADR-0145): what it is called, of which
+ * one stands for an account at a time, when it is raised and with what words, and the agent it
+ * was kept through. The worker raises it as a signal when its moment has come, and the row
+ * goes with it.
+ */
+export const agentWakes = pgTable(
+  "agent_wakes",
+  {
+    personId: uuid()
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    key: text().notNull(),
+    at: instant().notNull(),
+    text: text().notNull(),
+    agent: text(),
+    createdAt: instant().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.personId, table.key] }),
+    index("agent_wakes_at_idx").on(table.at),
   ],
 );
 

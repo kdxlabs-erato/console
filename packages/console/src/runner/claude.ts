@@ -11,6 +11,7 @@ import {
   type DriverSession,
   errorsShown,
   type Fact,
+  notStarted,
   type Picture,
   plainCut,
   plainCutEnd,
@@ -535,6 +536,7 @@ const wait = (ms: number): Promise<"timeout"> =>
 
 function sessionOf(
   child: Child,
+  command: string,
   asked: string,
   uuid: () => string,
   cut: Cut,
@@ -575,7 +577,7 @@ function sessionOf(
       const shown = errorsShown(said, cutEnd);
       const text =
         exit.error !== undefined
-          ? `The product could not be started: ${exit.error}`
+          ? notStarted(exit.error, command)
           : `The product's process ended${exit.signal === null ? ` with code ${exit.code}` : ` on ${exit.signal}`}.${shown.length === 0 ? "" : `\n${shown}`}`;
       yield { type: "event", kind: "error", text };
       yield {
@@ -651,6 +653,9 @@ export function claudeArguments(options: StartOptions): readonly string[] {
     claudeMode(options.permissions),
     "--permission-prompts",
     "none",
+    // The product's browser tool is off in a run nobody attends unless it is asked for when the
+    // product starts: seen with 2.1.329, where its own setting for it did nothing in this mode.
+    ...(options.browser === "chrome" ? ["--chrome"] : []),
     ...(model === undefined ? [] : ["--model", model]),
     ...(effort === undefined ? [] : ["--effort", effort]),
     ...(resume === undefined ? [] : ["--resume", resume]),
@@ -660,9 +665,11 @@ export function claudeArguments(options: StartOptions): readonly string[] {
 /**
  * The builds of the binary the driver was run against, a turn, a tool call, a picture each way,
  * a message during a tool call, a turn stopped for a message, a denial and a conversation gone
- * on with: what the fixtures of the tests were written down from.
+ * on with: what the fixtures of the tests were written down from, of the first two. The third
+ * kept an agent account at work against a live console for a day, its browser tool among it,
+ * and no fixture was taken of it.
  */
-const TRIED = ["2.1.321", "2.1.322"] as const;
+const TRIED = ["2.1.321", "2.1.322", "2.1.329"] as const;
 
 export function createClaudeDriver(host: DriverHost): Driver {
   const command = host.command ?? "claude";
@@ -692,6 +699,7 @@ export function createClaudeDriver(host: DriverHost): Driver {
     start(options) {
       return sessionOf(
         host.spawn(command, claudeArguments(options), { cwd: options.cwd, env: options.env }),
+        command,
         claudeMode(options.permissions),
         uuid,
         options.cut ?? plainCut,

@@ -4,6 +4,7 @@ import {
   MAX_DECISIONS_PER_PROJECT,
   MAX_DOCUMENTS_PER_PROJECT,
   MAX_GOALS_PER_PROJECT,
+  MAX_OWN_WAKES_PER_HOUR,
   MAX_PROJECTS_PER_WORKSPACE,
   MAX_RUNNER_WAKES_PER_HOUR,
   MAX_RUNS_PER_TASK,
@@ -40,6 +41,8 @@ export interface Quotas {
   readonly transcriptEventsPerHour: number;
   readonly agentSessionsPerHour: number;
   readonly runnerWakesPerHour: number;
+  /** The wakes an agent account raises for itself within an hour (ADR-0145). */
+  readonly ownWakesPerHour: number;
   readonly agentStateChangesPerHour: number;
   /**
    * How many bytes the files of one project hold together: those runs hand in, those put in
@@ -61,6 +64,7 @@ export const DEFAULT_QUOTAS: Quotas = {
   transcriptEventsPerHour: MAX_TRANSCRIPT_EVENTS_PER_HOUR,
   agentSessionsPerHour: MAX_AGENT_SESSIONS_PER_HOUR,
   runnerWakesPerHour: MAX_RUNNER_WAKES_PER_HOUR,
+  ownWakesPerHour: MAX_OWN_WAKES_PER_HOUR,
   agentStateChangesPerHour: MAX_AGENT_STATE_CHANGES_PER_HOUR,
   fileBytesPerProject: Number.POSITIVE_INFINITY,
 };

@@ -102,6 +102,11 @@ export interface StartOptions {
    */
   readonly permissions?: string | undefined;
   /**
+   * The browser the product's browser tool works in, as `runner.json` names it; a driver whose
+   * product has no such tool to turn on takes nothing of it.
+   */
+  readonly browser?: string | undefined;
+  /**
    * What cuts a text to what the transcript shows of it. A driver cuts whatever it shows a
    * part of through this, and never by itself first; left out, a text is cut as it is.
    */
@@ -144,6 +149,16 @@ export function errorsShown(errors: string, cutEnd: Cut): string {
   const text = errors.trim();
   const more = text.startsWith("…");
   return cutEnd(more ? text.slice(1) : text, MAX_ERRORS_SHOWN, more);
+}
+
+/**
+ * Why a product's process never started, as an event says it: that its command is not there, in
+ * words that say where it is looked for, or what the system said of it.
+ */
+export function notStarted(error: string, command?: string): string {
+  return /\bENOENT\b/.test(error)
+    ? `The product could not be started: its command${command === undefined ? "" : ` ${command}`} was not found where the runner looks for programs. Install it, or put its folder on the PATH the runner is started with.`
+    : `The product could not be started: ${error}`;
 }
 
 /** What the installed product is and offers, asked without starting a session. */
@@ -229,6 +244,11 @@ export interface WakeHost {
   raise(wake: { readonly key: string; readonly text: string }): Promise<void>;
   /** A line for whoever reads the runner's own output: never what a message says. */
   log(line: string): void;
+  /**
+   * Says how the source stands, which the account's page shows (ADR-0144): listening, or not
+   * yet, with why in a few words of the source's own. Never what a message says.
+   */
+  stands(state: "connected" | "waiting", why?: string): void;
   fetch(
     url: string,
     init: {

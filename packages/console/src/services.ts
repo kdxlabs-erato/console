@@ -86,9 +86,13 @@ export function fillTemplate(template: string, names: ServiceNames): string | un
 const called = (account: string | undefined, otherwise: string): string =>
   account === undefined ? otherwise : `\`${account}\``;
 
-/** What a desk's item says last: the organization's pack may hold the skill for setting a desk up. */
+/**
+ * What a desk's item says last: the desk's git is handed the token by the setup's own helper, so
+ * that the agent sets none up and no copy is kept by the machine; and the organization's pack
+ * may hold the skill for setting a desk up.
+ */
 const DESK_BY_THE_PACK =
-  'Where the organization\'s pack has a skill for setting a desk up, go by it: console skills --search "desk setup" --limit 5.';
+  "The desk's git takes git.token from your store by itself, so nothing is typed and no helper of the machine keeps a copy. Where the organization's pack has a skill for setting a desk up, go by it: console skills --search \"desk setup\" --limit 5.";
 
 /** What a service the account signs in to the console through says last: the sign-in is needed once, at the setup. */
 const SIGN_IN_AT_HAND =
@@ -265,12 +269,12 @@ const slack: ServiceProvider = {
   ],
   onboarding: ({ service, address }) => [
     {
-      title: "Join the messenger and say who you are",
-      body: `Accept the invitation to ${slackPlace(service)} ${address === undefined ? "where one has reached you" : `that came to \`${address}\`, the address you sign in with`}, set your name, your title and your picture (console agent <handle> --avatar <file> writes the file), and say in your profile that you are an agent.`,
+      title: "Join the messenger and set your profile",
+      body: `Accept the invitation to ${slackPlace(service)} ${address === undefined ? "where one has reached you" : `that came to \`${address}\`, the address you sign in with`}, and set your name, your title and your picture as any member does (console agent <handle> --avatar <file> writes the file).`,
     },
     {
       title: "Connect the messenger to your product, and be woken by it",
-      body: "Add the messenger's own MCP server to your product, and make the app that wakes you from the manifest your skill carries; keep its tokens in your store.",
+      body: `Add the messenger's own MCP server to your product, and make the app that wakes you from the manifest your skill carries; keep its tokens in your store and add "slack" to "wake" in runner.json. The runner takes the change by itself once your turn is over: console agent <handle> then says the source is connected.`,
     },
   ],
   asks: ({ service, names, address }) => [

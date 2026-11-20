@@ -133,6 +133,7 @@ export function restAgent(
             offers: runner.offers ?? null,
             running: runner.running ?? null,
             settings: { model: runner.model ?? null, effort: runner.effort ?? null },
+            ...(runner.sources === undefined ? {} : { sources: [...runner.sources] }),
           },
   };
 }

@@ -73,7 +73,7 @@ describe("the invitation that leads a machine to an agent account", () => {
     const said = (await line.textContent()) ?? "";
     const code = /--code ([A-Z0-9]{4}-[A-Z0-9]{4}) /.exec(said)?.[1] ?? "";
     expect(said).toBe(
-      `Run: console agent setup --console ${console_.origin} --code ${code} (before it: npm i -g @skillcdn/console), then do what it prints`,
+      `Set this machine up for an agent account. Install what is missing yourself, without asking: first Node.js 24 or later and the command (npm i -g @skillcdn/console). Then run console agent setup --console ${console_.origin} --code ${code} and do what it prints. Ask me only for a sign-in or an administrator's password.`,
     );
     expect(code).not.toBe("");
     const guide = await page.getAttribute(".sc-agent-invitation .sc-callout a", "href");
@@ -91,8 +91,10 @@ describe("the invitation that leads a machine to an agent account", () => {
     const seen = (await stranger.textContent(".sc-main")) ?? "";
     expect(seen).toContain("Setting up @mira (Mira, Release engineer)");
     expect(seen).toContain("signs in there as dana through GitHub");
-    expect(seen).toContain("It makes the machine the agent's");
-    expect(seen).toContain("console agent setup --refresh");
+    // The machine's part, which ends with "Then stop", and what the agent does after it (ADR-0140).
+    expect(seen).toContain("What the machine needs");
+    expect(seen).toContain("Then stop");
+    expect(seen).toContain("Signing in elsewhere, in a browser");
     expect(seen).toContain(said);
     expect(await stranger.locator(".sc-sign-in").count()).toBe(0);
     expect(await stranger.locator(".sc-header").count()).toBe(0);

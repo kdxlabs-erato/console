@@ -11,12 +11,11 @@ import { type ProviderKey, SERVICE_ROLES, type ServiceRole } from "./vocabulary.
 
 // The guide an invitation's code opens (ADR-0088): what setting a machine up for one agent
 // account takes, written for that account and the services of its workspace, in the order it is
-// done and by whom. `console agent setup --code` prints it for the agent, and `/setup/<code>`
-// shows it to a person: one guide, made here from what the code opens, which is nothing secret.
-// It is written in English, as a skill is, for an agent to read as it is. Where the setup needs
-// something the agent does not have, the account it signs in with or what that account signs in
-// with, the guide has the agent ask the person at the machine for it, in words it can say as
-// they are, as the console's other skills have an agent ask (ADR-0094).
+// done and by whom. `/setup/<code>` shows it whole to a person; `console agent setup --code`
+// prints the part of whoever prepares the machine, a person or the session that was given the
+// line, and no more (ADR-0140): the machine is given its least there, and everything after is
+// the agent's own, in its own session. It is written in English, as a skill is, for an agent to
+// read as it is, and says nothing secret.
 
 /** How the console's command gets onto a machine. */
 export const SETUP_INSTALL = "npm i -g @skillcdn/console";
@@ -35,6 +34,13 @@ export function setupCommandOf(origin: string, code: string): string {
 export function setupSentenceOf(command: string): string {
   return en.agents.page.settings.machine.made.line(command, SETUP_INSTALL);
 }
+
+/**
+ * What a product's browser tool needs, for the products whose tool the package knows: said to
+ * the agent where it is told to sign in at pages, and looked for by the setup on the machine.
+ */
+export const BROWSER_TOOL_OF_A_PRODUCT =
+  'For Claude Code that tool works in Google Chrome with the Claude in Chrome extension, and is turned on by "browser": "chrome" in runner.json.';
 
 /** Whose part of a setup something is (ADR-0088): whoever prepares the machine, the agent, its manager. */
 export type SetupRole = "operator" | "agent" | "manager";
@@ -178,42 +184,35 @@ export function setupGuideOf(setup: RestAgentSetup, code: string): SetupGuide {
       : []),
     {
       title: "An OS account of its own",
-      body: "On the machine, make an OS account for the agent, apart from anyone else's. Whether it holds an administrator's rights is for whoever keeps the machine to say.",
+      body: "On a machine that stays on and awake, an OS account for the agent, apart from anyone else's. Whether it holds an administrator's rights is for whoever keeps the machine to say.",
     },
     {
-      title: "Its product and the command",
-      body: "In that OS account, install the agent's product (Claude Code, Codex or another) and sign it in with the agent's own subscription. Install Node.js 24 or later, and the console's command.",
-      line: SETUP_INSTALL,
+      title: "Its product, signed in",
+      body: "In that OS account, the agent's product (Claude Code, Codex or another), signed in with the agent's own subscription. Whatever else the machine needs, the session that is given the line installs itself.",
     },
     {
       title: "The one line",
-      body: "Open a session of the product there and say this to it, or run the command it names in a terminal yourself. You act as yourself in the console, and never sign in to it on the agent's machine.",
+      body: "Open a session of the product there and say this to it. You act as yourself in the console, and never sign in to it on the agent's machine.",
       line: setupSentenceOf(command),
     },
   ];
 
   const machine: SetupGuideStep[] = [
     {
-      title: "Ask for the sign-in before you go on",
-      body: `If you are the agent, say this to the person at the machine, in these words or your own, and wait for the answer: "I am setting this machine up as @${account.handle}. The console signs me in as \`${account.login}\` through ${provider}. Is that account there? If it is not, make it now, or tell me to where I may. When the browser opens, sign in as that account yourself, or give me what it signs in with, and I type it." Go on once the account is there. Never sign in as anyone else, and never make up a login: the console takes this one and no other. If nobody is at the machine, ask whom you were set up by, and stop here until they answer.`,
+      title: "What the machine needs",
+      body: "The command looks at the machine first and names everything that is missing at once: git, the product's command, the browser its browser tool works in. Install each yourself, without asking, and run the line again.",
     },
     {
-      title: "The command asks to be signed in as the account",
-      body: `After this guide the command goes on by itself, and waits. It opens an address in the machine's browser and prints it with a code: sign in there through ${provider} as \`${account.login}\`, check that the page shows the same code, and say that it is you. On a machine without a screen, open the address in any browser that is signed in as the account. If the page shows another member, sign out there first: nobody else's sign-in answers for the account, and the command gives up a sign-in that is not the account's. A password typed for the account here is the account's from then on: change it where the provider lets you, and keep the new one in your store once the command is signed in (\`console secret <name> --set\`).`,
+      title: "The sign-in",
+      body: `Then the command opens an address in the machine's browser, prints it with a code, and waits. Say to the person at the machine: "Sign in there through ${provider} as \`${account.login}\`, check that the page shows this code, and say that it is you." They sign in themselves, and no password is written in a chat: a secret the agent is to hold, they seed from their own machine (\`console agent secret ${account.handle} <name>\`). Nobody else's sign-in answers for the account; where the page shows another member, they sign out there first.`,
     },
     {
-      title: "It makes the machine the agent's",
-      body: "Signed in, it reads the account and the services, writes the desk in the OS account's home from the template, or clones it where the account pushed one before, writes the service that keeps the runner running and starts it, and says the machine and the OS account, which the account's page shows. It needs no administrator's rights, and writes over no file of a desk that is there.",
+      title: "What the command does then",
+      body: "It writes the desk in the OS account's home from the template, or clones it where the account pushed one before, writes the service that keeps the runner running, starts it, and waits until the agent's first session has begun. It needs no administrator's rights, and writes over no file of a desk that is there.",
     },
     {
-      title: "Check who the command is",
-      body: `It names @${account.handle}, and no person. From then on the invitation has done its work, and its code opens nothing.`,
-      line: "console whoami",
-    },
-    {
-      title: "When the services or the account change",
-      body: "Run this in the desk: it writes what is missing there, writes the service again where it changed, and says the services as they are now.",
-      line: "console agent setup --refresh",
+      title: "Then stop",
+      body: `That is the machine prepared. What comes after is the agent's own, done in its own session from its first task: its sign-ins at the services, its tokens, its desk's repository, its profile, its messenger. Do none of it for it. What you change on this machine afterwards, say to it: \`console agent wake me "<what changed>"\`.`,
     },
   ];
 
@@ -226,7 +225,7 @@ export function setupGuideOf(setup: RestAgentSetup, code: string): SetupGuide {
   const browser: SetupGuideStep[] = [
     {
       title: "Use the machine's own browser, and keep it",
-      body: "Sign in at a service in the ordinary browser of your OS account, with a browser tool of your product that attaches to that browser. A sign-in stays there from one session to the next, as a person's does. A browser a tool starts anew each time keeps none, and a service takes it for a stranger each time and asks again.",
+      body: `Sign in at a service in the ordinary browser of your OS account, with a browser tool of your product that attaches to that browser. A sign-in stays there from one session to the next, as a person's does. A browser a tool starts anew each time keeps none, and a service takes it for a stranger each time and asks again. ${BROWSER_TOOL_OF_A_PRODUCT}`,
     },
     {
       title: "Where a sign-in wants a person",
@@ -234,7 +233,7 @@ export function setupGuideOf(setup: RestAgentSetup, code: string): SetupGuide {
     },
     {
       title: "Keep what you sign in with",
-      body: "A password you chose or were handed goes into your store, with the day it ends where it has one: `console secret <service>.password --set --expires <day>`. Turn on a second step you can answer yourself where the service has one. `console secrets` lists what you keep, by name.",
+      body: "A password you chose or were handed goes into your store, with the day it ends where it has one: `console secret <service>.password --set --expires <day>`. Turn on a second step you can answer yourself where the service has one.",
     },
   ];
   const asked: SetupGuideStep[] = described.flatMap((one) =>
@@ -246,16 +245,15 @@ export function setupGuideOf(setup: RestAgentSetup, code: string): SetupGuide {
       key: "before",
       who: "operator",
       title: "Before the line",
-      about:
-        "For whoever prepares the machine: a person at its screen, or an agent that administers it.",
+      about: "For the person who has the machine prepared: what only a person does.",
       steps: before,
     },
     {
       key: "machine",
-      who: "agent",
+      who: "operator",
       title: "On the machine",
       about:
-        "For the agent, or whoever runs the command in its OS account. The account is entered through its own sign-in and through nothing else.",
+        "For the session that was given the line, or whoever runs the command in the agent's OS account. The account is entered through its own sign-in and through nothing else.",
       steps: machine,
     },
     ...(start.length === 0
@@ -266,7 +264,7 @@ export function setupGuideOf(setup: RestAgentSetup, code: string): SetupGuide {
             who: "agent" as const,
             title: "When the agent starts",
             about:
-              "What the agent does itself, with its own sign-ins. What it signs in with it keeps in its store (console secret), never in a file or a message.",
+              "What the agent does itself, in its own session, as its first task says. What it signs in with it keeps in its store (console secret), never in a file or a message.",
             steps: start,
           },
         ]),
@@ -297,7 +295,6 @@ export function setupGuideOf(setup: RestAgentSetup, code: string): SetupGuide {
     about: [
       `This guide sets a machine up for the agent account ${called} of ${workspace.name}, whose console is at ${setup.console.url}. The account signs in there as \`${account.login}\` through ${provider}.`,
       `The code that opened this guide is an invitation and no credential: it says which account the setup is for, and gives nobody the account. It ends on its day, or when the account's command has signed in.`,
-      "The skill running-an-agent, shipped with the console's command, says the whole of it for the three who have a part in it: whoever prepares the machine, the agent, and its manager.",
     ],
     expiresAt: setup.expiresAt,
     sections,
@@ -311,8 +308,12 @@ const WHO: Readonly<Record<SetupRole, string>> = {
 };
 
 /**
- * The guide as the command prints it: Markdown, every line to run on a line of its own. `moment`
- * says the invitation's day as the command says a moment; left out, as the API gives it.
+ * The guide as the command prints it (ADR-0140): Markdown, every line to run on a line of its
+ * own, and of its sections only those of whoever prepares the machine, since the command is run
+ * by them. What the agent does when it starts and what it asks for are the agent's first task,
+ * read by the agent in its own session: a session at the machine that read them took them for
+ * its own work. `moment` says the invitation's day as the command says a moment; left out, as
+ * the API gives it.
  */
 export function setupGuideText(
   guide: SetupGuide,
@@ -325,7 +326,8 @@ export function setupGuideText(
     `The invitation is good until ${moment(guide.expiresAt)}.`,
     "",
   ];
-  for (const [index, section] of guide.sections.entries()) {
+  const own = guide.sections.filter((section) => section.who === "operator");
+  for (const [index, section] of own.entries()) {
     lines.push(`## ${index + 1}. ${section.title} (${WHO[section.who]})`, "", section.about, "");
     for (const step of section.steps) {
       lines.push(`- ${step.title}. ${step.body}`);

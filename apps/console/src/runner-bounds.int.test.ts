@@ -123,6 +123,7 @@ beforeAll(async () => {
       transcriptEventsPerHour: 5,
       agentSessionsPerHour: 3,
       runnerWakesPerHour: 2,
+      ownWakesPerHour: 2,
       agentStateChangesPerHour: 3,
     },
   });
@@ -149,6 +150,7 @@ describe("what an agent account's runner writes within an hour (ADR-0132)", () =
       transcriptEventsPerHour: 60_000,
       agentSessionsPerHour: 60,
       runnerWakesPerHour: 600,
+      ownWakesPerHour: 30,
       agentStateChangesPerHour: 20,
     });
   });
@@ -234,6 +236,25 @@ describe("what an agent account's runner writes within an hour (ADR-0132)", () =
     expect(third.status).toBe(201);
     expect(restSignalSchema.parse(await third.json()).number).toBe(6);
     expect((await raise("C1/5")).status).toBe(429);
+  });
+
+  it("takes so many wakes an account raises for itself within the hour, counted apart from its runner's (ADR-0145)", async () => {
+    later(120);
+    const own = () => send(bearer(command), "POST", agentPath("me", "wakes"), { text: "Again." });
+    expect((await own()).status).toBe(201);
+    // What its runner raises from a messenger is counted by itself, and takes none of these.
+    expect((await raise("C2/1")).status).toBe(201);
+    later(10);
+    expect((await own()).status).toBe(201);
+    const over = await own();
+    expect(over.status).toBe(429);
+    expect(await errorOf(over)).toBe("signal.too_many");
+    expect(retryOf(over)).toBeGreaterThan(49 * 60);
+    expect(retryOf(over)).toBeLessThanOrEqual(50 * 60);
+    // Once the first is an hour old, the hour has room for one more.
+    later(51);
+    expect((await own()).status).toBe(201);
+    expect((await own()).status).toBe(429);
   });
 
   it("tells the feed so many changes of an account's state within the hour, keeps how it stands meanwhile, and tells it once the hour has room", async () => {

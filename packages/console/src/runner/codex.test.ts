@@ -734,7 +734,7 @@ describe("the codex driver", () => {
       {
         type: "event",
         kind: "error",
-        text: "The product could not be started: spawn codex ENOENT",
+        text: "The product could not be started: its command codex was not found where the runner looks for programs. Install it, or put its folder on the PATH the runner is started with.",
       },
       { type: "cannot_go_on", state: "failed", reason: "start" },
     ]);

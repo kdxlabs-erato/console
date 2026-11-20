@@ -270,7 +270,12 @@ describe("the invitation that leads a machine to an agent account (ADR-0088)", (
         write: async (path, text) => {
           files.set(path, text);
         },
-        run: async () => ({ code: null, out: "", err: "nothing is run here" }),
+        // The machine has what a setup looks for (ADR-0140): a program asked for its version
+        // answers. Nothing else is run here.
+        run: async (_command, args) =>
+          args.join(" ") === "--version"
+            ? { code: 0, out: "", err: "" }
+            : { code: null, out: "", err: "nothing is run here" },
         open: async () => false,
       };
       const io: CliIo = {

@@ -2317,6 +2317,34 @@ export function AgentRunnerFacts(props: { readonly runner: RestAgentRunner | nul
           ],
         ] as [string, ReactNode][])),
     [words.signals, words.delivered(runner.delivered, runner.latest)],
+    // The wake sources its runner keeps beside the console's own, as it last said (ADR-0144):
+    // each by its module's name, with how it stands and why where it does not listen.
+    ...(runner.sources === undefined || runner.sources.length === 0
+      ? []
+      : ([
+          [
+            words.sources,
+            <span key="sources" className="sc-agent-product">
+              {runner.sources.map((source) => (
+                <span key={source.name} className="sc-agent-product">
+                  {source.name}
+                  <Badge
+                    tone={
+                      source.state === "connected"
+                        ? "success"
+                        : source.state === "failing"
+                          ? "danger"
+                          : "warning"
+                    }
+                  >
+                    {wordOf(words.sourceStates, source.state)}
+                  </Badge>
+                  {source.why !== undefined && <span className="sc-muted">{source.why}</span>}
+                </span>
+              ))}
+            </span>,
+          ],
+        ] as [string, ReactNode][])),
   ];
   return (
     <dl className="sc-person-facts sc-agent-runner-facts">

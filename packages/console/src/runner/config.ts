@@ -22,6 +22,8 @@ const workFile = z.string().check(
 );
 const secretName = z.string().check(z.refine(isSecretName, "is the name of a secret"));
 const MAX_ENTRIES = 50;
+/** The browsers a desk may name for its product's browser tool. */
+export const RUNNER_BROWSERS = ["chrome"] as const;
 const bounded = <T extends Record<string, string>>(entries: T): boolean =>
   Object.keys(entries).length <= MAX_ENTRIES;
 
@@ -57,6 +59,13 @@ export const runnerConfigSchema = z.object({
    * asking. Left out, the driver's own for a run nobody attends.
    */
   permissions: z.optional(z.string().check(z.regex(/^[A-Za-z][A-Za-z0-9-]{0,39}$/))),
+  /**
+   * The browser the product's own browser tool works in, for a driver whose product has such a
+   * tool and turns it on when it is started (ADR-0140): a name of a short list, and never words
+   * for the product's command line. Left out, a session has no browser tool but what the
+   * product gives it by itself.
+   */
+  browser: z.optional(z.enum(RUNNER_BROWSERS)),
 });
 export type RunnerConfig = z.infer<typeof runnerConfigSchema>;
 

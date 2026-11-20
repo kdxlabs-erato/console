@@ -3,6 +3,7 @@ import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { type as osType, release, userInfo } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import process from "node:process";
+import { type Awake, holdAwake } from "../runner/awake.js";
 import { createSpawn } from "../runner/process.js";
 import { KEEPER_VARIABLE, type Spawn, type WakeSocket } from "../runner/types.js";
 
@@ -32,6 +33,12 @@ export interface RunnerHost {
    * stopping by itself.
    */
   untilStopped(): Promise<void>;
+  /**
+   * Holds the machine awake for as long as this process runs, where the system has a way that
+   * needs no administrator (ADR-0140), and answers what holds it, or why nothing does. Left out
+   * by a host that touches no machine.
+   */
+  keepAwake?(): Promise<Awake>;
   readonly random: () => number;
 }
 
@@ -178,6 +185,7 @@ export function createRunnerHost(
           timer.unref();
         }
       }),
+    keepAwake: () => holdAwake(process.platform, process.pid, env),
     // A session's mark is made of these: not to be guessed from outside the machine.
     random: () => randomInt(0, 2 ** 31) / 2 ** 31,
   };

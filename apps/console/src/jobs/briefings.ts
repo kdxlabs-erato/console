@@ -130,6 +130,9 @@ export function briefingOf(kind: "day" | "week", input: BriefingInput): string {
 export const WRAP_BRIEFING =
   "Your day ends. Report on the runs you have open, write down what should be kept where it is kept, and commit and push your desk.";
 
+/** What a wake an agent account kept for itself says where it kept no words with it (ADR-0145). */
+export const OWN_WAKE_WORDS = "The moment you asked to be woken at has come.";
+
 /** What a wake says of a secret whose day comes within a month. */
 export function secretWake(name: string, expiresOn: string): string {
   return `Your secret ${name} ends on ${expiresOn}. Renew what it holds where it was made, and set it again with its new day: console secret ${name} --set --expires <day>`;

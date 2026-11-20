@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RestAgentSetup } from "./schemas.js";
 import {
+  BROWSER_TOOL_OF_A_PRODUCT,
   SETUP_INSTALL,
   setupCommandOf,
   setupGuideOf,
@@ -39,8 +40,10 @@ const COMMAND = "console agent setup --console https://console.acme.example --co
 describe("the guide of an agent account's setup (ADR-0088)", () => {
   it("spells the command and the one line as they are said on the machine", () => {
     expect(setupCommandOf("https://console.acme.example", CODE)).toBe(COMMAND);
+    // The line has whoever is given it install what is missing without asking, and ask a
+    // person for a sign-in alone (ADR-0140).
     expect(setupSentenceOf(COMMAND)).toBe(
-      `Run: ${COMMAND} (before it: npm i -g @skillcdn/console), then do what it prints`,
+      `Set this machine up for an agent account. Install what is missing yourself, without asking: first Node.js 24 or later and the command (npm i -g @skillcdn/console). Then run ${COMMAND} and do what it prints. Ask me only for a sign-in or an administrator's password.`,
     );
     expect(SETUP_INSTALL).toBe("npm i -g @skillcdn/console");
   });
@@ -64,7 +67,7 @@ describe("the guide of an agent account's setup (ADR-0088)", () => {
     const guide = setupGuideOf(SETUP, CODE);
     expect(guide.sections.map((section) => [section.key, section.who])).toEqual([
       ["before", "operator"],
-      ["machine", "agent"],
+      ["machine", "operator"],
       ["start", "agent"],
       ["browser", "agent"],
       ["asked", "manager"],
@@ -77,9 +80,15 @@ describe("the guide of an agent account's setup (ADR-0088)", () => {
       "GitHub, the git host",
       "Slack, the messenger",
       "An OS account of its own",
-      "Its product and the command",
+      "Its product, signed in",
       "The one line",
     ]);
+    // A person's part is what only a person does: the machine stays on, the product is signed
+    // in, and everything else the session that is given the line installs.
+    expect(before?.steps[3]?.body).toContain("On a machine that stays on and awake");
+    expect(before?.steps[4]?.body).toContain(
+      "Whatever else the machine needs, the session that is given the line installs itself.",
+    );
     // What has to be there, and never who makes it or what a provider's terms ask (ADR-0094).
     expect(before?.steps[0]?.body).toContain(
       "The user `mira@acme.example` in the Workspace, with a mailbox, made if it is not there yet",
@@ -89,34 +98,32 @@ describe("the guide of an agent account's setup (ADR-0088)", () => {
     );
     expect(setupGuideText(guide)).not.toMatch(/a person makes|person's to make|terms/i);
     expect(before?.steps[1]?.body).toContain("`acme-mira`");
-    expect(before?.steps[4]?.line).toBe(SETUP_INSTALL);
+    expect(before?.steps[4]?.line).toBeUndefined();
     expect(before?.steps[5]?.line).toBe(setupSentenceOf(COMMAND));
-    // On the machine: the account's own sign-in, at this console, and nobody else's.
+    // On the machine (ADR-0140): what is missing is installed first, a person signs in
+    // themselves, and the machine's part ends when the agent's session has begun.
     expect(machine?.steps.map((step) => step.title)).toEqual([
-      "Ask for the sign-in before you go on",
-      "The command asks to be signed in as the account",
-      "It makes the machine the agent's",
-      "Check who the command is",
-      "When the services or the account change",
+      "What the machine needs",
+      "The sign-in",
+      "What the command does then",
+      "Then stop",
     ]);
-    // First the agent asks the person at the machine for what the sign-in takes, in words it
-    // can say as they are: the exact account, that it be made where it is not there, and that
-    // the person signs in or hands over what it signs in with.
     expect(machine?.steps[0]?.body).toContain(
-      '"I am setting this machine up as @mira. The console signs me in as `mira@acme.example` through Google. Is that account there?',
+      "names everything that is missing at once: git, the product's command, the browser its browser tool works in. Install each yourself, without asking",
     );
-    expect(machine?.steps[0]?.body).toContain(
-      "sign in as that account yourself, or give me what it signs in with, and I type it.",
-    );
-    expect(machine?.steps[0]?.body).toContain("Never sign in as anyone else");
+    // The person signs in themselves, at this console and as nobody else; no password is
+    // written in a chat, and a secret is seeded from the person's own machine.
     expect(machine?.steps[1]?.body).toContain(
-      "sign in there through Google as `mira@acme.example`",
+      '"Sign in there through Google as `mira@acme.example`, check that the page shows this code, and say that it is you."',
     );
-    expect(machine?.steps[1]?.body).toContain("nobody else's sign-in answers for the account");
-    expect(machine?.steps[1]?.line).toBeUndefined();
+    expect(machine?.steps[1]?.body).toContain("no password is written in a chat");
+    expect(machine?.steps[1]?.body).toContain("`console agent secret mira <name>`");
+    expect(machine?.steps[1]?.body).toContain("Nobody else's sign-in answers for the account");
+    expect(setupGuideText(guide)).not.toMatch(/and I type it|give me what it signs in with/);
     expect(machine?.steps[2]?.body).toContain("It needs no administrator's rights");
-    expect(machine?.steps[3]?.line).toBe("console whoami");
-    expect(machine?.steps[4]?.line).toBe("console agent setup --refresh");
+    // What comes after is the agent's own, and the way to tell it what changed on the machine.
+    expect(machine?.steps[3]?.body).toContain("Do none of it for it.");
+    expect(machine?.steps[3]?.body).toContain('`console agent wake me "<what changed>"`');
     // How it signs in elsewhere, at a page: in the machine's own browser, where a sign-in
     // stays; a person signing in inside its session where it cannot; nothing in a message.
     expect(browser?.title).toBe("Signing in elsewhere, in a browser");
@@ -126,6 +133,7 @@ describe("the guide of an agent account's setup (ADR-0088)", () => {
       "Keep what you sign in with",
     ]);
     expect(browser?.steps[0]?.body).toContain("a browser tool of your product that attaches");
+    expect(browser?.steps[0]?.body).toContain(BROWSER_TOOL_OF_A_PRODUCT);
     expect(browser?.steps[1]?.body).toContain("over a remote desktop");
     expect(browser?.steps[1]?.body).toContain(
       "Nothing you sign in with is sent in a message, a task or a comment.",
@@ -240,12 +248,14 @@ describe("the guide of an agent account's setup (ADR-0088)", () => {
     expect(lines[0]).toBe("# Setting up @mira (Mira, Release engineer)");
     expect(text).toContain("The invitation is good until <2026-11-17T09:00:00.000Z>.");
     expect(lines).toContain("## 1. Before the line (whoever prepares the machine)");
-    expect(lines).toContain("## 2. On the machine (the agent)");
-    expect(lines).toContain("## 3. When the agent starts (the agent)");
-    expect(lines).toContain("## 4. Signing in elsewhere, in a browser (the agent)");
-    expect(lines).toContain("## 5. What the agent asks for (its manager)");
+    expect(lines).toContain("## 2. On the machine (whoever prepares the machine)");
+    // The command prints the part of whoever prepares the machine and no more (ADR-0140): what
+    // the agent does when it starts is its first task, read by the agent in its own session.
+    expect(text).not.toContain("When the agent starts");
+    expect(text).not.toContain("Signing in elsewhere, in a browser");
+    expect(text).not.toContain("What the agent asks for");
+    expect(text).not.toContain("Make your desk there and push it");
     expect(lines).toContain(`      ${setupSentenceOf(COMMAND)}`);
-    expect(lines).toContain("      console agent setup --refresh");
     expect(text.endsWith("\n")).toBe(false);
     // As the API gives the day, where nothing says how to print a moment.
     expect(setupGuideText(setupGuideOf(SETUP, CODE))).toContain(

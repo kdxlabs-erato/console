@@ -55,7 +55,25 @@ describe("what an event of the messenger wakes the agent for", () => {
       ),
     ).toEqual({
       key: "slack:D0MIRA:1762800000.000100",
-      text: "A direct message at Slack, from the member U0TOM, in the thread 1762800000.000100:\nAre you there?",
+      // Outside any thread it is said as a message of the conversation: named a thread, it was
+      // answered in one.
+      text: "A direct message at Slack, from the member U0TOM, in the conversation D0MIRA:\nAre you there?",
+    });
+    // One written in a thread of a direct conversation names the thread.
+    expect(
+      slackWakeOf(
+        payload(
+          message({
+            channel: "D0MIRA",
+            channel_type: "im",
+            text: "And this?",
+            thread_ts: "1762799000.000001",
+          }),
+        ),
+      ),
+    ).toEqual({
+      key: "slack:D0MIRA:1762799000.000001",
+      text: "A direct message at Slack, from the member U0TOM, in the thread 1762799000.000001 of the conversation D0MIRA:\nAnd this?",
     });
   });
 
@@ -142,6 +160,7 @@ describe("the slack wake source", () => {
     const sent: string[] = [];
     const raised: { key: string; text: string }[] = [];
     const log: string[] = [];
+    const stood: string[] = [];
     const waited: number[] = [];
     let closed = 0;
     const host: WakeHost = {
@@ -150,6 +169,9 @@ describe("the slack wake source", () => {
         raised.push({ ...wake });
       },
       log: (line) => log.push(line),
+      stands: (state, why) => {
+        stood.push(why === undefined ? state : `${state}: ${why}`);
+      },
       fetch: async (url, init) => {
         asked.push({ url, method: init.method, headers: init.headers });
         return {
@@ -179,7 +201,7 @@ describe("the slack wake source", () => {
         waited.push(ms);
       },
     };
-    return { host, asked, sockets, sent, raised, log, waited, closed: () => closed };
+    return { host, asked, sockets, sent, raised, log, stood, waited, closed: () => closed };
   }
   const run = (host: WakeHost) => slack.run?.(host, new AbortController().signal);
 
@@ -224,6 +246,8 @@ describe("the slack wake source", () => {
     expect(at.closed()).toBeGreaterThan(0);
     // Its line says that it is connected, and nothing of what was said.
     expect(at.log).toEqual(["the slack wake source is connected"]);
+    // How it stands is said for the account's page (ADR-0144).
+    expect(at.stood).toEqual(["connected"]);
     expect(JSON.stringify(at.log)).not.toContain("xapp-");
   });
 
@@ -236,6 +260,7 @@ describe("the slack wake source", () => {
     expect(at.log).toEqual([
       "the slack wake source finds no slack.app_token in the account's store",
     ]);
+    expect(at.stood).toEqual(["waiting: no slack.app_token in the account's store"]);
   });
 
   it("ends with the messenger's word when no connection is opened, and opens no address that is not the messenger's", async () => {

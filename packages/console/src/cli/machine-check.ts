@@ -1,0 +1,216 @@
+import type { SetupMachine } from "./setup-machine.js";
+
+// What `console agent setup` looks for on a machine before it asks anyone to sign in (ADR-0140):
+// git, the command of the agent's product, and the browser that product's browser tool works
+// in. Everything that is missing is found in one look and said at once, with what installs it,
+// so that the session that was given the line installs it all and runs the line again, and a
+// person is asked to sign in once, on a machine that is ready. What the setup cannot see, a
+// product's sign-in and a browser's extension, it says in a line and does not hold up for.
+
+/** A product the package has a driver for, as a setup looks for it on a machine. */
+interface Product {
+  readonly driver: string;
+  readonly name: string;
+  readonly command: string;
+  /** What installs it for an OS account, by platform; `any` where one line does everywhere. */
+  readonly install: Readonly<Record<string, string>>;
+  /** The browser its own browser tool works in, and what that browser needs for it. */
+  readonly browser?: { readonly name: "chrome"; readonly needs: string } | undefined;
+}
+
+const PRODUCTS: readonly Product[] = [
+  {
+    driver: "claude",
+    name: "Claude Code",
+    command: "claude",
+    install: {
+      any: "npm install -g @anthropic-ai/claude-code",
+      // The runner starts a program, and npm makes a script of it there.
+      win32: "its native installer for Windows, which puts claude.exe on the PATH",
+    },
+    browser: { name: "chrome", needs: "the Claude in Chrome extension" },
+  },
+  {
+    driver: "codex",
+    name: "Codex",
+    command: "codex",
+    install: {
+      any: "npm install -g @openai/codex",
+      win32: "a build of it for Windows that is a program on the PATH",
+    },
+  },
+];
+
+/** What a look at a machine found. */
+export interface MachineLook {
+  /** The driver of the product found, or the one asked for; nothing where none was found. */
+  readonly driver: string | undefined;
+  /** What the product is called and the version it says, where it answered. */
+  readonly product: string | undefined;
+  /** The browser the product's browser tool works in, where the product has such a tool and the browser is there. */
+  readonly browser: "chrome" | undefined;
+  /** What is missing, a line each, with what installs it: the setup stops for any of these. */
+  readonly missing: readonly string[];
+  /** What the setup could not see and says once: it goes on. */
+  readonly notes: readonly string[];
+}
+
+const answers = async (
+  machine: SetupMachine,
+  command: string,
+  args: readonly string[],
+): Promise<string | undefined> => {
+  const ran = await machine.run(command, args);
+  return ran.code === 0 ? ran.out.trim().split(/\r?\n/)[0]?.trim() || "" : undefined;
+};
+
+/** What installs git for an OS account, by platform, in words a session acts on. */
+function gitMissing(platform: string): string {
+  switch (platform) {
+    case "darwin":
+      return "git: the Command Line Tools are not installed, so git is a placeholder that opens a window. Install them: xcode-select --install, then Install in the window it opens on the machine's screen, pressed by whoever sees that screen.";
+    case "win32":
+      return "git: winget install --id Git.Git -e --source winget, then a new terminal so that it is on the PATH.";
+    default:
+      return "git: install it with the system's package manager, which takes an administrator (sudo apt-get install -y git, or the like).";
+  }
+}
+
+/** Whether Google Chrome is on the machine, looked for where each system keeps it. */
+async function chromeThere(machine: SetupMachine): Promise<boolean> {
+  if (machine.platform === "darwin") {
+    return (
+      (await machine.exists("/Applications/Google Chrome.app")) ||
+      (await machine.exists(machine.path(machine.home, "Applications", "Google Chrome.app")))
+    );
+  }
+  if (machine.platform === "win32") {
+    for (const place of [
+      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+      machine.path(
+        machine.home,
+        "AppData",
+        "Local",
+        "Google",
+        "Chrome",
+        "Application",
+        "chrome.exe",
+      ),
+    ]) {
+      if (await machine.exists(place)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  for (const command of ["google-chrome", "google-chrome-stable"]) {
+    if ((await answers(machine, command, ["--version"])) !== undefined) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Looks at the machine: git, the product, its browser. `driver` names the product where whoever
+ * runs the setup said one, and the first of the package's products that answers is taken where
+ * they said none; `browser: false` is an agent that signs in at no page.
+ */
+export async function lookAtMachine(
+  machine: SetupMachine,
+  wanted: { readonly driver?: string | undefined; readonly browser: boolean },
+): Promise<MachineLook> {
+  const missing: string[] = [];
+  const notes: string[] = [];
+
+  // On a Mac without the Command Line Tools, git is there and opens a window instead of
+  // answering: asked for only once the tools are known to be installed.
+  const tools =
+    machine.platform !== "darwin" || (await answers(machine, "xcode-select", ["-p"])) !== undefined;
+  if (!tools || (await answers(machine, "git", ["--version"])) === undefined) {
+    missing.push(gitMissing(machine.platform));
+  }
+
+  const install = (product: Product): string =>
+    product.install[machine.platform] ?? product.install.any ?? "as its maker says";
+  let found: { readonly product: Product; readonly version: string } | undefined;
+  const candidates =
+    wanted.driver === undefined
+      ? PRODUCTS
+      : PRODUCTS.filter((product) => product.driver === wanted.driver);
+  for (const product of candidates) {
+    const version = await answers(machine, product.command, ["--version"]);
+    if (version !== undefined) {
+      found = { product, version };
+      break;
+    }
+  }
+  if (found === undefined && candidates.length > 0) {
+    missing.push(
+      candidates.length === 1 && candidates[0] !== undefined
+        ? `${candidates[0].name}: its command ${candidates[0].command} does not answer where this command looks for programs. Install it (${install(candidates[0])}) and sign it in with the agent's own subscription.`
+        : `the agent's product: none of ${candidates.map((product) => `${product.command} (${product.name})`).join(", ")} answers where this command looks for programs. Install the one the agent runs in (${candidates.map((product) => `${product.name}: ${install(product)}`).join("; ")}) and sign it in with the agent's own subscription. For another product, say --driver acp and name its command in the desk's runner.json.`,
+    );
+  }
+
+  let browser: "chrome" | undefined;
+  const tool = found?.product.browser;
+  if (tool !== undefined && wanted.browser) {
+    if (await chromeThere(machine)) {
+      browser = tool.name;
+      notes.push(
+        `Google Chrome is there. ${found?.product.name}'s browser tool also takes ${tool.needs} in it, signed in as the agent's subscription account: install it now where it is not there.`,
+      );
+    } else {
+      missing.push(
+        `Google Chrome: ${found?.product.name}'s browser tool works in it, and the agent signs in at its services with that tool. Install it, and ${tool.needs} in it. For an agent that signs in at no page, say --no-browser.`,
+      );
+    }
+  }
+  if (found !== undefined) {
+    notes.push(
+      `Whether ${found.product.name} is signed in cannot be seen from here: where it is not, the agent's page says so once its first session starts.`,
+    );
+  }
+  return {
+    driver: found?.product.driver ?? wanted.driver,
+    product:
+      found === undefined
+        ? undefined
+        : `${found.product.name}${found.version.length === 0 ? "" : ` (${found.version})`}`,
+    browser,
+    missing,
+    notes,
+  };
+}
+
+/**
+ * Whether the machine is held awake by the runner's own helper, as the system says where it
+ * can be asked without an administrator: yes, no, or nothing where it cannot be asked.
+ */
+export async function heldAwake(machine: SetupMachine): Promise<boolean | undefined> {
+  if (machine.platform !== "darwin") {
+    return undefined;
+  }
+  const ran = await machine.run("pmset", ["-g", "assertions"]);
+  return ran.code === 0 ? /\(caffeinate\)/.test(ran.out) : undefined;
+}
+
+/** What is left to whoever keeps the machine so that it stays awake and comes back, a sentence by platform. */
+export function awakeWords(platform: string, held: boolean | undefined): string {
+  const back =
+    platform === "linux"
+      ? ""
+      : " After a restart the runner starts when this OS account is logged in: turn on automatic login for it where the machine is to come back by itself.";
+  if (held === false) {
+    return `The machine is not held awake by the runner: set it never to sleep when idle (System Settings, Energy; or sudo pmset -a sleep 0, which takes an administrator), or the agent is not heard from once it sleeps.${back}`;
+  }
+  const also =
+    platform === "win32"
+      ? " Where it sleeps all the same: powercfg /change standby-timeout-ac 0."
+      : platform === "linux"
+        ? " Where a desktop suspends it all the same, turn that off in its power settings."
+        : "";
+  return `The machine is kept from sleeping while the runner runs; a sleep someone asks for, or a lid that is closed, still ends that.${also}${back}`;
+}

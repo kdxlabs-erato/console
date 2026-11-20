@@ -64,6 +64,10 @@ export interface RunnerRecord {
     | { models: string[]; efforts: string[]; steer: boolean; images: boolean; resume: boolean }
     | undefined;
   readonly running: { model: string | null; effort: string | null } | undefined;
+  /** The wake sources its runner keeps beside the console's own, as it last said; none where it says none. */
+  readonly sources:
+    | readonly { name: string; state: string; since: string; why?: string }[]
+    | undefined;
   /** What was chosen for it to run with; none each for the product's own. */
   readonly model: string | undefined;
   readonly effort: string | undefined;
@@ -89,6 +93,7 @@ const toRunner = (row: RunnerRow): RunnerRecord => ({
   product: row.product ?? undefined,
   offers: row.offers ?? undefined,
   running: row.running ?? undefined,
+  sources: row.sources ?? undefined,
   model: row.model ?? undefined,
   effort: row.effort ?? undefined,
   dayStart: row.dayStart ?? undefined,
@@ -306,6 +311,8 @@ export async function recordHeartbeat(
         product: heartbeat.product,
         offers: heartbeat.offers,
         running: heartbeat.running,
+        // A runner of before says none: what stood is not kept for it, since it is no longer known.
+        sources: heartbeat.sources ?? null,
         ...(gone(before.model, heartbeat.offers.models) ? { model: null } : {}),
         ...(gone(before.effort, heartbeat.offers.efforts) ? { effort: null } : {}),
         ...(changed ? { state, reason, stateAt: now } : { reason }),
@@ -420,9 +427,10 @@ export async function sendSignal(
     /** The pictures sent with it, their bytes kept already. */
     readonly files?: readonly Omit<SignalFileRecord, "id">[] | undefined;
     /**
-     * For a wake the account's runner raises itself: how many of them the record takes within
-     * an hour (ADR-0132). One more is refused, `signal.too_many`. Unbounded where left out,
-     * as what a supervisor, the board and the schedule send is.
+     * For a wake the account's runner raises itself, or the account for itself (ADR-0145): how
+     * many of them the record takes within an hour (ADR-0132), counted among those of the same
+     * source, kind and sender. One more is refused, `signal.too_many`. Unbounded where left
+     * out, as what a supervisor, the board and the schedule send is.
      */
     readonly perHour?: number | undefined;
     readonly now: Date;
@@ -444,7 +452,9 @@ export async function sendSignal(
             eq(agentSignals.personId, account.id),
             gt(agentSignals.number, next - 1 - SIGNALS_LOOKED_THROUGH),
             eq(agentSignals.source, input.source),
-            isNull(agentSignals.byId),
+            // What the runner raises is by nobody; what the account raises for itself is its own.
+            by === undefined ? isNull(agentSignals.byId) : eq(agentSignals.byId, by.id),
+            eq(agentSignals.kind, kind),
             gt(agentSignals.createdAt, new Date(now.getTime() - HOUR_MS)),
           ),
         )

@@ -10,6 +10,7 @@ import {
   type DriverSession,
   errorsShown,
   type Fact,
+  notStarted,
   type Picture,
   type Probe,
   plainCut,
@@ -1111,7 +1112,7 @@ function sessionOf(
           kind: "error",
           text:
             exit.error !== undefined
-              ? `The product could not be started: ${exit.error}`
+              ? notStarted(exit.error)
               : `The product's process ended${exit.signal === null ? ` with code ${exit.code}` : ` on ${exit.signal}`}.${shown.length === 0 ? "" : `\n${shown}`}`,
         },
         {
