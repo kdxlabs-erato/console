@@ -2,4 +2,4 @@
 "@skillcdn/console": patch
 ---
 
-Two sentences of the Korean pack take the particle their word asks for. When the word for a task became 작업, two sentences that are written out whole kept the particle of the word before: a plugin's `board:tasks` capability read "작업를 만들고", and a board at a glance with no task at work read "진행 중인 작업가 없습니다". They read 작업을 and 작업이.
+Two sentences of the Korean pack take the particle their word asks for. When the Korean word for a task became one that ends in a consonant, two sentences that are written out whole kept the particle of the word before, which ended in a vowel: what a plugin's `board:tasks` capability opens, on its settings page, and the line of a board at a glance with no task at work. They take the object particle and the subject particle of a word that ends in a consonant.
