@@ -629,6 +629,12 @@ Goal: the last line of 0.5 before its patch is released: the packages at SkillCD
 - [x] The database's container has an init process, in the development compose file and in the smallest install's: a health check left behind under load no longer reads to PostgreSQL as a crashed child.
 - [x] The repository's own layout: `docs/README.md` maps the documents, the agreement names each workspace's Rules and the skills read through the console, and the console binding is ignored, with no key written in a public repository.
 
+## Milestone 51, what the first week of 0.5.1 asked, on SkillCDN 0.5.3 (2026-11-20)
+
+Goal: the next patch of 0.5: the packages at SkillCDN 0.5.3, and what a week of the consoles at 0.5.1 left on the board done.
+
+- [x] The packages at SkillCDN 0.5.3 (board #581): a part of a long skill after the first begins under the skill's name, its source and its license alone, and the console's own words at the end of a part stay, the line above them being as it was. The image is built on the release of its HTTP framework that holds a body sent in many small pieces to its limit.
+
 ## After milestone 16
 
 Nothing is chosen yet; the list below is where the next milestone comes from.
