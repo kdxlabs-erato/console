@@ -432,7 +432,7 @@ export const ko: Messages = {
       },
       "board:tasks": {
         name: "작업",
-        opens: "자기 프로젝트에 작업를 만들고, 만든 것을 바꾸고 닫고 댓글을 답니다.",
+        opens: "자기 프로젝트에 작업을 만들고, 만든 것을 바꾸고 닫고 댓글을 답니다.",
       },
       "board:decisions": { name: "결정", opens: "자기 프로젝트에 결정을 올리고 그 답을 읽습니다." },
       "board:documents": { name: "문서", opens: "자기 프로젝트의 문서에 자기 폴더를 두고 씁니다." },
@@ -1510,7 +1510,7 @@ export const ko: Messages = {
       reviewTasks: "검토를 기다리는 작업",
       roadmap: "로드맵",
       more: (count: number) => `외 ${count}건`,
-      noTasks: "진행 중인 작업가 없습니다",
+      noTasks: "진행 중인 작업이 없습니다",
       noGoals: "남은 목표가 없습니다",
       done: (done: number, total: number) => `${total}개 중 ${done}개 완료`,
       named: (project: string, key: string, working: number, review: number, decisions: number) =>

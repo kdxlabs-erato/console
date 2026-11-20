@@ -60,4 +60,20 @@ describe("the language packs", () => {
     expect(en.board.decisions(2)).toBe("2 decisions");
     expect(ko.board.decisions(2)).toBe("결정 2건");
   });
+
+  it("writes the Korean word for a task with the particle its last syllable takes", () => {
+    // The word for a task changed from one that ends in a vowel to one that ends in a
+    // consonant (ADR-0137), and a sentence written out, not built from its parts, kept the
+    // particle of the word before: 작업를, 작업가. No sentence of the pack reads so.
+    const sentences = (value: unknown): string[] =>
+      typeof value === "string"
+        ? [value]
+        : typeof value === "object" && value !== null
+          ? Object.values(value).flatMap(sentences)
+          : [];
+    const wrong = /작업(를|가|는|와|로)(?![가-힣])/u;
+    expect(sentences(ko).filter((sentence) => wrong.test(sentence))).toEqual([]);
+    expect(sentences(ko).some((sentence) => sentence.includes("작업을 만들고"))).toBe(true);
+    expect(sentences(ko).some((sentence) => sentence.includes("작업이 없습니다"))).toBe(true);
+  });
 });
