@@ -67,6 +67,7 @@ import { Badge, Button, Callout, cx, Day, DueBadge, ProgressBar, Workers } from 
 const SPARE_ROWS = 2;
 
 const NONE: readonly string[] = [];
+const NOT_PLACED: readonly PlacedTile[] = [];
 
 /**
  * What a project's tile at a glance reads of its board (ADR-0105): the one answer of
@@ -533,8 +534,12 @@ export function HomeGrid(props: HomeGridProps) {
   const working = draft ?? home;
   const hidden = working?.hidden ?? NONE;
   // A width nobody arranged is closed up by trying the sizes the tiles come in: once a render, not
-  // once a pointer's move.
-  const placed = useMemo(() => arranged(tiles, working, columns), [tiles, working, columns]);
+  // once a pointer's move, and not at all while the page stands composed and nobody arranges
+  // it, since the composed page is drawn from its own boxes and reads none of this.
+  const placed = useMemo(
+    () => (!editing && nobodyArranged(working) ? NOT_PLACED : arranged(tiles, working, columns)),
+    [editing, tiles, working, columns],
+  );
   const [drag, setDrag] = useState<Drag | null>(null);
   const { busy, error, act } = useAction();
   /** The tile in hand, once it has come loose; nothing while one is merely pressed. */

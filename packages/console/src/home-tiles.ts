@@ -365,9 +365,11 @@ function packed(
  * projects take one size together, so that they line up as a row of the same tiles; a widget
  * takes any of its own. A page that cannot close leaves the fewest cells empty it can.
  *
- * Where the page is the one a person is about to arrange, or has arranged (ADR-0139), the
- * projects are `kept` as they are: an icon stays an icon, since a page that closed by turning
- * the projects into cards would be another page than the one they looked at. What is empty is
+ * Where the page is the one a person is about to arrange, or has arranged (ADR-0139), what is
+ * on it is `kept`: an icon stays an icon, and a widget is given another size only where that
+ * takes no cell from it. A page that closed by turning the projects into cards, or by cutting
+ * its lead to a strip, would be another page than the one they looked at, and a lead beside a
+ * few icons scores better as a strip, since a strip takes fewer rows to count. What is empty is
  * then counted in the rows the widgets take alone: the projects' last row may end short, as on
  * the composed page (ADR-0108), and a row of icons under the widgets is no gap to close.
  */
@@ -391,7 +393,13 @@ function closedUp(wanted: readonly Wanted[], columns: number, kept = false): Pla
     if (entry.tile.kind !== "widget") {
       return;
     }
-    const others = sizesAt(entry.tile, columns).filter((size) => size !== entry.size);
+    const cells = (size: HomeTileSize) => {
+      const { w, h } = footprintOf(size, columns);
+      return w * h;
+    };
+    const others = sizesAt(entry.tile, columns).filter(
+      (size) => size !== entry.size && (!kept || cells(size) >= cells(entry.size)),
+    );
     const all = [entry.size, ...others];
     // Past what can be tried at once, a widget keeps the size it would rather have.
     const options = combinations * all.length <= MOST_COMBINATIONS ? all : [entry.size];
@@ -419,17 +427,7 @@ function closedUp(wanted: readonly Wanted[], columns: number, kept = false): Pla
         const { w, h } = footprintOf(size, columns);
         return cells + w * Math.max(0, Math.min(y + h, counted) - y);
       }, 0);
-      // A page being arranged closes by giving a widget more room before it takes any away: the
-      // cells the widgets lose of the sizes they had count before how many of them changed, so
-      // that the lead does not shrink to a strip where it could have grown to the row's end.
-      const lost = kept
-        ? placed.reduce((cells, { size }, at) => {
-            const had = footprintOf(preferred[at] as HomeTileSize, columns);
-            const has = footprintOf(size, columns);
-            return cells + Math.max(0, had.w * had.h - has.w * has.h);
-          }, 0)
-        : 0;
-      const score = [counted * columns - filled, lost, changed, rows];
+      const score = [counted * columns - filled, changed, rows];
       if (best === undefined || lessThan(score, best.score)) {
         best = { placed, score };
       }
@@ -467,14 +465,23 @@ export function arranged(
   const hidden = new Set(home?.hidden ?? []);
   const { entries, placed: keepsPlaces } = keptAt(home, columns);
   if (nobodyArranged(home)) {
-    // Arranging starts from the page closed up (ADR-0139): the tiles in the page's order, each
-    // widget at the size the composed page told it where the rows close with it, and at another
-    // of its own where they do not, the projects icons as they were. Put on the cells nearest
-    // where the composed page drew them, a tile drawn wider than any size it comes in left a
-    // band of empty cells beside it, and Done kept the bands. Where the composed page stands on
-    // whole cells, a lead alone with the projects beside it (ADR-0110), the projects alone
-    // (ADR-0108), this is the very same page.
-    const told = new Map(composed(tiles, home, columns).map(({ tile, size }) => [tile.id, size]));
+    // Where the composed page stands every tile on whole cells at a size it comes in, a lead
+    // alone with the projects beside it (ADR-0110), the projects alone (ADR-0108), a narrow grid
+    // (ADR-0139), arranging starts on those very cells: the page and its arranging do not differ.
+    const boxes = composed(tiles, home, columns);
+    const whole = boxes.every(({ x, y, w, h, size }) => {
+      const shape = footprintOf(size, columns);
+      return Number.isInteger(x) && Number.isInteger(y) && shape.w === w && shape.h === h;
+    });
+    if (whole) {
+      return boxes.map(({ tile, size, x, y }) => ({ tile, size, x, y }));
+    }
+    // Otherwise it starts from the page closed up (ADR-0139): the tiles in the page's order, a
+    // widget at the size the composed page told it, or at another of its own that takes no cell
+    // from it where the rows close with that, the projects icons as they were. Put on the cells
+    // nearest where the composed page drew them, a tile drawn wider than any size it comes in
+    // left a band of empty cells beside it, and Done kept the bands.
+    const told = new Map(boxes.map(({ tile, size }) => [tile.id, size]));
     const wanted = tiles
       .filter((tile) => !hidden.has(tile.id))
       .map((tile) => ({ tile, size: told.get(tile.id) ?? startingSizeAt(tile, columns) }));
