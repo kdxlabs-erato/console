@@ -248,7 +248,7 @@ export function formatAgentState(agent: RestAgent): string {
  * One signal of an agent account's record (ADR-0085): its number, its kind, who sent it or where
  * it came from, when, and the first words of what it says.
  */
-export function formatSignalLine(signal: RestSignal): string {
+export function formatSignalLine(signal: RestSignal, delivered?: number): string {
   const who =
     signal.by === null
       ? `${signal.source}${signal.key === null ? "" : `: ${signal.key}`}`
@@ -260,7 +260,12 @@ export function formatSignalLine(signal: RestSignal): string {
   const words = signal.text.replaceAll(/\s+/g, " ").trim();
   const said =
     words.length === 0 ? "" : `  ${words.length > 120 ? `${words.slice(0, 119)}…` : words}`;
-  return `#${signal.number}  ${signal.kind}  ${who}  ${moment(signal.at)}${set}${said}`;
+  // Whether it is delivered, where the record says how far it is (ADR-0131): the product took
+  // it or the record says what became of it, or it waits for that. A console that does not
+  // say, one before 0.5.2 and the answer to a signal just sent, has nothing said here.
+  const state =
+    delivered === undefined ? "" : signal.number <= delivered ? "delivered  " : "waiting  ";
+  return `#${signal.number}  ${signal.kind}  ${state}${who}  ${moment(signal.at)}${set}${said}`;
 }
 
 /** One secret of an agent account's store (ADR-0087): its name, when it was set and by which side, and the day it ends on where one is known. Never its value. */

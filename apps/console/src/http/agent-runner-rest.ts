@@ -151,6 +151,23 @@ export function registerAgentRunnerRest(
       ? undefined
       : page;
   };
+  /**
+   * A page of an account's record, with how far the record is delivered (ADR-0131): the number
+   * its runner last said, so that whoever reads the record tells a signal the product took from
+   * one that waits, signal by signal, where the account's line says only how many.
+   */
+  const recordOf = async (
+    accountId: string,
+    page: { readonly before: number | undefined; readonly limit: number },
+  ): Promise<RestSignals> => {
+    const listed = await listSignals(database, accountId, page);
+    const runner = await findRunner(database, accountId);
+    return {
+      items: listed.items.map(restSignal),
+      more: listed.more,
+      delivered: runner?.delivered ?? 0,
+    };
+  };
 
   const { running, own, supervising } = createAgentGuards(database, access);
 
@@ -317,9 +334,7 @@ export function registerAgentRunnerRest(
     if (page === undefined) {
       return invalid(c, `before: a signal's number; limit: from 1 to ${MAX_SIGNALS_PAGE_LIMIT}.`);
     }
-    const listed = await listSignals(database, caller.person.id, page);
-    const body: RestSignals = { items: listed.items.map(restSignal), more: listed.more };
-    return c.json(body);
+    return c.json(await recordOf(caller.person.id, page));
   });
 
   /**
@@ -509,8 +524,6 @@ export function registerAgentRunnerRest(
     if (page === undefined) {
       return invalid(c, `before: a signal's number; limit: from 1 to ${MAX_SIGNALS_PAGE_LIMIT}.`);
     }
-    const listed = await listSignals(database, found.agent.id, page);
-    const body: RestSignals = { items: listed.items.map(restSignal), more: listed.more };
-    return c.json(body);
+    return c.json(await recordOf(found.agent.id, page));
   });
 }

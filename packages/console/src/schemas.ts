@@ -916,8 +916,17 @@ export const restSignalSchema = z.object({
 });
 export type RestSignal = z.infer<typeof restSignalSchema>;
 
-/** `GET /api/v1/agents/<handle>/signals?before=&limit=`: the record, the newest first, and whether there is more before. */
-export const restSignalsSchema = z.object({ items: z.array(restSignalSchema), more: z.boolean() });
+/**
+ * `GET /api/v1/agents/<handle>/signals?before=&limit=`: the record, the newest first, and whether
+ * there is more before; and `delivered`, the number of the last signal delivered, every one
+ * before it too (ADR-0131), as the account's runner last said, `0` for none: a signal of the
+ * record is delivered where its number is no more than that. A console before 0.5.2 leaves it out.
+ */
+export const restSignalsSchema = z.object({
+  items: z.array(restSignalSchema),
+  more: z.boolean(),
+  delivered: z.optional(z.int().check(z.gte(0))),
+});
 export type RestSignals = z.infer<typeof restSignalsSchema>;
 
 /**

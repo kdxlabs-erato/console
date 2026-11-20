@@ -4301,6 +4301,7 @@ describe("configuring, as the person", () => {
             sent({ number: 7, by: null, agent: null, source: "board", key: "#412", kind: "wake" }),
           ],
           more: true,
+          delivered: 7,
         },
       },
       "GET /api/v1/agents/me/signals": { body: { items: [], more: false } },
@@ -4358,15 +4359,17 @@ describe("configuring, as the person", () => {
     }
     expect(calls.length).toBe(asked);
 
-    // The record, the newest first, a line each, and where it goes on.
+    // The record, the newest first, a line each, and where it goes on. Each line says whether
+    // its signal is delivered, by the number the record is delivered to (ADR-0131); a line of a
+    // signal just sent, above, and of a console that does not say, says nothing of it.
     const record = harness({ fetch, env: SIGNED_IN });
     expect(
       await runCli(["agent", "signals", "@mira", "--limit", "2", "--before", "9"], record.io),
     ).toBe(EXIT.ok);
     expect(record.out()).toBe(
       [
-        `#8  interrupt  bob through Claude Code  ${WHEN}  From a file, on two lines.`,
-        `#7  wake  board: #412  ${WHEN}`,
+        `#8  interrupt  waiting  bob through Claude Code  ${WHEN}  From a file, on two lines.`,
+        `#7  wake  delivered  board: #412  ${WHEN}`,
         "More before: console agent signals mira --before 7",
         "",
       ].join("\n"),

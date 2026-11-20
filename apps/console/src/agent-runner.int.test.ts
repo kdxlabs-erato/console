@@ -383,6 +383,8 @@ describe("an agent account's runner (ADR-0085)", () => {
       [1, "tell"],
     ]);
     expect(record.more).toBe(false);
+    // With how far the record is delivered, as the runner last said: the first, not the second.
+    expect(record.delivered).toBe(1);
     const page = restSignalsSchema.parse(
       await (await get({ cookie: alice }, `${SIGNALS}?limit=1`)).json(),
     );
@@ -406,6 +408,7 @@ describe("an agent account's runner (ADR-0085)", () => {
     for (const headers of [bearer(command), { cookie: mira }]) {
       const mine = restSignalsSchema.parse(await (await get(headers, OWN_SIGNALS)).json());
       expect(mine.items.map((item) => item.number)).toEqual([2, 1]);
+      expect(mine.delivered).toBe(1);
     }
     expect((await get({ cookie: bob }, OWN_SIGNALS)).status).toBe(404);
 

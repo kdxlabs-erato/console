@@ -5163,7 +5163,7 @@ const agentSignals = async (args: readonly string[], io: CliIo): Promise<number>
     found.items.length === 0
       ? "No signal yet."
       : [
-          ...found.items.map(formatSignalLine),
+          ...found.items.map((signal) => formatSignalLine(signal, found.delivered)),
           ...(found.more
             ? [
                 `More before: console agent signals ${handle} --before ${found.items.at(-1)?.number}`,
