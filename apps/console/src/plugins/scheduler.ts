@@ -114,6 +114,27 @@ export function nextRunAfter(
   return new Date(candidate - offsetMinutes(guess, zone) * 60_000);
 }
 
+/**
+ * When a job that was due at `due` runs next, its run ended at `ranAt`. With `at`, the next time
+ * of day after the run. Without, `due` stepped on by whole periods past the run: counted from the
+ * end of the run, the next time fell just past the scheduler's tick a period on, and a job of five
+ * minutes ran every six. The periods it was away for are skipped, not run one after another.
+ */
+export function nextRunAfterRun(
+  due: Date,
+  ranAt: Date,
+  every: string,
+  at: string | null,
+  zone: string,
+): Date | undefined {
+  const everyMs = durationMs(every);
+  if (at !== null || everyMs === undefined || everyMs <= 0) {
+    return nextRunAfter(ranAt, every, at, zone);
+  }
+  const periods = Math.max(0, Math.floor((ranAt.getTime() - due.getTime()) / everyMs)) + 1;
+  return new Date(due.getTime() + periods * everyMs);
+}
+
 /** The time of day an instant falls at in the zone, as `HH:MM`. */
 export function timeOfDayIn(at: Date, zone: string): string {
   const offset = offsetMinutes(at, zone) * 60_000;
@@ -256,7 +277,7 @@ export class PluginScheduler {
       }
       const result = await this.options.plugins.runJob(target.key, name);
       const ranAt = clock.now();
-      const nextAt = nextRunAfter(ranAt, job.every, job.at, zone);
+      const nextAt = nextRunAfterRun(row.nextAt ?? ranAt, ranAt, job.every, job.at, zone);
       if (result.ok) {
         logger.info({ plugin: target.key, job: name }, "plugin job ran");
         await writeJob(database, {

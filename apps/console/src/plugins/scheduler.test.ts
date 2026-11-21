@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextRunAfter, nextTimeMoved, timeOfDayIn } from "./scheduler.js";
+import { nextRunAfter, nextRunAfterRun, nextTimeMoved, timeOfDayIn } from "./scheduler.js";
 
 describe("a job's next time, when the time zone changes", () => {
   it("reads the time of day an instant falls at in a zone", () => {
@@ -54,5 +54,39 @@ describe("nextRunAfter", () => {
     expect(nextRunAfter(from, "P1D", "10:00", "Nowhere/Land")).toEqual(
       new Date("2026-11-02T10:00:00.000Z"),
     );
+  });
+});
+
+describe("nextRunAfterRun", () => {
+  const due = new Date("2026-11-14T11:57:00.000Z");
+
+  it("counts the period from the time the job was due, not from the end of its run", () => {
+    // Run at the tick after it was due and ended a little later: still a period after `due`.
+    expect(nextRunAfterRun(due, new Date("2026-11-14T11:57:40.000Z"), "PT1H", null, "UTC")).toEqual(
+      new Date("2026-11-14T12:57:00.000Z"),
+    );
+    // A run that ended on the very time a period on is past it: the one after.
+    expect(nextRunAfterRun(due, new Date("2026-11-14T12:57:00.000Z"), "PT1H", null, "UTC")).toEqual(
+      new Date("2026-11-14T13:57:00.000Z"),
+    );
+  });
+
+  it("skips the periods the console was away for, to the first time after the run", () => {
+    expect(nextRunAfterRun(due, new Date("2026-11-14T16:20:00.000Z"), "PT1H", null, "UTC")).toEqual(
+      new Date("2026-11-14T16:57:00.000Z"),
+    );
+  });
+
+  it("is a period on where the run ended before the time it was due, as another process's clock has it", () => {
+    expect(nextRunAfterRun(due, new Date("2026-11-14T11:56:59.000Z"), "PT1H", null, "UTC")).toEqual(
+      new Date("2026-11-14T12:57:00.000Z"),
+    );
+  });
+
+  it("finds the next time of day after the run where one is named", () => {
+    expect(
+      nextRunAfterRun(due, new Date("2026-11-14T11:57:40.000Z"), "P1D", "09:00", "Asia/Seoul"),
+    ).toEqual(new Date("2026-11-15T00:00:00.000Z"));
+    expect(nextRunAfterRun(due, due, "nonsense", null, "UTC")).toBeUndefined();
   });
 });

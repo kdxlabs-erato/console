@@ -95,6 +95,48 @@ describe("the scheduler", () => {
     }
   });
 
+  it("keeps a job's period whatever its run takes, and skips the periods it was away for", async () => {
+    // The scheduler looks once a minute, and a run ends after the tick that began it. Counted
+    // from the end of the run, the next time fell just past the tick a period on, and a job of
+    // five minutes ran every six, one of an hour every sixty-one.
+    const started: string[] = [];
+    let at = new Date("2026-11-14T09:00:30.000Z");
+    const jobs: Scheduling = {
+      jobTargets: async () => [
+        { key: "steady", boardProjectId: undefined, jobs: { sync: { every: "PT5M", at: null } } },
+      ],
+      runJob: async () => {
+        started.push(at.toISOString().slice(11, 19));
+        at = new Date(at.getTime() + 5_000);
+        return { ok: true, value: null };
+      },
+      recordFailure: async () => {},
+    };
+    const scheduler = new PluginScheduler({
+      database: testDatabase.database,
+      workspace: async () => workspace,
+      plugins: jobs,
+      clock: { now: () => at },
+      logger: pino({ level: "silent" }),
+    });
+    // Seen at 09:00:30, so first due at 09:05:30; then a tick every minute, half past.
+    await scheduler.tick();
+    for (let minute = 1; minute <= 16; minute += 1) {
+      at = new Date(Date.parse("2026-11-14T09:00:30.000Z") + minute * 60_000);
+      await scheduler.tick();
+    }
+    expect(started).toEqual(["09:05:30", "09:10:30", "09:15:30"]);
+    // Away for a quarter of an hour: one run when it is back, and the period goes on from the
+    // time the job was due, not from the run.
+    at = new Date("2026-11-14T09:33:30.000Z");
+    await scheduler.tick();
+    expect(started).toHaveLength(4);
+    const row = (await readJobs(testDatabase.database, workspace.id, "steady")).find(
+      (candidate) => candidate.name === "sync",
+    );
+    expect(row?.nextAt).toEqual(new Date("2026-11-14T09:35:30.000Z"));
+  });
+
   it("keeps since when a job has failed, run after run, and forgets it when the job goes well (ADR-0128)", async () => {
     // What the plugin's problems are read from: the first failure after the job went well is
     // where the run of failures began, a second failure running is one that keeps failing, and

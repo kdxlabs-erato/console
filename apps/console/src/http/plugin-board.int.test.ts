@@ -1484,7 +1484,9 @@ describe("a plugin on the board", () => {
     const brokenOnce = afterOne.jobs?.find((job) => job.name === "broken");
     expect(brokenOnce?.lastRunAt).toBe(firstFailureAt);
     expect(brokenOnce?.failedSince).toBe(firstFailureAt);
-    expect(brokenOnce?.nextAt).toBe(new Date(schedulerNow.getTime() + 5 * 60_000).toISOString());
+    // Due a period after it was seen and run a minute late, it is due next a period after the
+    // time it was due, not after the run.
+    expect(brokenOnce?.nextAt).toBe(new Date(schedulerNow.getTime() + 4 * 60_000).toISOString());
     expect(afterOne.jobs?.find((job) => job.name === "accrue")?.failedSince).toBeNull();
     // Due again, and failing again: a line in the log, and no second event within the hour.
     schedulerNow = new Date(schedulerNow.getTime() + 6 * 60_000);
