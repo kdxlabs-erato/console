@@ -1,6 +1,6 @@
 # ADR-0105: A project at a larger size is a glance at its board
 
-- Status: Accepted; point 5 and the first consequence amended by [ADR-0107](0107-a-glance-is-read-in-one-request.md)
+- Status: Accepted; point 5 and the first consequence amended by [ADR-0107](0107-a-glance-is-read-in-one-request.md); the projects taking one size together where a width is closed up (point 1) gone with [ADR-0147](0147-the-page-nobody-arranged-stands-as-arranging-shows-it-and-no-size-is-chosen-for-a-person.md)
 - Date: 2026-11-14
 - Amends point 2 of [ADR-0061](0061-the-front-page-is-one-grid-of-tiles-a-person-arranges-by-hand.md), which had a project come as an `icon` or `small` alone. The rest of that decision, and [ADR-0082](0082-the-page-of-someone-who-has-arranged-nothing-is-composed-edge-to-edge.md), stand.
 

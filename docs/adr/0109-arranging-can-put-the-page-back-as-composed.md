@@ -1,6 +1,6 @@
 # ADR-0109: Arranging can put the page back as composed
 
-- Status: Accepted
+- Status: Accepted; the page it puts back stands as [ADR-0147](0147-the-page-nobody-arranged-stands-as-arranging-shows-it-and-no-size-is-chosen-for-a-person.md) has it
 - Date: 2026-11-15
 - Adds to [ADR-0061](0061-the-front-page-is-one-grid-of-tiles-a-person-arranges-by-hand.md), where Done keeps what a person arranged and Cancel lets it go, and to [ADR-0082](0082-the-page-of-someone-who-has-arranged-nothing-is-composed-edge-to-edge.md), the page of someone who has arranged nothing.
 

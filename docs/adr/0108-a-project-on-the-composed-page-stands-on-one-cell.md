@@ -1,6 +1,6 @@
 # ADR-0108: A project on the composed page stands on one cell
 
-- Status: Accepted; point 2 amended by [ADR-0139](0139-arranging-starts-from-the-page-closed-up-and-a-page-kept-with-gaps-can-be-closed.md): a project keeps its cell when arranging starts where the composed page stands on whole cells, and takes the first room of the page closed up where it does not
+- Status: Superseded by [ADR-0147](0147-the-page-nobody-arranged-stands-as-arranging-shows-it-and-no-size-is-chosen-for-a-person.md): a project is an icon on one cell of a page nobody arranged, the same page looked at or arranged
 - Date: 2026-11-15
 - Amends point 1 of [ADR-0082](0082-the-page-of-someone-who-has-arranged-nothing-is-composed-edge-to-edge.md), where the projects stood "in rows of as many as are alike, each row as wide as its column, so that no row ends short", and its point 2 for a project. The rest of that decision stands: the lead and the widgets beside it, the widgets two to a row below, a widget's box reaching fractions of a cell, arranging from the composed page, a width closed up from the sizes the tiles come in.
 

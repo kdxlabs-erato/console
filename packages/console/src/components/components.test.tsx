@@ -4464,8 +4464,8 @@ describe("projects", () => {
     });
     const html = home([project(), ops]);
     expect(html).toContain('href="/projects/web"');
-    // The page nobody arranged is drawn from its composed tiles, and its grid is not hidden as
-    // an empty page's is: only a page with nothing on it shows what stands for none.
+    // The page nobody arranged is drawn on the grid, and its grid is not hidden as an empty
+    // page's is: only a page with nothing on it shows what stands for none.
     expect(html).toMatch(/<ul class="sc-home-grid"[^>]*data-columns="\d+"(?![^>]*hidden)[^>]*>/);
     const nothing = home([], { empty: <p>Nothing here</p> });
     expect(nothing).toContain("Nothing here");
@@ -4509,11 +4509,11 @@ describe("projects", () => {
     expect(home([], { empty: <p>none</p> })).toContain("<p>none</p>");
   });
 
-  it("offers, while the page is arranged, to put it back as composed, where there is something to put back (ADR-0109)", () => {
+  it("offers, while the page is arranged, to put it back as nobody arranged it, where there is something to put back (ADR-0109)", () => {
     const reset = (html: string) => /<button[^>]*>Reset to default<\/button>/.exec(html)?.[0];
     // Not arranging, there is no such button.
     expect(reset(home([project()]))).toBeUndefined();
-    // Arranging a page that stands as composed, there is nothing to put back.
+    // Arranging a page that stands as nobody arranged it, there is nothing to put back.
     expect(reset(home([project()], { editing: true }))).toContain('disabled=""');
     const kept = {
       hidden: [],
@@ -4527,6 +4527,70 @@ describe("projects", () => {
       home([project()], { editing: true, home: { hidden: ["widget:a:b"], layouts: {} } }),
     );
     expect(off).not.toContain("disabled");
+  });
+
+  it("draws the page nobody arranged on the very cells arranging shows, each widget at the size it starts at (ADR-0147)", () => {
+    const people = {
+      key: "people",
+      state: "enabled",
+      widgets: [
+        {
+          key: "notices",
+          name: { en: "Notices" },
+          place: "home:top",
+          size: "half",
+          sizes: ["medium", "large", "full"],
+          defaultSize: "large",
+        },
+        {
+          key: "leave",
+          name: { en: "My leave" },
+          place: "home:top",
+          size: "third",
+          sizes: ["small", "medium", "large"],
+          defaultSize: "medium",
+        },
+        {
+          key: "away",
+          name: { en: "Away today" },
+          place: "home:top",
+          size: "third",
+          sizes: ["small", "medium", "large"],
+          defaultSize: "medium",
+        },
+      ],
+    } as unknown as RestPlugin;
+    const three = [1, 2, 3].map((at) =>
+      project({ id: `0199c4d8-0000-7000-8000-00000000006${at}`, key: `p${at}`, name: `P${at}` }),
+    );
+    const page = (editing: boolean) =>
+      home(three, {
+        plugins: [people],
+        editing,
+        renderWidget: (tile, size) => <i>{`${tile.widget.key} at ${size}`}</i>,
+      });
+    const cells = (html: string) =>
+      Object.fromEntries(
+        [...html.matchAll(/data-tile="([^"]+)" style="([^"]*)"/g)].map(([, tile, style]) => [
+          tile,
+          style,
+        ]),
+      );
+    const shown = cells(page(false));
+    expect(Object.keys(shown)).toHaveLength(6);
+    // What a person looks at is what they start to arrange, tile for tile, so that the page Done
+    // keeps after Reset to default is the one they saw.
+    expect(cells(page(true))).toEqual(shown);
+    // Each widget on the cells of the size its plugin starts it at, and told that size: no lead
+    // drawn half the page, no widget grown to close a row.
+    expect(shown["widget:people:notices"]).toBe(
+      "--sc-tile-x:0;--sc-tile-y:0;--sc-tile-w:4;--sc-tile-h:4",
+    );
+    expect(shown["widget:people:away"]).toBe(
+      "--sc-tile-x:4;--sc-tile-y:2;--sc-tile-w:4;--sc-tile-h:2",
+    );
+    expect(page(false)).toContain("notices at large");
+    expect(page(false)).toContain("away at medium");
   });
 
   it("shows a project at a glance from one answer: its figures, its tasks in progress, its goals and what waits for review (ADR-0105, ADR-0107)", () => {
@@ -4676,9 +4740,9 @@ describe("projects", () => {
         plugins: [plugin],
         renderWidget: (tile, size) => <i>{`frame of ${tile.widget.key} at ${size}`}</i>,
       });
-    // Alone on a page nobody arranged, it takes the size of its own that leaves the fewest cells
-    // empty (ADR-0082): a medium four across, where a small would leave twelve.
-    expect(drawn(hello)).toContain("frame of latest at medium");
+    // Alone on a page nobody arranged, it stands at the size it starts at, and is told it: no
+    // larger one is chosen to fill the row (ADR-0147).
+    expect(drawn(hello)).toContain("frame of latest at small");
     expect(drawn(hello)).toContain(">Latest</h2>");
     expect(drawn({ ...hello, state: "disabled" })).not.toContain("frame of");
   });

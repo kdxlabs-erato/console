@@ -1,6 +1,6 @@
 # ADR-0110: A lead with nothing beside it stands at a size it comes in
 
-- Status: Accepted; point 2 amended by [ADR-0139](0139-arranging-starts-from-the-page-closed-up-and-a-page-kept-with-gaps-can-be-closed.md): the widgets that come in a size as wide as the columns the lead leaves stand there before the projects
+- Status: Superseded by [ADR-0147](0147-the-page-nobody-arranged-stands-as-arranging-shows-it-and-no-size-is-chosen-for-a-person.md): no widget leads; each stands at the size it starts at
 - Date: 2026-11-15
 - Amends point 1 of [ADR-0082](0082-the-page-of-someone-who-has-arranged-nothing-is-composed-edge-to-edge.md) where nothing stands beside the lead, "on a grid of 6 columns or fewer, or with no second widget, everything stands one under the other: the lead as wide as the page", and its point 2 for that lead. The lead with widgets beside it, the widgets two to a row below and the rest of the composed page stand.
 

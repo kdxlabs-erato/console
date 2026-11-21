@@ -1,6 +1,6 @@
 # ADR-0139: Arranging starts from the page closed up, and a page kept with gaps can be closed
 
-- Status: Accepted
+- Status: Superseded by [ADR-0147](0147-the-page-nobody-arranged-stands-as-arranging-shows-it-and-no-size-is-chosen-for-a-person.md): the page nobody arranged is the page arranging starts from, and closing the gaps moves the tiles and changes no size
 - Date: 2026-11-20
 - Amends point 3 of [ADR-0082](0082-the-page-of-someone-who-has-arranged-nothing-is-composed-edge-to-edge.md), "arranging starts from the composed page: each widget takes the cells nearest where it stood, at the size it was told", and its consequence that the two differ by up to half a cell; point 2 of [ADR-0108](0108-a-project-on-the-composed-page-stands-on-one-cell.md), "a project stays where it stood when the person starts to arrange the page", which holds from now on where the composed page stands on whole cells and not where it is closed up; point 2 of [ADR-0110](0110-a-lead-with-nothing-beside-it-stands-at-a-size-it-comes-in.md), where the projects alone followed a lead into the columns it leaves; and adds to [ADR-0109](0109-arranging-can-put-the-page-back-as-composed.md). The composed page of ADR-0082, a project's one cell on it (ADR-0108, point 1) and the closing up of a width nobody arranged when another was stand. The contract is in [specs/plugins.md](../specs/plugins.md).
 

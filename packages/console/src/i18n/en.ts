@@ -1681,9 +1681,9 @@ export const en = {
   home: {
     edit: "Edit layout",
     hint: "Drag to move. Pick a size at the top right; × takes a tile off this page.",
-    /** Puts the page back as it is composed for someone who has arranged nothing, kept by Done (ADR-0109). */
+    /** Puts the page back as it stands for someone who has arranged nothing, kept by Done (ADR-0109). */
     reset: "Reset to default",
-    /** Closes the page up where it has gaps: the tiles in their order from the top, a widget at another of its sizes where a row closes with it (ADR-0139). */
+    /** Closes the page up where it has gaps: the tiles moved up in their order from the top, each at the size it has (ADR-0147). */
     tidy: "Close the gaps",
     done: "Done",
     add: "Add",

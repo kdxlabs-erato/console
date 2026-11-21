@@ -14,11 +14,7 @@ import { daysBetween, today } from "../dates.js";
 import {
   added,
   arranged,
-  COMPOSED_HOME,
-  type ComposedTile,
   columnsFor,
-  composed,
-  composedRows,
   footprintOf,
   GLANCE_REM,
   GLANCE_ROOM_GUESS,
@@ -33,14 +29,14 @@ import {
   homeWith,
   isGlanceSize,
   moved,
-  nobodyArranged,
   type PlacedTile,
   resized,
   rowsOf,
   sameArrangement,
   sizesAt,
-  standsComposed,
+  standsUnarranged,
   tidied,
+  UNARRANGED_HOME,
   waitToGiveWay,
 } from "../home-tiles.js";
 import { useWords } from "../i18n/index.js";
@@ -67,7 +63,6 @@ import { Badge, Button, Callout, cx, Day, DueBadge, ProgressBar, Workers } from 
 const SPARE_ROWS = 2;
 
 const NONE: readonly string[] = [];
-const NOT_PLACED: readonly PlacedTile[] = [];
 
 /**
  * What a project's tile at a glance reads of its board (ADR-0105): the one answer of
@@ -533,13 +528,10 @@ export function HomeGrid(props: HomeGridProps) {
   const [draft, setDraft] = useState<RestHome | null>(null);
   const working = draft ?? home;
   const hidden = working?.hidden ?? NONE;
-  // A width nobody arranged is closed up by trying the sizes the tiles come in: once a render, not
-  // once a pointer's move, and not at all while the page stands composed and nobody arranges
-  // it, since the composed page is drawn from its own boxes and reads none of this.
-  const placed = useMemo(
-    () => (!editing && nobodyArranged(working) ? NOT_PLACED : arranged(tiles, working, columns)),
-    [editing, tiles, working, columns],
-  );
+  // The page stands on the same cells whether it is looked at or arranged (ADR-0147), so that
+  // arranging starts from what the person saw and Done keeps what they see: worked out once a
+  // render, not once a pointer's move.
+  const placed = useMemo(() => arranged(tiles, working, columns), [tiles, working, columns]);
   const [drag, setDrag] = useState<Drag | null>(null);
   const { busy, error, act } = useAction();
   /** The tile in hand, once it has come loose; nothing while one is merely pressed. */
@@ -756,10 +748,10 @@ export function HomeGrid(props: HomeGridProps) {
     setDraft(null);
     props.onDone();
   };
-  /** The page as composed again, every tile back on it: kept by Done like any change, let go by Cancel. */
-  const reset = () => setDraft(COMPOSED_HOME);
-  // The page closed up (ADR-0139), worked out while it is arranged alone: it tries the sizes the
-  // widgets come in, and the way to it is offered only where it would change something.
+  /** The page as nobody arranged it, every tile back on it: kept by Done like any change, let go by Cancel. */
+  const reset = () => setDraft(UNARRANGED_HOME);
+  // The page closed up (ADR-0147), worked out while it is arranged alone: the tiles moved up into
+  // the gaps at the sizes they have, the way to it offered only where it would move something.
   const closed = useMemo(
     () => (editing ? tidied(placed, columns) : placed),
     [editing, placed, columns],
@@ -770,16 +762,7 @@ export function HomeGrid(props: HomeGridProps) {
     tile.kind === "project" ? tile.project.name : nameOf(tile.widget.name);
   // Moved in the page, a frame would load again: the tiles keep the order they came in for as
   // long as the page is open, and each stands where its style says.
-  // Someone who has arranged nothing sees the page composed, edge to edge (ADR-0082); arranging
-  // it puts the same tiles on the grid's cells, closed up, where they move from (ADR-0139).
-  const composing = !editing && nobodyArranged(working);
-  const boxes: readonly ComposedTile[] = useMemo(
-    () =>
-      composing
-        ? composed(tiles, working, columns)
-        : shown.map((tile) => ({ ...tile, ...footprintOf(tile.size, columns) })),
-    [composing, tiles, working, columns, shown],
-  );
+  const boxes = shown.map((tile) => ({ ...tile, ...footprintOf(tile.size, columns) }));
   const order = useRef<readonly string[]>(NONE);
   const inOrder = [...boxes].sort((a, b) => a.y - b.y || a.x - b.x).map((tile) => tile.tile.id);
   order.current = [
@@ -793,9 +776,7 @@ export function HomeGrid(props: HomeGridProps) {
     ? tiles.filter((tile) => !shown.some((candidate) => candidate.tile.id === tile.id))
     : [];
   const slot = dragging === null ? undefined : shown.find((tile) => tile.tile.id === dragging.id);
-  const rows = composing
-    ? composedRows(boxes)
-    : rowsOf(shown, columns) + (editing ? SPARE_ROWS : 0);
+  const rows = rowsOf(shown, columns) + (editing ? SPARE_ROWS : 0);
   // The boards of the projects at a glance are read by whoever composes the page, once for each
   // set of them: the ids in order say when it changed.
   const glancing = glanceProjects(boxes);
@@ -821,7 +802,7 @@ export function HomeGrid(props: HomeGridProps) {
             <Button
               size="sm"
               variant="ghost"
-              disabled={busy || standsComposed(working)}
+              disabled={busy || standsUnarranged(working)}
               onClick={reset}
             >
               {words.reset}
@@ -864,8 +845,6 @@ export function HomeGrid(props: HomeGridProps) {
           ))}
         </div>
       )}
-      {/* What stands on the page, composed or arranged: the tiles drawn, not the arranged ones,
-          which are not worked out while the page stands composed. */}
       {boxes.length === 0 && !editing && (props.empty ?? null)}
       <ul
         ref={grid}

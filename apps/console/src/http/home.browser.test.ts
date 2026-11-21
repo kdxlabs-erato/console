@@ -118,6 +118,14 @@ const CUT_WORDS = `(() => {
   return cut;
 })()`;
 
+/** Where every tile stands and how far it reaches, by its id, as its style says. */
+const LAYOUT = `Object.fromEntries(
+  [...document.querySelectorAll("[data-tile]")].map((tile) => [
+    tile.getAttribute("data-tile"),
+    ["x", "y", "w", "h"].map((name) => tile.style.getPropertyValue("--sc-tile-" + name).trim()),
+  ]),
+)`;
+
 /** How many of the icons have lost their names. */
 const NAMES_GONE = `(() =>
   [...document.querySelectorAll(".sc-tile-project:not(.sc-tile-project-card)")].filter(
@@ -371,8 +379,8 @@ describe("the front page in a browser (ADR-0061)", () => {
     await page.context().close();
   });
 
-  // Last, since it leaves the page as composed, on which the tiles the tests above make stand below the window.
-  it("puts the page back as composed when the person asks, and keeps that only on Done (ADR-0109)", async () => {
+  // Last, since it leaves the page as nobody arranged it, on which the tiles the tests above make stand below the window.
+  it("puts the page back as nobody arranged it when the person asks, and keeps that only on Done, as it was shown (ADR-0109, ADR-0147)", async () => {
     const page = await signedIn(BROWSER_ADMIN);
     const tile = await made(page, "back");
     const aside = await made(page, "aside");
@@ -384,11 +392,17 @@ describe("the front page in a browser (ADR-0061)", () => {
           body: JSON.stringify({ home: body }),
         });
       }, home);
-    // Where the tile stands on the page as composed, nothing arranged.
+    // Where the tiles stand on the page nobody arranged; arranging it moves none of them.
     await keep(null);
     await page.goto(`${console_.origin}/`);
     await page.waitForSelector(`[data-tile="${tile}"]`);
-    const composed = await placeOf(page, tile);
+    const unarranged = await placeOf(page, tile);
+    const looked = await page.evaluate(LAYOUT);
+    await page.click("text=Edit layout");
+    await page.waitForSelector(".sc-home-bar");
+    expect(await page.evaluate(LAYOUT)).toEqual(looked);
+    await page.click("text=Cancel");
+    await page.waitForSelector("text=Edit layout");
     // The page arranged, the tile in a corner of its own, and a project taken off.
     await keep({ hidden: [aside], layouts: { 8: [{ tile, x: 7, y: 6, size: "icon" }] } });
     await page.goto(`${console_.origin}/`);
@@ -407,12 +421,14 @@ describe("the front page in a browser (ADR-0061)", () => {
     await page.waitForSelector("text=Edit layout");
     expect(await placeOf(page, tile)).toEqual(["7", "6"]);
 
-    // Put back, and kept.
+    // Put back, and kept: the page Done leaves is the one shown while it was arranged.
     await page.click("text=Edit layout");
     await page.waitForSelector(".sc-home-bar");
     await page.click("text=Reset to default");
+    const shown = await page.evaluate(LAYOUT);
     await page.click("text=Done");
     await page.waitForSelector("text=Edit layout");
+    expect(await page.evaluate(LAYOUT)).toEqual(shown);
     const me = (await page.evaluate(async () => (await fetch("/api/v1/me")).json())) as {
       readonly home: { readonly hidden: readonly string[]; readonly layouts: object } | null;
     };
@@ -420,7 +436,8 @@ describe("the front page in a browser (ADR-0061)", () => {
     expect(Object.keys(me.home?.layouts ?? {})).toEqual([]);
     await page.reload();
     await page.waitForSelector(`[data-tile="${aside}"]`);
-    expect(await placeOf(page, tile)).toEqual(composed);
+    expect(await placeOf(page, tile)).toEqual(unarranged);
+    expect(await page.evaluate(LAYOUT)).toEqual(looked);
     await page.context().close();
   });
 });
