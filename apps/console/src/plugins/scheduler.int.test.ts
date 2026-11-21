@@ -95,6 +95,70 @@ describe("the scheduler", () => {
     }
   });
 
+  it("runs a job once when another process ran it while this one was at the job before", async () => {
+    // Each process reads a plugin's jobs once, then runs them one after another. One was at a
+    // long job while the other ran the next one; it came to that job with what it had read
+    // before, took the lock the other had let go, and ran it a second time.
+    const first = createDatabase({
+      connectionString: testDatabase.connectionString,
+      maxConnections: 4,
+    });
+    const second = createDatabase({
+      connectionString: testDatabase.connectionString,
+      maxConnections: 4,
+    });
+    try {
+      let quickRuns = 0;
+      const jobs: Scheduling = {
+        jobTargets: async () => [
+          {
+            key: "twice",
+            boardProjectId: undefined,
+            jobs: { long: { every: "PT5M", at: null }, quick: { every: "PT5M", at: null } },
+          },
+        ],
+        runJob: async (_key, name) => {
+          if (name === "long") {
+            await sleep(1_500);
+          } else {
+            quickRuns += 1;
+          }
+          return { ok: true, value: null };
+        },
+        recordFailure: async () => {},
+      };
+      let at = new Date("2026-11-16T09:00:00.000Z");
+      const clock = { now: () => at };
+      const logger = pino({ level: "silent" });
+      const one = new PluginScheduler({
+        database: first,
+        workspace: async () => workspace,
+        plugins: jobs,
+        clock,
+        logger,
+      });
+      const two = new PluginScheduler({
+        database: second,
+        workspace: async () => workspace,
+        plugins: jobs,
+        clock,
+        logger,
+      });
+      await one.tick();
+      at = new Date(at.getTime() + 5 * 60_000);
+      // The first is at the long job; the second finds it taken and runs the quick one.
+      const ticking = one.tick();
+      await sleep(500);
+      await two.tick();
+      expect(quickRuns).toBe(1);
+      await ticking;
+      expect(quickRuns).toBe(1);
+    } finally {
+      await first.close();
+      await second.close();
+    }
+  });
+
   it("keeps a job's period whatever its run takes, and skips the periods it was away for", async () => {
     // The scheduler looks once a minute, and a run ends after the tick that began it. Counted
     // from the end of the run, the next time fell just past the tick a period on, and a job of

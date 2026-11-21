@@ -275,9 +275,17 @@ export class PluginScheduler {
       if (locked.rows[0]?.locked !== true) {
         return;
       }
+      // Read again under the lock: the row this process read before its plugin's other jobs ran
+      // may be minutes old, and another process may have run the job and let the lock go since.
+      const current = (await readJobs(database, workspace.id, target.key)).find(
+        (candidate) => candidate.name === name,
+      );
+      if (current?.nextAt === undefined || current.nextAt.getTime() !== row.nextAt?.getTime()) {
+        return;
+      }
       const result = await this.options.plugins.runJob(target.key, name);
       const ranAt = clock.now();
-      const nextAt = nextRunAfterRun(row.nextAt ?? ranAt, ranAt, job.every, job.at, zone);
+      const nextAt = nextRunAfterRun(current.nextAt, ranAt, job.every, job.at, zone);
       if (result.ok) {
         logger.info({ plugin: target.key, job: name }, "plugin job ran");
         await writeJob(database, {
@@ -288,7 +296,7 @@ export class PluginScheduler {
           lastRunAt: ranAt,
           lastOutcome: "ok",
           nextAt,
-          failedEventAt: row.failedEventAt,
+          failedEventAt: current.failedEventAt,
           // It went well: whatever run of failures it was in is over.
           failedSince: undefined,
         });
@@ -296,8 +304,8 @@ export class PluginScheduler {
       }
       logger.warn({ plugin: target.key, job: name, code: result.error.code }, "plugin job failed");
       const eventDue =
-        row.failedEventAt === undefined ||
-        ranAt.getTime() - row.failedEventAt.getTime() >= FAILURE_EVENT_EVERY_MS;
+        current.failedEventAt === undefined ||
+        ranAt.getTime() - current.failedEventAt.getTime() >= FAILURE_EVENT_EVERY_MS;
       if (eventDue) {
         await this.options.plugins.recordFailure(
           target.key,
@@ -313,12 +321,12 @@ export class PluginScheduler {
         lastRunAt: ranAt,
         lastOutcome: "failed",
         nextAt,
-        failedEventAt: eventDue ? ranAt : row.failedEventAt,
+        failedEventAt: eventDue ? ranAt : current.failedEventAt,
         // The first failure after it went well is where the run of failures began (ADR-0128).
         // What the row keeps of it counts only while the run before this one failed too: a
         // worker of the version before writes a run that went well and leaves the column as it
         // was, and one failure after that is no run of failures begun before the good run.
-        failedSince: row.lastOutcome === "failed" ? (row.failedSince ?? ranAt) : ranAt,
+        failedSince: current.lastOutcome === "failed" ? (current.failedSince ?? ranAt) : ranAt,
       });
     });
   }
