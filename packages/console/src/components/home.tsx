@@ -51,6 +51,7 @@ import type {
 } from "../schemas.js";
 import { useAction } from "../use-action.js";
 import { DRAG_SLACK, edgeScrollOf, HOLD_MS, HOLD_SLACK } from "./board.js";
+import { Icon } from "./icon.js";
 import { POPOVERS, useListPopover } from "./popover.js";
 import { ProjectMark, ProjectRoleBadge } from "./projects.js";
 import { Badge, Button, Callout, cx, Day, DueBadge, ProgressBar, Workers } from "./ui.js";
@@ -456,8 +457,9 @@ function SizeChoice(props: {
 
 /**
  * The sizes of a tile one cell wide, behind one button: a row of them, folded into its cell,
- * covers what the tile shows. The button shows the size the tile has, and the list it opens
- * stands over the tiles, each size by its shape and its name.
+ * covers what the tile shows. The button is the pack's "more", read at once as a list to open,
+ * where one size alone, lit, read as a choice already made; its label says the size the tile
+ * has. The list stands over the tiles, each size by its shape and its name.
  */
 function SizeMenu(props: {
   readonly tile: PlacedTile;
@@ -471,11 +473,11 @@ function SizeMenu(props: {
   const list = useListPopover(button, panel);
   const now = props.tile.size;
   return (
-    <div className="sc-tile-sizes sc-home-size-one">
+    <div className="sc-home-size-one">
       <button
         type="button"
         ref={button}
-        className="sc-tile-size sc-tile-size-on"
+        className="sc-tile-size"
         aria-label={words.sizeIs(words.sizes[now])}
         title={words.sizeIs(words.sizes[now])}
         aria-expanded={list.open}
@@ -486,7 +488,7 @@ function SizeMenu(props: {
           list.toggle();
         }}
       >
-        <SizeGlyph size={now} />
+        <Icon name="more" size="md" />
       </button>
       <div
         id={id}

@@ -638,7 +638,8 @@ a.sc-tile-glance:focus-visible {
 
 /* The sizes stay within their tile, folding onto a second row where a cell is narrower than they
    are, as a project's five are on an icon: what stands beside the tile, and its own way off the
-   page, stay in reach. */
+   page, stay in reach. Their ends are round, as the tile's corner is, so that the row keeps as
+   far from the corner's curve as from its sides; a square end reached past the curve. */
 .sc-tile-sizes {
   position: absolute;
   top: var(--sc-space-1);
@@ -653,7 +654,7 @@ a.sc-tile-glance:focus-visible {
   margin: 0;
   padding: 1px;
   border: var(--sc-border);
-  border-radius: var(--sc-radius-md);
+  border-radius: var(--sc-radius-full);
   background: var(--sc-color-bg-raised);
 }
 
@@ -665,7 +666,7 @@ a.sc-tile-glance:focus-visible {
   height: 1.5rem;
   padding: 0 3px;
   border: 0;
-  border-radius: var(--sc-radius-sm);
+  border-radius: var(--sc-radius-full);
   background: transparent;
   color: var(--sc-color-text-muted);
   cursor: pointer;
@@ -692,15 +693,18 @@ a.sc-tile-glance:focus-visible {
   padding: 0 2px;
 }
 
-/* A project a cell wide stands lower, at every width, and the one button its sizes fold behind
-   stands closer to the corner: the two keep clear of each other. */
+/* A project a cell wide stands lower, at every width, clear of the one button its sizes fold
+   behind, which stands in the corner as the sizes do, with no box around it to reach past the
+   tile's rounded corner. */
 .sc-home-editing .sc-tile-project:not(.sc-tile-project-card) {
   justify-content: flex-end;
 }
 
-.sc-home-editing .sc-home-size-one {
-  top: calc(var(--sc-space-1) / 2);
-  right: calc(var(--sc-space-1) / 2);
+.sc-home-size-one {
+  position: absolute;
+  top: var(--sc-space-1);
+  right: var(--sc-space-1);
+  z-index: 1;
 }
 
 /* A glance's figures stand where the sizes do: while the page is arranged, it starts under them. */

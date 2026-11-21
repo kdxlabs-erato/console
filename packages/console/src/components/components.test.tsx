@@ -4709,9 +4709,15 @@ describe("projects", () => {
     expect(html).toContain('aria-label="Remove from this page: The web &lt;app&gt;"');
     // A tile a cell wide has one button for its sizes, which says the size it has and opens the
     // list of them over the tiles: a row of them, folded into the cell, would cover the icon.
-    expect(html).toMatch(
-      /<button type="button" class="sc-tile-size sc-tile-size-on" aria-label="Size: Icon"[^>]* aria-expanded="false" aria-controls="([^"]+)" popovertarget="\1">/i,
+    // It shows the pack's "more", not a size lit, which read as a choice already made.
+    const one = html.match(
+      /<button type="button" class="sc-tile-size" aria-label="Size: Icon"[^>]* aria-expanded="false" aria-controls="([^"]+)" popovertarget="\1">(.*?)<\/button>/i,
     );
+    expect(one).not.toBeNull();
+    expect(one?.[2]).toMatch(/^<svg class="sc-icon sc-icon-md"[^>]* aria-hidden="true">/);
+    expect(one?.[2]).not.toContain("sc-tile-size-glyph");
+    expect(html).not.toContain("sc-tile-size-on");
+    expect(html).not.toContain("sc-tile-sizes");
     expect(html.match(/class="sc-tile-size[ "]/g)).toHaveLength(1);
     expect(html).toMatch(/<div id="[^"]+" popover="auto" class="sc-menu-panel sc-menu-popover/);
     expect(html).toMatch(
