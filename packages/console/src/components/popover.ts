@@ -6,7 +6,7 @@ import { type RefObject, useEffect, useState } from "react";
 
 /** How close to the window's edge a list may come. */
 const PANEL_GUTTER_PX = 8;
-/** How far below its button, off the line the button stands on, a list opens. */
+/** How far below its button, or above it, off the line the button stands on, a list opens. */
 const PANEL_DROP_PX = 6;
 /** How far a list's edge stands before the names in it: its own padding and a link's. */
 const PANEL_INSET_PX = 14;
@@ -21,22 +21,30 @@ export const POPOVERS =
   typeof HTMLElement === "undefined" || typeof HTMLElement.prototype.showPopover === "function";
 
 /**
- * Puts a list under the button that opened it, the names in it lined up with the button's,
- * within the page's width, the scrollbar left out, and no taller than the window has room for
- * below it, a longer list scrolling within itself: the list is in the top layer, where nothing
- * of the page places it.
+ * Puts a list by the button that opened it, the names in it lined up with the button's, within
+ * the page's width, the scrollbar left out: the list is in the top layer, where nothing of the
+ * page places it. It opens under the button, or over it where the window has no room below for
+ * the whole of it and more above, as for a tile near the foot of the window; no taller than the
+ * window has room for on its side, a longer list scrolling within itself.
  */
-function placeUnder(button: HTMLElement | null, box: HTMLElement | null): void {
+function place(button: HTMLElement | null, box: HTMLElement | null): void {
   if (button === null || box === null) {
     return;
   }
   const at = button.getBoundingClientRect();
   const { clientWidth, clientHeight } = document.documentElement;
   const room = clientWidth - box.offsetWidth - PANEL_GUTTER_PX;
-  const top = at.bottom + PANEL_DROP_PX;
+  const below = clientHeight - at.bottom - PANEL_DROP_PX - PANEL_GUTTER_PX;
+  const above = at.top - PANEL_DROP_PX - PANEL_GUTTER_PX;
+  // Its whole height, however short it was held the last time it opened: its items, its padding
+  // and its border.
+  const whole = box.scrollHeight + box.offsetHeight - box.clientHeight;
+  const over = whole > below && above > below;
+  const tallest = Math.max(PANEL_SHORTEST_PX, over ? above : below);
+  const top = over ? at.top - PANEL_DROP_PX - Math.min(whole, tallest) : at.bottom + PANEL_DROP_PX;
   box.style.left = `${Math.max(PANEL_GUTTER_PX, Math.min(at.left - PANEL_INSET_PX, room))}px`;
-  box.style.top = `${top}px`;
-  box.style.maxHeight = `${Math.max(PANEL_SHORTEST_PX, clientHeight - top - PANEL_GUTTER_PX)}px`;
+  box.style.top = `${Math.max(PANEL_GUTTER_PX, top)}px`;
+  box.style.maxHeight = `${tallest}px`;
 }
 
 /** Closes a list: the browser's popover, or the list its button shows by hand where there is none. */
@@ -86,7 +94,7 @@ export function useListPopover(
     }
     if (!box.matches(":popover-open")) {
       box.showPopover();
-      placeUnder(anchor.current, box);
+      place(anchor.current, box);
     }
   };
   const hide = () => hideList(panel.current, setOpen);
@@ -130,7 +138,7 @@ export function useListPopover(
   useEffect(() => {
     // Shown by the button itself where the browser has no popover: placed now that it shows.
     if (open && !POPOVERS) {
-      placeUnder(anchor.current, panel.current);
+      place(anchor.current, panel.current);
     }
   }, [open, anchor, panel]);
   return { open, show, hide, toggle };

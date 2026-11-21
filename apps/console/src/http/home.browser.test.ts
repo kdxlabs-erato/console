@@ -171,12 +171,37 @@ describe("the front page in a browser (ADR-0061)", () => {
     // sizes, which opens their list over the tiles; a scroll of the page closes the list, so the
     // button is in sight, and the scroll heard, before it is pressed.
     const sizes = page.locator(`[data-tile="${ops}"] [aria-label="Size: Icon"]`);
-    await sizes.scrollIntoViewIfNeeded();
-    await page.evaluate(
-      "new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))",
+    const settled =
+      "new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))";
+    // Which side of its button the list opened on, and whether it is within the window.
+    const sideOf = `(() => {
+      const button = document.querySelector('[data-tile="${ops}"] [aria-label="Size: Icon"]').getBoundingClientRect();
+      const list = document.querySelector("[popover]:popover-open").getBoundingClientRect();
+      return [list.top >= button.bottom ? "under" : list.bottom <= button.top ? "over" : "across",
+        list.top >= 0 && list.bottom <= innerHeight];
+    })()`;
+    // The page at its top, and the window ending a little under the button, then far under it.
+    await page.evaluate("window.scrollTo(0, 0)");
+    const buttonTop = Math.round(
+      Number(
+        await page.evaluate(
+          `document.querySelector('[data-tile="${ops}"] [aria-label="Size: Icon"]').getBoundingClientRect().top`,
+        ),
+      ),
     );
-    await sizes.click();
-    await page.waitForSelector("[popover]:popover-open");
+    const openedWithRoom = async (under: number) => {
+      await page.setViewportSize({ width: 1280, height: buttonTop + under });
+      await page.evaluate(settled);
+      await sizes.click();
+      await page.waitForSelector("[popover]:popover-open");
+      return page.evaluate(sideOf);
+    };
+    // A tile at the foot of the window, with no room under it for the list: the list opens over it.
+    expect(await openedWithRoom(64)).toEqual(["over", true]);
+    await page.keyboard.press("Escape");
+    expect(await page.$("[popover]:popover-open")).toBeNull();
+    // With room under it, under it.
+    expect(await openedWithRoom(480)).toEqual(["under", true]);
     // The button says so once the browser has told the page, a moment after the list shows.
     await expect.poll(() => sizes.getAttribute("aria-expanded")).toBe("true");
     await page.click(`[data-tile="${ops}"] [popover] button:has-text("Small")`);
@@ -186,6 +211,7 @@ describe("the front page in a browser (ADR-0061)", () => {
     expect(
       await page.$(`[data-tile="${ops}"] [aria-label="Small"][aria-pressed="true"]`),
     ).not.toBeNull();
+    await page.setViewportSize({ width: 1280, height: 900 });
 
     await page.click("text=Done");
     await page.waitForSelector("text=Edit layout");
