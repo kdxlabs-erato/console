@@ -416,15 +416,32 @@ export function arranged(
 }
 
 /**
- * A page being arranged, closed up (ADR-0147): its tiles in the order they are read, from the top,
- * each at the size it has, at the first room. What a person asks for when a page they kept has
- * gaps they did not mean, from a tile that left or one they moved; no tile changes its size.
+ * A page being arranged, closed up (ADR-0147): each tile, in the order the tiles are read, moved
+ * to the first room from the top that the others leave it, at the size it has, and again until
+ * none moves. What a person asks for when a page they kept has gaps they did not mean, from a
+ * tile that left or one they moved. No tile changes its size or goes further down, so the page
+ * grows no longer, and a page packed from the top, as nobody arranged it, has nothing to move.
+ * Packed again in the order read instead, a small tile could take the cell a large one below it
+ * stood on, and the large one went a row down.
  */
 export function tidied(placed: readonly PlacedTile[], columns: number): PlacedTile[] {
-  return packed(
-    inReadingOrder(placed).map(({ tile, size }) => ({ tile, size })),
-    columns,
-  );
+  let tiles = inReadingOrder(placed);
+  for (let moved = true; moved; ) {
+    moved = false;
+    for (const tile of inReadingOrder(tiles)) {
+      const others = occupied(
+        tiles.filter((other) => other !== tile),
+        columns,
+      );
+      const room = firstRoom(others, footprintOf(tile.size, columns), columns);
+      if (room.x !== tile.x || room.y !== tile.y) {
+        const at = { ...tile, ...room };
+        tiles = tiles.map((other) => (other === tile ? at : other));
+        moved = true;
+      }
+    }
+  }
+  return inReadingOrder(tiles);
 }
 
 /** Whether two arrangements stand every tile on the same cells at the same size. */

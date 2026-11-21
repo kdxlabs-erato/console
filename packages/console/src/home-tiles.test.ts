@@ -368,6 +368,99 @@ describe("the front page's grid (ADR-0061)", () => {
     }
   });
 
+  it("moves no tile further down to close a gap, so that the page grows no longer", () => {
+    // Packed again in the order read, the small widget below took the cell the large one stood
+    // on beside it, and the large one went a row down: a page nobody arranged was offered the
+    // way to close it up, and closed up, it was a row longer.
+    const calendar = plugin("calendar", [
+      {
+        key: "mine",
+        name: { en: "Mine" },
+        place: "home:top",
+        size: "third",
+        sizes: ["small", "medium"],
+        defaultSize: "small",
+      },
+      {
+        key: "month",
+        name: { en: "Month" },
+        place: "home:bottom",
+        size: "half",
+        sizes: ["small", "medium", "large"],
+        defaultSize: "large",
+      },
+      {
+        key: "next",
+        name: { en: "Next" },
+        place: "home:bottom",
+        size: "third",
+        sizes: ["small", "medium"],
+        defaultSize: "small",
+      },
+    ]);
+    const fresh = arranged(homeTiles([calendar], [1, 2, 3, 4, 5].map(project)), null, 6);
+    expect(places(fresh)).toMatchObject({
+      "widget:calendar:month": [0, 2, "large"],
+      "widget:calendar:next": [4, 1, "small"],
+    });
+    expect(rowsOf(fresh, 6)).toBe(6);
+    expect(sameArrangement(tidied(fresh, 6), fresh)).toBe(true);
+  });
+
+  it("closes up any page without moving a tile down, and leaves a page packed from the top as it is", () => {
+    let seed = 7;
+    const random = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    const below = (a: PlacedTile, b: PlacedTile) => a.y > b.y || (a.y === b.y && a.x > b.x);
+    const SIZES = ["small", "medium", "large", "wide", "full"] as const;
+    for (let round = 0; round < 300; round += 1) {
+      const widgets = Array.from({ length: 1 + Math.floor(random() * 5) }, (_, at) => {
+        const sizes = SIZES.filter((_, index) => index === at % 3 || random() < 0.4);
+        return {
+          key: `w${at}`,
+          name: { en: `W${at}` },
+          place: random() < 0.6 ? ("home:top" as const) : ("home:bottom" as const),
+          size: "third" as const,
+          sizes,
+          defaultSize: sizes[Math.floor(random() * sizes.length)] ?? "small",
+        };
+      });
+      const tiles = homeTiles(
+        [plugin("any", widgets)],
+        Array.from({ length: Math.floor(random() * 10) }, (_, at) => project(at)),
+      );
+      for (const columns of [12, 8, 6, 4] as const) {
+        const fresh = arranged(tiles, null, columns);
+        expect(sameArrangement(tidied(fresh, columns), fresh)).toBe(true);
+        // A page kept with every tile somewhere, the overlaps settled as the page settles them.
+        const kept = arranged(
+          tiles,
+          layout(
+            columns,
+            fresh.map(({ tile, size }) => ({
+              tile: tile.id,
+              size,
+              x: Math.floor(random() * columns),
+              y: Math.floor(random() * 12),
+            })),
+          ),
+          columns,
+        );
+        const closed = tidied(kept, columns);
+        expect(holdsTogether(closed, columns)).toBe(true);
+        expect(rowsOf(closed, columns)).toBeLessThanOrEqual(rowsOf(kept, columns));
+        for (const tile of closed) {
+          const before = kept.find((other) => other.tile.id === tile.tile.id);
+          expect(before?.size).toBe(tile.size);
+          expect(before !== undefined && below(tile, before)).toBe(false);
+        }
+        expect(sameArrangement(tidied(closed, columns), closed)).toBe(true);
+      }
+    }
+  });
+
   it("keeps the sizes kept at another width, so that icons stay icons where a row does not close", () => {
     // Eight icons kept on a phone fill a row of eight.
     const eight = [1, 2, 3, 4, 5, 6, 7, 8].map(project);
