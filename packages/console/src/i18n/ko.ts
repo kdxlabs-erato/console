@@ -1598,6 +1598,7 @@ export const ko: Messages = {
     add: "추가",
     remove: "화면에서 제거",
     size: "크기",
+    sizeIs: (size) => `크기: ${size}`,
     sizes: {
       icon: "아이콘",
       small: "소형",

@@ -53,7 +53,7 @@ A part is a file under `parts/` and a row here, with the classes that are its ow
 | `files` | `sc-file*`, `sc-chosen*` | | Files to choose, and the ones chosen with the way to take each out. |
 | `toggle` | `sc-toggle*` | | One choice among a few, each a chip, the chosen one filled. |
 | `picker` | `sc-picker*`, `sc-person-option*` | `Picker` | One thing chosen out of a listing that is searched: a person, a project, a goal, a task. `sc-picker-quiet` where it is a fact changed in place, `sc-picker-add` at the end of a row of chips. |
-| `menu` | `sc-menu*` | | What opens from a button over the page: the person's menu, a card's. |
+| `menu` | `sc-menu*` | | What opens from a button over the page: the person's menu, a card's. `sc-menu-popover` is a panel opened in the top layer, over whatever around its button would clip or cover it, as a front page tile's sizes are. |
 | `tabs` | `sc-tab*`, `sc-tabs*`, `sc-subtabs*` | | The pages of a project (`sc-tabs`), and the views of one page (`sc-subtabs` of `sc-tab`s), the current one marked. |
 | `pager` | `sc-pager*`, `sc-show*` | `Pager`, `ShowMore` | A long list a page at a time: turned by pages, or grown by "show more". |
 | `badge` | `sc-badge*`, `sc-kind*` | `Badge`, `DueBadge`, `GoalStateBadge`, `RoleBadge`, `RunStatusBadge` | A state or a kind in a word. The tone is the meaning: neutral, accent, success, warning, point, danger. Nothing stands before its words but the dot of one that is `live`. |

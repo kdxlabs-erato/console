@@ -692,14 +692,37 @@ a.sc-tile-glance:focus-visible {
   padding: 0 2px;
 }
 
-.sc-home-editing .sc-home-grid[data-columns="4"] .sc-tile-project:not(.sc-tile-project-card),
-.sc-home-editing .sc-home-grid[data-columns="6"] .sc-tile-project:not(.sc-tile-project-card) {
+/* A project a cell wide stands lower, at every width, and the one button its sizes fold behind
+   stands closer to the corner: the two keep clear of each other. */
+.sc-home-editing .sc-tile-project:not(.sc-tile-project-card) {
   justify-content: flex-end;
+}
+
+.sc-home-editing .sc-home-size-one {
+  top: calc(var(--sc-space-1) / 2);
+  right: calc(var(--sc-space-1) / 2);
 }
 
 /* A glance's figures stand where the sizes do: while the page is arranged, it starts under them. */
 .sc-home-editing .sc-tile-glance {
   padding-top: calc(var(--sc-glance-pad-y) + var(--sc-space-6));
+}
+
+/* The list a tile one cell wide opens of its sizes: as wide as its names, each size's shape in a
+   column of its own before its name, so that the names line up. */
+.sc-home-size-menu {
+  min-width: 8rem;
+}
+
+.sc-home-size-option {
+  display: grid;
+  grid-template-columns: 1.5rem auto;
+  align-items: center;
+  column-gap: var(--sc-space-2);
+}
+
+.sc-home-size-option .sc-tile-size-glyph {
+  justify-self: center;
 }
 
 /* The size's shape in small: the cells it takes, a few pixels each. */

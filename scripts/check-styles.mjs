@@ -94,7 +94,7 @@ const STYLE_WRITES = new Map(
   Object.entries({
     "components/agent-page.tsx": 3, // the conversation's top, the box grown to its words
     "components/pictures.tsx": 3, // the page held still under a picture
-    "components/shell.tsx": 3, // where a menu's panel opens
+    "components/popover.ts": 3, // where a list a button opens is placed
     "plugin/web.ts": 1, // a plugin's page given the console's tokens
   }),
 );

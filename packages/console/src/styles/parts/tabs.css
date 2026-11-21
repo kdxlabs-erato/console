@@ -111,15 +111,9 @@
   display: none;
 }
 
+/* It opens as a menu's popover does (sc-menu-in, the menu's). */
 .sc-tab-group-panel:popover-open {
   animation: sc-menu-in 120ms ease-out;
-}
-
-@keyframes sc-menu-in {
-  from {
-    opacity: 0;
-    transform: translateY(-0.25rem);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -5,6 +5,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -50,6 +51,7 @@ import type {
 } from "../schemas.js";
 import { useAction } from "../use-action.js";
 import { DRAG_SLACK, edgeScrollOf, HOLD_MS, HOLD_SLACK } from "./board.js";
+import { POPOVERS, useListPopover } from "./popover.js";
 import { ProjectMark, ProjectRoleBadge } from "./projects.js";
 import { Badge, Button, Callout, cx, Day, DueBadge, ProgressBar, Workers } from "./ui.js";
 
@@ -411,6 +413,22 @@ export function ProjectTile(props: ProjectTileProps) {
 }
 
 /** The sizes a tile comes in, each a little picture of its shape, the one it has lit. */
+/** A size's shape in small: the cells it takes. */
+function SizeGlyph(props: { readonly size: HomeTileSize }) {
+  return (
+    <span
+      className="sc-tile-size-glyph"
+      aria-hidden="true"
+      style={
+        {
+          "--sc-tile-w": HOME_TILE_CELLS[props.size].columns,
+          "--sc-tile-h": HOME_TILE_CELLS[props.size].rows,
+        } as CSSProperties
+      }
+    />
+  );
+}
+
 function SizeChoice(props: {
   readonly tile: PlacedTile;
   readonly sizes: readonly HomeTileSize[];
@@ -429,18 +447,77 @@ function SizeChoice(props: {
           title={words.sizes[size]}
           onClick={() => props.onChoose(size)}
         >
-          <span
-            className="sc-tile-size-glyph"
-            style={
-              {
-                "--sc-tile-w": HOME_TILE_CELLS[size].columns,
-                "--sc-tile-h": HOME_TILE_CELLS[size].rows,
-              } as CSSProperties
-            }
-          />
+          <SizeGlyph size={size} />
         </button>
       ))}
     </fieldset>
+  );
+}
+
+/**
+ * The sizes of a tile one cell wide, behind one button: a row of them, folded into its cell,
+ * covers what the tile shows. The button shows the size the tile has, and the list it opens
+ * stands over the tiles, each size by its shape and its name.
+ */
+function SizeMenu(props: {
+  readonly tile: PlacedTile;
+  readonly sizes: readonly HomeTileSize[];
+  readonly onChoose: (size: HomeTileSize) => void;
+}) {
+  const words = useWords().home;
+  const id = useId();
+  const button = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const list = useListPopover(button, panel);
+  const now = props.tile.size;
+  return (
+    <div className="sc-tile-sizes sc-home-size-one">
+      <button
+        type="button"
+        ref={button}
+        className="sc-tile-size sc-tile-size-on"
+        aria-label={words.sizeIs(words.sizes[now])}
+        title={words.sizeIs(words.sizes[now])}
+        aria-expanded={list.open}
+        aria-controls={id}
+        popoverTarget={id}
+        onClick={(event) => {
+          event.preventDefault();
+          list.toggle();
+        }}
+      >
+        <SizeGlyph size={now} />
+      </button>
+      <div
+        id={id}
+        ref={panel}
+        popover="auto"
+        hidden={!POPOVERS && !list.open}
+        className="sc-menu-panel sc-menu-popover sc-home-size-menu"
+      >
+        <div className="sc-menu-list">
+          {props.sizes.map((size) => (
+            <button
+              key={size}
+              type="button"
+              className={cx(
+                "sc-menu-link",
+                "sc-home-size-option",
+                size === now && "sc-menu-chosen",
+              )}
+              aria-pressed={size === now}
+              onClick={() => {
+                list.hide();
+                props.onChoose(size);
+              }}
+            >
+              <SizeGlyph size={size} />
+              {words.sizes[size]}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -553,10 +630,11 @@ export function HomeGrid(props: HomeGridProps) {
   const loose = useRef(false);
 
   const press = (tile: PlacedTile, event: ReactPointerEvent<HTMLElement>) => {
-    // The tile's own buttons are pressed for themselves; everything else takes hold of it.
+    // The tile's own buttons, and the list of its sizes, are pressed for themselves; everything
+    // else takes hold of it.
     if (
       event.button !== 0 ||
-      (event.target instanceof Element && event.target.closest("button") !== null)
+      (event.target instanceof Element && event.target.closest("button, [popover]") !== null)
     ) {
       return;
     }
@@ -915,13 +993,23 @@ export function HomeGrid(props: HomeGridProps) {
                   >
                     ×
                   </button>
-                  {sizesAt(tile.tile, columns).length > 1 && (
-                    <SizeChoice
-                      tile={tile}
-                      sizes={sizesAt(tile.tile, columns)}
-                      onChoose={(size) => change(resized(placed, tile.tile.id, size, columns))}
-                    />
-                  )}
+                  {sizesAt(tile.tile, columns).length > 1 &&
+                    // One cell is narrower than the row of sizes, at every width of the grid:
+                    // they fold behind one button, where the browser can open its list over the
+                    // tiles.
+                    (w === 1 && POPOVERS ? (
+                      <SizeMenu
+                        tile={tile}
+                        sizes={sizesAt(tile.tile, columns)}
+                        onChoose={(size) => change(resized(placed, tile.tile.id, size, columns))}
+                      />
+                    ) : (
+                      <SizeChoice
+                        tile={tile}
+                        sizes={sizesAt(tile.tile, columns)}
+                        onChoose={(size) => change(resized(placed, tile.tile.id, size, columns))}
+                      />
+                    ))}
                 </>
               )}
             </li>

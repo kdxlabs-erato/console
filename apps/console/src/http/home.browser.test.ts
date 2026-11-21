@@ -167,9 +167,25 @@ describe("the front page in a browser (ADR-0061)", () => {
     await page.click("text=+ WEB");
     await page.waitForSelector(`[data-tile="${web}"]`);
 
-    // A size picked on the tile, and the cells it takes.
-    await page.click(`[data-tile="${ops}"] [aria-label="Small"]`);
+    // A size picked on the tile, and the cells it takes. A tile a cell wide has one button for its
+    // sizes, which opens their list over the tiles; a scroll of the page closes the list, so the
+    // button is in sight, and the scroll heard, before it is pressed.
+    const sizes = page.locator(`[data-tile="${ops}"] [aria-label="Size: Icon"]`);
+    await sizes.scrollIntoViewIfNeeded();
+    await page.evaluate(
+      "new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))",
+    );
+    await sizes.click();
+    await page.waitForSelector("[popover]:popover-open");
+    // The button says so once the browser has told the page, a moment after the list shows.
+    await expect.poll(() => sizes.getAttribute("aria-expanded")).toBe("true");
+    await page.click(`[data-tile="${ops}"] [popover] button:has-text("Small")`);
     expect(await styleOf(page, ops, "--sc-tile-w")).toBe("2");
+    // Chosen, the list is closed; wider than a cell now, the tile has the row of its sizes.
+    expect(await page.$("[popover]:popover-open")).toBeNull();
+    expect(
+      await page.$(`[data-tile="${ops}"] [aria-label="Small"][aria-pressed="true"]`),
+    ).not.toBeNull();
 
     await page.click("text=Done");
     await page.waitForSelector("text=Edit layout");

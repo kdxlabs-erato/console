@@ -1689,6 +1689,8 @@ export const en = {
     add: "Add",
     remove: "Remove from this page",
     size: "Size",
+    /** The one button of a tile a cell wide, which opens the list of its sizes: the size it has. */
+    sizeIs: (size: string) => `Size: ${size}`,
     sizes: {
       icon: "Icon",
       small: "Small",

@@ -1,7 +1,8 @@
-import { Fragment, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useId, useRef } from "react";
 import type { RestPerson } from "../api.js";
 import { useWords } from "../i18n/index.js";
 import { Icon } from "./icon.js";
+import { POPOVERS, useListPopover } from "./popover.js";
 import { Avatar, cx, personName } from "./ui.js";
 
 // The frame every page sits in (ADR-0010): a header that names the workspace and the project the
@@ -119,53 +120,6 @@ function tabLabel(label: string): { readonly title: string | undefined } {
   return { title: widthOf(label) > TAB_LABEL_WHOLE ? label : undefined };
 }
 
-/** How close to the window's edge a list opened from a tab may come. */
-const PANEL_GUTTER_PX = 8;
-/** How far below its tab, off the header's line, a list opens. */
-const PANEL_DROP_PX = 6;
-/** How far a list's edge stands before the names in it: its own padding and a link's. */
-const PANEL_INSET_PX = 14;
-
-/** The least a list is let be tall where the window is short: a few of its pages, scrolled. */
-const PANEL_SHORTEST_PX = 120;
-
-/**
- * Whether the browser shows a popover. One that does not, as Safari before 17, has the list
- * shown and hidden by the tab itself, without the browser's ways of closing it.
- */
-const POPOVERS =
-  typeof HTMLElement === "undefined" || typeof HTMLElement.prototype.showPopover === "function";
-
-/**
- * Puts the list a tab opened under the tab, the names in it lined up with the tab's, within the
- * page's width, the scrollbar left out, and no taller than the window has room for below it, a
- * longer list scrolling within itself: the list is in the top layer, where nothing of the page
- * places it.
- */
-function placeUnder(tab: HTMLElement | null, box: HTMLElement | null): void {
-  if (tab === null || box === null) {
-    return;
-  }
-  const at = tab.getBoundingClientRect();
-  const { clientWidth, clientHeight } = document.documentElement;
-  const room = clientWidth - box.offsetWidth - PANEL_GUTTER_PX;
-  const top = at.bottom + PANEL_DROP_PX;
-  box.style.left = `${Math.max(PANEL_GUTTER_PX, Math.min(at.left - PANEL_INSET_PX, room))}px`;
-  box.style.top = `${top}px`;
-  box.style.maxHeight = `${Math.max(PANEL_SHORTEST_PX, clientHeight - top - PANEL_GUTTER_PX)}px`;
-}
-
-/** Closes a list: the browser's popover, or the list the tab shows by hand where there is none. */
-function hideList(box: HTMLElement | null, setOpen: (open: boolean) => void): void {
-  if (!POPOVERS) {
-    setOpen(false);
-    return;
-  }
-  if (box?.matches(":popover-open") === true) {
-    box.hidePopover();
-  }
-}
-
 /** How long a mouse rests on a tab before its list opens: one passing along the row opens nothing. */
 const HOVER_OPEN_MS = 80;
 /** How long a list stays once the mouse has left it and its tab: the moment it takes to cross from one to the other. */
@@ -194,70 +148,14 @@ function TabGroup(props: { readonly item: NavItem; readonly onNavigate: (href: s
   const id = useId();
   const tab = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
+  const { open, show, hide, toggle } = useListPopover(tab, panel);
   const resting = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const { item } = props;
   const after = (ms: number, what: () => void) => {
     clearTimeout(resting.current);
     resting.current = setTimeout(what, ms);
   };
-  // Shown here rather than by the browser, and placed at once, before anything is painted: the
-  // list has its width only once it shows, and a list placed before that, then again once the
-  // browser said it opened, could stand out of the window in between. The button stays its
-  // invoker, so that a click on it is not a click outside that closes it first.
-  const show = () => {
-    const box = panel.current;
-    if (box === null) {
-      return;
-    }
-    if (!POPOVERS) {
-      setOpen(true);
-      return;
-    }
-    if (!box.matches(":popover-open")) {
-      box.showPopover();
-      placeUnder(tab.current, box);
-    }
-  };
-  const hide = () => hideList(panel.current, setOpen);
-  useEffect(() => {
-    const box = panel.current;
-    if (box === null) {
-      return;
-    }
-    const onToggle = (event: Event) => {
-      setOpen((event as ToggleEvent).newState === "open");
-    };
-    // Open, it is where its tab is; the row of tabs scrolling, or the window changing, would
-    // leave it where the tab no longer is, so either closes it, and so does the window losing
-    // the focus. A scroll within the list is the list's own. Heard from the start rather than
-    // once the page knows it opened, which comes a moment after it shows.
-    const close = (event: Event) => {
-      const shown = POPOVERS ? box.matches(":popover-open") : !box.hidden;
-      const within =
-        event.type === "scroll" && event.target instanceof Node && box.contains(event.target);
-      if (shown && !within) {
-        hideList(box, setOpen);
-      }
-    };
-    box.addEventListener("toggle", onToggle);
-    window.addEventListener("resize", close);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("blur", close);
-    return () => {
-      clearTimeout(resting.current);
-      box.removeEventListener("toggle", onToggle);
-      window.removeEventListener("resize", close);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("blur", close);
-    };
-  }, []);
-  useEffect(() => {
-    // Shown by the tab itself where the browser has no popover: placed now that it shows.
-    if (open && !POPOVERS) {
-      placeUnder(tab.current, panel.current);
-    }
-  }, [open]);
+  useEffect(() => () => clearTimeout(resting.current), []);
   return (
     <div
       className="sc-tab-group"
@@ -291,12 +189,7 @@ function TabGroup(props: { readonly item: NavItem; readonly onNavigate: (href: s
             props.onNavigate(item.href);
             return;
           }
-          const shown = POPOVERS ? panel.current?.matches(":popover-open") === true : open;
-          if (shown) {
-            hide();
-          } else {
-            show();
-          }
+          toggle();
         }}
       >
         <span className="sc-tab-label">{item.label}</span>

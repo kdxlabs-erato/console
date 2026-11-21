@@ -57,6 +57,39 @@
   overscroll-behavior: contain;
 }
 
+/* A menu's panel as a popover, in the top layer: out of whatever around its button clips or
+   stacks over what hangs out of it, as a tile of the front page does, and placed under the
+   button by the component that opens it. A group tab's list is one too, by its own class. */
+.sc-menu-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  color: var(--sc-color-text);
+  font-size: var(--sc-text-sm);
+}
+
+/* Where the browser has no popover, the button shows and hides the list itself. */
+.sc-menu-popover[hidden] {
+  display: none;
+}
+
+.sc-menu-popover:popover-open {
+  animation: sc-menu-in 120ms ease-out;
+}
+
+@keyframes sc-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-menu-popover:popover-open {
+    animation: none;
+  }
+}
+
 .sc-menu-who {
   display: flex;
   flex-direction: column;

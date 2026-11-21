@@ -4707,8 +4707,30 @@ describe("projects", () => {
     expect(html).not.toContain("href=");
     expect(html).toContain("sc-home-editing");
     expect(html).toContain('aria-label="Remove from this page: The web &lt;app&gt;"');
-    expect(html).toContain('aria-pressed="true" aria-label="Icon"');
-    expect(html).toContain('aria-pressed="false" aria-label="Small"');
+    // A tile a cell wide has one button for its sizes, which says the size it has and opens the
+    // list of them over the tiles: a row of them, folded into the cell, would cover the icon.
+    expect(html).toMatch(
+      /<button type="button" class="sc-tile-size sc-tile-size-on" aria-label="Size: Icon"[^>]* aria-expanded="false" aria-controls="([^"]+)" popovertarget="\1">/i,
+    );
+    expect(html.match(/class="sc-tile-size[ "]/g)).toHaveLength(1);
+    expect(html).toMatch(/<div id="[^"]+" popover="auto" class="sc-menu-panel sc-menu-popover/);
+    expect(html).toMatch(
+      /<button[^>]* class="sc-menu-link sc-home-size-option sc-menu-chosen" aria-pressed="true">.*?Icon<\/button>/,
+    );
+    expect(html).toMatch(
+      /<button[^>]* class="sc-menu-link sc-home-size-option" aria-pressed="false">.*?Small<\/button>/,
+    );
+    // A tile wider than a cell has the row of its sizes, each a button of its own.
+    const card = home([project()], {
+      editing: true,
+      home: {
+        hidden: [],
+        layouts: { 8: [{ tile: `project:${project().id}`, x: 0, y: 0, size: "small" }] },
+      },
+    });
+    expect(card).toContain('aria-pressed="true" aria-label="Small"');
+    expect(card).toContain('aria-pressed="false" aria-label="Icon"');
+    expect(card).not.toContain("popover=");
     expect(html).toContain(">Done</button>");
     expect(html).toContain(">Cancel</button>");
     // What the person took off waits to be added back.
