@@ -91,9 +91,13 @@
 }
 
 @media (max-width: 40rem) {
-  /* A head with one way alone gives it the whole width too. */
-  .sc-page-head > .sc-button {
-    width: 100%;
-    justify-content: center;
+  /* The ways at the head of a page on a phone, a page's or a task's: lower and narrower than a
+     form's, at one height whatever size each was given, so that the head stays a line over the
+     page; the words keep their size. */
+  .sc-page-head .sc-button,
+  .sc-task-actions > .sc-button {
+    min-height: 2.25rem;
+    padding: 0 var(--sc-space-3);
+    font-size: var(--sc-text-sm);
   }
 }

@@ -143,13 +143,14 @@
 
 /* A phone's pages as one design. */
 @media (max-width: 40rem) {
-  /* Every page's head: the name, a word about it under the name, and the ways the page offers
-     as a row of equal buttons under those, so that no head differs from another. */
+  /* Every page's head: the name, a word about it under the name, and the ways the page offers at
+     their own width, beside the name where they fit and on a line under the words where they do
+     not, so that no head differs from another. Buttons as wide as the window weighed more than
+     the page under them. */
   .sc-page-head {
-    display: grid;
-    justify-content: stretch;
     gap: var(--sc-space-3);
-    margin-bottom: var(--sc-space-5);
+    margin-bottom: var(--sc-space-4);
+    padding-bottom: var(--sc-space-3);
   }
 
   .sc-page-heading {
@@ -159,16 +160,5 @@
 
   .sc-page-lead {
     flex: none;
-  }
-
-  .sc-page-actions {
-    flex-wrap: nowrap;
-    width: 100%;
-  }
-
-  .sc-page-actions > * {
-    flex: 1 1 0;
-    justify-content: center;
-    min-width: 0;
   }
 }

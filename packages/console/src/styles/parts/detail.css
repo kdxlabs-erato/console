@@ -89,23 +89,13 @@
 }
 
 @media (max-width: 40rem) {
-  /* A task's head: the parent on one line, the title, the badges, then the ways as a row of
-     equal buttons. */
+  /* A task's head: the parent on one line, the title, the badges, then the ways at their own
+     width, as a page's head has them. */
   .sc-task-header {
     display: grid;
     justify-content: stretch;
     gap: var(--sc-space-3);
-  }
-
-  .sc-task-actions {
-    flex-wrap: nowrap;
-    align-items: stretch;
-  }
-
-  .sc-task-actions > * {
-    flex: 1 1 0;
-    justify-content: center;
-    min-width: 0;
+    padding-bottom: var(--sc-space-3);
   }
 }
 
