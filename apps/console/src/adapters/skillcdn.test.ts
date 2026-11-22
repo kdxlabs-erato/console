@@ -1,8 +1,12 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { FetchLike } from "@skillcdn/client";
 import { parseAddress } from "@skillcdn/core";
 import { pino } from "pino";
 import { describe, expect, it } from "vitest";
 import { PackError } from "../ports/skill-source.js";
+import { createDirectorySource } from "./directory-packs.js";
 import { createSkillCdnSource } from "./skillcdn.js";
 
 const ADDRESS = (() => {
@@ -262,5 +266,76 @@ describe("the SkillCDN source", () => {
       () => new Response("<html>", { status: 404, headers: { "content-type": "text/html" } }),
     );
     expect(html.error).toMatchObject({ status: 404, code: "invalid_response" });
+  });
+
+  it("passes on what a pack of SkillCDN 0.6 answers beside a page's text, with nothing of it dropped on the way", async () => {
+    // What a deployment of 0.6 answers, made here by the same reader on a directory, since the
+    // two answer one shape: a manifest that names the page to read first, and a skill that
+    // links a file of another pack and whose table is longer than a page.
+    const root = await mkdtemp(join(tmpdir(), "console-pack-"));
+    try {
+      const directory = join(root, "acme", "skills");
+      await mkdir(join(directory, "checks"), { recursive: true });
+      await mkdir(join(directory, "docs"), { recursive: true });
+      await writeFile(
+        join(directory, "SKILLCDN.md"),
+        "---\nname: Skills\ndescription: An invented pack.\ndocuments:\n  - docs\nstart: docs/start.md\n---\n",
+      );
+      await writeFile(join(directory, "docs", "start.md"), "# Start\n\nRead this first.\n");
+      const rows = Array.from(
+        { length: 420 },
+        (_, at) => `| R${at + 1} | a check of the change, said in a line of its own |`,
+      ).join("\n");
+      await writeFile(
+        join(directory, "checks", "SKILL.md"),
+        `---\nname: checks\ndescription: Checks a change.\n---\n# Checks\n\nSee [the base skill](skill://gh/acme/base/review/SKILL.md).\n\n| Code | What |\n| --- | --- |\n${rows}\n`,
+      );
+      const local = parseAddress("/local/acme/skills");
+      if (!local.ok) {
+        throw new Error(local.error.message);
+      }
+      const read = createDirectorySource({
+        root,
+        clock: { now: () => new Date("2026-11-22T00:00:00Z") },
+        logger: pino({ level: "silent" }),
+      }).open(local.value);
+      if (read === undefined) {
+        throw new Error("the directory is not served");
+      }
+      const mount = await read.mount();
+      const first = await read.skill("checks/SKILL.md", undefined);
+      const next = first.status === "ready" ? first.skill.nextCursor : undefined;
+      if (first.status !== "ready" || typeof next !== "string") {
+        throw new Error("the skill is longer than a page");
+      }
+      const second = await read.skill("checks/SKILL.md", next);
+      // The reader said all four: the test is of what happens to them next.
+      expect(mount.index.status === "ready" ? mount.index.manifest?.start : undefined).toBe(
+        "docs/start.md",
+      );
+      expect(first.skill.pagesLeft).toBeGreaterThan(0);
+      expect(first.skill.packReferences?.map((one) => one.href)).toEqual([
+        "skill://gh/acme/base/review/SKILL.md",
+      ]);
+      expect(second.status === "ready" ? second.skill.tableHead : undefined).toBe(
+        "| Code | What |\n| --- | --- |\n",
+      );
+      // The deployment answers them, and the console's source hands them on as they came.
+      const { source: packs } = source(async (url) => {
+        if (url.includes("/api/v1/mounts/")) {
+          return json(mount);
+        }
+        return json(url.includes("cursor=") ? second : first);
+      });
+      const pack = packs.open(ADDRESS);
+      if (pack === undefined) {
+        throw new Error("the deployment serves every address");
+      }
+      expect(await pack.mount()).toEqual(mount);
+      expect(await pack.skill("checks/SKILL.md", undefined)).toEqual(first);
+      expect(await pack.skill("checks/SKILL.md", next)).toEqual(second);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
