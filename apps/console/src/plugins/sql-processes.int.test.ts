@@ -494,3 +494,201 @@ describe("a migration of a plugin's", () => {
     }
   }, 30_000);
 });
+
+describe("ending a transaction of a plugin's", () => {
+  it("keeps it under its time while the commit waits behind a statement that still runs", async () => {
+    const key = keyOf("late");
+    const api = processOf({ transactionMs: 500 });
+    await api.provision(key);
+    const free = async (): Promise<boolean> => {
+      const got = await drizzleOf(console_).execute<{ got: boolean }>(
+        sql`select pg_try_advisory_xact_lock(616161) as got`,
+      );
+      return got.rows[0]?.got === true;
+    };
+    const tx = await api.begin(key);
+    await api.query(key, "set local statement_timeout = 0", [], tx);
+    await api.query(key, "select pg_advisory_xact_lock(616161)", [], tx);
+    // A plugin may send a statement and not wait for it, and then the commit: the commit waits
+    // behind the statement at the database. The transaction was forgotten as the commit was
+    // sent, its time with it, and the statement ran for as long as it liked with what it held.
+    const running = api.query(key, "select pg_sleep(120)", [], tx).then(
+      () => "done",
+      (error: unknown) => (error as { code?: string }).code,
+    );
+    const began = performance.now();
+    await expect(api.commit(key, tx)).rejects.toMatchObject({ code: "plugin.timeout" });
+    expect(performance.now() - began).toBeLessThan(10_000);
+    expect(await running).toBe("plugin.timeout");
+    await expect.poll(free, { timeout: 5_000 }).toBe(true);
+    await expect.poll(() => sessionsOf(key), { timeout: 5_000 }).toBe(0);
+    // It took no statement and no second end once the commit was sent, and the pool goes on.
+    await expect(api.rollback(key, tx)).rejects.toMatchObject({ code: "plugin.not_found" });
+    expect((await api.query(key, "select 1 as n", [])).rows).toEqual([{ n: 1 }]);
+  }, 30_000);
+
+  it("is found by a stop while its commit waits, and the process stops", async () => {
+    const key = keyOf("halt");
+    const api = processOf();
+    await api.provision(key);
+    const tx = await api.begin(key);
+    await api.query(key, "set local statement_timeout = 0", [], tx);
+    const running = api.query(key, "select pg_sleep(120)", [], tx).then(
+      () => "done",
+      (error: unknown) => (error as { code?: string }).code,
+    );
+    const committed = api.commit(key, tx).then(
+      () => "done",
+      (error: unknown) => (error as { code?: string }).code,
+    );
+    await expect
+      .poll(async () => {
+        const seen = await drizzleOf(console_).execute<{ n: number }>(
+          sql`select count(*)::int as n from pg_stat_activity where usename = ${`plugin_${key}`} and state = 'active'`,
+        );
+        return seen.rows[0]?.n;
+      })
+      .toBe(1);
+    const began = performance.now();
+    await api.stop();
+    expect(performance.now() - began).toBeLessThan(10_000);
+    expect(await running).toBe("plugin.unavailable");
+    expect(await committed).toBe("plugin.unavailable");
+  }, 30_000);
+});
+
+describe("a plugin's role that is not what provisioning leaves", () => {
+  it("is refused while it is a member of another role, by a process that provisioned nothing and by provisioning", async () => {
+    const key = keyOf("member");
+    const other = `console_test_${run}_other`;
+    const api = processOf();
+    await api.provision(key);
+    // Given by whoever may, since: a role the plugin's may become, whatever that one holds.
+    await admin.query(`create role "${other}" with nologin`);
+    try {
+      await admin.query(`grant "${other}" to "plugin_${key}" with inherit false, set true`);
+      const worker = processOf();
+      await expect(worker.query(key, "select 1", [])).rejects.toMatchObject({
+        code: "plugin.unavailable",
+      });
+      // Provisioning may not take it back here, the console's user holding nothing of that
+      // role: it refuses, in words that give the statement, and the role signs in nowhere.
+      const refused = await processOf()
+        .provision(key)
+        .then(
+          () => undefined,
+          (error: unknown) => error as { code?: string; message?: string },
+        );
+      expect(refused?.code).toBe("plugin.unavailable");
+      expect(refused?.message).toContain(`is a member of "${other}"`);
+      expect(refused?.message).toContain(`REVOKE "${other}" FROM "plugin_${key}";`);
+      const login = async (): Promise<boolean | undefined> =>
+        (
+          await drizzleOf(console_).execute<{ rolcanlogin: boolean }>(
+            sql`select rolcanlogin from pg_roles where rolname = ${`plugin_${key}`}`,
+          )
+        ).rows[0]?.rolcanlogin;
+      expect(await login()).toBe(false);
+      await expect.poll(() => sessionsOf(key), { timeout: 5_000 }).toBe(0);
+      // The process that held it ready is refused as well: its sessions were ended, and the
+      // role may not sign in.
+      await expect(api.query(key, "select 1", [])).rejects.toMatchObject({
+        code: "plugin.unavailable",
+      });
+      // The owner takes the membership away, and provisioning lets the role sign in again,
+      // last of all it does.
+      await admin.query(`revoke "${other}" from "plugin_${key}"`);
+      await api.provision(key);
+      expect(await login()).toBe(true);
+      expect((await api.query(key, "select 1 as n", [])).rows).toEqual([{ n: 1 }]);
+      expect((await worker.query(key, "select 1 as n", [])).rows).toEqual([{ n: 1 }]);
+    } finally {
+      await admin.query(`revoke "${other}" from "plugin_${key}"`).catch(() => undefined);
+      await admin.query(`drop role if exists "${other}"`);
+    }
+  });
+
+  it("stays unable to sign in through a provisioning that is refused again", async () => {
+    const key = keyOf("shut");
+    const api = processOf();
+    await api.provision(key);
+    // Made a member of a role the console's user holds nothing of, by whoever may: provisioning
+    // cannot take that back, and refuses.
+    const other = `console_test_${run}_held`;
+    await admin.query(`create role "${other}" with nologin`);
+    try {
+      await admin.query(`grant "${other}" to "plugin_${key}" with inherit false, set true`);
+      await expect(processOf().provision(key)).rejects.toMatchObject({
+        code: "plugin.unavailable",
+      });
+      // Refused once, the role is shut. Every later start of a process provisions it again, and
+      // is refused again: at no moment of that may the role sign in.
+      const seen: boolean[] = [];
+      let watching = true;
+      const watch = (async () => {
+        while (watching) {
+          const row = await drizzleOf(console_).execute<{ rolcanlogin: boolean }>(
+            sql`select rolcanlogin from pg_roles where rolname = ${`plugin_${key}`}`,
+          );
+          seen.push(row.rows[0]?.rolcanlogin === true);
+        }
+      })();
+      for (let boot = 0; boot < 5; boot += 1) {
+        await expect(processOf().provision(key)).rejects.toMatchObject({
+          code: "plugin.unavailable",
+        });
+      }
+      watching = false;
+      await watch;
+      expect(seen.length).toBeGreaterThan(5);
+      expect(seen.includes(true)).toBe(false);
+    } finally {
+      await admin.query(`revoke "${other}" from "plugin_${key}"`).catch(() => undefined);
+      await admin.query(`drop role if exists "${other}"`);
+    }
+  }, 30_000);
+
+  it("is asked about again by a process that held it ready, once it was shut and provisioned anew", async () => {
+    const key = keyOf("reopen");
+    const api = processOf();
+    await api.provision(key);
+    expect((await api.query(key, "select 1 as n", [])).rows).toEqual([{ n: 1 }]);
+    // Another process refused the role and shut it: it may not sign in, and its sessions ended.
+    await drizzleOf(console_).execute(sql.raw(`alter role "plugin_${key}" nologin`));
+    await admin.query(
+      "select pg_terminate_backend(pid, 5000) from pg_stat_activity where usename = $1",
+      [`plugin_${key}`],
+    );
+    await expect
+      .poll(
+        () =>
+          api.query(key, "select 1", []).then(
+            () => "signed in",
+            (error: unknown) => (error as Error).message,
+          ),
+        { timeout: 5_000 },
+      )
+      .toContain("may not sign in to the database");
+    // Provisioned again elsewhere: the process that was refused finds the role fit by itself.
+    await processOf().provision(key);
+    expect((await api.query(key, "select 1 as n", [])).rows).toEqual([{ n: 1 }]);
+  });
+});
+
+describe("purging a plugin's schema whose role was made before the console's user held what it holds", () => {
+  it("gives itself what the role holds first, and leaves nothing", async () => {
+    const key = keyOf("old");
+    const api = processOf();
+    await api.provision(key);
+    await api.query(key, "create table things (id int)", []);
+    await api.query(key, "select lo_create(0)", []);
+    // As a release before left it: the console's user is no member of the role.
+    await drizzleOf(console_).execute(sql.raw(`revoke "plugin_${key}" from current_user`));
+    await api.purge(key);
+    const left = await drizzleOf(console_).execute<{ roles: number; schemas: number }>(
+      sql`select (select count(*)::int from pg_roles where rolname = ${`plugin_${key}`}) as roles,
+                 (select count(*)::int from pg_namespace where nspname = ${`plugin_${key}`}) as schemas`,
+    );
+    expect(left.rows[0]).toEqual({ roles: 0, schemas: 0 });
+  });
+});

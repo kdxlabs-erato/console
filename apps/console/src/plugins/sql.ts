@@ -175,7 +175,13 @@ const ROLE_PASSWORD_LABEL = "skillcdn-console plugin role password v1";
 export function rolePassword(connectionString: string, name: string): string | undefined {
   let key: string;
   try {
-    const { password } = new URL(connectionString);
+    const { password, searchParams } = new URL(connectionString);
+    // The driver lets a user or a password among an address's parameters win over the ones
+    // before the host: the console would then sign in with another password than the key read
+    // here, and a plugin's pool, made from the same address, as the console's own user.
+    if (searchParams.has("user") || searchParams.has("password")) {
+      return undefined;
+    }
     try {
       // As the driver reads it, so that one password written two ways is one key.
       key = decodeURIComponent(password);
@@ -198,7 +204,7 @@ export function rolePassword(connectionString: string, name: string): string | u
 
 /** What a deployment whose database address carries no password is told. */
 const NO_PASSWORD =
-  "storage:sql needs a password in the database's address: a plugin's role is given one derived from it, which every process of the deployment arrives at";
+  "storage:sql needs the database's address to carry its user and password before the host (postgres://user:password@host/database), and neither among its parameters: a plugin's role is given a password derived from it, which every process of the deployment arrives at";
 
 /**
  * Whether the database refused a statement because another session changed the same thing at
@@ -229,7 +235,15 @@ function metAnother(error: unknown): boolean {
 }
 
 /** The statement that gives a role its password met another process's: said without the statement. */
-class RoleChangedAtOnce extends Error {}
+class RoleChangedAtOnce extends Error {
+  /** What the database said, as a refusal names it: its code and words, and never the statement. */
+  readonly told: PluginRefusal;
+
+  constructor(told: PluginRefusal) {
+    super(told.message);
+    this.told = told;
+  }
+}
 
 /**
  * What a statement that gave the plugin's role its password failed with, as a refusal that names
@@ -284,8 +298,10 @@ interface OpenTransaction {
   readonly key: string;
   readonly client: PoolClient;
   timer: NodeJS.Timeout | undefined;
-  /** How many of its statements are with the database now. */
+  /** How many of its statements are with the database now, the one that ends it among them. */
   running: number;
+  /** Its commit or its rollback was sent and has not come back: it takes nothing more. */
+  closing: boolean;
   /** Why the console ended it, where it did: what a statement cut short is told. */
   over: "time" | "stopped" | undefined;
 }
@@ -435,7 +451,7 @@ export class PluginSqlService {
         if (error instanceof RoleChangedAtOnce) {
           throw new PluginRefusal(
             "plugin.unavailable",
-            `the role ${quoted(name)} could not be made or changed: other processes kept changing it at the same moment`,
+            `${error.told.message}; it was tried ${PROVISION_ATTEMPTS} times, and other processes kept changing the role at the same moment`,
           );
         }
         throw error;
@@ -463,16 +479,14 @@ export class PluginSqlService {
     const verifier = scramVerifier(password);
     const statement =
       role !== undefined
-        ? `alter role ${quoted(name)} with login noinherit ${taken.join(" ")} connection limit ${PLUGIN_SQL_CONNECTIONS} password ${literal(verifier)}`
-        : `create role ${quoted(name)} with login noinherit nocreatedb nocreaterole nosuperuser connection limit ${PLUGIN_SQL_CONNECTIONS} password ${literal(verifier)}`;
+        ? `alter role ${quoted(name)} with noinherit ${taken.join(" ")} connection limit ${PLUGIN_SQL_CONNECTIONS} password ${literal(verifier)}`
+        : `create role ${quoted(name)} with nologin noinherit nocreatedb nocreaterole nosuperuser connection limit ${PLUGIN_SQL_CONNECTIONS} password ${literal(verifier)}`;
     try {
       await db.execute(sql.raw(statement));
     } catch (error) {
-      if (metAnother(error)) {
-        throw new RoleChangedAtOnce();
-      }
       // What the ORM throws quotes the statement whole, the verifier in it.
-      throw roleRefusal(name, role === undefined ? "made" : "changed", error, verifier);
+      const told = roleRefusal(name, role === undefined ? "made" : "changed", error, verifier);
+      throw metAnother(error) ? new RoleChangedAtOnce(told) : told;
     }
     // The console's user holds what the role holds, which whoever made a role may give itself:
     // only so may a user that is no superuser end the role's sessions, at purge and when a
@@ -496,18 +510,55 @@ export class PluginSqlService {
         }
       }
     }
+    // And what it was made a member of: a role it may become, whatever rights that one holds.
+    for (const granted of await this.memberOf(name)) {
+      try {
+        await db.execute(sql.raw(`revoke ${quoted(granted)} from ${quoted(name)}`));
+      } catch (error) {
+        if (!refusedForWantOfRight(error)) {
+          throw error;
+        }
+      }
+    }
     const reachable = await this.reachableBy(name);
-    if (reachable.length > 0) {
+    const member = await this.memberOf(name);
+    if (reachable.length > 0 || member.length > 0) {
       // Refused for every process of the deployment, not for this one alone: the role signs in
       // nowhere until it is provisioned again, and what it holds open is ended.
       this.ready.delete(key);
       await this.shut(key, name);
+      const undo = [
+        ...reachable.map(
+          (schema) => `REVOKE ALL ON SCHEMA ${quoted(schema)} FROM ${quoted(name)};`,
+        ),
+        ...member.map((granted) => `REVOKE ${quoted(granted)} FROM ${quoted(name)};`),
+      ];
+      const holds = [
+        ...(reachable.length > 0 ? [`may use ${schemasNamed(reachable)}`] : []),
+        ...(member.length > 0 ? [`is a member of ${member.map(quoted).join(", ")}`] : []),
+      ];
       throw new PluginRefusal(
         "plugin.unavailable",
-        `the role ${quoted(name)} may use ${schemasNamed(reachable)}, which no plugin's role may, and the console's database user may not take it back. The database's owner runs, once: ${reachable.map((schema) => `REVOKE ALL ON SCHEMA ${quoted(schema)} FROM ${quoted(name)};`).join(" ")}`,
+        `the role ${quoted(name)} ${holds.join(" and ")}, which no plugin's role may, and the console's database user may not take it back. The database's owner runs, once: ${undo.join(" ")}`,
       );
     }
+    // Only now may the role sign in. It is made unable to, and one that was shut after a refusal
+    // stays shut through every statement above: no process comes back as a role that is not yet
+    // seen to be fit.
+    await db.execute(sql.raw(`alter role ${quoted(name)} login`));
     this.ready.add(key);
+  }
+
+  /** The roles a plugin's role was made a member of, which it never is by the console's doing. */
+  private async memberOf(name: string): Promise<string[]> {
+    const result = await drizzleOf(this.options.database).execute<{ granted: string }>(sql`
+      select g.rolname as granted
+      from pg_auth_members m
+      join pg_roles r on r.oid = m.member
+      join pg_roles g on g.oid = m.roleid
+      where r.rolname = ${name}
+      order by g.rolname`);
+    return result.rows.map((row) => row.granted);
   }
 
   /**
@@ -553,6 +604,7 @@ export class PluginSqlService {
     const found = await drizzleOf(this.options.database).execute<{ fit: boolean }>(
       sql`select (r.rolcanlogin
                   and not (${sql.raw(ROLE_POWERS.map(([column]) => `r.${column}`).join(" or "))})
+                  and not exists (select 1 from pg_auth_members m where m.member = r.oid)
                   and exists (select 1 from pg_namespace n where n.nspname = ${name})) as fit
           from pg_roles r where r.rolname = ${name}`,
     );
@@ -574,6 +626,8 @@ export class PluginSqlService {
     }
     const url = new URL(this.options.connectionString);
     url.username = sqlNameOf(key);
+    // No parameter of the address says who signs in, which the driver would take over these:
+    // an address that has one gives no password to derive from, and never comes this far.
     url.password = password;
     pool = new Pool({
       connectionString: url.href,
@@ -763,7 +817,7 @@ export class PluginSqlService {
    */
   private opened(key: string, id: string): OpenTransaction {
     const open = this.transactions.get(id);
-    if (open === undefined || open.key !== key) {
+    if (open === undefined || open.key !== key || open.closing) {
       throw new PluginRefusal("plugin.not_found", "the transaction is not open");
     }
     return open;
@@ -797,7 +851,14 @@ export class PluginSqlService {
     }
     this.counter += 1;
     const id = `${key}:${this.counter}`;
-    const open: OpenTransaction = { key, client, timer: undefined, running: 0, over: undefined };
+    const open: OpenTransaction = {
+      key,
+      client,
+      timer: undefined,
+      running: 0,
+      closing: false,
+      over: undefined,
+    };
     open.timer = setTimeout(() => {
       void this.expire(id, "time").catch(() => undefined);
     }, this.options.transactionMs ?? TRANSACTION_TTL_MS);
@@ -806,15 +867,39 @@ export class PluginSqlService {
     return id;
   }
 
+  /**
+   * Commits or rolls back. The transaction takes nothing more from here on, and stays known,
+   * with its time running, until the database answered: a commit waits behind whatever
+   * statement of the transaction still runs, which its plugin may have sent and not waited for,
+   * and may itself be slow, under any timeout the transaction set. A transaction forgotten as
+   * its commit was sent had neither its minute nor anybody to end it when the process stopped.
+   */
   private async end(key: string, id: string, statement: "commit" | "rollback"): Promise<void> {
     const open = this.opened(key, id);
-    this.transactions.delete(id);
-    clearTimeout(open.timer);
+    open.closing = true;
+    open.running += 1;
+    let failed: { readonly error: unknown } | undefined;
     try {
       await open.client.query(statement);
     } catch (error) {
+      failed = { error };
+    } finally {
+      open.running -= 1;
+    }
+    if (open.over !== undefined) {
+      // Ended by the console meanwhile, past its time or at a stop: its connection went with
+      // that, and what the database answered before it stands.
+      if (failed === undefined) {
+        return;
+      }
+      throw this.cutShort(open) ?? this.refusal(failed.error);
+    }
+    this.transactions.delete(id);
+    clearTimeout(open.timer);
+    if (failed !== undefined) {
+      const { error } = failed;
       open.client.release(error instanceof Error ? error : new Error(String(error)));
-      throw this.cutShort(open) ?? this.refusal(error);
+      throw this.refusal(error);
     }
     await this.giveBack(open.client);
   }
@@ -877,9 +962,17 @@ export class PluginSqlService {
     }
     try {
       // By its number and its role both: a number is given to another session once one ended.
-      await drizzleOf(this.options.database).execute(
-        sql`select pg_terminate_backend(pid) from pg_stat_activity where pid = ${pid} and usename = ${sqlNameOf(key)}`,
+      const ended = await drizzleOf(this.options.database).execute<{ ended: boolean }>(
+        sql`select pg_terminate_backend(pid) as ended from pg_stat_activity where pid = ${pid} and usename = ${sqlNameOf(key)}`,
       );
+      if (ended.rows[0]?.ended !== true) {
+        // Something between the console and the database, a pooler, gives a session another
+        // number than the driver knows it by: nothing was ended, and that must be seen.
+        this.options.logger.error(
+          { plugin: key },
+          `${what} of a plugin's was not ended at the database: no session of its role answers to the number its connection has; its statement runs until it ends by itself`,
+        );
+      }
     } catch (error) {
       this.options.logger.error(
         { err: error, plugin: key },
@@ -902,24 +995,31 @@ export class PluginSqlService {
       application_name: "console-plugin-migrate",
     });
     await lock.connect();
-    const pool = this.pool(key);
     let applied = 0;
     try {
       await lock.query("select pg_advisory_lock($1)", [MIGRATION_LOCK_KEY]);
-      await pool.query(
-        "create table if not exists _migrations (name text primary key, applied_at timestamptz not null default now())",
-      );
-      const done = new Set(
-        (await pool.query<{ name: string }>("select name from _migrations")).rows.map(
-          (row) => row.name,
-        ),
-      );
+      // A session of the role as a statement gets one: waited for where another process holds
+      // them all, as several do that start together.
+      const book = await this.connect(key);
+      let done: Set<string>;
+      try {
+        await book.query(
+          "create table if not exists _migrations (name text primary key, applied_at timestamptz not null default now())",
+        );
+        done = new Set(
+          (await book.query<{ name: string }>("select name from _migrations")).rows.map(
+            (row) => row.name,
+          ),
+        );
+      } finally {
+        await this.giveBack(book);
+      }
       for (const name of names) {
         if (done.has(name)) {
           continue;
         }
         const text = await readFile(join(dir, name), "utf8");
-        const client = await pool.connect();
+        const client = await this.connect(key);
         // A migration is the plugin's own text and may set itself any timeout, and it runs under
         // the lock every migration of the console's waits for: one that runs past the time a
         // step of a plugin's life has is ended at the server, and the lock goes on to the next.

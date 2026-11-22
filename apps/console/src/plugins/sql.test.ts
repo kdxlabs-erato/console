@@ -245,6 +245,26 @@ describe("the password of a plugin's role (ADR-0148)", () => {
     expect(rolePassword("x".repeat(100_000), "plugin_tally")).toBe(undefined);
   });
 
+  it("is nothing where a parameter of the address says who signs in, which the driver takes over what stands before the host", () => {
+    // With either, the console signs in with another user or password than the address shows:
+    // a key read from before the host would be the wrong one, and a pool made from the address
+    // for the plugin's role would sign in as the parameter's user, the console's own.
+    for (const query of [
+      "?user=console",
+      "?password=x",
+      "?sslmode=require&user=console&password=x",
+      "?password=",
+    ]) {
+      expect(rolePassword(address("p-q", `@db.example:5432/console${query}`), "plugin_tally")).toBe(
+        undefined,
+      );
+    }
+    // Any other parameter is the address's own, and changes nothing of the key.
+    expect(
+      rolePassword(address("p-q", "@db.example:5432/console?sslmode=require"), "plugin_tally"),
+    ).toBe(rolePassword(address("p-q", "@db.example:5432/console"), "plugin_tally"));
+  });
+
   it("holds against a name and a password of any length and any character", () => {
     const long = rolePassword(address("p".repeat(50_000)), `plugin_${"k".repeat(50_000)}`);
     expect(long).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -270,7 +290,9 @@ describe("a deployment whose database address carries no password", () => {
     expect(await service.available()).toBe(false);
     expect(await service.available()).toBe(false);
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain("storage:sql needs a password in the database's address");
+    expect(lines[0]).toContain(
+      "storage:sql needs the database's address to carry its user and password before the host",
+    );
   });
 
   it("refuses to provision, to run a statement and to open a transaction", async () => {
@@ -281,7 +303,7 @@ describe("a deployment whose database address carries no password", () => {
     ]) {
       await expect(refused).rejects.toMatchObject({
         code: "plugin.unavailable",
-        message: expect.stringContaining("needs a password in the database's address"),
+        message: expect.stringContaining("to carry its user and password before the host"),
       });
     }
   });
