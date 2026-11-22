@@ -124,7 +124,7 @@ Documentation is part of the change, not a follow-up. A future session starts wi
 | Environment variables or configuration | the config module, `.env.example`, the table in `deploy/README.md` |
 | Database schema | migration, the data model in the workspace's `README.md` |
 | Build, image or CI | `deploy/README.md` |
-| A workspace's public surface or usage | that workspace's `README.md` |
+| A workspace's entry points or how it is used | that workspace's `README.md`, which names the entry points and what each is for, never every export: a constant, a helper or a type beside them is described where it is declared, in its doc comment |
 | An item of the roadmap is started, finished or dropped | `docs/roadmap.md`, kept as its "How this page is kept" says: a few sentences an entry, no history |
 | A document is added or retired (a spec, a workspace's README) | its row in `docs/README.md`, the map of the documents |
 | You learned a durable gotcha the hard way | "Gotchas" in the nearest `AGENTS.md` or workspace `README.md` |

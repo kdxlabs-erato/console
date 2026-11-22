@@ -27,10 +27,15 @@ const ARCHIVE_INTERVAL_MS = 60 * 60_000;
 const RUN_CLOSE_INTERVAL_MS = 15 * 60_000;
 
 /**
- * The `worker` role: the schedules, and later the job queue. Today that is the sweep of what
- * time has ended, and, where the deployment names an organization at the git host, the reading
- * of it (ADR-0022). Any number may run; each is interruptible: a pass that a signal cuts short
- * is the next one's work. Resolves when the process has shut down cleanly.
+ * The `worker` role: what the console does by the clock and from the feed, which no request
+ * waits for. There is no job queue: each job below sweeps once at the start and then by its
+ * own timer, and keeps what it must remember in the database. They are the sweep of what time
+ * has ended, the watch on the agent accounts' runners and the board's wakes (ADR-0085), the
+ * putting away of closed work and the ending of runs not heard from where the deployment
+ * keeps them on, the reading of the organization at the git host where one is named
+ * (ADR-0022), and the plugins' hooks and jobs in a host of this process's own. Any number may
+ * run; each is interruptible: a pass that a signal cuts short is the next one's work. Resolves
+ * when the process has shut down cleanly.
  */
 export async function runWorker(config: Config, logger: Logger): Promise<void> {
   const database = createDatabase({

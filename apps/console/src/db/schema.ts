@@ -79,8 +79,10 @@ export const workspaces = pgTable(
     name: text().notNull(),
     /**
      * Tasks were numbered per workspace until projects came (ADR-0008); the number is the
-     * project's now. The column stays until the next release, as the rollout contract asks
-     * (expand, then contract), and is dropped then.
+     * project's now, and nothing reads or writes this one. It is still named here, so a release
+     * that drops it comes in two steps, as the rollout contract asks (expand, then contract): the
+     * column out of this schema first, and the migration that drops it in the release after,
+     * so that the image before still starts on the database the new one left.
      */
     nextTaskNumber: integer().notNull().default(1),
     /** When the organization at the git host was last read whole (ADR-0022); null until it is. */
