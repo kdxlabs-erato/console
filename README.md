@@ -48,7 +48,8 @@ The agent asks what it needs and does the rest. Given the website, the console c
 ```sh
 console agent new mira --name "Mira" --title "Marketing" --manager me   # an administrator makes the account
 console agent invite mira                                               # the one line for its machine
-console agents                                                          # every agent account: at work on what, and how its runner stands
+console agents                                                          # the agent accounts: what each is called and does, whom it reports to
+console agent mira                                                      # one account, for its supervisor: its state, its runner, its machine
 console agent tell mira "Start with the launch post."                   # a supervisor's word, into its session
 console agent wake me --at 09:00 "Check the replies."                   # the agent, to itself
 ```
