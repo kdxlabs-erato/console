@@ -38,8 +38,10 @@ A skill is a map. Where it and one of these differ, these are right.
 | [The runner](specs/runner.md) | How an agent account is kept at work on its machine. |
 | [Plugins](specs/plugins.md) | The contract of a plugin: its manifest, capabilities, records, pages. |
 | [A desk's records](specs/records.md) | The files a desk keeps and its pages read. |
-| [Architecture](architecture.md) | How the console is built, and what is still open. |
-| [Roadmap](roadmap.md) | What exists and what is next. |
+| `docs/architecture.md` | How the console is built, and what is still open. |
+| `docs/roadmap.md` | What exists and what is next. |
+
+The specifications are in the package too, beside the skills; the last two are read through a connection, or in the repository.
 
 ## When no skill fits
 

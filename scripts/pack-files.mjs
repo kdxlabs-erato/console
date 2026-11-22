@@ -1,6 +1,7 @@
 // What the published package carries beside its code, while every file has one source in the
-// repository: the license (ADR-0003, ADR-0007), and the console's skills with their manifest and
-// the specifications they point to (ADR-0015). `prepack` copies them next to what is packed,
+// repository: the license (ADR-0003, ADR-0007), and the console's skills with their manifest,
+// the specifications they point to (ADR-0015) and the page the manifest names as the first an
+// agent reads, so that the package read as a pack is whole. `prepack` copies them next to what is packed,
 // and `postpack` takes the copies out again; .gitignore keeps them out of git meanwhile.
 // Package scripts run in the package's directory, two levels below the root.
 import { cpSync, rmSync } from "node:fs";
@@ -13,6 +14,7 @@ const COPIES = [
   ["SKILLCDN.md", "SKILLCDN.md"],
   ["skills", "skills"],
   ["docs/specs", "docs/specs"],
+  ["docs/start.md", "docs/start.md"],
 ];
 /** What `remove` takes out: the copies, and the directory made for the specifications. */
 const REMOVALS = ["LICENSE.md", "SKILLCDN.md", "skills", "docs"];
