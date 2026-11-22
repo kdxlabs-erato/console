@@ -8,15 +8,15 @@ The rules for working in this codebase (conventions, testing, commits, documenta
 
 You need:
 
-- **pnpm 12 or newer** (`npm install -g pnpm@latest`). pnpm then pins its own exact version and downloads the pinned Node.js 24 runtime for project scripts; both are verified against the lockfile.
-- **Docker**, for the local PostgreSQL once the first milestone brings a database, and for building the image once there is one.
+- **pnpm 12.4 or newer** (`npm install -g pnpm@latest`). pnpm then pins its own exact version and downloads the pinned Node.js 24 runtime for project scripts; both are verified against the lockfile.
+- **Docker**, for the local PostgreSQL and the bucket the integration tests run against, and for building the image.
 - Node.js 24 as your system Node.js is recommended so editors and ad-hoc commands match. It is not required for pnpm scripts.
 
 ```sh
 pnpm install
-pnpm check                                          # lint, build, typecheck, test: must pass before every commit
-docker compose -f deploy/compose.dev.yaml up -d     # PostgreSQL 18 on 127.0.0.1:5433
+docker compose -f deploy/compose.dev.yaml up -d     # PostgreSQL 18 on 127.0.0.1:5433, and a bucket on 7070
 cp .env.example .env
+pnpm check                                          # lint, build, typecheck, test: must pass before every commit
 ```
 
 ## Process

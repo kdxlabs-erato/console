@@ -21,5 +21,7 @@ Things we especially want to hear about:
 - A console token or a git-host token that leaks, through a log, a response or a page.
 - Anything an agent sends (a report, a file, a decision) that is executed, rendered as HTML, or escapes the bounds the console puts on it.
 - A request that changes something for a person from a page that is not the console's own.
+- An agent account entered by anyone but itself, or its secrets, its signals or its transcript read by someone who is neither the account nor one of its supervisors.
+- A plugin that reaches past the capabilities an administrator consented to, or a plugin's page that reaches the console's session or another plugin.
 
 Out of scope: the hosts and services the console talks to (a git host, a SkillCDN deployment, an AI vendor), which have their own programs.
