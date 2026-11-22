@@ -4,7 +4,7 @@ The map of the documents: what each one is for and when it changes. The rules fo
 
 | Document | Purpose | Lifecycle |
 |---|---|---|
-| [`../README.md`](../README.md) | What the console is, for someone who has never seen it, and how it is installed. | Overview only. Details live below. |
+| [`../README.md`](../README.md) | What the console is, for someone who has never seen it: a team of people and agent accounts on one board, and how it is installed. | Overview only. Details live below. |
 | [`architecture.md`](architecture.md) | How the console is built: the parts, the boundaries, the data, the security model, and what is still open. | Living. Always describes the current design. |
 | [`roadmap.md`](roadmap.md) | What exists, area by area, what is being built now, what comes next and what is undecided; an entry is a few sentences and links the document that says the rest. | Living. Updated in the change that starts, finishes or drops an item. No history: git, the package's changelog and the ADRs keep it. |
 | [`specs/`](specs/) | The contracts: the REST API of the board ([`rest.md`](specs/rest.md)), the command line ([`cli.md`](specs/cli.md)), plugins ([`plugins.md`](specs/plugins.md)), the runner of an agent account ([`runner.md`](specs/runner.md)), a desk's records ([`records.md`](specs/records.md)). | Living and normative. Where the README and a spec disagree, the spec wins and the README is fixed. |
@@ -12,7 +12,7 @@ The map of the documents: what each one is for and when it changes. The rules fo
 | [`../skills/`](../skills/) | The console's skills in the SkillCDN Format: how an agent works the board, plans it, builds a console or a plugin, deploys one, runs an agent account, keeps a desk. The package carries them as they are. | Living. Read again by hand when what they name changes. |
 | [`../SKILLCDN.md`](../SKILLCDN.md) | This repository as a pack: the name and the description an agent is told, the folders served (the skills and these documents), and the rules for every skill. | Living. |
 | [`../deploy/README.md`](../deploy/README.md) | Building, configuring and releasing the image; the contract with whoever operates it. | Living. |
-| `apps/console/README.md`, `packages/console/README.md` | What the workspace is for, its surface, how to work on it, the data model, and under "Rules" the rules for changing it. | Living. |
+| `apps/console/README.md`, `packages/console/README.md` | What the workspace is for, how to work on it, and under "Rules" the rules for changing it; the app's with its layout and the data model, the package's with its entry points and what each is for. Not a list of every export: those are described where they are declared. | Living. |
 | [`../packages/console/src/styles/README.md`](../packages/console/src/styles/README.md) | The rules for the pages and the catalogue of the parts they are built from. | Living. A part added, changed or taken out changes its row. |
 | [`../packages/console/icons/README.md`](../packages/console/icons/README.md) | For whoever draws the icon pack: the grid's rules, how a glyph is changed or added, and where it is looked at. | Living. A rule of the grid changed changes it. |
 | [`../AGENTS.md`](../AGENTS.md) | The working agreement: the rules for changing the code, for agents and people. | Living. Short. |
