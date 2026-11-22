@@ -1,6 +1,6 @@
 # ADR-0117: A desk keeps records of what its member made, as files the desk's pages read
 
-- Status: Accepted
+- Status: Accepted; points 2 and 4, the form of the records and a file of every desk, are amended by [ADR-0122](0122-a-desk-is-given-its-least-and-grown-by-what-its-member-asks.md)
 - Date: 2026-11-15
 - Adds to [ADR-0115](0115-a-person-has-a-desk-too-written-by-the-command-and-set-up-by-a-skill-of-the-organizations-pack.md) and [ADR-0116](0116-a-desks-dashboard-is-a-page-of-a-console-of-ones-own-read-as-it-is-looked-at.md), which stand as written: where the first said that a desk is no copy of the board and the second that nothing of the board is kept, this decision makes neither a rule (point 7), and where the first named a person's desk `<handle>-desk`, it is named as an agent account's (point 1). An agent account's desk is [ADR-0088](0088-an-agent-account-has-a-desk-and-is-set-up-from-an-invitation-by-signing-in-as-itself.md)'s; the serving is [ADR-0014](0014-a-persons-own-console-is-served-from-their-machine-by-the-command.md)'s.
 

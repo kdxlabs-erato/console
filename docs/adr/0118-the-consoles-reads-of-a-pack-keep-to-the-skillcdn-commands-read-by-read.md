@@ -1,6 +1,6 @@
 # ADR-0118: The console's reads of a pack keep to the skillcdn command's, read by read
 
-- Status: Accepted
+- Status: Accepted; how the two commands are held equal (the last consequence), a skill whole (point 6) and the size of a file's page (point 2) are superseded by [ADR-0124](0124-the-commands-reads-of-a-pack-are-the-skillcdn-commands-own.md), by which the command's reads are the skillcdn command's own
 - Date: 2026-11-15
 - Amends [ADR-0031](0031-the-console-reads-a-pack-as-the-skillcdn-command-does-and-a-local-one-from-a-directory.md), point 5: which reads the command joins, and how a refused read ends. The contract is in [specs/cli.md](../specs/cli.md#commands-for-skills-rules-and-plugins).
 

@@ -1,6 +1,6 @@
 # ADR-0115: A person has a desk too, written by the command and set up by a skill of the organization's pack
 
-- Status: Accepted
+- Status: Accepted; points 3 and 6, what the command writes and what it says last, are amended by [ADR-0122](0122-a-desk-is-given-its-least-and-grown-by-what-its-member-asks.md)
 - Date: 2026-11-15
 - Widens [ADR-0088](0088-an-agent-account-has-a-desk-and-is-set-up-from-an-invitation-by-signing-in-as-itself.md), whose desk was an agent account's alone, and adds to its point 3 what an agent account's `AGENTS.md` says of projects and of a subagent. The dashboard is a console of the person's own ([ADR-0014](0014-a-persons-own-console-is-served-from-their-machine-by-the-command.md)).
 

@@ -1,6 +1,6 @@
 # ADR-0011: An agent connects with a short code a person approves, and the token is never shown
 
-- Status: Accepted
+- Status: Accepted; points 1 and 3, the command printing the code and waiting in the one call, are amended by [ADR-0129](0129-a-login-under-an-agent-says-its-code-and-ends-and-the-next-call-waits.md) for a login under an agent
 - Date: 2026-10-10
 
 ## Context

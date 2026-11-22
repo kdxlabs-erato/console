@@ -1,6 +1,6 @@
 # ADR-0043: The REST contract is held to a snapshot taken at the floors
 
-- Status: Accepted
+- Status: Accepted; point 2, what breaks, is amended by [ADR-0130](0130-the-rest-check-holds-an-answer-to-what-a-console-of-before-sends.md)
 - Date: 2026-10-30
 - Fulfils point 4 of [ADR-0038](0038-the-command-and-the-console-go-together-within-a-line-and-a-release-that-changes-what-passes-between-them-raises-the-floors.md), which stands otherwise. The contract is in [specs/rest.md](../specs/rest.md).
 

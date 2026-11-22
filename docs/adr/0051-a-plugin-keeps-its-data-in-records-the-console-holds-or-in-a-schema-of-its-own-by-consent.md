@@ -1,6 +1,6 @@
 # ADR-0051: A plugin keeps its data in records the console holds, or in a schema of its own by consent
 
-- Status: Accepted
+- Status: Accepted; point 4, what the plugin's role holds on `public`, is amended by [ADR-0133](0133-the-consoles-schemas-are-closed-to-every-role-when-a-plugin-first-gets-a-schema-of-its-own.md)
 - Date: 2026-11-01
 
 ## Context

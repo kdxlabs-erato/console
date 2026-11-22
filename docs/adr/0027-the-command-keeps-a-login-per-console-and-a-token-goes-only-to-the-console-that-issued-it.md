@@ -1,6 +1,6 @@
 # ADR-0027: The command keeps a login per console and account, and a token goes only to the console that issued it
 
-- Status: Accepted
+- Status: Accepted; point 4, what `console use` writes, is amended by [ADR-0112](0112-a-binding-names-its-console-and-whoami-asks-the-console-for-the-project.md)
 - Date: 2026-10-14
 - Builds on [ADR-0004](0004-people-and-agents-reach-the-board-only-through-the-api-with-a-credential-of-their-own.md) and [ADR-0011](0011-an-agent-connects-with-a-short-code-a-person-approves-and-the-token-is-never-shown.md). The contract is in [specs/cli.md](../specs/cli.md#signing-in).
 

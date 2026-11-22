@@ -1,6 +1,6 @@
 # ADR-0031: The console reads a pack as the `skillcdn` command does, a local one from a directory of its own, and passes the pack's answers on as they are
 
-- Status: Accepted
+- Status: Accepted; point 5, which reads the command joins and how a refused read ends, is amended by [ADR-0118](0118-the-consoles-reads-of-a-pack-keep-to-the-skillcdn-commands-read-by-read.md)
 - Date: 2026-10-18
 - Builds on [ADR-0028](0028-the-console-reads-a-projects-pack-through-the-deployments-rest-api-with-a-pack-token-for-a-private-one.md) and [ADR-0015](0015-the-consoles-skills-live-in-this-repository-in-the-skillcdn-format-and-the-package-carries-them.md). The contract is in [specs/rest.md](../specs/rest.md#get-apiv1projectskeyskills) and [specs/cli.md](../specs/cli.md); what an operator sets is in [deploy/README.md](../../deploy/README.md#the-smallest-install-and-a-closed-network).
 

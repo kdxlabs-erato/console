@@ -1,6 +1,6 @@
 # ADR-0065: A plugin writes one text, and a person's language is kept from the first time the pages see them
 
-- Status: Accepted
+- Status: Accepted; a default language of the workspace, rejected here, is taken up by [ADR-0081](0081-a-workspace-has-a-language-for-whoever-has-none-of-their-own.md)
 - Date: 2026-11-07
 - Supersedes [ADR-0058](0058-what-a-plugin-writes-on-the-board-is-in-every-language-of-the-workspace-and-read-in-the-readers.md), which was never released; amends [ADR-0012](0012-the-pages-speak-the-persons-language-from-packs-that-ship-with-the-package.md), where a person who had not chosen followed the browser on every visit. The contract is in [specs/plugins.md](../specs/plugins.md) and [specs/rest.md](../specs/rest.md).
 

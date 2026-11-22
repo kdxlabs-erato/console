@@ -1,6 +1,6 @@
 # ADR-0025: The command names its version on every request, and the console holds it to the range it takes
 
-- Status: Accepted
+- Status: Accepted; point 3, the common rule before 1.0, is amended by [ADR-0038](0038-the-command-and-the-console-go-together-within-a-line-and-a-release-that-changes-what-passes-between-them-raises-the-floors.md)
 - Date: 2026-10-13
 
 ## Context

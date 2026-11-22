@@ -1,6 +1,6 @@
 # ADR-0023: The rules of a board are pages the workspace and its projects keep, read first by every agent
 
-- Status: Accepted
+- Status: Accepted; point 2 is superseded by [ADR-0120](0120-the-consoles-rules-always-hold-and-a-workspace-and-a-project-add-to-them.md), by which the console's rules always hold and a workspace and a project add to them, and point 4, what `console rules` and `console take` print of the rules, is amended by [ADR-0119](0119-a-take-leaves-out-the-rules-a-session-says-it-holds.md)
 - Date: 2026-10-12
 
 ## Context

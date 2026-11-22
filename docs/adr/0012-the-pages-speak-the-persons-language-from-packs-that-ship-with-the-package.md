@@ -1,6 +1,6 @@
 # ADR-0012: The pages speak the person's language, from packs that ship with the package
 
-- Status: Accepted
+- Status: Accepted; what a person who has chosen no language is shown is amended by [ADR-0065](0065-a-plugin-writes-one-text-and-a-persons-language-is-kept-from-the-first-time-the-pages-see-them.md): the language is kept from the first time the pages see them
 - Date: 2026-10-10
 
 ## Context

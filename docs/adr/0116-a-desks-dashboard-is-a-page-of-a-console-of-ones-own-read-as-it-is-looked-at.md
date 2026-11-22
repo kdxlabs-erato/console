@@ -1,6 +1,6 @@
 # ADR-0116: A desk's dashboard is a page of a console of one's own, read as it is looked at
 
-- Status: Accepted
+- Status: Accepted; point 7, what the organization's console says of where a desk comes from, is amended by [ADR-0121](0121-the-agents-page-says-what-to-tell-an-agent-for-a-desk-from-the-commands-install-on.md), and what the shell of a desk's pages mounts by [ADR-0122](0122-a-desk-is-given-its-least-and-grown-by-what-its-member-asks.md)
 - Date: 2026-11-15
 - Builds on [ADR-0014](0014-a-persons-own-console-is-served-from-their-machine-by-the-command.md) (a person's own console) and [ADR-0106](0106-a-look-is-a-part-with-a-file-and-a-row-and-a-page-places-its-parts.md) (the parts); the desk it belongs to is a member's own repository, an agent account's by [ADR-0088](0088-an-agent-account-has-a-desk-and-is-set-up-from-an-invitation-by-signing-in-as-itself.md) and a person's by [ADR-0115](0115-a-person-has-a-desk-too-written-by-the-command-and-set-up-by-a-skill-of-the-organizations-pack.md).
 

@@ -1,6 +1,6 @@
 # ADR-0028: The console reads a project's pack through the deployment's REST API, with a pack token a person made for a private one
 
-- Status: Accepted
+- Status: Accepted; point 2 is amended by [ADR-0036](0036-a-private-pack-is-connected-with-a-code-a-person-approves-from-the-projects-settings.md): a private pack is connected with a code a person approves
 - Date: 2026-10-14
 - Builds on [ADR-0006](0006-agents-work-the-board-through-the-rest-api-and-the-command-line-not-an-mcp-server.md), [ADR-0015](0015-the-consoles-skills-live-in-this-repository-in-the-skillcdn-format-and-the-package-carries-them.md) and [ADR-0021](0021-a-token-configures-as-its-person-does.md). The contract is in [specs/rest.md](../specs/rest.md#get-apiv1projectskeyskills) and [specs/cli.md](../specs/cli.md).
 

@@ -1,6 +1,6 @@
 # ADR-0041: A run not heard from for twelve hours is ended by the console
 
-- Status: Accepted
+- Status: Accepted; point 1, an abandoned run leaving its task as it is, is amended by [ADR-0114](0114-the-end-of-a-run-leaves-no-task-at-work-behind-it.md)
 - Date: 2026-10-26
 - Supersedes point 3 of [ADR-0020](0020-the-console-does-not-claim-an-agent-is-at-work-a-run-says-when-it-was-last-heard-from-and-a-new-run-takes-over.md)
 

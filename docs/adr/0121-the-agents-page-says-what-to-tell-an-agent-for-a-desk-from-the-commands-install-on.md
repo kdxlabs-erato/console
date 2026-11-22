@@ -1,6 +1,6 @@
 # ADR-0121: The Agents page says what to tell an agent for a desk, from the command's install on
 
-- Status: Accepted
+- Status: Accepted; points 2 and 4, what the Agents page names, are amended by [ADR-0122](0122-a-desk-is-given-its-least-and-grown-by-what-its-member-asks.md)
 - Date: 2026-11-15
 - Amends [ADR-0116](0116-a-desks-dashboard-is-a-page-of-a-console-of-ones-own-read-as-it-is-looked-at.md), point 7: what the organization's console says of where a desk comes from.
 

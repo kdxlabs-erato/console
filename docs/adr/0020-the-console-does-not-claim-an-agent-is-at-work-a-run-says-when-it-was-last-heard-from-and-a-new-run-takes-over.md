@@ -1,6 +1,6 @@
 # ADR-0020: The console does not claim an agent is at work; a run says when it was last heard from, and a new run takes over
 
-- Status: Accepted
+- Status: Accepted; point 3 is superseded by [ADR-0041](0041-a-run-not-heard-from-for-twelve-hours-is-ended-by-the-console.md), which ends a run not heard from for twelve hours, and point 2 is amended by [ADR-0114](0114-the-end-of-a-run-leaves-no-task-at-work-behind-it.md), by which the end of a run leaves no task at work behind it
 - Date: 2026-10-11
 
 ## Context

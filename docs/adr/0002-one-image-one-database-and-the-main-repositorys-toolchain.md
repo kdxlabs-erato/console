@@ -1,6 +1,6 @@
 # ADR-0002: One image, one database, and the main repository's toolchain and conventions
 
-- Status: Accepted; that everything past an image that builds is defined outside this repository is amended by [ADR-0092](0092-the-image-of-a-release-is-published-and-the-smallest-install-is-made-from-a-bundle.md): the image of a release is published beside the package, and a script installs it on one host
+- Status: Accepted; that everything past an image that builds is defined outside this repository is amended by [ADR-0092](0092-the-image-of-a-release-is-published-and-the-smallest-install-is-made-from-a-bundle.md): the image of a release is published beside the package, and a script installs it on one host; [ADR-0007](0007-the-package-is-published-through-trusted-publishing-and-versioned-on-the-core-line.md) adds the one workflow that publishes anything, the package's
 - Date: 2026-10-09
 
 ## Context
