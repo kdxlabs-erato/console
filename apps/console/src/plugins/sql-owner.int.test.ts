@@ -160,7 +160,7 @@ describe("where the console's database user owns its database", () => {
       expect((await reading.query("select count(*)::int as n from public.tasks")).rows).toEqual([
         { n: 0 },
       ]);
-      // Every boot provisions again, with a password drawn anew, and finds nothing more to close.
+      // Every boot provisions again, and finds nothing more to close.
       await service.provision(key);
       expect((await service.query(key, "select 1 as n", [])).rows).toEqual([{ n: 1 }]);
       expect(lines.filter((line) => line.msg !== undefined)).toHaveLength(1);
@@ -213,6 +213,16 @@ describe("where the console's database user does not own the schema public", () 
     ]);
     await own.execute(sql`create table public.later (id int)`);
     await own.execute(sql`drop table public.later`);
+    // Another process of the deployment uses the plugin too, and holds a session of it.
+    const { service: other } = serviceOf(urlOf(shared.connectionString, undefined, user));
+    const held = await other.begin(key);
+    const canSignIn = async () =>
+      (
+        await operator.execute<{ login: boolean; sessions: boolean }>(sql`
+          select (select rolcanlogin from pg_roles where rolname = ${`plugin_${key}`}) as login,
+                 exists (select 1 from pg_stat_activity where usename = ${`plugin_${key}`}) as sessions`)
+      ).rows[0];
+    expect(await canSignIn()).toEqual({ login: true, sessions: true });
     // A right given to the plugin's role by name, which the console's user may not take back, is
     // refused too, and the plugin's statements wait for the owner.
     await operator.execute(sql.raw(`grant usage on schema public to "plugin_${key}"`));
@@ -224,9 +234,21 @@ describe("where the console's database user does not own the schema public", () 
     await expect(service.query(key, "select 1", [])).rejects.toMatchObject({
       code: "plugin.unavailable",
     });
+    // Refused for the whole deployment: the role signs in nowhere, the session the other process
+    // held is ended, and that process is refused its next statement as this one is.
+    await expect.poll(canSignIn, { timeout: 5_000 }).toEqual({ login: false, sessions: false });
+    await expect(other.query(key, "select 1", [], held)).rejects.toMatchObject({
+      code: expect.stringMatching(/^plugin\./),
+    });
+    await other.rollback(key, held).catch(() => undefined);
+    await expect(other.query(key, "select 1", [])).rejects.toMatchObject({
+      code: "plugin.unavailable",
+    });
+    expect(await canSignIn()).toEqual({ login: false, sessions: false });
     await operator.execute(sql.raw(revoke));
     await service.provision(key);
     expect((await service.query(key, "select 1 as n", [])).rows).toEqual([{ n: 1 }]);
+    expect((await other.query(key, "select 2 as n", [])).rows).toEqual([{ n: 2 }]);
     await service.purge(key);
     expect(await made()).toEqual({ schemas: 0, roles: 0 });
   });
@@ -313,15 +335,15 @@ describe("where the database refuses the statement that gives a plugin's role it
   /**
    * That nothing a statement gave a role as its password is in anything said of the failure, and
    * that the failure is said. What a statement gives is what the server keeps of a password, its
-   * salt and its keys, and never the password drawn: the server may log the statement.
+   * salt and its keys, and never the password itself: the server may log the statement.
    */
   function expectSaidWithoutPassword(
     said: Awaited<ReturnType<typeof provisionRefused>>,
     role: string,
     words: string,
   ) {
-    // Two passwords were drawn, one a pass, and what the server keeps of each was sent in the
-    // statements that failed.
+    // The role was given its password twice, once a pass, and what the server keeps of it was
+    // sent in the statements that failed, under a salt of its own each time.
     expect(said.drawn).toHaveLength(2);
     for (const drawn of said.drawn) {
       expect(drawn).toMatch(

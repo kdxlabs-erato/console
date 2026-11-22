@@ -1,9 +1,19 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { DrizzleQueryError } from "drizzle-orm";
 import { DatabaseError } from "pg";
+import { pino } from "pino";
 import { describe, expect, it } from "vitest";
+import type { Database } from "../db/client.js";
 import { errorForLog } from "../logger.js";
-import { CONSOLE_SCHEMAS, closingStatement, roleRefusal, scramVerifier, sqlNameOf } from "./sql.js";
+import {
+  CONSOLE_SCHEMAS,
+  closingStatement,
+  PluginSqlService,
+  rolePassword,
+  roleRefusal,
+  scramVerifier,
+  sqlNameOf,
+} from "./sql.js";
 
 // What a refusal of `storage:sql` tells the database's owner to run (ADR-0133): the statement is
 // read by a person and run as it is written, so its names are quoted as PostgreSQL reads them.
@@ -175,5 +185,104 @@ describe("the console's schemas", () => {
   it("are closed to every plugin's role, and none of them is a plugin's", () => {
     expect([...CONSOLE_SCHEMAS].sort()).toEqual(["drizzle", "feed_order", "public", "transcript"]);
     expect(CONSOLE_SCHEMAS.some((schema) => schema.startsWith(sqlNameOf("")))).toBe(false);
+  });
+});
+
+describe("the password of a plugin's role (ADR-0148)", () => {
+  // Invented for the test, and built from parts: no line of this file is shaped like a credential.
+  const words = ["an", "invented", "word", "for", "tests"].join("-");
+  const address = (password: string, rest = "@db.example:5432/console") =>
+    `postgres://console:${password}${rest}`;
+
+  it("is the same wherever the database's address is the same, and kept nowhere", () => {
+    const first = rolePassword(address(words), "plugin_tally");
+    expect(first).toBe(rolePassword(address(words), "plugin_tally"));
+    // Letters, digits, `-` and `_`: what the preparation the protocol asks of a password leaves
+    // as it is, and 256 bits of them.
+    expect(first).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    // The host, the port and the database are not the key: a replica reached by another name
+    // arrives at the same password.
+    expect(
+      rolePassword(address(words, "@replica.example:6432/console?sslmode=require"), "plugin_tally"),
+    ).toBe(first);
+  });
+
+  it("is another for another role, and for another password of the console's", () => {
+    const first = rolePassword(address(words), "plugin_tally");
+    expect(rolePassword(address(words), "plugin_tally2")).not.toBe(first);
+    expect(rolePassword(address(words), "plugin_tall")).not.toBe(first);
+    expect(rolePassword(address(`${words}x`), "plugin_tally")).not.toBe(first);
+    // The key and the name are two fields: what one ends with is not what the other begins with.
+    expect(rolePassword(address("ab"), "cplugin")).not.toBe(rolePassword(address("abc"), "plugin"));
+  });
+
+  it("says nothing of the console's own password", () => {
+    const derived = rolePassword(address(words), "plugin_tally") ?? "";
+    expect(derived).not.toContain(words);
+    expect(Buffer.from(derived, "base64url").toString("latin1")).not.toContain(words);
+  });
+
+  it("reads a password as the driver does, written with its escapes or without", () => {
+    const plain = rolePassword(address("p-q_r.s"), "plugin_tally");
+    expect(rolePassword(address("p%2Dq%5Fr%2Es"), "plugin_tally")).toBe(plain);
+    // One that is escaped as no text is escaped is taken as it is written.
+    expect(rolePassword(address("100%zz"), "plugin_tally")).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(rolePassword(address("100%zz"), "plugin_tally")).not.toBe(
+      rolePassword(address("100"), "plugin_tally"),
+    );
+  });
+
+  it("is nothing where the address carries no password, or is no address", () => {
+    expect(rolePassword("postgres://console@db.example:5432/console", "plugin_tally")).toBe(
+      undefined,
+    );
+    expect(rolePassword("postgres://console:@db.example:5432/console", "plugin_tally")).toBe(
+      undefined,
+    );
+    expect(rolePassword("postgres://db.example/console", "plugin_tally")).toBe(undefined);
+    expect(rolePassword("", "plugin_tally")).toBe(undefined);
+    expect(rolePassword("not an address", "plugin_tally")).toBe(undefined);
+    expect(rolePassword("x".repeat(100_000), "plugin_tally")).toBe(undefined);
+  });
+
+  it("holds against a name and a password of any length and any character", () => {
+    const long = rolePassword(address("p".repeat(50_000)), `plugin_${"k".repeat(50_000)}`);
+    expect(long).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    const odd = rolePassword(
+      address(encodeURIComponent(`a"b'c${String.fromCodePoint(92, 0x1f512)} d`)),
+      'plugin_"; drop role x; --',
+    );
+    expect(odd).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  });
+});
+
+describe("a deployment whose database address carries no password", () => {
+  const lines: string[] = [];
+  // Never reached: the service answers before it asks the database anything.
+  const service = new PluginSqlService({
+    database: undefined as unknown as Database,
+    connectionString: "postgres://console@db.example:5432/console",
+    ca: undefined,
+    logger: pino({ level: "warn" }, { write: (line: string) => void lines.push(line) }),
+  });
+
+  it("gives no plugin a schema, and says why once", async () => {
+    expect(await service.available()).toBe(false);
+    expect(await service.available()).toBe(false);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("storage:sql needs a password in the database's address");
+  });
+
+  it("refuses to provision, to run a statement and to open a transaction", async () => {
+    for (const refused of [
+      service.provision("tally"),
+      service.query("tally", "select 1", []),
+      service.begin("tally"),
+    ]) {
+      await expect(refused).rejects.toMatchObject({
+        code: "plugin.unavailable",
+        message: expect.stringContaining("needs a password in the database's address"),
+      });
+    }
   });
 });

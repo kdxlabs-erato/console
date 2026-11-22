@@ -202,7 +202,7 @@ describe("a plugin's schema", () => {
         try {
           await refusedAtOnce(statement, schema, tx);
         } finally {
-          await service.rollback(tx);
+          await service.rollback("tallytest", tx);
         }
       }
       // A function of the plugin's own that names the table is refused when it runs.
@@ -216,7 +216,7 @@ describe("a plugin's schema", () => {
         );
         await refusedAtOnce("select peeked()", "public", tx);
       } finally {
-        await service.rollback(tx);
+        await service.rollback("tallytest", tx);
       }
       // A vacuum runs outside a transaction.
       await refusedAtOnce("vacuum public.tasks", "public");
@@ -263,7 +263,7 @@ describe("a plugin's schema", () => {
       expect(await settledEnd(testDatabase.database, "console")).toBe(written);
     } finally {
       await service.query("tallytest", "select pg_advisory_unlock_all()", [], tx);
-      await service.rollback(tx);
+      await service.rollback("tallytest", tx);
     }
   }, 20_000);
 
@@ -323,7 +323,7 @@ describe("a plugin's schema", () => {
           });
           expect(performance.now() - began, statement).toBeLessThan(1000);
         } finally {
-          await service.rollback(tx);
+          await service.rollback("tallytest", tx);
         }
       }
     } finally {
@@ -396,7 +396,7 @@ describe("a plugin's schema", () => {
     const tx = await service.begin("tallytest");
     await service.query("tallytest", "select pg_advisory_lock(424243)", [], tx);
     await service.query("tallytest", "set statement_timeout = 0", [], tx);
-    await service.commit(tx);
+    await service.commit("tallytest", tx);
     expect(await free(424243)).toBe(true);
     expect((await service.query("tallytest", "show statement_timeout", [])).rows).toEqual([
       { statement_timeout: "10s" },
@@ -432,17 +432,17 @@ describe("a plugin's schema", () => {
     await expect(service.query("tallytest", "select 1; select 2", [], tx)).rejects.toMatchObject({
       code: "plugin.invalid_args",
     });
-    await service.rollback(tx);
+    await service.rollback("tallytest", tx);
   });
 
   it("runs a transaction as a unit, committed or rolled back", async () => {
     const tx = await service.begin("tallytest");
     await service.query("tallytest", "insert into things (name) values ($1)", ["two"], tx);
     await service.query("tallytest", "insert into things (name) values ($1)", ["three"], tx);
-    await service.commit(tx);
+    await service.commit("tallytest", tx);
     const undone = await service.begin("tallytest");
     await service.query("tallytest", "insert into things (name) values ($1)", ["four"], undone);
-    await service.rollback(undone);
+    await service.rollback("tallytest", undone);
     await expect(service.query("tallytest", "select 1", [], undone)).rejects.toMatchObject({
       code: "plugin.not_found",
     });
@@ -450,29 +450,63 @@ describe("a plugin's schema", () => {
     expect(counted.rows).toEqual([{ n: 3 }]);
   });
 
-  it("draws a new password when provisioned again, and the old connections give way", async () => {
+  it("is brought to what it must be when provisioned again, and what is open goes on", async () => {
+    const db = drizzleOf(testDatabase.database);
     // A power the role was given meanwhile is taken again.
-    await drizzleOf(testDatabase.database).execute(sql`alter role plugin_tallytest createdb`);
+    await db.execute(sql`alter role plugin_tallytest createdb`);
+    // A transaction of the plugin's is open while the console provisions again, as another
+    // process of the deployment does at its start: the role keeps its password, so nothing that
+    // is open has to give way, and nothing signs in in vain afterwards (ADR-0148).
+    const tx = await service.begin("tallytest");
+    await service.query("tallytest", "insert into things (name) values ($1)", ["five"], tx);
     await service.provision("tallytest");
-    const powers = await drizzleOf(testDatabase.database).execute<{ createdb: boolean }>(
+    const powers = await db.execute<{ createdb: boolean }>(
       sql`select rolcreatedb as createdb from pg_roles where rolname = 'plugin_tallytest'`,
     );
     expect(powers.rows).toEqual([{ createdb: false }]);
+    await service.query("tallytest", "insert into things (name) values ($1)", ["six"], tx);
+    await service.rollback("tallytest", tx);
     // The role was given what the server keeps of its password, never the password, so the
-    // statement a server may log holds no credential. This query signs in with the password
-    // itself, on a connection made after the role changed, which proves the two belong
-    // together wherever the server asks for a password, as the tests' own does: had the server
-    // taken what it was given for a password and kept its own of that, the password itself
-    // would sign nobody in.
-    const counted = await service.query("tallytest", "select count(*)::int as n from things", []);
-    expect(counted.rows).toEqual([{ n: 3 }]);
+    // statement a server may log holds no credential. A session made anew signs in with the
+    // password itself, which proves the two belong together wherever the server asks for a
+    // password, as the tests' own does: had the server taken what it was given for a password
+    // and kept its own of that, the password itself would sign nobody in.
+    await db.execute(
+      sql`select pg_terminate_backend(pid, 5000) from pg_stat_activity where usename = 'plugin_tallytest'`,
+    );
+    await expect
+      .poll(
+        () =>
+          service.query("tallytest", "select count(*)::int as n from things", []).then(
+            (counted) => counted.rows,
+            () => undefined,
+          ),
+        { timeout: 5_000 },
+      )
+      .toEqual([{ n: 3 }]);
     expect(await service.applyMigrations("tallytest", migrations)).toBe(0);
+    // What the console's user holds of the role: what the role holds, so that it may end the
+    // role's sessions and drop what the role owns, and never the right to become it. The role
+    // is a member of nothing.
+    const held = await db.execute<{ inherits: boolean; becomes: boolean; member: number }>(sql`
+      select bool_or(m.inherit_option) as inherits, bool_or(m.set_option) as becomes,
+             (select count(*)::int from pg_auth_members o
+               where o.member = (select oid from pg_roles where rolname = 'plugin_tallytest')) as member
+      from pg_auth_members m
+      where m.roleid = (select oid from pg_roles where rolname = 'plugin_tallytest')
+        and m.member = (select oid from pg_roles where rolname = current_user)`);
+    expect(held.rows).toEqual([{ inherits: true, becomes: false, member: 0 }]);
   });
 
-  it("refuses a plugin that was not provisioned in this process", async () => {
+  it("refuses a plugin nobody provisioned, and makes nothing on a statement's way", async () => {
     await expect(service.query("ghost", "select 1", [])).rejects.toMatchObject({
       code: "plugin.unavailable",
     });
+    await expect(service.begin("ghost")).rejects.toMatchObject({ code: "plugin.unavailable" });
+    const made = await drizzleOf(testDatabase.database).execute<{ n: number }>(
+      sql`select count(*)::int as n from pg_roles where rolname = 'plugin_ghost'`,
+    );
+    expect(made.rows).toEqual([{ n: 0 }]);
   });
 
   it("purges the schema and the role, leaving nothing", async () => {

@@ -1,0 +1,32 @@
+# ADR-0148: A plugin's role has one password every process arrives at, and the console's user holds what the role holds
+
+- Status: Accepted
+- Date: 2026-11-22
+- Amends points 2 and 3 of [ADR-0051](0051-a-plugin-keeps-its-data-in-records-the-console-holds-or-in-a-schema-of-its-own-by-consent.md): the password drawn anew at every boot, and what a purge drops. Builds on [ADR-0133](0133-the-consoles-schemas-are-closed-to-every-role-when-a-plugin-first-gets-a-schema-of-its-own.md). The contract is in [specs/plugins.md](../specs/plugins.md#sql).
+
+## Context
+
+A plugin with `storage:sql` runs its statements as a login role of its own. Every process drew that role's password for itself at its start and kept it in memory. A deployment is several processes over one database: `migrate`, which runs before every rollout while the version before still serves, the `api`, often more than one, and a `worker`. Each provisions the plugins it finds enabled, so the role answered whichever started last and every other was refused its next session (`28P01`); a process started before an administrator enabled a plugin held no password for it at all; and processes that started together were refused the statements that changed one role at the same moment. Tests over one database with several services reproduced all three.
+
+Reading the same module found more. A role that owns a large object, which any role may make, or default privileges cannot be dropped, so the purge failed. A database user that is no superuser may not end another role's sessions, so the purge failed while another process held one, and a transaction past its minute could only queue its rollback behind a statement that had set itself any timeout. And a transaction was found by its name alone, which comes from the plugin's own thread: one plugin could run a statement in what another had open.
+
+None of the reference plugins declares `storage:sql`, so nothing published met any of this.
+
+## Decision
+
+1. **The role's password is derived, not drawn.** It is HMAC-SHA-256 of the role's name under a fixed label, keyed with the password the console's own database address carries, and is given to the role as before, as what the server keeps of one. Every process arrives at it by itself: nothing is stored and nothing passes between processes. The key is the one credential every role of the image is certain to hold, and whoever holds it may give the role any password already, so the hash hands nobody a power they lacked. An address that carries no password gives no plugin a schema.
+2. **Provisioning brings the schema and the role to a state, whoever ran it last.** Where the database refuses a statement because another process changed the same thing at that moment, provisioning goes round again, eight times at most.
+3. **A process that provisioned nothing uses what another made**, once it sees the role as provisioning leaves it: able to sign in, holding no power, with its schema, using no schema of the console's. It makes and changes nothing on a statement's way.
+4. **A refusal of provisioning is the deployment's.** Where the role may use a schema of the console's that the console's user cannot take back, the role is kept from signing in and its sessions are ended, in every process.
+5. **The console's user holds what the role holds**, `GRANT … WITH INHERIT TRUE, SET FALSE`, which whoever made a role may give itself. Only so may a user that is no superuser end the role's sessions and drop what it owns. The role is a member of nothing, and the console's user may not become it.
+6. **Purge leaves nothing.** The role is kept from signing in, its sessions are ended and waited for, what it owns is dropped (`DROP OWNED`), then the schema and the role.
+7. **A transaction past its minute is ended with the statement it runs.** One that runs nothing is rolled back and its connection kept; otherwise the session is ended at the server, which rolls back and frees every lock at once. The same when the process stops.
+8. **A transaction answers the plugin that opened it**, and is not found by any other.
+
+## Consequences
+
+- No setting is added, and no role of the image needs a secret it did not have: the deployment's task definitions stand as they are.
+- The roles of one deployment reach the database with one address. Where its password changes, the role's follows at the next start of a process, and a process still on the old one is refused new sessions of the role, in words that say so, until it restarts.
+- During the rollout to this release, a process of the release before still draws a password, and is refused as it was in every rollout before.
+- The console's user holds the plugin's rights on the plugin's schema, which it owned already.
+- Rejected: a password derived from `AUTH_SECRET` (the `worker` and `migrate` of the reference deployment are not given it, it comes only with all of signing in, and a rotation would have to be followed); the password sealed in a row (the same secret in every role, and a credential at rest); a lock around provisioning (an advisory one any plugin's role may take, a table's needs a right the console's user may lack); cancelling the statement in place of ending the session (a function of the plugin's may catch a cancel); taking the large-object functions from `PUBLIC` (only their owner may).

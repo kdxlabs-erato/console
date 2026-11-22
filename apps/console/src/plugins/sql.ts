@@ -1,17 +1,20 @@
 // A schema and a login role of a plugin's own (ADR-0051, docs/specs/plugins.md, "SQL"): what the
 // capability `storage:sql` opens. Enabling creates `plugin_<key>` and the role of the same name,
 // with rights on that schema and nothing else, a search path of its own, a statement timeout and
-// a connection limit; the console draws the role's password at every boot and keeps it in memory
-// alone. The plugin's migrations are applied as the role, and `ctx.sql` runs on a pool of the
-// role in the parent, its results bounded. Purge drops the schema and the role.
+// a connection limit. The role's password is a keyed hash every process of the deployment arrives
+// at by itself, kept nowhere (ADR-0148): the `api`, the `worker` and the `migrate` role each
+// provision what they find enabled, and none of them takes the role from another. The plugin's
+// migrations are applied as the role, and `ctx.sql` runs on a pool of the role in the parent, its
+// results bounded. Purge drops the schema and the role with whatever the role owns.
 //
 // The role may use no schema of the console's (ADR-0133): a role that may use a schema may name a
 // table in it, and naming a table takes a lock on it before any right on the table is asked for.
 // What every role holds through PUBLIC is taken from PUBLIC, which only a schema's owner may do;
 // where the console's role may not, provisioning is refused with what the owner runs.
-import { createHash, createHmac, pbkdf2Sync, randomBytes } from "node:crypto";
+import { createHash, createHmac, pbkdf2Sync, randomBytes, randomInt } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   MAX_PLUGIN_SQL_ROWS,
   PLUGIN_SQL_CONNECTIONS,
@@ -25,8 +28,12 @@ import type { Logger } from "../logger.js";
 
 /** The bytes a result may hold as JSON: `MAX_PLUGIN_MESSAGE_BYTES`, measured before it crosses to the host. */
 const RESULT_BYTES_AT_MOST = 4 * 1024 * 1024;
-/** How long an open transaction waits for its plugin before it is rolled back. */
+/** How long an open transaction waits for its plugin before it is ended. */
 const TRANSACTION_TTL_MS = 60_000;
+/** How long purge waits for a session of the role to be gone, once it told the server to end it. */
+const SESSION_END_MS = 5_000;
+/** How often provisioning goes round again where another process changed the same thing at once. */
+const PROVISION_ATTEMPTS = 8;
 /** The console's own migration lock, which the plugins' migrations run under too. */
 const MIGRATION_LOCK_KEY = 5_434_002;
 const MIGRATION_NAME = /^\d{4}-[a-z0-9-]+\.sql$/;
@@ -41,10 +48,15 @@ const ROLE_POWERS = [
 
 export interface PluginSqlOptions {
   readonly database: Database;
-  /** The console's own connection string and authority, from which the role's connections are made. */
+  /**
+   * The console's own connection string and authority, from which the role's connections are
+   * made, and whose password the role's is derived from (ADR-0148).
+   */
   readonly connectionString: string;
   readonly ca: string | undefined;
   readonly logger: Logger;
+  /** How long an open transaction waits for its plugin; a minute unless a test says otherwise. */
+  readonly transactionMs?: number | undefined;
 }
 
 export interface SqlResult {
@@ -128,6 +140,78 @@ export function scramVerifier(password: string, salt: Buffer = randomBytes(16)):
   return `SCRAM-SHA-256$${SCRAM_ITERATIONS}:${salt.toString("base64")}$${storedKey.toString("base64")}:${serverKey.toString("base64")}`;
 }
 
+/** What the derivation is for: nothing else hashes these words with the database's password. */
+const ROLE_PASSWORD_LABEL = "skillcdn-console plugin role password v1";
+
+/**
+ * The password of a plugin's role (ADR-0148): a keyed hash of the role's name, keyed with the
+ * password the console itself signs in to the database with. Every process of a deployment holds
+ * that one, the `migrate` role and a `worker` given nothing but the database's address among
+ * them, so each arrives at the same password with nothing kept anywhere and nothing passed
+ * between them. Whoever holds the key may give the role any password already, so the hash hands
+ * nobody a power they lacked, and it says nothing of the key to whoever learned its result.
+ * Nothing where the address carries no password: no plugin gets a schema there. Letters, digits,
+ * `-` and `_`, which the preparation the protocol asks of a password leaves as they are.
+ */
+export function rolePassword(connectionString: string, name: string): string | undefined {
+  let key: string;
+  try {
+    const { password } = new URL(connectionString);
+    try {
+      // As the driver reads it, so that one password written two ways is one key.
+      key = decodeURIComponent(password);
+    } catch {
+      key = password;
+    }
+  } catch {
+    return undefined;
+  }
+  if (key.length === 0) {
+    return undefined;
+  }
+  // The label and the name are two fields: a zero byte, which neither holds, stands between them.
+  return createHmac("sha256", key)
+    .update(ROLE_PASSWORD_LABEL)
+    .update(Buffer.from([0]))
+    .update(name)
+    .digest("base64url");
+}
+
+/** What a deployment whose database address carries no password is told. */
+const NO_PASSWORD =
+  "storage:sql needs a password in the database's address: a plugin's role is given one derived from it, which every process of the deployment arrives at";
+
+/**
+ * Whether the database refused a statement because another session changed the same thing at
+ * the same moment: two processes that start together provision the same plugins, and a role, a
+ * schema or a grant changed by two at once is refused for one of them ("tuple concurrently
+ * updated", or the name taken meanwhile). Whoever was refused goes round again and finds it made.
+ */
+function metAnother(error: unknown): boolean {
+  for (let at: unknown = error, depth = 0; depth < 4; depth += 1) {
+    if (typeof at !== "object" || at === null) {
+      return false;
+    }
+    const code = "code" in at ? at.code : undefined;
+    const message = "message" in at && typeof at.message === "string" ? at.message : "";
+    if (
+      code === "23505" ||
+      code === "42710" ||
+      code === "42P06" ||
+      code === "40001" ||
+      code === "40P01" ||
+      (code === "XX000" && /tuple concurrently (?:updated|deleted)/.test(message))
+    ) {
+      return true;
+    }
+    at = "cause" in at ? at.cause : undefined;
+  }
+  return false;
+}
+
+/** The statement that gives a role its password met another process's: said without the statement. */
+class RoleChangedAtOnce extends Error {}
+
 /**
  * What a statement that gave the plugin's role its password failed with, as a refusal that names
  * the role and gives the database's code and words, and nothing of the statement: the ORM's error
@@ -175,19 +259,46 @@ export function roleRefusal(
   );
 }
 
+/** A transaction a plugin opened and has not ended. */
+interface OpenTransaction {
+  /** The plugin that opened it, and the only one it answers. */
+  readonly key: string;
+  readonly client: PoolClient;
+  timer: NodeJS.Timeout | undefined;
+  /** How many of its statements are with the database now. */
+  running: number;
+  /** Why the console ended it, where it did: what a statement cut short is told. */
+  over: "time" | "stopped" | undefined;
+}
+
 export class PluginSqlService {
   private readonly options: PluginSqlOptions;
-  private readonly passwords = new Map<string, string>();
+  /**
+   * The plugins whose role this process found fit to sign in as: provisioned here, or made by
+   * another process of the deployment and seen to reach nothing of the console's.
+   */
+  private readonly ready = new Set<string>();
   private readonly pools = new Map<string, Pool>();
-  private readonly transactions = new Map<string, { client: PoolClient; timer: NodeJS.Timeout }>();
+  private readonly transactions = new Map<string, OpenTransaction>();
   private counter = 0;
+  private saidNoPassword = false;
 
   constructor(options: PluginSqlOptions) {
     this.options = options;
   }
 
-  /** Whether the console's database user may make roles: without `CREATEROLE`, no plugin gets a schema. */
+  /**
+   * Whether a plugin may get a schema here: the console's database user may make roles
+   * (`CREATEROLE`), and its address carries the password a plugin's role's is derived from.
+   */
   async available(): Promise<boolean> {
+    if (rolePassword(this.options.connectionString, "plugin_") === undefined) {
+      if (!this.saidNoPassword) {
+        this.saidNoPassword = true;
+        this.options.logger.warn(NO_PASSWORD);
+      }
+      return false;
+    }
     try {
       const result = await drizzleOf(this.options.database).execute<{ able: boolean }>(
         sql`select (rolcreaterole or rolsuper) as able from pg_roles where rolname = current_user`,
@@ -278,15 +389,43 @@ export class PluginSqlService {
   }
 
   /**
-   * Makes the plugin's schema and role, or brings them to what they must be, and draws the role's
-   * password anew. The role may use and create in its schema and use no other of the console's or
-   * the plugins'; its statements time out and its connections are few. Refused, with nothing
-   * made, where the console's schemas cannot be closed to PUBLIC.
+   * Makes the plugin's schema and role, or brings them to what they must be, the role's password
+   * among it: the one every process of the deployment arrives at (ADR-0148), so that a process
+   * that provisions takes the role from no other. The role may use and create in its schema and
+   * use no other of the console's or the plugins'; its statements time out and its connections
+   * are few. Refused, with nothing made, where the console's schemas cannot be closed to PUBLIC.
+   * Where another process changed the same role, schema or grant at the same moment, it goes
+   * round again: every statement here brings a thing to what it must be, whoever ran it last.
    */
   async provision(key: string): Promise<void> {
     const name = sqlNameOf(key);
+    const password = rolePassword(this.options.connectionString, name);
+    if (password === undefined) {
+      throw new PluginRefusal("plugin.unavailable", NO_PASSWORD);
+    }
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await this.provisionOnce(key, name, password);
+        return;
+      } catch (error) {
+        const again = error instanceof RoleChangedAtOnce || metAnother(error);
+        if (again && attempt < PROVISION_ATTEMPTS) {
+          await delay(randomInt(10, 60 * attempt));
+          continue;
+        }
+        if (error instanceof RoleChangedAtOnce) {
+          throw new PluginRefusal(
+            "plugin.unavailable",
+            `the role ${quoted(name)} could not be made or changed: other processes kept changing it at the same moment`,
+          );
+        }
+        throw error;
+      }
+    }
+  }
+
+  private async provisionOnce(key: string, name: string, password: string): Promise<void> {
     await this.closeToPublic();
-    const password = randomBytes(32).toString("base64url");
     const db = drizzleOf(this.options.database);
     await db.execute(sql.raw(`create schema if not exists ${quoted(name)}`));
     // The schema is its role's alone, whatever default privileges the database's keeper set.
@@ -310,9 +449,17 @@ export class PluginSqlService {
     try {
       await db.execute(sql.raw(statement));
     } catch (error) {
+      if (metAnother(error)) {
+        throw new RoleChangedAtOnce();
+      }
       // What the ORM throws quotes the statement whole, the verifier in it.
       throw roleRefusal(name, role === undefined ? "made" : "changed", error, verifier);
     }
+    // The console's user holds what the role holds, which whoever made a role may give itself:
+    // only so may a user that is no superuser end the role's sessions, at purge and when a
+    // transaction ran past its time, and drop what the role owns. Never the other way round: the
+    // role is a member of nothing, and the console's user may not become it (`set false`).
+    await db.execute(sql.raw(`grant ${quoted(name)} to current_user with inherit true, set false`));
     await db.execute(sql.raw(`alter role ${quoted(name)} set search_path = ${quoted(name)}`));
     await db.execute(
       sql.raw(
@@ -330,34 +477,81 @@ export class PluginSqlService {
         }
       }
     }
-    const pool = this.pools.get(key);
-    if (pool !== undefined) {
-      this.pools.delete(key);
-      await pool.end().catch(() => undefined);
-    }
     const reachable = await this.reachableBy(name);
     if (reachable.length > 0) {
-      this.passwords.delete(key);
+      // Refused for every process of the deployment, not for this one alone: the role signs in
+      // nowhere until it is provisioned again, and what it holds open is ended.
+      this.ready.delete(key);
+      await this.shut(key, name);
       throw new PluginRefusal(
         "plugin.unavailable",
         `the role ${quoted(name)} may use ${schemasNamed(reachable)}, which no plugin's role may, and the console's database user may not take it back. The database's owner runs, once: ${reachable.map((schema) => `REVOKE ALL ON SCHEMA ${quoted(schema)} FROM ${quoted(name)};`).join(" ")}`,
       );
     }
-    this.passwords.set(key, password);
+    this.ready.add(key);
   }
 
-  /** The pool of the plugin's role, made with the password drawn at this boot. */
+  /**
+   * Keeps a role that may not be used from signing in, in this process and in every other, and
+   * ends the sessions it has: what a refusal of provisioning leaves behind it. What cannot be
+   * done of it is said in the log, and the refusal stands either way.
+   */
+  private async shut(key: string, name: string): Promise<void> {
+    const pool = this.pools.get(key);
+    if (pool !== undefined) {
+      this.pools.delete(key);
+      void pool.end().catch(() => undefined);
+    }
+    const db = drizzleOf(this.options.database);
+    try {
+      await db.execute(sql.raw(`alter role ${quoted(name)} nologin`));
+      await db.execute(
+        sql`select pg_terminate_backend(pid) from pg_stat_activity where usename = ${name} and pid <> pg_backend_pid()`,
+      );
+    } catch (error) {
+      this.options.logger.error(
+        { err: error, plugin: key },
+        "a plugin's role that may not be used could not be kept from signing in",
+      );
+    }
+  }
+
+  /**
+   * Whether this process may sign in as the plugin's role: it provisioned the plugin itself, or
+   * another process of the deployment did, a `worker` started before an administrator enabled the
+   * plugin in the `api` say, and the role is seen here to be what provisioning leaves: one that
+   * signs in, holds no power, has its schema and may use none of the console's. Nothing is made
+   * or changed on this way; a role that is not so waits for whoever provisions it.
+   */
+  private async fit(key: string): Promise<void> {
+    if (this.ready.has(key)) {
+      return;
+    }
+    const name = sqlNameOf(key);
+    if (rolePassword(this.options.connectionString, name) === undefined) {
+      throw new PluginRefusal("plugin.unavailable", NO_PASSWORD);
+    }
+    const found = await drizzleOf(this.options.database).execute<{ fit: boolean }>(
+      sql`select (r.rolcanlogin
+                  and not (${sql.raw(ROLE_POWERS.map(([column]) => `r.${column}`).join(" or "))})
+                  and exists (select 1 from pg_namespace n where n.nspname = ${name})) as fit
+          from pg_roles r where r.rolname = ${name}`,
+    );
+    if (found.rows[0]?.fit !== true || (await this.reachableBy(name)).length > 0) {
+      throw new PluginRefusal("plugin.unavailable", "the plugin's schema is not provisioned");
+    }
+    this.ready.add(key);
+  }
+
+  /** The pool of the plugin's role, signed in with the password every process arrives at. */
   private pool(key: string): Pool {
     let pool = this.pools.get(key);
     if (pool !== undefined) {
       return pool;
     }
-    const password = this.passwords.get(key);
+    const password = rolePassword(this.options.connectionString, sqlNameOf(key));
     if (password === undefined) {
-      throw new PluginRefusal(
-        "plugin.unavailable",
-        "the plugin's schema is not provisioned in this process",
-      );
+      throw new PluginRefusal("plugin.unavailable", NO_PASSWORD);
     }
     const url = new URL(this.options.connectionString);
     url.username = sqlNameOf(key);
@@ -372,6 +566,13 @@ export class PluginSqlService {
       statement_timeout: PLUGIN_SQL_STATEMENT_MS,
     });
     pool.on("error", () => {});
+    // A session ended at the server, at purge by another process or past a transaction's time,
+    // says so to whoever ran a statement on it, and as an event of its connection as well. The
+    // pool hears that event only of a connection that is idle: one a statement or a transaction
+    // holds has nobody listening, and an event nobody hears ends the process.
+    pool.on("connect", (client) => {
+      client.on("error", () => {});
+    });
     this.pools.set(key, pool);
     return pool;
   }
@@ -460,31 +661,90 @@ export class PluginSqlService {
         "a statement is text, up to 100,000 characters",
       );
     }
-    try {
-      if (tx !== undefined) {
-        const open = this.transactions.get(tx);
-        if (open === undefined) {
-          throw new PluginRefusal("plugin.not_found", "the transaction is not open");
-        }
-        return this.bounded(await this.one(open.client, text, params));
-      }
-      const client = await this.pool(key).connect();
+    if (tx !== undefined) {
+      const open = this.opened(key, tx);
+      open.running += 1;
       try {
-        return this.bounded(await this.one(client, text, params));
+        return this.bounded(await this.one(open.client, text, params));
+      } catch (error) {
+        throw this.cutShort(open) ?? (error instanceof PluginRefusal ? error : this.refusal(error));
       } finally {
-        await this.giveBack(client);
+        open.running -= 1;
       }
+    }
+    const client = await this.connect(key);
+    try {
+      return this.bounded(await this.one(client, text, params));
+    } catch (error) {
+      throw error instanceof PluginRefusal ? error : this.refusal(error);
+    } finally {
+      await this.giveBack(client);
+    }
+  }
+
+  /** A connection of the plugin's role, for a process that may sign in as it. */
+  private async connect(key: string): Promise<PoolClient> {
+    await this.fit(key);
+    try {
+      return await this.pool(key).connect();
     } catch (error) {
       if (error instanceof PluginRefusal) {
         throw error;
+      }
+      const code = (error as { code?: unknown }).code;
+      if (code === "28P01") {
+        // The role answers another password than the one this process arrives at: the role
+        // changed it itself, or a process reaches the database with another password.
+        throw new PluginRefusal(
+          "plugin.unavailable",
+          "the plugin's role could not sign in to the database: its password is not the one this process arrives at. Every process of a deployment reaches the database with one address, and the role is given its password again when a process starts or the plugin is enabled",
+        );
+      }
+      if (code === "28000") {
+        // The role was shut meanwhile: whether it is fit is asked again at the next statement.
+        this.ready.delete(key);
+        throw new PluginRefusal(
+          "plugin.unavailable",
+          "the plugin's role may not sign in to the database: its schema waits to be provisioned again",
+        );
       }
       throw this.refusal(error);
     }
   }
 
-  /** Opens a transaction on a connection of the plugin's role; rolled back on its own after a minute. */
+  /**
+   * The transaction a plugin names, where that plugin opened it and it is still open. The name
+   * comes from the plugin's own thread, which may send any: another plugin's transaction is not
+   * found, as one that never was.
+   */
+  private opened(key: string, id: string): OpenTransaction {
+    const open = this.transactions.get(id);
+    if (open === undefined || open.key !== key) {
+      throw new PluginRefusal("plugin.not_found", "the transaction is not open");
+    }
+    return open;
+  }
+
+  /** What a statement is told that failed because the console ended its transaction, or nothing. */
+  private cutShort(open: OpenTransaction): PluginRefusal | undefined {
+    if (open.over === "time") {
+      return new PluginRefusal("plugin.timeout", "the transaction ran past its time");
+    }
+    if (open.over === "stopped") {
+      return new PluginRefusal(
+        "plugin.unavailable",
+        "the transaction was ended by the console, which stops or purges the plugin's schema",
+      );
+    }
+    return undefined;
+  }
+
+  /**
+   * Opens a transaction on a connection of the plugin's role. One its plugin does not end is
+   * ended after a minute, with the statement it runs.
+   */
   async begin(key: string): Promise<string> {
-    const client = await this.pool(key).connect();
+    const client = await this.connect(key);
     try {
       await client.query("begin");
     } catch (error) {
@@ -493,36 +753,81 @@ export class PluginSqlService {
     }
     this.counter += 1;
     const id = `${key}:${this.counter}`;
-    const timer = setTimeout(() => {
-      void this.rollback(id).catch(() => undefined);
-    }, TRANSACTION_TTL_MS);
-    timer.unref();
-    this.transactions.set(id, { client, timer });
+    const open: OpenTransaction = { key, client, timer: undefined, running: 0, over: undefined };
+    open.timer = setTimeout(() => {
+      void this.expire(id, "time").catch(() => undefined);
+    }, this.options.transactionMs ?? TRANSACTION_TTL_MS);
+    open.timer.unref();
+    this.transactions.set(id, open);
     return id;
   }
 
-  private async end(id: string, statement: "commit" | "rollback"): Promise<void> {
-    const open = this.transactions.get(id);
-    if (open === undefined) {
-      throw new PluginRefusal("plugin.not_found", "the transaction is not open");
-    }
+  private async end(key: string, id: string, statement: "commit" | "rollback"): Promise<void> {
+    const open = this.opened(key, id);
     this.transactions.delete(id);
     clearTimeout(open.timer);
     try {
       await open.client.query(statement);
     } catch (error) {
       open.client.release(error instanceof Error ? error : new Error(String(error)));
-      throw this.refusal(error);
+      throw this.cutShort(open) ?? this.refusal(error);
     }
     await this.giveBack(open.client);
   }
 
-  commit(id: string): Promise<void> {
-    return this.end(id, "commit");
+  commit(key: string, id: string): Promise<void> {
+    return this.end(key, id, "commit");
   }
 
-  rollback(id: string): Promise<void> {
-    return this.end(id, "rollback");
+  rollback(key: string, id: string): Promise<void> {
+    return this.end(key, id, "rollback");
+  }
+
+  /**
+   * Ends a transaction its plugin did not end: past its minute, or because the process stops or
+   * the plugin is purged. Where it runs nothing it is rolled back and its connection kept. Where
+   * a statement of it is with the database, the rollback would wait behind that statement, which
+   * may have set itself any timeout: the session is ended at the server instead, which rolls
+   * back and lets go of every lock at once, and the statement is told why. The console's user
+   * may end the role's sessions since provisioning gave it what the role holds.
+   */
+  private async expire(id: string, why: "time" | "stopped"): Promise<void> {
+    const open = this.transactions.get(id);
+    if (open === undefined) {
+      return;
+    }
+    // No statement is taken for it from here on.
+    this.transactions.delete(id);
+    clearTimeout(open.timer);
+    open.over = why;
+    if (open.running === 0) {
+      try {
+        await open.client.query("rollback");
+      } catch (error) {
+        open.client.release(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
+      await this.giveBack(open.client);
+      return;
+    }
+    // The driver knows the number of the session's process at the server; its types do not say so.
+    const pid = (open.client as unknown as { readonly processID?: unknown }).processID;
+    try {
+      if (typeof pid === "number") {
+        // By its number and its role both: a number is given to another session once one ended.
+        await drizzleOf(this.options.database).execute(
+          sql`select pg_terminate_backend(pid) from pg_stat_activity where pid = ${pid} and usename = ${sqlNameOf(open.key)}`,
+        );
+      }
+    } catch (error) {
+      this.options.logger.error(
+        { err: error, plugin: open.key },
+        "a transaction of a plugin's could not be ended at the database; its statement runs until it ends by itself",
+      );
+    } finally {
+      // Its connection is not one to hand to the next statement.
+      open.client.release(new Error("the transaction was ended by the console"));
+    }
   }
 
   /**
@@ -532,6 +837,7 @@ export class PluginSqlService {
    */
   async applyMigrations(key: string, dir: string): Promise<number> {
     const names = (await readdir(dir)).filter((name) => MIGRATION_NAME.test(name)).sort();
+    await this.fit(key);
     const lock = new Client({
       connectionString: this.options.connectionString,
       ssl: sslOf(this.options.ca),
@@ -579,25 +885,47 @@ export class PluginSqlService {
     return applied;
   }
 
-  /** Drops the plugin's schema with everything in it, ends the role's connections, and drops the role. */
+  /**
+   * Drops the plugin's schema with everything in it, and the role with everything it owns. The
+   * role is first kept from signing in, so that no process of the deployment comes back as it,
+   * and its sessions are ended, another process's among them. What the role owns outside its
+   * schema goes before the role does: a large object, which any role may make, and the privileges
+   * it set for what it makes later each keep a role from being dropped, and no right keeps a role
+   * from either. The console's user may do all of it since it holds what the role holds, which a
+   * role made before that was given to it is given here. Purged twice is purged.
+   */
   async purge(key: string): Promise<void> {
     const name = sqlNameOf(key);
+    for (const [id, open] of [...this.transactions]) {
+      if (open.key === key) {
+        await this.expire(id, "stopped").catch(() => undefined);
+      }
+    }
     const pool = this.pools.get(key);
     this.pools.delete(key);
-    this.passwords.delete(key);
+    this.ready.delete(key);
     await pool?.end().catch(() => undefined);
     const db = drizzleOf(this.options.database);
+    const role = await db.execute(sql`select 1 from pg_roles where rolname = ${name}`);
+    if (role.rows.length > 0) {
+      await db.execute(sql.raw(`alter role ${quoted(name)} nologin`));
+      await db.execute(
+        sql.raw(`grant ${quoted(name)} to current_user with inherit true, set false`),
+      );
+      // Waited for: what a session holds open is in the way of dropping it.
+      await db.execute(
+        sql`select pg_terminate_backend(pid, ${SESSION_END_MS}::bigint) from pg_stat_activity where usename = ${name} and pid <> pg_backend_pid()`,
+      );
+      await db.execute(sql.raw(`drop owned by ${quoted(name)}`));
+    }
     await db.execute(sql.raw(`drop schema if exists ${quoted(name)} cascade`));
-    await db.execute(
-      sql`select pg_terminate_backend(pid) from pg_stat_activity where usename = ${name} and pid <> pg_backend_pid()`,
-    );
     await db.execute(sql.raw(`drop role if exists ${quoted(name)}`));
   }
 
-  /** Ends every pool and rolls back what is open. */
+  /** Ends what is open, a statement that still runs with it, and every pool. */
   async stop(): Promise<void> {
     for (const id of [...this.transactions.keys()]) {
-      await this.rollback(id).catch(() => undefined);
+      await this.expire(id, "stopped").catch(() => undefined);
     }
     for (const [key, pool] of this.pools) {
       this.pools.delete(key);

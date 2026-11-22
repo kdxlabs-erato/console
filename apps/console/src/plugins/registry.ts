@@ -589,7 +589,7 @@ export class Plugins {
         install.state === "enabled" &&
         install.consent.includes("storage:sql")
       ) {
-        // The role's password is drawn anew at every boot; a schema that is not there is made.
+        // Every boot brings the schema and its role to what they must be; one not there is made.
         try {
           await this.provisionSql(entry as Entry & { manifest: PluginManifest });
         } catch (error) {
@@ -667,8 +667,9 @@ export class Plugins {
   }
 
   /**
-   * Makes the plugin's schema and role, draws the role's password, and applies the plugin's
-   * migrations as the role (docs/specs/plugins.md, "SQL"). Needs the SQL service and `storage:sql`.
+   * Makes the plugin's schema and role, or brings them to what they must be, and applies the
+   * plugin's migrations as the role (docs/specs/plugins.md, "SQL"). Needs the SQL service and
+   * `storage:sql`.
    */
   private async provisionSql(entry: Entry & { manifest: PluginManifest }): Promise<void> {
     const sql = this.options.sql;
@@ -2353,10 +2354,10 @@ export class Plugins {
           case "begin":
             return sql.begin(call.plugin);
           case "commit":
-            await sql.commit(typeof args[0] === "string" ? args[0] : "");
+            await sql.commit(call.plugin, typeof args[0] === "string" ? args[0] : "");
             return null;
           case "rollback":
-            await sql.rollback(typeof args[0] === "string" ? args[0] : "");
+            await sql.rollback(call.plugin, typeof args[0] === "string" ? args[0] : "");
             return null;
           default:
             throw new PluginRefusal("plugin.invalid_args", `sql.${method} is not a call`);
