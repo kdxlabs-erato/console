@@ -1,4 +1,7 @@
 import { randomBytes } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import process from "node:process";
 import { sql } from "drizzle-orm";
 import { Client } from "pg";
@@ -39,7 +42,9 @@ function keyOf(name: string): string {
 }
 
 /** One process of the deployment: a pool of the console's own and a service over it. */
-function processOf(options: { transactionMs?: number } = {}): PluginSqlService {
+function processOf(
+  options: { transactionMs?: number; migrationMs?: number } = {},
+): PluginSqlService {
   const database = createDatabase({ connectionString: url, maxConnections: 2 });
   const service = new PluginSqlService({
     database,
@@ -408,5 +413,84 @@ describe("a transaction of a plugin's past its time", () => {
     expect(performance.now() - began).toBeLessThan(10_000);
     expect(await running).toBe("plugin.unavailable");
     await expect.poll(() => sessionsOf(key), { timeout: 5_000 }).toBe(0);
+  }, 30_000);
+});
+
+describe("the connections of a plugin's role across processes", () => {
+  it("serves a second process once the first is done with its connections, though it used every one", async () => {
+    const key = keyOf("share");
+    const api = processOf();
+    const worker = processOf();
+    await api.provision(key);
+    // The role may hold four sessions in the whole deployment, and one process may open as
+    // many: four statements at once in the api take every one of them.
+    await Promise.all(Array.from({ length: 4 }, () => api.query(key, "select pg_sleep(0.3)", [])));
+    expect(await sessionsOf(key)).toBe(4);
+    // The api is done with them. A statement of the worker's that comes now, a job's say, is
+    // run: the sessions are not kept from another process by one that only holds them idle.
+    const began = performance.now();
+    expect((await worker.query(key, "select 1 as n", [])).rows).toEqual([{ n: 1 }]);
+    expect(performance.now() - began).toBeLessThan(8_000);
+  }, 30_000);
+
+  it("says that every connection is taken where they stay taken, and serves again once one is free", async () => {
+    const key = keyOf("taken");
+    const api = processOf();
+    const worker = processOf();
+    await api.provision(key);
+    // Four transactions the api holds open: every session of the role is at work.
+    const held = await Promise.all(Array.from({ length: 4 }, () => api.begin(key)));
+    const refused = await worker.query(key, "select 1 as n", []).then(
+      () => undefined,
+      (error: unknown) => error as { code?: string; message?: string },
+    );
+    expect(refused?.code).toBe("plugin.unavailable");
+    expect(refused?.message).toContain("every connection of the plugin's role is taken");
+    // Nothing of the database's own words for it, which name the role's limit to whoever asked.
+    expect(refused?.message).not.toContain("too many connections");
+    // One is let go: the worker's next statement finds it.
+    await api.rollback(key, held[0] ?? "");
+    expect((await worker.query(key, "select 1 as n", [])).rows).toEqual([{ n: 1 }]);
+    for (const tx of held.slice(1)) {
+      await api.rollback(key, tx);
+    }
+  }, 60_000);
+});
+
+describe("a migration of a plugin's", () => {
+  it("is ended where it runs past the time a step of a plugin's life has, and lets the console's migration lock go", async () => {
+    const key = keyOf("mig");
+    const migrate = processOf({ migrationMs: 500 });
+    await migrate.provision(key);
+    const dir = await mkdtemp(join(tmpdir(), "console-migrations-"));
+    try {
+      // A migration is the plugin's own text: it may set itself any timeout, and ran for as
+      // long as it liked under the lock every migration of the console waits for.
+      await writeFile(join(dir, "0001-first.sql"), "create table things (id int);\n");
+      await writeFile(
+        join(dir, "0002-slow.sql"),
+        "set local statement_timeout = 0;\ninsert into things values (1);\nselect pg_sleep(120);\n",
+      );
+      const began = performance.now();
+      await expect(migrate.applyMigrations(key, dir)).rejects.toMatchObject({
+        code: "plugin.timeout",
+        message: "the migration 0002-slow.sql ran past its time",
+      });
+      expect(performance.now() - began).toBeLessThan(10_000);
+      // The console's migrations go on: the lock is free, and the role's session is gone.
+      const lock = await drizzleOf(console_).execute<{ got: boolean }>(
+        sql`select pg_try_advisory_xact_lock(5434002) as got`,
+      );
+      expect(lock.rows[0]?.got).toBe(true);
+      // What the migration before it made stands, and nothing of the one that was ended.
+      expect(
+        (await migrate.query(key, "select name from _migrations order by name", [])).rows,
+      ).toEqual([{ name: "0001-first.sql" }]);
+      expect((await migrate.query(key, "select count(*)::int as n from things", [])).rows).toEqual([
+        { n: 0 },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   }, 30_000);
 });

@@ -259,6 +259,10 @@ A statement of `ctx.sql` is one statement: it is sent with its parameters whethe
 
 A transaction answers the plugin that opened it: its name comes from the plugin's own thread, and one another plugin opened is not found (`plugin.not_found`), as one that never was. A transaction its plugin does not end is ended after a minute. Where it runs nothing, it is rolled back and its connection kept. Where a statement of it is with the database, which may have set itself any timeout, a rollback would wait behind that statement: the session is ended at the server instead, which rolls back and lets go of every lock at once, and the statement is refused (`plugin.timeout`). A transaction is ended the same way when its process stops or its plugin is purged (`plugin.unavailable`).
 
+The role's four connections are the deployment's, and each process may open as many. A process gives a session back two seconds after it is done with it, so that the statements of one command share a session and a process that is only done with its sessions keeps no other from them. A statement that finds every one taken, which the server says of any process's, waits for one, some five seconds in all, and is then refused (`plugin.unavailable`) in words that say every connection of the plugin's role is taken, and not in the database's, which name the role's limit; a transaction holds its connection until it ends, so four open at once leave none.
+
+A migration is the plugin's own text, may set itself any timeout, and runs under the lock every migration of the console's waits for. One that runs past the time a step of a plugin's life has, ten minutes, is ended at the server as a transaction past its time is: what it changed is rolled back, the lock goes on to the next, the migrations before it stand, and the plugin is held failed (`plugin.timeout`, `the migration <name> ran past its time`).
+
 What the role can still do beyond its schema, since no right keeps a role that may sign in from it, and what bounds each:
 
 - **Take an advisory lock by number**: the one the migrations run under, the ones a transcript's writes take, and the ones the console tries before a plugin's hooks and jobs, which pass over a round where theirs is held. A lock is held no longer than the statement that took it, or the transaction of `ctx.sql` it was taken in, since the connection is reset when either ends. That is ten seconds a statement by the role's own setting, and a minute for a transaction, whatever timeout a statement in it set for itself: at the minute its session is ended with the statement it runs. The role has four connections, and whoever holds a lock is seen in `pg_locks` beside `pg_stat_activity`, whose `application_name` is `console-plugin_<key>`. The feeds' order is not held this way for that reason ([ADR-0125](../adr/0125-a-feed-is-read-no-further-than-its-settled-end-which-its-writers-hold-a-lock-for.md)).
@@ -497,7 +501,7 @@ The install path is the first line (a release of the deployment, from a lockfile
 | webhook requests | 600 a minute per plugin |
 | `ctx.log` | 100 lines a minute |
 | collections; commands and queries; endpoints; pages; widgets; roles; settings; groups of settings; indexes of a collection | 50; 100; 20; 12; 4; 10; 50; 10; 8 |
-| SQL: a statement; a transaction; a result; connections | 10 s; 1 min; 10,000 rows and 4 MiB; 4 for the role, in every process together |
+| SQL: a statement; a transaction; a migration; a result; connections | 10 s; 1 min; 10 min; 10,000 rows and 4 MiB; 4 for the role, in every process together, an idle one given back after 2 s |
 | a page of a list | 200 |
 | a file of a plugin's package as `console-plugin check` reads it | 4 MiB; one larger is refused by its size and not read |
 

@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   MAX_PLUGIN_SQL_ROWS,
+  PLUGIN_LIFECYCLE_MS,
   PLUGIN_SQL_CONNECTIONS,
   PLUGIN_SQL_STATEMENT_MS,
   PluginRefusal,
@@ -34,6 +35,22 @@ const TRANSACTION_TTL_MS = 60_000;
 const SESSION_END_MS = 5_000;
 /** How often provisioning goes round again where another process changed the same thing at once. */
 const PROVISION_ATTEMPTS = 8;
+/**
+ * How long a session of the role a process is done with stays in that process's pool. The role's
+ * sessions are the deployment's, four in all, and each process may open as many: a session kept
+ * idle for long is one another process's statement is refused for. Long enough for the
+ * statements of one command to share a session, short enough to give it back between two.
+ */
+const IDLE_SESSION_MS = 2_000;
+/**
+ * How long a statement waits, step by step, where the server said every session of the role is
+ * taken: past the time an idle one is given back in, so that a process that is only done with
+ * its sessions holds nobody up, and no longer than a caller waits for a connection anyway.
+ */
+const SESSION_WAITS_MS = [100, 200, 400, 800, 1_600, 1_600];
+/** What a statement is told once it waited that long and every session was still taken. */
+const SESSIONS_TAKEN =
+  "every connection of the plugin's role is taken, across the processes of the deployment, and stayed so while this statement waited for one: fewer of the plugin's statements at once, or shorter transactions, leave one free";
 /** The console's own migration lock, which the plugins' migrations run under too. */
 const MIGRATION_LOCK_KEY = 5_434_002;
 const MIGRATION_NAME = /^\d{4}-[a-z0-9-]+\.sql$/;
@@ -57,6 +74,8 @@ export interface PluginSqlOptions {
   readonly logger: Logger;
   /** How long an open transaction waits for its plugin; a minute unless a test says otherwise. */
   readonly transactionMs?: number | undefined;
+  /** How long one migration of a plugin's may run; what a step of a plugin's life has unless a test says otherwise. */
+  readonly migrationMs?: number | undefined;
 }
 
 export interface SqlResult {
@@ -562,7 +581,7 @@ export class PluginSqlService {
       max: PLUGIN_SQL_CONNECTIONS,
       application_name: `console-${sqlNameOf(key)}`,
       connectionTimeoutMillis: 5_000,
-      idleTimeoutMillis: 30_000,
+      idleTimeoutMillis: IDLE_SESSION_MS,
       statement_timeout: PLUGIN_SQL_STATEMENT_MS,
     });
     pool.on("error", () => {});
@@ -685,31 +704,56 @@ export class PluginSqlService {
   /** A connection of the plugin's role, for a process that may sign in as it. */
   private async connect(key: string): Promise<PoolClient> {
     await this.fit(key);
+    for (const wait of SESSION_WAITS_MS) {
+      try {
+        return await this.pool(key).connect();
+      } catch (error) {
+        // The role's limit of sessions is the deployment's: another process holds them, and one
+        // that is only done with them gives them back shortly. Anything else is said below.
+        if ((error as { code?: unknown }).code !== "53300") {
+          throw this.notConnected(key, error);
+        }
+        await delay(wait);
+      }
+    }
     try {
       return await this.pool(key).connect();
     } catch (error) {
-      if (error instanceof PluginRefusal) {
-        throw error;
-      }
-      const code = (error as { code?: unknown }).code;
-      if (code === "28P01") {
-        // The role answers another password than the one this process arrives at: the role
-        // changed it itself, or a process reaches the database with another password.
-        throw new PluginRefusal(
-          "plugin.unavailable",
-          "the plugin's role could not sign in to the database: its password is not the one this process arrives at. Every process of a deployment reaches the database with one address, and the role is given its password again when a process starts or the plugin is enabled",
-        );
-      }
-      if (code === "28000") {
-        // The role was shut meanwhile: whether it is fit is asked again at the next statement.
-        this.ready.delete(key);
-        throw new PluginRefusal(
-          "plugin.unavailable",
-          "the plugin's role may not sign in to the database: its schema waits to be provisioned again",
-        );
-      }
-      throw this.refusal(error);
+      throw this.notConnected(key, error);
     }
+  }
+
+  /** Why a connection of the plugin's role could not be had, as the plugin is told. */
+  private notConnected(key: string, error: unknown): PluginRefusal {
+    if (error instanceof PluginRefusal) {
+      return error;
+    }
+    const code = (error as { code?: unknown }).code;
+    // Taken at the server, by any process, or in this process's own pool, whose wait for one
+    // ran out: the database's words for the first name the role's limit, and are not said.
+    if (
+      code === "53300" ||
+      (error instanceof Error && error.message === "timeout exceeded when trying to connect")
+    ) {
+      return new PluginRefusal("plugin.unavailable", SESSIONS_TAKEN);
+    }
+    if (code === "28P01") {
+      // The role answers another password than the one this process arrives at: the role
+      // changed it itself, or a process reaches the database with another password.
+      return new PluginRefusal(
+        "plugin.unavailable",
+        "the plugin's role could not sign in to the database: its password is not the one this process arrives at. Every process of a deployment reaches the database with one address, and the role is given its password again when a process starts or the plugin is enabled",
+      );
+    }
+    if (code === "28000") {
+      // The role was shut meanwhile: whether it is fit is asked again at the next statement.
+      this.ready.delete(key);
+      return new PluginRefusal(
+        "plugin.unavailable",
+        "the plugin's role may not sign in to the database: its schema waits to be provisioned again",
+      );
+    }
+    return this.refusal(error);
   }
 
   /**
@@ -810,23 +854,37 @@ export class PluginSqlService {
       await this.giveBack(open.client);
       return;
     }
-    // The driver knows the number of the session's process at the server; its types do not say so.
-    const pid = (open.client as unknown as { readonly processID?: unknown }).processID;
     try {
-      if (typeof pid === "number") {
-        // By its number and its role both: a number is given to another session once one ended.
-        await drizzleOf(this.options.database).execute(
-          sql`select pg_terminate_backend(pid) from pg_stat_activity where pid = ${pid} and usename = ${sqlNameOf(open.key)}`,
-        );
-      }
-    } catch (error) {
-      this.options.logger.error(
-        { err: error, plugin: open.key },
-        "a transaction of a plugin's could not be ended at the database; its statement runs until it ends by itself",
-      );
+      await this.endSession(open.key, open.client, "a transaction");
     } finally {
       // Its connection is not one to hand to the next statement.
       open.client.release(new Error("the transaction was ended by the console"));
+    }
+  }
+
+  /**
+   * Ends the session a connection of the plugin's role holds, at the server: whatever it runs
+   * stops, what it changed is rolled back and every lock it held is let go, at once and whatever
+   * timeout its statements set themselves. The console's user may, since provisioning gave it
+   * what the role holds. What could not be done is said in the log, and the statement then runs
+   * until it ends by itself.
+   */
+  private async endSession(key: string, client: PoolClient, what: string): Promise<void> {
+    // The driver knows the number of the session's process at the server; its types do not say so.
+    const pid = (client as unknown as { readonly processID?: unknown }).processID;
+    if (typeof pid !== "number") {
+      return;
+    }
+    try {
+      // By its number and its role both: a number is given to another session once one ended.
+      await drizzleOf(this.options.database).execute(
+        sql`select pg_terminate_backend(pid) from pg_stat_activity where pid = ${pid} and usename = ${sqlNameOf(key)}`,
+      );
+    } catch (error) {
+      this.options.logger.error(
+        { err: error, plugin: key },
+        `${what} of a plugin's could not be ended at the database; its statement runs until it ends by itself`,
+      );
     }
   }
 
@@ -862,6 +920,15 @@ export class PluginSqlService {
         }
         const text = await readFile(join(dir, name), "utf8");
         const client = await pool.connect();
+        // A migration is the plugin's own text and may set itself any timeout, and it runs under
+        // the lock every migration of the console's waits for: one that runs past the time a
+        // step of a plugin's life has is ended at the server, and the lock goes on to the next.
+        let late = false;
+        const timer = setTimeout(() => {
+          late = true;
+          void this.endSession(key, client, "a migration");
+        }, this.options.migrationMs ?? PLUGIN_LIFECYCLE_MS);
+        timer.unref();
         try {
           await client.query("begin");
           await client.query(text);
@@ -869,11 +936,14 @@ export class PluginSqlService {
           await client.query("commit");
         } catch (error) {
           await client.query("rollback").catch(() => undefined);
-          throw new PluginRefusal(
-            "plugin.failed",
-            `the migration ${name} failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
+          throw late
+            ? new PluginRefusal("plugin.timeout", `the migration ${name} ran past its time`)
+            : new PluginRefusal(
+                "plugin.failed",
+                `the migration ${name} failed: ${error instanceof Error ? error.message : String(error)}`,
+              );
         } finally {
+          clearTimeout(timer);
           // A migration is the plugin's own text: what it set or took for its session goes too.
           await this.giveBack(client);
         }
