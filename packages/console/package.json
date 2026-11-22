@@ -1,7 +1,7 @@
 {
   "name": "@skillcdn/console",
   "version": "0.5.3",
-  "description": "What a custom SkillCDN console is built from: the API client and schemas, the components, the composition of the default console, and the console command agents work the board with.",
+  "description": "What a custom SkillCDN console is built from: the API client and schemas, the components, the composition of the default console, the console command a person's agent and an agent account work the board with, and the runner that keeps an agent account at work.",
   "license": "MIT",
   "homepage": "https://github.com/skillcdn/console#readme",
   "repository": {

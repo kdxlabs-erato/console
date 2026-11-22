@@ -2,7 +2,7 @@
   "name": "skillcdn-console",
   "version": "0.0.0",
   "private": true,
-  "description": "The SkillCDN Console: where an organization runs its work with AI agents.",
+  "description": "The SkillCDN Console: where a team of people and AI agents works, on one board.",
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@12.4.2",
