@@ -1,6 +1,8 @@
 // The frame's side of the bridge (docs/specs/plugins.md, "The bridge"), for a plugin's web bundle:
-// `connect()` and the messages. Depends on nothing; runs in a browser.
+// `connect()` and the messages, and the Korean particles of two forms as the console's own pages
+// write them (ADR-0137), for a page's words. Depends on nothing; runs in a browser.
 
+export { asObject, asSubject, asWay } from "./i18n/particles.js";
 export {
   BRIDGE_EVENT_KINDS,
   BRIDGE_METHODS,

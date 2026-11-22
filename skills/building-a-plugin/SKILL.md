@@ -5,7 +5,7 @@ license: MIT
 compatibility: A shell with Node.js 24 or newer, npm and git, and an agent that reads and writes files. For running the plugin on a local console, Docker for the database and a checkout of the console's repository, where signing in needs a GitHub OAuth app of the person's own, as the console's README says. The console command is optional, for running the plugin's commands as an agent would. No key of the agent's own is needed, and it never sees a token.
 metadata:
   author: skillcdn
-  version: "1.11"
+  version: "1.12"
 skillcdn:
   translations:
     ko:
@@ -23,7 +23,7 @@ The contract is the [specification of plugins](/docs/specs/plugins.md): every fi
 - **Questions:** one message, before anything is written, with what the request leaves open under "Inputs": what the feature does and for whom, what a person must decide and what an agent may do alone, where it reaches (a board, which projects, people, an outside service), what it keeps, its name. Plain words; the person need not be a developer.
 - **Checkpoints:** the design (phase 1), as the table of the split and the manifest's capabilities read aloud as the sentences an administrator will consent to; the pages, once they run on a local console (phase 4), where a browser can show them; publishing or tagging (phase 5), named with where it goes. One short message each, with the recommendation, and "OK" continues.
 - **Go-ahead:** when the person says to go ahead alone, the design is still shown before code, and publishing is still confirmed; the rest needs no answer.
-- **Language:** the conversation's in chat; code, identifiers, commit messages and the plugin's skills in English; what people read of the plugin (its name, description, agent note, roles, settings, pages) in every language the organization uses, through the manifest's language maps, `en` first.
+- **Language:** the conversation's in chat; code, identifiers, commit messages and the plugin's skills in English; what people read of the plugin (its name, description, agent note, roles, settings, pages) in every language the organization uses, through the manifest's language maps, `en` first. A Korean sentence that carries a name takes its particle from `asObject`, `asSubject` and `asWay` of the package (`@skillcdn/console/plugin`, and `/plugin/web` for a page), as the console's own sentences do, and never writes both forms.
 
 ## Requirements
 

@@ -5,6 +5,10 @@
 // console, which reads the description the module yields.
 
 export * as z from "zod";
+// The Korean particles that take one of two forms, as the console's own Korean writes them
+// (ADR-0137): a sentence a plugin writes for people, a decision's question or a task's title,
+// reads as the console's sentences beside it do.
+export { asObject, asSubject, asWay } from "./i18n/particles.js";
 export {
   ARG_TYPES,
   type ArgDefinition,
