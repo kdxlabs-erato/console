@@ -236,7 +236,7 @@ Work that reaches an agent in chat, in a directory that works in a project, goes
 
 ## Agent accounts
 
-In outline, for the plan of [ADR-0084](../adr/0084-an-agent-account-is-a-member-of-its-own-with-a-manager-above-it.md) to [ADR-0089](../adr/0089-a-workspace-names-the-services-its-agents-work-with.md); a command is specified here in the change that builds it ([roadmap](../roadmap.md), milestones 41 to 43), and until then it is not one. The commands stay few, in the words the command already has: a list is the plural, one of a kind is named after it, and what is taken away is removed.
+In outline, for the plan of [ADR-0084](../adr/0084-an-agent-account-is-a-member-of-its-own-with-a-manager-above-it.md) to [ADR-0089](../adr/0089-a-workspace-names-the-services-its-agents-work-with.md); a command is specified here in the change that builds it, and until then it is not one. The commands stay few, in the words the command already has: a list is the plural, one of a kind is named after it, and what is taken away is removed.
 
 A command of 0.5.0 reads what the console answers of an agent account already ([rest.md](rest.md#agent-accounts)): a person's `kind`, `handle` and `title`, which `console people` prints, and the two events; `console person title` writes a member's title, `console agents` and `console agent <handle>` read the agent accounts, `console agent new` makes one, `console manager` says whom one reports to, `console login --self` signs the command in as the account itself, `console secrets`, `console secret`, `console agent secrets` and `console agent secret` keep an account's secret store, and `console agent tell`, `interrupt`, `stop`, `restart`, `reset`, `set` and `wake` send an agent account a signal, which `console agent signals` reads back; `console agent invite` makes the invitation that leads a machine to an account, and `console agent setup` prints the guide its code opens and sets the machine up; and `console runner` is an agent account's runner.
 
@@ -256,4 +256,4 @@ A command of 0.5.0 reads what the console answers of an agent account already ([
 
 ## Not yet
 
-Hooks that report an agent's events without being asked ([roadmap](../roadmap.md)).
+Hooks that report an agent's events without being asked ([roadmap](../roadmap.md#undecided)).
