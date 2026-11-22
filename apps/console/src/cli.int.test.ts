@@ -1154,6 +1154,40 @@ describe("the command line", () => {
       join(directory, "docs", "codes.md"),
       "# Codes\n\n| Code | Meaning |\n| --- | --- |\n| A1 | Starts |\n| B1 | Stops, at once |\n\n```sh\nmachine --start\n```\n",
     );
+    // A second skill, long in the ways a page can cut (SkillCDN 0.6): a table of more rows than
+    // a page holds, fenced code blocks, and Korean prose, three bytes a character.
+    const row = (at: number): string =>
+      `| R${String(at).padStart(3, "0")} | 검토 항목 ${at}: 변경이 약속을 지키는지 본다 | a step of the review, said in one line |`;
+    const fenced = (name: string, count: number): string =>
+      [
+        "```sh",
+        ...Array.from({ length: count }, (_, at) => `${name} --step ${at + 1} --check`),
+        "```",
+      ].join("\n");
+    const korean = (word: string, count: number): string =>
+      Array.from(
+        { length: count },
+        (_, at) =>
+          `${word} ${at + 1}: 한 줄은 한 쪽에 들어가는 한 쪼개지지 않고, 표와 코드 블록 밖에서 끝납니다.`,
+      ).join("\n\n");
+    const TABLE_HEAD = "| Code | 무엇을 보는가 | Note |\n| --- | --- | --- |";
+    const ROWS = 260;
+    await mkdir(join(directory, "cuts"), { recursive: true });
+    await writeFile(
+      join(directory, "cuts", "SKILL.md"),
+      [
+        "---\nname: cuts\ndescription: Checks a change by a long table.\n---\n# Checking",
+        korean("머리말", 40),
+        "## The checks",
+        `${TABLE_HEAD}\n${Array.from({ length: ROWS }, (_, at) => row(at + 1)).join("\n")}`,
+        "## Commands",
+        korean("준비", 30),
+        fenced("review", 120),
+        korean("마무리", 60),
+        fenced("verify", 90),
+        "Done.\n",
+      ].join("\n\n"),
+    );
     const parsed = parseAddress("/local/acme/manual");
     if (!parsed.ok) {
       throw new Error(parsed.error.message);
@@ -1249,28 +1283,59 @@ describe("the command line", () => {
       expect(await through(["skills", "--search", "review"])).toBe(
         `${await command({ read: "find", words: "review" })}\n${LOADING}\n`,
       );
-      // The skill, in parts: each within what a host shows whole, ending with the command that
-      // reads the next, until the last.
-      const parts: string[] = [];
-      let cursor: string | undefined;
-      for (let part = 0; part < 8; part += 1) {
-        const printed = await through([
-          "skill",
-          "review/SKILL.md",
-          ...(cursor === undefined ? [] : ["--cursor", cursor]),
-        ]);
-        // What the skillcdn command prints, and after a part that is not the last, the
-        // console's own words on what the part lacks.
-        const theirs = await command({ read: "skill", path: "review/SKILL.md", cursor });
-        const continues = theirs.includes("The skill continues");
-        expect(printed).toBe(continues ? `${theirs}\n${PART_ENDS}\n` : `${theirs}\n`);
-        expect(printed.length).toBeLessThanOrEqual(28_001 + PART_ENDS.length + 1);
-        parts.push(printed);
-        cursor = /console skill review\/SKILL\.md --cursor (\S+)\n/.exec(printed)?.[1];
-        if (cursor === undefined) {
-          break;
+      // A skill, in parts: each within what a host shows whole, ending with the command that
+      // reads the next, until the last. Each is what the skillcdn command prints, and after it
+      // the console's own words: after a part that is not the last, how many pages the pack
+      // says follow it (SkillCDN 0.6.1) and that the part stops in the middle; after the last,
+      // that the skill is complete.
+      const partsOf = async (path: string): Promise<string[]> => {
+        // By the cursor a page names as the next: how many pages the pack says follow that page.
+        const left = new Map<string, number>();
+        for (let at: string | undefined, page = 0; page < 16; page += 1) {
+          const answer = await opened.skill(path, at);
+          const next = answer.status === "ready" ? answer.skill.nextCursor : null;
+          if (answer.status !== "ready" || typeof next !== "string") {
+            break;
+          }
+          left.set(next, answer.skill.pagesLeft ?? 0);
+          at = next;
         }
-      }
+        const printedParts: string[] = [];
+        const named = new RegExp(
+          `console skill ${path.replace(/[/.]/g, "\\$&")} --cursor (\\S+)\\n`,
+        );
+        for (let cursor: string | undefined, part = 0; part < 8; part += 1) {
+          const printed = await through([
+            "skill",
+            path,
+            ...(cursor === undefined ? [] : ["--cursor", cursor]),
+          ]);
+          const theirs = await command({ read: "skill", path, cursor });
+          const next = named.exec(printed)?.[1];
+          expect(next !== undefined, `part ${part + 1} of ${path}`).toBe(
+            theirs.includes("The skill continues"),
+          );
+          const follow = next === undefined ? undefined : left.get(next);
+          expect(follow === undefined, `part ${part + 1} of ${path}`).toBe(next === undefined);
+          const closing =
+            follow === undefined
+              ? cursor === undefined
+                ? ""
+                : "The skill is complete: this was its last part.\n"
+              : `${follow} more ${follow === 1 ? "page" : "pages"} of the skill ${follow === 1 ? "follows" : "follow"} this part. ${PART_ENDS}\n`;
+          expect(printed).toBe(`${theirs}\n${closing}`);
+          // What the library prints stays within what a host shows whole; the console's own
+          // line comes after it.
+          expect(theirs.length).toBeLessThanOrEqual(28_000);
+          printedParts.push(printed);
+          if (next === undefined) {
+            break;
+          }
+          cursor = next;
+        }
+        return printedParts;
+      };
+      const parts = await partsOf("review/SKILL.md");
       expect(parts.length).toBeGreaterThan(1);
       expect(parts[0]).toContain("Skill context is incomplete");
       expect(parts[0]).toContain("Rule 0001:");
@@ -1282,6 +1347,43 @@ describe("the command line", () => {
       expect(parts.at(-1)).not.toContain("The skill continues");
       expect(parts.at(-1)).not.toContain("This part stops in the middle");
       expect(parts[0]?.endsWith(`${PART_ENDS}\n`)).toBe(true);
+      expect(parts.at(-1)?.endsWith("The skill is complete: this was its last part.\n")).toBe(true);
+      // The skill a page cuts: where a part ends is the pack's to say (SkillCDN 0.6), and
+      // through the console each part is what the skillcdn command prints, so that nothing of
+      // it is lost on the way.
+      const cut = await partsOf("cuts/SKILL.md");
+      expect(cut.length).toBeGreaterThan(1);
+      expect(cut.at(-1)).toContain("Done.");
+      const seen: number[] = [];
+      let headsAgain = 0;
+      for (const [at, printed] of cut.entries()) {
+        const lines = printed.split("\n");
+        // No part ends inside a fenced code block: every fence it opens, it closes.
+        expect(lines.filter((line) => line === "```sh").length, `part ${at + 1}`).toBe(
+          lines.filter((line) => line === "```").length,
+        );
+        // No line is cut: a row of the table is whole, and so is a line of the prose.
+        const rows = lines.filter((line) => line.startsWith("| R"));
+        for (const line of rows) {
+          const number = /^\| R(\d{3}) \| 검토 항목 \d+: .+ \| .+ \|$/.exec(line)?.[1];
+          expect(number, line).toBeDefined();
+          seen.push(Number(number));
+        }
+        for (const line of lines.filter((one) => /^(머리말|준비|마무리) \d+:/.test(one))) {
+          expect(line.endsWith("끝납니다."), line).toBe(true);
+        }
+        // A part that goes on with the table says the table's first two lines again above its
+        // rows, where the pack answered them beside the text (`tableHead`).
+        const first = rows[0];
+        if (first !== undefined && first !== row(1)) {
+          expect(printed, `part ${at + 1}`).toContain(`${TABLE_HEAD}\n${first}`);
+          headsAgain += 1;
+        }
+      }
+      // The table is longer than a part, so one part at least went on with it; and every row is
+      // there once, in its order.
+      expect(headsAgain).toBeGreaterThan(0);
+      expect(seen).toEqual(Array.from({ length: ROWS }, (_, at) => at + 1));
       // A file, a page a host shows whole, ended at a line, and the page after it.
       const page = await through(["skill", "--file", "docs/guide.md"]);
       expect(page).toBe(`${await command({ read: "file", path: "docs/guide.md" })}\n`);

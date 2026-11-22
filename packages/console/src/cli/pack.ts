@@ -249,6 +249,14 @@ const MAX_PAGES = 64;
 export interface ConsolePack extends Pack {
   /** The console's answer to the last read made of the pack: what `--json` prints around the pack's own answer, and what a refusal is said from. */
   answered(): PackAnswer | undefined;
+  /**
+   * How many pages of a skill follow the page that named `cursor` as the next, where the pack
+   * said (`pagesLeft`, SkillCDN 0.6.1): what the command says of a part that ends there.
+   * Nothing for a cursor no page of this pack named, or a pack that counts none.
+   */
+  pagesAfter(cursor: string): number | undefined;
+  /** Whether the last page of a skill this pack answered was the skill's last. */
+  skillEnded(): boolean;
 }
 
 /**
@@ -272,6 +280,9 @@ export function consolePack(
   }
   let last: PackAnswer | undefined;
   let pages = 0;
+  /** By the cursor a page of a skill named as the next: how many pages the pack said follow that page. */
+  const left = new Map<string, number>();
+  let ended = false;
   /** One more page of a read the command joins, within what one command follows. */
   const another = (what: string, path: string | undefined): void => {
     pages += 1;
@@ -342,8 +353,16 @@ export function consolePack(
           "The pack answers more pages of a skill than one read takes.",
         );
       }
-      return ready("skill", await reader.skill(path, cursor));
+      const read = ready("skill", await reader.skill(path, cursor));
+      const { nextCursor, pagesLeft, complete } = read.skill;
+      if (typeof nextCursor === "string" && pagesLeft !== undefined) {
+        left.set(nextCursor, pagesLeft);
+      }
+      ended = complete === true;
+      return read;
     },
+    pagesAfter: (cursor: string) => left.get(cursor),
+    skillEnded: () => ended,
     file: async (query: FileQuery): Promise<RestFile> =>
       taken(
         "file",

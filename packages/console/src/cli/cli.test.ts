@@ -9027,6 +9027,76 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     },
   });
 
+  it("says how many pages of a skill follow a part, where the pack counts them, and that the last part is the last (SkillCDN 0.6.1)", async () => {
+    // Five pages of twelve thousand characters, two a part, and the pack says of each page how
+    // many follow it, as one of SkillCDN 0.6.1 does.
+    const page = (letter: string, nextCursor: string | null, pagesLeft: number) => {
+      const answer = longPage(letter, 12_000, nextCursor);
+      return { ...answer, read: { ...answer.read, skill: { ...answer.read.skill, pagesLeft } } };
+    };
+    const ONE = "/skills/one?path=review%2FSKILL.md";
+    const { fetch } = fakeConsole({
+      [`GET ${IN}/skills`]: { body: LISTING },
+      [`GET ${IN}${ONE}`]: { body: page("a", "two", 4) },
+      [`GET ${IN}${ONE}&cursor=two`]: { body: page("b", "three", 3) },
+      [`GET ${IN}${ONE}&cursor=three`]: { body: page("c", "four", 2) },
+      [`GET ${IN}${ONE}&cursor=four`]: { body: page("d", "five", 1) },
+      [`GET ${IN}${ONE}&cursor=five`]: { body: page("e", null, 0) },
+    });
+    const part = async (cursor?: string): Promise<string> => {
+      const ran = harness({ fetch, env: SIGNED_IN });
+      expect(
+        await runCli(
+          ["skill", "review", ...(cursor === undefined ? [] : ["--cursor", cursor])],
+          ran.io,
+        ),
+      ).toBe(EXIT.ok);
+      return ran.out();
+    };
+    // The first part holds two pages: what follows it is what follows its second page, and
+    // not the page that was asked for to know that it did not fit.
+    expect(
+      (await part()).endsWith(
+        `console skill review --cursor three\n3 more pages of the skill follow this part. ${PART_ENDS}\n`,
+      ),
+    ).toBe(true);
+    expect(
+      (await part("three")).endsWith(
+        `console skill review --cursor five\n1 more page of the skill follows this part. ${PART_ENDS}\n`,
+      ),
+    ).toBe(true);
+    // The last part says that it is: the end is said, and not only what is missing.
+    const last = await part("five");
+    expect(
+      last.endsWith(`${"e".repeat(12_000)}\n\nThe skill is complete: this was its last part.\n`),
+    ).toBe(true);
+    expect(last).not.toContain("This part stops in the middle");
+    expect(last).not.toContain("more page");
+  });
+
+  it("ends a skill of several pages that prints whole with none of a part's words", async () => {
+    // Three pages that fit together in what a host shows whole. The library tries the first two
+    // before it has the third, and asks for the line that would read on from them: a line that
+    // is then not printed, and that the command once took for a part that goes on.
+    const page = (letter: string, nextCursor: string | null) => longPage(letter, 6_000, nextCursor);
+    const ONE = "/skills/one?path=review%2FSKILL.md";
+    const { fetch } = fakeConsole({
+      [`GET ${IN}/skills`]: { body: LISTING },
+      [`GET ${IN}${ONE}`]: { body: page("a", "two") },
+      [`GET ${IN}${ONE}&cursor=two`]: { body: page("b", "three") },
+      [`GET ${IN}${ONE}&cursor=three`]: { body: page("c", null) },
+    });
+    const whole = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skill", "review"], whole.io)).toBe(EXIT.ok);
+    const printed = whole.out();
+    expect(printed).toContain("a".repeat(6_000));
+    expect(printed).toContain("c".repeat(6_000));
+    expect(printed).not.toContain("The skill continues");
+    expect(printed).not.toContain("This part stops in the middle");
+    // Read in one command, it is whole as any short skill is, and says nothing of parts.
+    expect(printed).not.toContain("this was its last part");
+  });
+
   it("prints a long skill in parts a host shows whole, each ending with the command that reads the next (ADR-0124)", async () => {
     // Three pages of twelve thousand characters each: two fit in what a host shows whole, the
     // third does not.

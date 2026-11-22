@@ -2267,7 +2267,10 @@ async function readSkill(
   }
   // The skill, its rules first, as load_skill lays them out: whole, or the part that begins at
   // the cursor, ending with the command that reads the next, asked as this one was.
-  let continues = false;
+  // The library asks for that line of every run of pages it tries, the runs it goes on from
+  // among them, so a line was asked for of a skill that is then printed to its end: the part
+  // goes on only where what is printed ends with the line.
+  const offered: { readonly cursor: string; readonly line: string }[] = [];
   const loaded = await readThrough(
     io,
     session,
@@ -2279,19 +2282,28 @@ async function readSkill(
       // Spelled so that bash and PowerShell run it as it is; where a word has no such spelling,
       // the command that was run is run again, with the cursor, and the line says why.
       nextPart: (next) => {
-        continues = true;
-        return (
+        const line =
           commandLine(command, [given, "--cursor", next, ...again]) ??
-          `the command you ran, with --cursor ${commandWord(next) ?? JSON.stringify(next)} in place of any it had, each word quoted for your shell. ${NO_LINE_TO_RUN}`
-        );
+          `the command you ran, with --cursor ${commandWord(next) ?? JSON.stringify(next)} in place of any it had, each word quoted for your shell. ${NO_LINE_TO_RUN}`;
+        offered.push({ cursor: next, line });
+        return line;
       },
     },
   );
+  const goesOn = offered.findLast((one) => loaded.text.endsWith(one.line));
   // A part that is not the last ends with the console's own words after the library's line: a
   // fresh agent read one part of four, saw that the skill continued, and planned from that part,
-  // since "before using it" did not read as now to a session that meant only to plan.
+  // since "before using it" did not read as now to a session that meant only to plan. The last
+  // part of a skill read in parts says that it is the last, so that the end is said and not
+  // only missed.
+  const closing =
+    goesOn !== undefined
+      ? partEndsHere(pack.pagesAfter(goesOn.cursor))
+      : cursor !== undefined && pack.skillEnded()
+        ? SKILL_ENDS_HERE
+        : undefined;
   say(jsonOfRead(session, pack, loaded), () =>
-    continues ? `${loaded.text}\n${PART_ENDS_HERE}` : loaded.text,
+    closing === undefined ? loaded.text : `${loaded.text}\n${closing}`,
   );
   return EXIT.ok;
 }
@@ -2302,6 +2314,20 @@ async function readSkill(
  */
 const PART_ENDS_HERE =
   "This part stops in the middle of the skill: its later steps, its checkpoints and its rules are in the parts that follow, and nothing above is complete without them. Run that command now, before a plan, an answer or any other step, and each next one, until a part ends without these lines.";
+
+/**
+ * The same with how far the skill goes on before it, where the pack counts the pages left
+ * (SkillCDN 0.6.1): a reader told how many pages follow reads a skill to its end far more often
+ * than one told only that it continues. A part is a run of pages, so the count is the pack's
+ * own, of pages, and falls from part to part.
+ */
+const partEndsHere = (left: number | undefined): string =>
+  left === undefined || left < 1
+    ? PART_ENDS_HERE
+    : `${left} more ${left === 1 ? "page" : "pages"} of the skill ${left === 1 ? "follows" : "follow"} this part. ${PART_ENDS_HERE}`;
+
+/** What the last part of a skill read in parts ends with. */
+const SKILL_ENDS_HERE = "The skill is complete: this was its last part.";
 
 const skill: Command = async (args, io) => {
   const { values, positionals } = parse(args, SKILL_OPTIONS);
