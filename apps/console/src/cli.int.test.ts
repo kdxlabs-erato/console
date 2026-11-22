@@ -411,7 +411,7 @@ describe("the command line", () => {
     expect(unbound.out).toContain("; no project named here\n");
     const who = await console_(["whoami"]);
     expect(who.out).toBe(
-      `Alice (member) at Acme, ${SIGN_IN_URL}; project web (The web app), named by CONSOLE_PROJECT\nBefore the first task, read console rules and the skill working-the-board (console skills says where it is); for one command's flags, console help <command>.\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.0 <0.2.0; this command works with a console from 0.5.0 on.\n`,
+      `Alice (member) at Acme, ${SIGN_IN_URL}; project web (The web app), named by CONSOLE_PROJECT\nBefore the first task, read console rules and the skill working-the-board (console skills says where it is); for one command's flags, console help <command>.\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.0 <0.2.0; this command works with a console from 0.6.0 on.\n`,
     );
   });
 
@@ -659,7 +659,7 @@ describe("the command line", () => {
     expect(found.out).toContain(`Reported on run ${runId}`);
     const whoami = await console_(["whoami"], bobToken);
     expect(whoami.out).toBe(
-      `bob (member) at Acme, ${SIGN_IN_URL}; project web (The web app), named by CONSOLE_PROJECT\nBefore the first task, read console rules and the skill working-the-board (console skills says where it is); for one command's flags, console help <command>.\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.0 <0.2.0; this command works with a console from 0.5.0 on.\n`,
+      `bob (member) at Acme, ${SIGN_IN_URL}; project web (The web app), named by CONSOLE_PROJECT\nBefore the first task, read console rules and the skill working-the-board (console skills says where it is); for one command's flags, console help <command>.\nThis command is of a version it does not know; the console is 0.1.18 and takes >=0.1.0 <0.2.0; this command works with a console from 0.6.0 on.\n`,
     );
   });
 
@@ -1118,7 +1118,9 @@ describe("the command line", () => {
 
   it("prints a pack as the skillcdn command prints it: one directory read by that command's reads and through the console (ADR-0124)", async () => {
     // An invented pack on this machine: a skill that includes two files and is longer than a
-    // host shows whole, a document longer than a page, and a table and a code block.
+    // host shows whole, a document longer than a page, and a table and a code block; its
+    // manifest names the page an agent reads first, and its skill links a file of another pack,
+    // as a pack of SkillCDN 0.6 may.
     const root = await mkdtemp(join(tmpdir(), "console-pack-"));
     const directory = join(root, "acme", "manual");
     const lines = (count: number, word: string): string =>
@@ -1131,11 +1133,11 @@ describe("the command line", () => {
     await mkdir(join(directory, "docs"), { recursive: true });
     await writeFile(
       join(directory, "SKILLCDN.md"),
-      "---\nname: Manual\ndescription: The manual of an invented machine.\ndocuments:\n  - docs\n---\nBe kind.\n",
+      "---\nname: Manual\ndescription: The manual of an invented machine.\ndocuments:\n  - docs\nstart: docs/README.md\n---\nBe kind.\n",
     );
     await writeFile(
       join(directory, "review", "SKILL.md"),
-      `---\nname: review\ndescription: Reviews a change.\nskillcdn:\n  include:\n    - steps.md\n    - checks.md\n---\n# Reviewing\n\n${lines(110, "Rule")}\n\nSee [the guide](guide.md).\n`,
+      `---\nname: review\ndescription: Reviews a change.\nskillcdn:\n  include:\n    - steps.md\n    - checks.md\n---\n# Reviewing\n\n${lines(110, "Rule")}\n\nSee [the guide](guide.md), and [the base skill](skill://gh/acme/base/review/SKILL.md).\n`,
     );
     await writeFile(join(directory, "review", "steps.md"), `# Steps\n\n${lines(190, "Step")}\n`);
     await writeFile(join(directory, "review", "checks.md"), `# Checks\n\n${lines(190, "Check")}\n`);
@@ -1235,6 +1237,11 @@ describe("the command line", () => {
           "",
         ].join("\n"),
       );
+      // The page the manifest names as the first to read is said, in the console's word for
+      // the read.
+      expect(await through(["skills"])).toContain(
+        "Start here, before a task: console skill --file docs/README.md.",
+      );
       // A folder, and what words find.
       expect(await through(["skills", "docs"])).toBe(
         `${await command({ read: "browse", path: "docs" })}\n`,
@@ -1267,6 +1274,9 @@ describe("the command line", () => {
       expect(parts.length).toBeGreaterThan(1);
       expect(parts[0]).toContain("Skill context is incomplete");
       expect(parts[0]).toContain("Rule 0001:");
+      // The file of another pack the skill links to is named, and not read here.
+      expect(parts[0]).toContain("In other packs, not readable here:");
+      expect(parts[0]).toContain("skill://gh/acme/base/review/SKILL.md");
       expect(parts.join("")).toContain("Step 0190:");
       expect(parts.at(-1)).toContain("Check 0190:");
       expect(parts.at(-1)).not.toContain("The skill continues");
