@@ -67,7 +67,7 @@ export function TokenList(props: TokenListProps) {
       {props.tokens.map((token) => (
         <li key={token.id} className="sc-token">
           <div>
-            <p className="sc-token-name">{token.name}</p>
+            <p className="sc-name">{token.name}</p>
             <p className="sc-token-meta">
               <span>
                 {words.connected} <Time iso={token.createdAt} />

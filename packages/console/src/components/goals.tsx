@@ -64,7 +64,9 @@ export function GoalList(props: GoalListProps) {
             {goal.category !== null && <CategoryBadge category={goal.category} />}
             <GoalStateBadge state={goal.state} />
             {goal.startsOn !== null && goal.dueOn !== null && goal.startsOn < goal.dueOn && (
-              <span className="sc-goal-days">{formatDays(goal.startsOn, goal.dueOn, tag)}</span>
+              <span className="sc-goal-days sc-fine">
+                {formatDays(goal.startsOn, goal.dueOn, tag)}
+              </span>
             )}
             {goal.dueOn !== null && (
               <DueBadge dueOn={goal.dueOn} state={dueState(goal)} today={props.today} />
@@ -270,7 +272,7 @@ export function GoalView(props: GoalViewProps) {
         const inState = towards.filter((task) => task.state === state);
         return inState.length === 0 ? null : (
           <div key={state} className="sc-goal-tasks">
-            <h3 className="sc-goal-tasks-state">
+            <h3 className="sc-goal-tasks-state sc-eyebrow">
               {words.vocabulary.state[state]}{" "}
               <span className="sc-column-count">{inState.length}</span>
             </h3>
@@ -391,7 +393,7 @@ export function GoalView(props: GoalViewProps) {
         </dl>
         {goal.body.length > 0 && (
           <details className="sc-goal-about">
-            <summary className="sc-goal-about-summary">{roadmap.about}</summary>
+            <summary className="sc-goal-about-summary sc-note">{roadmap.about}</summary>
             <Markdown source={goal.body} docHref={props.docHref} />
           </details>
         )}

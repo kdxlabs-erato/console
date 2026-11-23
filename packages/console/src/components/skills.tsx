@@ -97,7 +97,7 @@ export function SkillList(props: SkillListProps) {
               )}
               <span className="sc-muted">{skill.directory === "" ? "/" : skill.directory}</span>
             </p>
-            <p className="sc-skill-description">{skill.description}</p>
+            <p className="sc-skill-description sc-note">{skill.description}</p>
             {skill.uri !== null && <code className="sc-skill-uri">{skill.uri}</code>}
           </li>
         ))}

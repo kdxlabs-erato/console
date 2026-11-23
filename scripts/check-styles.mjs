@@ -490,7 +490,7 @@ for (const file of pages) {
             : `gives ${owner} a look of its own: ${said}`,
           ofAPart
             ? "A page puts a part somewhere (its margin, its grid area, its width, how its own contents are laid out) and leaves its look alone: its padding, its colours, its borders, its radius, its type. To change the part, change its rule under parts/, for every page at once; if this is another thing, it is another part."
-            : `A page's class places: it lays its element out and no more. Build the element from the parts (${catalogueFile}): a pane is sc-panel, a label sc-eyebrow, a note sc-muted, and so on. If no part does it, the look is a new part with a row in the catalogue, which is the designer's to decide. Do not add the class to drawn-by-pages.json: that list only gets shorter.`,
+            : `A page's class places: it lays its element out and no more. Build the element from the parts (${catalogueFile}): a pane is sc-panel, a label sc-eyebrow, a quiet line sc-muted, a line that says more about what it stands by sc-note, and so on. If no part does it, the look is a new part with a row in the catalogue, which is the designer's to decide. Do not add the class to drawn-by-pages.json: that list only gets shorter.`,
         );
       }
     }

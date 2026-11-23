@@ -62,7 +62,7 @@ export function SignIn(props: SignInProps) {
         <img className="sc-sign-in-wordmark" src={props.brand.wordmark} alt="" />
       )}
       <h1 className="sc-sign-in-title">{props.title}</h1>
-      <p className="sc-sign-in-lead">{words.lead}</p>
+      <p className="sc-muted">{words.lead}</p>
       {props.failure !== undefined && (
         <Callout tone={props.failure === "refused" ? "warning" : "info"}>
           {words.failure[props.failure]}
@@ -100,7 +100,7 @@ export function SignIn(props: SignInProps) {
                   )}
                 </a>
                 {provider.admits !== undefined && (
-                  <p className="sc-sign-in-admits">{admitsOf(provider.admits)}</p>
+                  <p className="sc-sign-in-admits sc-fine">{admitsOf(provider.admits)}</p>
                 )}
               </div>
             );

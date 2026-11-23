@@ -107,7 +107,7 @@ export function GoalTimeline(props: GoalTimelineProps) {
   return (
     <div className="sc-timeline">
       <div className="sc-timeline-head">
-        <h2 className="sc-timeline-title">{words.timeline.title}</h2>
+        <h2 className="sc-timeline-title sc-subtitle">{words.timeline.title}</h2>
         <nav className="sc-calendar-nav" aria-label={words.timeline.title}>
           <a
             className="sc-button sc-button-ghost sc-button-sm"

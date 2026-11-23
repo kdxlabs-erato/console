@@ -329,7 +329,7 @@ function Outcome(props: {
   }
   return (
     <section className="sc-decision-section" aria-label={words.decisions.whatFollowed}>
-      <h4 className="sc-decision-label">{words.decisions.whatFollowed}</h4>
+      <h4 className="sc-decision-label sc-eyebrow">{words.decisions.whatFollowed}</h4>
       {writing ? (
         <form
           className="sc-outcome-form"
@@ -461,7 +461,7 @@ export function DecisionCard(props: DecisionCardProps) {
       </header>
       {decision.body.length > 0 && (
         <section className="sc-decision-section" aria-label={words.decisions.context}>
-          <h4 className="sc-decision-label">{words.decisions.context}</h4>
+          <h4 className="sc-decision-label sc-eyebrow">{words.decisions.context}</h4>
           <Markdown
             source={decision.body}
             docHref={props.docHref}
@@ -472,7 +472,7 @@ export function DecisionCard(props: DecisionCardProps) {
       )}
       {following.length > 0 && (
         <section className="sc-decision-section" aria-label={words.decisions.files}>
-          <h4 className="sc-decision-label">{words.decisions.files}</h4>
+          <h4 className="sc-decision-label sc-eyebrow">{words.decisions.files}</h4>
           <ul className="sc-decision-files">
             {following.map((attached) => {
               const href = hrefOf(attached);
@@ -517,7 +517,7 @@ export function DecisionCard(props: DecisionCardProps) {
             <Chosen decision={decision} />
           </p>
           {decision.answer.note !== null && (
-            <div className="sc-answer-note">
+            <div className="sc-answer-note sc-note">
               <Markdown source={decision.answer.note} docHref={props.docHref} />
             </div>
           )}
@@ -629,7 +629,7 @@ function RecordRow(props: {
               </a>
             ))}
         </p>
-        <p className="sc-decision-record-meta">
+        <p className="sc-decision-record-meta sc-fine">
           <Asked decision={decision} day />
           {props.project}
         </p>
@@ -640,11 +640,11 @@ function RecordRow(props: {
             <Chosen decision={decision} />
           </p>
           {answer.note !== null && (
-            <div className="sc-decision-record-note">
+            <div className="sc-decision-record-note sc-muted">
               <Markdown source={answer.note} docHref={props.docHref} />
             </div>
           )}
-          <p className="sc-decision-record-meta">
+          <p className="sc-decision-record-meta sc-fine">
             <PersonChip person={answer.by} /> {answeredWord(words, answer.agent)}{" "}
             <Time iso={answer.at} precision="day" />
           </p>

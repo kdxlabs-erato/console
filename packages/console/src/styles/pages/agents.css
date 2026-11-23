@@ -116,15 +116,6 @@
   box-shadow: 0 0 0 1px var(--sc-color-accent);
 }
 
-.sc-agent-proposal-name {
-  font-weight: var(--sc-weight-medium);
-}
-
-.sc-agent-proposal-handle {
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-xs);
-}
-
 /* An agent account's page (ADR-0085, ADR-0086): a panel with who it is and how it stands, then
    its views as the console's own sub-tabs. The picture beside the name, the handle beside the
    name as on its card, what it does under them, how it stands under that with its times told
@@ -174,11 +165,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sc-space-1) var(--sc-space-2);
-}
-
-.sc-agent-state-why {
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-sm);
 }
 
 .sc-agent-views {
@@ -543,12 +529,6 @@
   align-items: center;
   justify-content: flex-end;
   gap: var(--sc-space-1) var(--sc-space-2);
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-xs);
-}
-
-.sc-talk-who {
-  font-weight: var(--sc-weight-medium);
 }
 
 /* What was told and the agent has not taken yet: as it will stand there, on no tint, within a
@@ -566,8 +546,6 @@
   justify-content: flex-end;
   gap: var(--sc-space-2);
   margin: var(--sc-space-1) 0 0;
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-xs);
 }
 
 /* What the agent said. */
@@ -778,8 +756,6 @@
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
   gap: var(--sc-space-1);
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-xs);
 }
 
 .sc-talk-note-line {
@@ -823,8 +799,6 @@
 
 .sc-talk-cut {
   margin: 0;
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-xs);
 }
 
 /* Where a turn ended: a hairline with how long it took, quieter than a note. */
@@ -852,8 +826,6 @@
   display: flex;
   align-items: center;
   gap: var(--sc-space-3);
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-sm);
 }
 
 .sc-talk-dots {
@@ -1044,8 +1016,6 @@
 
 .sc-agent-session-facts {
   min-width: 0;
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-sm);
   overflow-wrap: anywhere;
 }
 

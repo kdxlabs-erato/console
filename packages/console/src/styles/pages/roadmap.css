@@ -1,13 +1,5 @@
 /* Sources: components/roadmap.tsx, components/goals.tsx */
 
-.sc-goal-tasks-state {
-  color: var(--sc-color-text-faint);
-  font-size: var(--sc-text-xs);
-  font-weight: var(--sc-weight-medium);
-  letter-spacing: var(--sc-tracking-wide);
-  text-transform: var(--sc-label-case);
-}
-
 /* The roadmap: a goal a pane, with how far it is as a bar. */
 .sc-goals {
   display: grid;
@@ -81,8 +73,6 @@
 
 .sc-timeline-title {
   margin: 0;
-  font-size: var(--sc-text-md);
-  font-weight: var(--sc-weight-medium);
 }
 
 .sc-timeline-grid {
@@ -249,8 +239,6 @@
 
 .sc-goal-days {
   margin-inline-start: auto;
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-xs);
 }
 
 @media (max-width: 40rem) {
@@ -293,8 +281,6 @@
 }
 
 .sc-goal-about-summary {
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-sm);
   cursor: pointer;
 }
 

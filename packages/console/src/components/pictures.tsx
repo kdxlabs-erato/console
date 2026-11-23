@@ -550,7 +550,7 @@ export function PictureOverlay(props: PictureOverlayProps) {
           onLoad={(event) => sizeOf(event.currentTarget)}
         />
       </div>
-      <p className="sc-overlay-hint">{words.hint}</p>
+      <p className="sc-overlay-hint sc-fine">{words.hint}</p>
     </div>
   );
 }

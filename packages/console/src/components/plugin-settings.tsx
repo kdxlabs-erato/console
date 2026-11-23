@@ -186,12 +186,12 @@ function TickRow(props: {
           onChange={(event) => props.onChange?.(event.target.checked)}
         />
         <span className="sc-plugin-tick-words">
-          <span className="sc-plugin-tick-name">
+          <span className="sc-plugin-tick-name sc-name">
             {props.name}
             {props.tag !== undefined && <Badge tone="warning">{props.tag}</Badge>}
           </span>
           {props.under !== undefined && props.under !== "" && (
-            <span className="sc-plugin-tick-under">{props.under}</span>
+            <span className="sc-note">{props.under}</span>
           )}
         </span>
       </label>
@@ -295,10 +295,8 @@ function Overview(props: {
                   const text = capabilityText(words, capability);
                   return (
                     <li key={capability}>
-                      <span className="sc-plugin-tick-name">{text.name}</span>
-                      {text.opens !== "" && (
-                        <span className="sc-plugin-tick-under"> {text.opens}</span>
-                      )}
+                      <span className="sc-plugin-tick-name sc-name">{text.name}</span>
+                      {text.opens !== "" && <span className="sc-note"> {text.opens}</span>}
                     </li>
                   );
                 })}
@@ -326,10 +324,8 @@ function Overview(props: {
                             }
                           />
                           <span>
-                            <span className="sc-plugin-tick-name">{text.name}</span>
-                            {text.opens !== "" && (
-                              <span className="sc-plugin-tick-under"> {text.opens}</span>
-                            )}
+                            <span className="sc-plugin-tick-name sc-name">{text.name}</span>
+                            {text.opens !== "" && <span className="sc-note"> {text.opens}</span>}
                           </span>
                         </label>
                       </li>
@@ -351,11 +347,11 @@ function Overview(props: {
         <ul className="sc-plugin-held">
           {detail.jobs.map((job) => (
             <li key={job.name}>
-              <span className="sc-plugin-tick-name">
+              <span className="sc-plugin-tick-name sc-name">
                 <code>{job.name}</code>
                 {job.lastOutcome === "failed" && <Badge tone="danger">{settings.jobFailing}</Badge>}
               </span>
-              <span className="sc-plugin-tick-under"> {jobStanding(settings, job, language)}</span>
+              <span className="sc-note"> {jobStanding(settings, job, language)}</span>
             </li>
           ))}
         </ul>
@@ -1102,7 +1098,7 @@ function EnableForm(props: {
     <form className="sc-form sc-plugin-enable" onSubmit={submit} aria-label={settings.enable}>
       {detail.capabilities.length + optional.length > 0 && (
         <div className="sc-plugin-group">
-          <h3 className="sc-plugin-group-title">{settings.capabilities}</h3>
+          <h3 className="sc-plugin-group-title sc-subtitle">{settings.capabilities}</h3>
           {detail.capabilities.length > 0 && (
             <div className="sc-plugin-capabilities">
               <p className="sc-plugin-capabilities-head">
@@ -1152,7 +1148,7 @@ function EnableForm(props: {
       )}
       {needsBoard && (
         <div className="sc-plugin-group">
-          <h3 className="sc-plugin-group-title">{settings.board}</h3>
+          <h3 className="sc-plugin-group-title sc-subtitle">{settings.board}</h3>
           <p className="sc-settings-hint">{settings.boardHint}</p>
           <div className="sc-radio-row">
             {detail.boardNeeds === "optional" && (
@@ -1244,7 +1240,7 @@ function EnableForm(props: {
         </div>
       )}
       <div className="sc-plugin-group">
-        <h3 className="sc-plugin-group-title">{settings.projects}</h3>
+        <h3 className="sc-plugin-group-title sc-subtitle">{settings.projects}</h3>
         <div className="sc-radio-row">
           <label className="sc-check">
             <input
@@ -1282,7 +1278,7 @@ function EnableForm(props: {
       <div className="sc-plugin-group">
         {asks.length > 0 && (
           <div className="sc-plugin-group">
-            <h3 className="sc-plugin-group-title">{settings.asks}</h3>
+            <h3 className="sc-plugin-group-title sc-subtitle">{settings.asks}</h3>
             <p className="sc-settings-hint">{settings.asksHint}</p>
             <ul className="sc-plugin-ticks">
               {asks.map((ask) => {
@@ -1459,7 +1455,7 @@ function RoleRow(props: {
   return (
     <li className="sc-plugin-role">
       <div>
-        <p className="sc-plugin-role-name">
+        <p className="sc-plugin-role-name sc-name">
           {pluginWord(role.name, props.language)}
           <code className="sc-plugin-role-key">{role.key}</code>
           {props.isDefault && <Badge tone="accent">{settings.roleDefault}</Badge>}
@@ -1563,13 +1559,13 @@ function RolesSection(props: {
       )}
       {asks.length > 0 && (
         <div className="sc-plugin-group">
-          <h3 className="sc-plugin-group-title">{settings.asks}</h3>
+          <h3 className="sc-plugin-group-title sc-subtitle">{settings.asks}</h3>
           <p className="sc-settings-hint">{settings.asksHint}</p>
           <ul className="sc-plugin-roles">
             {asks.map((ask) => (
               <li key={`${ask.plugin}:${ask.role}`} className="sc-plugin-role">
                 <div>
-                  <p className="sc-plugin-role-name">
+                  <p className="sc-plugin-role-name sc-name">
                     {pluginNameOf(props.plugins, ask.plugin, props.language)}
                     <code className="sc-plugin-role-key">{ask.role}</code>
                     {ask.state === "granted" && <Badge tone="accent">{settings.askGranted}</Badge>}

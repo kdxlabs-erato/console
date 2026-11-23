@@ -114,8 +114,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sc-space-1) var(--sc-space-2);
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-xs);
 }
 
 .sc-doc-meta .sc-person-login {
@@ -211,7 +209,6 @@
 }
 
 .sc-version-title {
-  font-weight: var(--sc-weight-medium);
   overflow-wrap: anywhere;
 }
 
@@ -221,8 +218,6 @@
   align-items: center;
   gap: var(--sc-space-1) var(--sc-space-2);
   grid-column: 2;
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-xs);
 }
 
 .sc-version-meta .sc-person-login {
@@ -244,8 +239,6 @@
   align-items: center;
   gap: var(--sc-space-2);
   margin: 0 0 var(--sc-space-3);
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-sm);
 }
 
 /* What the organization adds stands off the console's rules above it (ADR-0120). */

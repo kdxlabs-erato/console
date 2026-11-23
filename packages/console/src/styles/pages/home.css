@@ -177,8 +177,6 @@ a.sc-tile-glance:focus-visible {
 .sc-tile-about {
   display: -webkit-box;
   overflow: hidden;
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-sm);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
@@ -488,8 +486,6 @@ a.sc-tile-glance:focus-visible {
 
 .sc-home-hint {
   margin: 0;
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-sm);
 }
 
 /* The ways out of arranging and the ways to put the page right, four of them: on a phone they

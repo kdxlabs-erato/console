@@ -105,7 +105,7 @@ export function DocumentList(props: DocumentListProps) {
             {document.title}
           </a>
           {document.archivedAt !== null && <Badge tone="neutral">{words.archived}</Badge>}
-          <span className="sc-doc-meta">
+          <span className="sc-doc-meta sc-fine">
             <code className="sc-doc-path">{document.path}</code> · {words.version(document.version)}{" "}
             · <Writer by={document.updatedBy} agent={document.agent} />{" "}
             <Time iso={document.updatedAt} />
@@ -655,8 +655,8 @@ export function DocumentView(props: DocumentViewProps) {
                         {docs.version(entry.number)}
                       </a>
                     )}
-                    <span className="sc-version-title">{entry.title}</span>
-                    <span className="sc-version-meta">
+                    <span className="sc-version-title sc-name">{entry.title}</span>
+                    <span className="sc-version-meta sc-fine">
                       <Writer by={entry.author} agent={entry.agent} />{" "}
                       <Time iso={entry.createdAt} />
                     </span>

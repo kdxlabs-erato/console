@@ -41,10 +41,10 @@ export function PackTokenWays(props: PackTokenWaysProps) {
   return (
     <section className="sc-panel sc-panel-form" aria-label={props.title}>
       <h2 className="sc-section-title">{props.title}</h2>
-      <p className="sc-pack-intro">{props.intro}</p>
+      <p className="sc-pack-intro sc-note">{props.intro}</p>
       <div className="sc-pack-ways">
         <section className="sc-pack-way" aria-label={pack.connectTitle}>
-          <h3 className="sc-pack-way-title">{pack.connectTitle}</h3>
+          <h3 className="sc-subtitle">{pack.connectTitle}</h3>
           <PackConnect
             onStart={props.onStart}
             poll={props.poll}
@@ -55,7 +55,7 @@ export function PackTokenWays(props: PackTokenWaysProps) {
           />
         </section>
         <section className="sc-pack-way" aria-label={pack.pasteTitle}>
-          <h3 className="sc-pack-way-title">{pack.pasteTitle}</h3>
+          <h3 className="sc-subtitle">{pack.pasteTitle}</h3>
           <PackTokenForm
             set={props.set}
             setAt={props.setAt}

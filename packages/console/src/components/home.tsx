@@ -286,7 +286,7 @@ function ProjectGlanceTile(props: {
           </span>
         </span>
         {columns && project.description.length > 0 && (
-          <span className="sc-tile-about sc-glance-about">{project.description}</span>
+          <span className="sc-tile-about sc-note sc-glance-about">{project.description}</span>
         )}
         <dl className="sc-glance-facts">
           {figure(glanceWords.working, glance?.taskCounts.in_progress)}
@@ -361,7 +361,7 @@ export function ProjectTile(props: ProjectTileProps) {
         </span>
       )}
       {card && project.description.length > 0 && (
-        <span className="sc-tile-about">{project.description}</span>
+        <span className="sc-tile-about sc-note">{project.description}</span>
       )}
       {project.openDecisions > 0 && (
         <span
@@ -877,7 +877,7 @@ export function HomeGrid(props: HomeGridProps) {
     >
       {editing && (
         <div className="sc-home-bar">
-          <p className="sc-home-hint">{words.hint}</p>
+          <p className="sc-home-hint sc-note">{words.hint}</p>
           <div className="sc-home-bar-actions">
             <Button
               size="sm"

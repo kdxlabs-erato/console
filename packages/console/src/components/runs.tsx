@@ -76,7 +76,7 @@ export function RunCard(props: RunCardProps) {
           {agentLabel(run.agent)}
         </span>
         <RunStatusBadge status={run.status} />
-        <span className="sc-run-meta">
+        <span className="sc-run-meta sc-note">
           {words.for} <PersonChip person={run.person} /> {words.since} <Time iso={run.startedAt} />
           {run.endedAt !== null && (
             <>

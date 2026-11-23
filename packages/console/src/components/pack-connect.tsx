@@ -147,7 +147,7 @@ export function PackConnect(props: PackConnectProps) {
               {pack.connectCancel}
             </Button>
           </div>
-          <p className="sc-pack-connect-waiting">
+          <p className="sc-pack-connect-waiting sc-note">
             <span className="sc-spinner" aria-hidden="true">
               <span className="sc-spinner-ring" />
             </span>

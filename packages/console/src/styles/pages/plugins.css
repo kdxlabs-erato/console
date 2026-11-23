@@ -29,8 +29,6 @@
 
 .sc-plugin-group-title {
   margin: 0;
-  font-size: var(--sc-text-md);
-  font-weight: var(--sc-weight-medium);
 }
 
 .sc-plugin-group > .sc-settings-hint {
@@ -119,12 +117,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sc-space-2);
-  font-weight: var(--sc-weight-medium);
-}
-
-.sc-plugin-tick-under {
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-sm);
 }
 
 /* The capabilities an enabled plugin holds, one a line; its commands as words side by side. */
@@ -185,7 +177,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sc-space-2);
-  font-weight: var(--sc-weight-medium);
 }
 
 .sc-plugin-role-key {

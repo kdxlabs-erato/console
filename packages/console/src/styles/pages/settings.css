@@ -43,8 +43,6 @@
 
 .sc-skill-description {
   margin: var(--sc-space-2) 0 0;
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-sm);
 }
 
 .sc-skill-uri {
@@ -116,8 +114,6 @@
 .sc-pack-intro {
   max-width: var(--sc-width-prose);
   margin: 0 0 var(--sc-space-5);
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-sm);
 }
 
 .sc-pack-ways {
@@ -134,11 +130,6 @@
   border: var(--sc-border);
   border-radius: var(--sc-radius-lg);
   background: var(--sc-color-sheet);
-}
-
-.sc-pack-way-title {
-  font-size: var(--sc-text-md);
-  font-weight: var(--sc-weight-medium);
 }
 
 .sc-pack-way .sc-field-hint {
@@ -166,8 +157,6 @@
   display: flex;
   align-items: center;
   gap: var(--sc-space-2);
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-sm);
 }
 
 .sc-pack-actions {

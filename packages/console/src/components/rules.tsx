@@ -59,7 +59,7 @@ export function RulesView(props: RulesViewProps) {
         <Callout tone="info">{words.rules.console}</Callout>
       ) : (
         page !== null && (
-          <p className="sc-rules-facts">
+          <p className="sc-rules-facts sc-note">
             {words.docs.version(page.version)} · {words.docs.writtenBy}{" "}
             <Writer by={page.updatedBy} agent={page.agent} /> <Time iso={page.updatedAt} />
           </p>
@@ -106,7 +106,7 @@ function WorkspaceRules(props: RulesViewProps & { readonly own: string }) {
           <p className="sc-muted">{words.rules.nothingAdded}</p>
         ) : (
           <>
-            <p className="sc-rules-facts">
+            <p className="sc-rules-facts sc-note">
               {words.docs.version(added.page.version)} · {words.docs.writtenBy}{" "}
               <Writer by={added.page.updatedBy} agent={added.page.agent} />{" "}
               <Time iso={added.page.updatedAt} />

@@ -113,7 +113,7 @@ export function WorkList(props: WorkListProps) {
                     <span className="sc-task-row-project">
                       <ProjectMark project={project} size="sm" /> {work.inProject(project.name)}
                     </span>
-                    <span className="sc-decision-row-meta">
+                    <span className="sc-decision-row-meta sc-muted">
                       <PersonChip person={decision.raisedBy} /> <Time iso={decision.createdAt} />
                     </span>
                   </li>

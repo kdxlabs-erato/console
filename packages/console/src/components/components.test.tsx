@@ -2320,7 +2320,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     // The call that started the sub-agent is the sub-agent's row: what it is, what its events
     // call it where the call did not say, how it ended and how much it did.
     expect(seen).toContain(
-      '<li class="sc-talk-item sc-talk-step sc-talk-tool" data-n="2"><details class="sc-talk-tool-fold"><summary class="sc-talk-tool-head sc-talk-agent-head"><span class="sc-talk-who sc-talk-agent-name" title="Explore">Explore</span><span class="sc-badge sc-badge-neutral">Done</span>',
+      '<li class="sc-talk-item sc-talk-step sc-talk-tool" data-n="2"><details class="sc-talk-tool-fold"><summary class="sc-talk-tool-head sc-talk-agent-head"><span class="sc-name sc-talk-agent-name" title="Explore">Explore</span><span class="sc-badge sc-badge-neutral">Done</span>',
     );
     expect(seen).toContain(
       '<span class="sc-muted sc-talk-agent-facts"><span class="sc-talk-kind">Sub-agent</span>1 tool call · 0:00</span>',
@@ -2394,7 +2394,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     );
     expect(korean).toContain(">서브 에이전트: Explore<");
     expect(korean).toContain(
-      '<span class="sc-talk-who sc-talk-agent-name" title="Explore: 경로 찾기">Explore: 경로 찾기</span><span class="sc-badge sc-badge-danger">실패</span>',
+      '<span class="sc-name sc-talk-agent-name" title="Explore: 경로 찾기">Explore: 경로 찾기</span><span class="sc-badge sc-badge-danger">실패</span>',
     );
     expect(korean).toContain('<span class="sc-talk-kind">서브 에이전트</span>도구 호출 1회 · 0:00');
     expect(korean).toContain('aria-label="서브 에이전트가 한 일"');
@@ -2609,7 +2609,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     expect(seen).toContain('<li class="sc-talk-item sc-talk-told" data-n="1">');
     // Who said it stands under the words, as in a chat, and not within them.
     expect(seen).toMatch(
-      /<\/div><div class="sc-talk-meta"><span class="sc-talk-who">alice<\/span><span>through Claude Code<\/span>/,
+      /<\/div><div class="sc-talk-meta sc-fine"><span class="sc-name">alice<\/span><span>through Claude Code<\/span>/,
     );
     expect(seen).toMatch(/<span class="sc-badge sc-badge-neutral">Interrupt<\/span>/);
     expect(seen).toContain('<pre class="sc-talk-text">Hold the release.</pre>');
@@ -2793,7 +2793,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     expect(seen).not.toContain("The turn completed.");
     expect(seen).toContain("Done in 2s");
     // An interrupt with no words is who stopped the turn, and no message.
-    expect(seen).toContain('<li class="sc-talk-item sc-talk-note" data-n="4">');
+    expect(seen).toContain('<li class="sc-talk-item sc-talk-note sc-fine" data-n="4">');
     expect(seen).toContain("alice interrupted, so that what waited is read now.");
     // What the session ended on before the agent took it says so.
     expect(seen).toContain(
@@ -3271,7 +3271,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
         <TalkWorking working={{ at: "thinking" }} agent={mira} />
       </ol>,
     );
-    expect(thinking).toContain('<li class="sc-talk-item sc-talk-working" role="status">');
+    expect(thinking).toContain('<li class="sc-talk-item sc-talk-working sc-note" role="status">');
     expect(thinking).toContain('<span class="sc-talk-dots" aria-hidden="true">');
     expect(thinking).toContain(">Thinking<");
     expect(
@@ -3314,13 +3314,13 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
       </ol>,
     );
     expect(agents).toContain(
-      '<li class="sc-talk-item sc-talk-working sc-talk-working-agents" role="status">',
+      '<li class="sc-talk-item sc-talk-working sc-note sc-talk-working-agents" role="status">',
     );
     expect(agents).toContain("<span>3 sub-agents at work</span>");
     expect(agents).not.toContain("Running Agent");
     expect(agents).toContain('<ul class="sc-talk-agents" aria-live="off">');
     expect(agents).toMatch(
-      /<li class="sc-talk-agents-row"><span class="sc-talk-who sc-talk-agent-name">Explore: Find the routes<\/span><span class="sc-talk-agents-facts">Running Bash · 4 tool calls · 1:0\d<\/span><\/li>/,
+      /<li class="sc-talk-agents-row"><span class="sc-name sc-talk-agent-name">Explore: Find the routes<\/span><span class="sc-talk-agents-facts">Running Bash · 4 tool calls · 1:0\d<\/span><\/li>/,
     );
     // One the record gives no name is called what it is; a name is text.
     expect(agents).toMatch(/sc-talk-agent-name">Sub-agent<\/span>[^/]*>Thinking · 1 tool call · /);
@@ -3340,7 +3340,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
           <TalkWorking working={{ at: "thinking" }} agents={[]} />
         </ol>,
       ),
-    ).toContain('<li class="sc-talk-item sc-talk-working" role="status">');
+    ).toContain('<li class="sc-talk-item sc-talk-working sc-note" role="status">');
     expect(renderToStaticMarkup(<TalkWorking working={undefined} agents={[at("One", 1)]} />)).toBe(
       "",
     );

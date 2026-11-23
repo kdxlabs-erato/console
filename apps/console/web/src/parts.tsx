@@ -1701,8 +1701,8 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
 
     <Part
       name="text"
-      classes="sc-muted, sc-lead, sc-time, sc-loading, sc-project-key, sc-card-number, sc-feed-agent, sc-visually-hidden"
-      use="The tones of a line of text: quiet, the sentence under a title, a moment, a key or a number in the mono face, the agent a person acted through, and what only a screen reader is told."
+      classes="sc-muted, sc-lead, sc-note, sc-fine, sc-name, sc-subtitle, sc-time, sc-loading, sc-project-key, sc-card-number, sc-feed-agent, sc-visually-hidden"
+      use="The tones of a line of text: quiet, the sentence under a title, a line that says more about what it stands by and the same a size down, the name of the thing a row is about, the title of a group inside a pane, a moment, a key or a number in the mono face, the agent a person acted through, and what only a screen reader is told."
     >
       <Specimen label="Quiet">
         <p className="sc-muted">Nothing more was written about this task.</p>
@@ -1712,6 +1712,15 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
           Everyone at Acme sees this project and may work in it. The members listed below are its
           owners.
         </p>
+      </Specimen>
+      <Specimen label="A name, with a line that says more about it and the fine print under both">
+        <p className="sc-name">Deploy key for the staging site</p>
+        <p className="sc-note">Reads the repository and nothing else. Made for the release job.</p>
+        <p className="sc-fine">Made by Alice Lindqvist, last used three days ago</p>
+      </Specimen>
+      <Specimen label="The title of a group inside a pane">
+        <h3 className="sc-subtitle">What this plugin may do</h3>
+        <p className="sc-note">Each capability is granted by an administrator.</p>
       </Specimen>
       <Specimen
         label="A moment: to the minute, the day alone, the hour of today, another day's hour; and a day"

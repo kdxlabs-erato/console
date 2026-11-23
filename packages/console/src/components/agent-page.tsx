@@ -65,7 +65,7 @@ export function AgentStateBadge(props: {
         <Badge tone="neutral" kind="state">
           {words.unset}
         </Badge>
-        <span className="sc-agent-state-why">{words.none}</span>
+        <span className="sc-note">{words.none}</span>
       </span>
     ) : null;
   }
@@ -87,7 +87,7 @@ export function AgentStateBadge(props: {
   return (
     <span className="sc-agent-state">
       {badge}
-      <span className="sc-agent-state-why">
+      <span className="sc-note">
         {reason !== undefined && `${reason} · `}
         {words.since.before}
         <Time iso={state.since} precision="clock" />
@@ -1014,7 +1014,7 @@ const TalkLine: NamedExoticComponent<TalkLineProps> = memo(function Line(
             <pre className={className}>{shown}</pre>
           ))}
         {event.whole !== null && read === undefined && (
-          <p className="sc-talk-cut">
+          <p className="sc-talk-cut sc-fine">
             {words.cutAt(formatBytes(event.whole))}{" "}
             {readWhole !== undefined && (
               <Button
@@ -1087,7 +1087,7 @@ const TalkLine: NamedExoticComponent<TalkLineProps> = memo(function Line(
         >
           <details className="sc-talk-tool-fold">
             <summary className="sc-talk-tool-head sc-talk-agent-head">
-              <span className="sc-talk-who sc-talk-agent-name" title={called}>
+              <span className="sc-name sc-talk-agent-name" title={called}>
                 {called}
               </span>
               {sub !== undefined && <Badge>{words.subagent(sub)}</Badge>}
@@ -1181,7 +1181,7 @@ const TalkLine: NamedExoticComponent<TalkLineProps> = memo(function Line(
   const { event } = one;
   if (event.sealed !== null) {
     return (
-      <li className="sc-talk-item sc-talk-note" data-n={event.n}>
+      <li className="sc-talk-item sc-talk-note sc-fine" data-n={event.n}>
         <span className="sc-talk-note-line">
           {words.sealed(
             event.sealed.by === null ? "?" : (event.sealed.by.name ?? event.sealed.by.login),
@@ -1212,7 +1212,7 @@ const TalkLine: NamedExoticComponent<TalkLineProps> = memo(function Line(
       others === undefined
     ) {
       return (
-        <li className="sc-talk-item sc-talk-note" data-n={event.n}>
+        <li className="sc-talk-item sc-talk-note sc-fine" data-n={event.n}>
           <span className="sc-talk-note-line">
             {words.interrupted(who)}
             {when(event)}
@@ -1252,8 +1252,8 @@ const TalkLine: NamedExoticComponent<TalkLineProps> = memo(function Line(
             <p className="sc-talk-note-line sc-talk-unseen">{words.unseen(unseen)}</p>
           )}
         </div>
-        <div className="sc-talk-meta">
-          <span className="sc-talk-who">{who}</span>
+        <div className="sc-talk-meta sc-fine">
+          <span className="sc-name">{who}</span>
           {through !== undefined && <span>{words.through(through)}</span>}
           {kind !== undefined && kind !== "tell" && (
             <Badge>{wordOf(words.signalKinds, kind)}</Badge>
@@ -1347,7 +1347,12 @@ const TalkLine: NamedExoticComponent<TalkLineProps> = memo(function Line(
   const lines = event.text.split("\n").filter((line) => line.trim().length > 0);
   return (
     <li
-      className={cx("sc-talk-item", "sc-talk-note", event.kind === "error" && "sc-talk-note-error")}
+      className={cx(
+        "sc-talk-item",
+        "sc-talk-note",
+        "sc-fine",
+        event.kind === "error" && "sc-talk-note-error",
+      )}
       data-n={event.n}
     >
       <span className="sc-talk-note-line">
@@ -1539,14 +1544,14 @@ export function TalkWaiting(props: TalkWaitingProps) {
                 </ul>
               )}
             </div>
-            <div className="sc-talk-meta">
-              <span className="sc-talk-who">
+            <div className="sc-talk-meta sc-fine">
+              <span className="sc-name">
                 {signal.by === null ? words.kinds.person : personName(signal.by)}
               </span>
               <Time iso={signal.at} precision="clock" />
             </div>
             {last && (
-              <p className="sc-talk-wait" role="status">
+              <p className="sc-talk-wait sc-fine" role="status">
                 <span>{waits[props.why]}</span>
                 {stops && (
                   <Button
@@ -1592,6 +1597,7 @@ export function TalkWorking(props: {
       className={cx(
         "sc-talk-item",
         "sc-talk-working",
+        "sc-note",
         agents.length > 0 && "sc-talk-working-agents",
       )}
       role="status"
@@ -1608,7 +1614,7 @@ export function TalkWorking(props: {
         <ul className="sc-talk-agents" aria-live="off">
           {agents.map((one) => (
             <li key={one.n} className="sc-talk-agents-row">
-              <span className="sc-talk-who sc-talk-agent-name">
+              <span className="sc-name sc-talk-agent-name">
                 {one.name.length === 0 ? live.agent.label : one.name}
               </span>
               <span className="sc-talk-agents-facts">
@@ -2274,7 +2280,7 @@ export function AgentSessionList(props: AgentSessionListProps) {
             )}
             {session.away && <Badge tone="warning">{words.away}</Badge>}
           </span>
-          <span className="sc-agent-session-facts">
+          <span className="sc-agent-session-facts sc-note">
             {[
               `${session.product.name}${session.product.version === null ? "" : ` ${session.product.version}`}`,
               ...(session.model === null ? [] : [session.model]),

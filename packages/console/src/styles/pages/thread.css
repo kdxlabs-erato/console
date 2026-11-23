@@ -66,8 +66,6 @@
   order: 2;
   align-items: center;
   gap: var(--sc-space-1) var(--sc-space-2);
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-sm);
 }
 
 .sc-run-waiting {
@@ -119,8 +117,6 @@
 
 .sc-comment-meta {
   margin-inline-start: auto;
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-sm);
 }
 
 /* A picture in a comment, or handed in on a run, is a thumbnail, no taller than a few lines, that
@@ -228,8 +224,6 @@
 .sc-overlay-hint {
   margin: 0;
   padding: var(--sc-space-2) var(--sc-space-4) var(--sc-space-3);
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-xs);
   text-align: center;
 }
 

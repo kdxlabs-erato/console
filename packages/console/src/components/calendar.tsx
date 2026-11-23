@@ -242,7 +242,7 @@ export function TaskTip(props: TaskTipProps) {
       style={{ left: place.shift }}
       aria-hidden="true"
     >
-      <p className="sc-task-tip-title">
+      <p className="sc-task-tip-title sc-name">
         #{task.number} {task.title}
       </p>
       <dl className="sc-task-tip-facts">

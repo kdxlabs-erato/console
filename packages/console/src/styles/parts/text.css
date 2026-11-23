@@ -25,6 +25,29 @@
   color: var(--sc-color-text-muted);
 }
 
+/* A line that says more about what it stands by: what a setting does, who wrote a thing and when. */
+.sc-note {
+  color: var(--sc-color-text-muted);
+  font-size: var(--sc-text-sm);
+}
+
+/* The same a size down: the fine print of a row, a word under a turn of a conversation. */
+.sc-fine {
+  color: var(--sc-color-text-muted);
+  font-size: var(--sc-text-xs);
+}
+
+/* The name of the thing a row is about, told from what is said of it. */
+.sc-name {
+  font-weight: var(--sc-weight-medium);
+}
+
+/* The title of a group inside a pane, a step under the pane's own. */
+.sc-subtitle {
+  font-size: var(--sc-text-md);
+  font-weight: var(--sc-weight-medium);
+}
+
 .sc-loading {
   display: grid;
   place-items: center;

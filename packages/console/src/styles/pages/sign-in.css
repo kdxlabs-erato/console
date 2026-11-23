@@ -98,10 +98,6 @@
   font-size: var(--sc-text-xl);
 }
 
-.sc-sign-in-lead {
-  color: var(--sc-color-text-muted);
-}
-
 .sc-sign-in .sc-callout {
   margin-bottom: 0;
   text-align: left;
@@ -166,8 +162,6 @@
 
 .sc-sign-in-admits {
   margin: 0;
-  color: var(--sc-color-text-muted);
-  font-size: var(--sc-text-xs);
 }
 
 @media (max-width: 40rem) {

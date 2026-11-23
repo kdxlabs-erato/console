@@ -58,7 +58,7 @@ export function CommentCard(props: CommentCardProps) {
             {words.feed.as(agentLabel(comment.agent))}
           </span>
         )}
-        <span className="sc-comment-meta">
+        <span className="sc-comment-meta sc-note">
           <Time iso={comment.createdAt} />
         </span>
       </header>

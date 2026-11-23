@@ -472,8 +472,8 @@ export function AgentAccountForm(props: AgentAccountFormProps) {
                 onClick={() => choose(proposal)}
               >
                 <AvatarPicture parts={proposal.avatarParts} className="sc-avatar sc-avatar-lg" />
-                <span className="sc-agent-proposal-name">{proposal.name}</span>
-                <span className="sc-agent-proposal-handle">@{proposal.handle}</span>
+                <span className="sc-name">{proposal.name}</span>
+                <span className="sc-fine">@{proposal.handle}</span>
               </button>
             ))}
           </div>

@@ -66,7 +66,7 @@ export function SessionList(props: SessionListProps) {
             >
               <DeviceIcon handheld={session.platform !== null && HANDHELD.has(session.platform)} />
               <div className="sc-session-body">
-                <p className="sc-session-name">
+                <p className="sc-session-name sc-name">
                   <span>{deviceOf(session)}</span>
                   {session.current && <Badge tone="accent">{words.current}</Badge>}
                 </p>
