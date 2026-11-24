@@ -73,20 +73,23 @@ export function readBytesAt(path: string): Promise<Uint8Array> {
  * the path is a directory; says where it went, in full. With `private`, the file is the OS
  * account's alone to read (mode 600), one that was there before too: what holds a line that is
  * shown once is no other account's of the machine to read. Windows keeps a file to its account's
- * own folders by itself and has no such mode.
+ * own folders by itself and has no such mode. With `after`, the bytes go after what the file
+ * holds and nothing of it is taken away: a path is tried so, with no bytes, before what is to
+ * be written there exists.
  */
 export async function writeBytesAt(
   path: string,
   bytes: Uint8Array,
   name: string,
-  options: { readonly private?: boolean } = {},
+  options: { readonly private?: boolean; readonly after?: boolean } = {},
 ): Promise<string> {
   const target = (await stat(path).catch(() => undefined))?.isDirectory() ? join(path, name) : path;
+  const flag = options.after === true ? "a" : "w";
   if (options.private === true) {
-    await writeFile(target, bytes, { mode: 0o600 });
+    await writeFile(target, bytes, { mode: 0o600, flag });
     await chmod(target, 0o600);
   } else {
-    await writeFile(target, bytes);
+    await writeFile(target, bytes, { flag });
   }
   return resolve(target);
 }

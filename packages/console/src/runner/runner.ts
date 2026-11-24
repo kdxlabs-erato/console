@@ -1627,6 +1627,22 @@ export function createRunner(options: RunnerOptions): Runner {
           await leave(session, session.took ? undefined : "next");
           record(session, "person", signal.text, signalData(signal));
         }
+        // The account's own reset that waits is let go with the stop (ADR-0154), here and not
+        // when the loop next looks: an agent that could not go on is not looked at until it
+        // can, and a restart would then begin the new conversation nobody asked it for.
+        if (ownReset !== undefined) {
+          const gone = ownReset;
+          ownReset = undefined;
+          if (session !== undefined) {
+            record(
+              session,
+              "status",
+              `The account's own reset #${gone.number} was let go: the agent was stopped before it was taken.`,
+              { let_go: `#${gone.number}` },
+            );
+          }
+          log(`#${gone.number} let go: the agent was stopped before its own reset was taken`);
+        }
         await end("stopped");
         await account(signal);
         setState("stopped", "stop");
@@ -1908,7 +1924,7 @@ export function createRunner(options: RunnerOptions): Runner {
       own: true,
       number: signal.number,
     };
-    pending.push(signal);
+    pending = [...pending, signal].sort((one, other) => one.number - other.number);
     await persist();
     setState("running", "reset");
     scheduleDeliver();
@@ -2033,6 +2049,20 @@ export function createRunner(options: RunnerOptions): Runner {
         return;
       }
       case "ended": {
+        // A product that ended before it took the word that it is back took nothing of what
+        // that word was handed with: it is kept, and handed over again with the word, as what
+        // a limit kept from being read is. Left to the session's end, it would be written as
+        // never read and the agent told that nothing reached it meanwhile.
+        if (limited?.handed === true) {
+          const untaken = target.handed.splice(0).flatMap((message) => message.signals);
+          for (const signal of untaken) {
+            owed.delete(signal.number);
+          }
+          pending = [
+            ...untaken.filter((signal) => !pending.some((kept) => kept.number === signal.number)),
+            ...pending,
+          ].sort((one, other) => one.number - other.number);
+        }
         await end(event.how, true);
         // A product that ended before it answered the word that it is back, or refused it, was
         // not brought back: the word is owed still, at the moment the runner waits for, or

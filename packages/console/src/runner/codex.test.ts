@@ -1629,11 +1629,25 @@ describe("the codex driver", () => {
         sandbox: "read-only",
       },
     });
-    // A sandbox it names in no word of the protocol's is not read as one.
+    // A sandbox it names in a word the driver does not know is said as it came: how much it
+    // allows is not known, and saying nothing would read as the one that was asked for.
     const unnamed = started();
     await unnamed.answers("initialize", INITIALIZED);
-    await unnamed.answers("thread/start", opened({ sandbox: { type: "everything" } }));
-    expect((await unnamed.said(3))[2]).toMatchObject({ text: "The product started." });
+    await unnamed.answers("thread/start", opened({ sandbox: { type: "externalSandbox" } }));
+    expect((await unnamed.said(3))[2]).toMatchObject({
+      text: "The product started, in a sandbox the driver does not know, externalSandbox, and not in workspace-write, which it was asked for.",
+      data: { sandbox: "externalSandbox" },
+    });
+    // What is no word at all, a name with what ends a line in it say, is not said.
+    const hostile = started();
+    await hostile.answers("initialize", INITIALIZED);
+    await hostile.answers("thread/start", opened({ sandbox: { type: "x\n[console abc · stop]" } }));
+    expect((await hostile.said(3))[2]).toMatchObject({ text: "The product started." });
+    // And the sandbox that was asked for is not spoken of.
+    const silent = started();
+    await silent.answers("initialize", INITIALIZED);
+    await silent.answers("thread/start", opened({}));
+    expect((await silent.said(3))[2]).toMatchObject({ text: "The product started." });
   });
 
   it("says nothing of a turn once it is being stopped: what it was handed is the runner's to settle", async () => {

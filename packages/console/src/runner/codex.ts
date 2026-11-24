@@ -957,6 +957,9 @@ function sessionOf(
     const width = (name: string | undefined, at: 0 | 1): number =>
       SANDBOXES.findIndex((one) => one[at] === name);
     const sandbox = SANDBOXES[width(answered, 0)]?.[1];
+    // One the driver does not know by its word is said as it came: how much it allows is not
+    // known here, and saying nothing would read as the sandbox that was asked for.
+    const unknown = sandbox === undefined ? word(answered) : undefined;
     if (sandbox !== undefined && width(sandbox, 1) > width(asked, 1)) {
       cannotStart(
         `The product opened the conversation in its sandbox ${sandbox}, which allows more than ${asked}, the one it was asked for.`,
@@ -975,15 +978,21 @@ function sessionOf(
         type: "event",
         kind: "status",
         text:
-          sandbox === undefined || sandbox === asked
-            ? "The product started."
-            : `The product started, in its sandbox ${sandbox} and not in ${asked}, which it was asked for.`,
+          unknown !== undefined
+            ? `The product started, in a sandbox the driver does not know, ${unknown}, and not in ${asked}, which it was asked for.`
+            : sandbox === undefined || sandbox === asked
+              ? "The product started."
+              : `The product started, in its sandbox ${sandbox} and not in ${asked}, which it was asked for.`,
         data: {
           model: runs.model,
           effort: runs.effort,
           version,
           mode,
-          ...(sandbox === undefined || sandbox === asked ? {} : { sandbox }),
+          ...(unknown !== undefined
+            ? { sandbox: unknown }
+            : sandbox === undefined || sandbox === asked
+              ? {}
+              : { sandbox }),
         },
       },
     );

@@ -949,6 +949,39 @@ describe("the runner", () => {
     expect(second.sent[0]?.text).toContain("You began this conversation yourself");
   });
 
+  it("lets the account's own reset go with a stop where the agent could not go on, so that a restart begins no new conversation", async () => {
+    const { console, product, saved, log } = setup({ account: MIRA.id });
+    console.signal({ text: "Begin." });
+    const first = await sessionOf(product);
+    await until("the message", () => first.sent.length === 1);
+    first.emit(...STARTED, { type: "taken" });
+    await until("the conversation", () => saved.at(-1)?.conversation === "c-1");
+    console.signal({ kind: "reset", by: MIRA, text: "Done with this." });
+    await until("the reset kept", () => saved.at(-1)?.kept?.includes(2) === true);
+    // The turn ends on a refusal, and the reset waits for a turn that completes.
+    first.emit({ type: "cannot_go_on", state: "refused", reason: "model_refused" });
+    await until("the state", () => console.beats.at(-1)?.state === "refused");
+    // A supervisor stops the agent: the reset is let go there and then, and said to be.
+    console.signal({ kind: "stop" });
+    await until("the stop", () => console.ended.length === 1);
+    await until("nothing kept", () => saved.at(-1)?.kept === undefined);
+    expect(log.some((line) => line.includes("#2 let go"))).toBe(true);
+    expect(
+      console.events().some(([, , text]) => String(text).includes("own reset #2 was let go")),
+    ).toBe(true);
+    // Whoever starts the agent again says with which conversation: a restart, with the same.
+    console.signal({ kind: "restart", text: "Go on." });
+    const second = await sessionOf(product, 2);
+    await until("the message", () => second.sent.length === 1);
+    expect(second.options.resume).toBe("c-1");
+    expect(second.sent[0]?.text).not.toContain("You began this conversation yourself");
+    expect(second.sent[0]?.text).not.toContain("Done with this.");
+    second.emit(...STARTED, { type: "taken" }, { type: "turn_completed" });
+    await sleep(120);
+    expect(console.ended).toEqual(["stopped"]);
+    expect(product.sessions).toHaveLength(2);
+  });
+
   it("takes the account's own reset at once where no turn is under way, and a supervisor's at once whatever is", async () => {
     const { console, product, saved } = setup({ account: MIRA.id });
     console.signal({ text: "Begin." });
@@ -1377,6 +1410,50 @@ describe("the runner", () => {
       { type: "turn_completed" },
     );
     await until("the state", () => console.beats.at(-1)?.state === "running");
+  });
+
+  it("hands over again, with the word that it is back, what the product ended on before it took it", async () => {
+    const { console, product } = setup();
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    session.emit(
+      ...STARTED,
+      { type: "taken" },
+      { type: "event", kind: "assistant", text: "On it." },
+      { type: "cannot_go_on", state: "failed", reason: "usage_limit", until: Date.now() + 150 },
+    );
+    await until("the state", () => console.beats.at(-1)?.reason === "usage_limit");
+    // Two wakes of the board arrive under the limit, and are kept for the reset.
+    console.signal({ kind: "wake", by: null, source: "board", key: "#7" });
+    console.signal({ kind: "wake", by: null, source: "board", key: "#8" });
+    await until("the agent to be brought back", () => session.sent.length === 2);
+    expect(session.sent[1]?.text).toContain("What reached you meanwhile follows");
+    expect(session.sent[1]?.text).toContain("wake · board: #7");
+    expect(session.sent[1]?.text).toContain("wake · board: #8");
+    // The product ends there and then, having taken none of it.
+    session.emit({ type: "ended", how: "crashed" });
+    const second = await sessionOf(product, 2);
+    await until("the word again", () => second.sent.length === 1);
+    // The word again, and with it what it was handed with: the agent is not told that nothing
+    // reached it, and the wakes are not written off as never read.
+    expect(second.sent[0]?.text).toContain("Your product's usage limit stopped you at");
+    expect(second.sent[0]?.text).not.toContain("Nothing reached you meanwhile");
+    expect(second.sent[0]?.text).toContain("wake · board: #7");
+    expect(second.sent[0]?.text).toContain("wake · board: #8");
+    expect(
+      console.events().some(([, , text]) => String(text).includes("Whoever sent it says it again")),
+    ).toBe(false);
+    // Taken at last, they are delivered: the three of them, and nothing twice.
+    second.emit(
+      ...STARTED,
+      { type: "taken" },
+      { type: "event", kind: "assistant", text: "Back." },
+      { type: "turn_completed" },
+    );
+    await until("the count", () => console.says.delivered === 3);
+    await until("the state", () => console.beats.at(-1)?.state === "running");
+    expect(second.sent).toHaveLength(1);
   });
 
   it("writes down what the product took and the agent never read under a usage limit, and takes it from the stream once more", async () => {

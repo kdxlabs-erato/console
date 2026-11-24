@@ -306,13 +306,14 @@ export interface CliIo {
   readonly readBytes: (path: string) => Promise<Uint8Array>;
   /**
    * A file read from the console, written at a path, or into a directory under its name; says
-   * where. With `private`, the file is the OS account's alone to read, whatever was there.
+   * where. With `private`, the file is the OS account's alone to read, whatever was there;
+   * with `after`, the bytes go after what the file holds, which stays.
    */
   readonly writeBytes: (
     path: string,
     bytes: Uint8Array,
     name: string,
-    options?: { readonly private?: boolean },
+    options?: { readonly private?: boolean; readonly after?: boolean },
   ) => Promise<string>;
   readonly store: CredentialStore;
   /** What the working directory says of the project, and the way to write it. */
@@ -5587,11 +5588,13 @@ const agentInvite = async (args: readonly string[], io: CliIo): Promise<number> 
   // The path is tried before the invitation is made: a new invitation takes the place of the
   // one before and its code comes once, so one made for a path that cannot be written would
   // leave the account with an invitation nobody holds. The file is the account's alone to read.
+  // What is at the path stays until the new line is there to take its place: the line of the
+  // invitation before, say, which still stands where this one cannot be made.
   const name = `${handle}-invitation.md`;
   let file: string | undefined;
   if (out !== undefined) {
     try {
-      file = await io.writeBytes(out, new Uint8Array(), name, { private: true });
+      file = await io.writeBytes(out, new Uint8Array(), name, { private: true, after: true });
     } catch {
       throw failed(
         `Nothing can be written at ${out}, so no invitation was made and the one before stands. Say a path that can be written.`,

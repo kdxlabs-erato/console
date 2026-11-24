@@ -4679,14 +4679,21 @@ describe("configuring, as the person", () => {
         },
       },
     });
-    const written: { path: string; name: string; words: string; own: boolean; posted: number }[] =
-      [];
+    const written: {
+      path: string;
+      name: string;
+      words: string;
+      own: boolean;
+      after: boolean;
+      posted: number;
+    }[] = [];
     const writeBytes: CliIo["writeBytes"] = async (path, bytes, name, options) => {
       written.push({
         path,
         name,
         words: new TextDecoder().decode(bytes),
         own: options?.private === true,
+        after: options?.after === true,
         posted: calls.filter((call) => call.key.startsWith("POST")).length,
       });
       return path.startsWith("/") ? path : `/home/bob/${path}`;
@@ -4694,16 +4701,24 @@ describe("configuring, as the person", () => {
     const made = harness({ fetch, env: SIGNED_IN, terminal: false, writeBytes });
     expect(await runCli(["agent", "invite", "mira", "--out", "line.md"], made.io)).toBe(EXIT.ok);
     // The path is tried first, with nothing in it and before the invitation is made, and the
-    // line is then written where the try landed; the file is the account's alone to read.
+    // line is then written where the try landed; the file is the account's alone to read. The
+    // try takes nothing away of what is at the path: the line of the invitation before stays
+    // there until the new one is made and written in its place.
     expect(written).toHaveLength(2);
     expect(written[0]).toEqual({
       path: "line.md",
       name: "mira-invitation.md",
       words: "",
       own: true,
+      after: true,
       posted: 0,
     });
-    expect(written[1]).toMatchObject({ path: "/home/bob/line.md", own: true, posted: 1 });
+    expect(written[1]).toMatchObject({
+      path: "/home/bob/line.md",
+      own: true,
+      after: false,
+      posted: 1,
+    });
     // The file holds what the command would have printed: the line, to be copied, and the guide.
     const words = written[1]?.words ?? "";
     expect(words).toContain("An invitation for @mira, good until 2026-10-16T10:00:00.000Z");
