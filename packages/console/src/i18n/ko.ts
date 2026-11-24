@@ -2004,7 +2004,6 @@ export const ko: Messages = {
         waiting: {
           call: "지금 하는 도구 호출이 끝나면 전달됩니다.",
           turn: "지금 턴이 끝나면 전달됩니다.",
-          anew: "지금 턴이 끝나면 전달됩니다.",
           stopped: "다시 시작하면 전달됩니다.",
           unheard: "러너가 연결되면 전달됩니다.",
           soon: "에이전트에게 전달하는 중입니다.",

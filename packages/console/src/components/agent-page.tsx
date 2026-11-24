@@ -616,6 +616,29 @@ export function waitingOf(signals: readonly RestSignal[], taken: number): readon
     .sort((a, b) => a.number - b.number);
 }
 
+/** Whether a signal is a reset the account itself sent (ADR-0154): who sent it tells it from a supervisor's. */
+export const isOwnReset = (signal: RestSignal, account: string): boolean =>
+  signal.kind === "reset" && signal.source === "person" && signal.by?.id === account;
+
+/**
+ * The account's own reset that waits (ADR-0154), or nothing. It waits for the turn under way
+ * to end, whatever its product takes in a turn and whatever was taken after it, so the count
+ * of what was taken does not say it: taking it ends the session, so one sent since the open
+ * session began waits still, the last of them standing for those before it. `began` is when
+ * the open session began; with none open, nothing waits so.
+ */
+export function ownResetWaiting(
+  signals: readonly RestSignal[],
+  account: string,
+  began: string | undefined,
+): RestSignal | undefined {
+  const from = began === undefined ? Number.NaN : Date.parse(began);
+  return signals
+    .filter((signal) => isOwnReset(signal, account) && Date.parse(signal.at) >= from)
+    .sort((a, b) => a.number - b.number)
+    .at(-1);
+}
+
 /** The texts read whole in a session: the session they were read in, and each by its event's number. */
 export interface WholeTexts {
   readonly of: string | undefined;
@@ -1487,12 +1510,12 @@ export interface TalkWaitingProps {
   /** The words that wait, the oldest first: `waitingOf` says which. */
   readonly signals: readonly RestSignal[];
   /**
-   * Why they wait, which says when they are read: a turn under way that the product takes a
-   * message in (`call`) or takes none in (`turn`), or whose end the last of them, the account's
-   * own reset, waits for to begin a new conversation (`anew`); an agent that is stopped, a
+   * Why they wait, which says when they are handed over: a turn under way that the product
+   * takes a message in (`call`) or takes none in (`turn`), which is also what the account's
+   * own reset waits for whatever its product takes in a turn; an agent that is stopped, a
    * runner not heard from, or nothing but the moment it takes to hand them over (`soon`).
    */
-  readonly why: "call" | "turn" | "anew" | "stopped" | "unheard" | "soon";
+  readonly why: "call" | "turn" | "stopped" | "unheard" | "soon";
   /** Where the bytes of a file of a signal are read. */
   readonly fileHref?: ((number: number, fileId: string) => string) | undefined;
   readonly busy?: boolean | undefined;
@@ -1515,9 +1538,7 @@ export function TalkWaiting(props: TalkWaitingProps) {
   if (props.signals.length === 0) {
     return null;
   }
-  const stops =
-    props.onInterrupt !== undefined &&
-    (props.why === "call" || props.why === "turn" || props.why === "anew");
+  const stops = props.onInterrupt !== undefined && (props.why === "call" || props.why === "turn");
   return (
     <>
       {props.signals.map((signal, index) => {

@@ -23,6 +23,8 @@ import {
   AgentStateBadge,
   atWorkOf,
   ChatPane,
+  isOwnReset,
+  ownResetWaiting,
   SignalComposer,
   TalkWaiting,
   TalkWorking,
@@ -422,11 +424,19 @@ function AgentLive(props: {
     // Where the record says none, what the runner says is delivered counts as taken: what the
     // product took, or the record of an earlier session says was never read (ADR-0131).
     const floor = open ? (taken ?? delivered) : Math.max(taken ?? 0, delivered);
-    const waiting = waitingOf(signals ?? [], floor);
     // The account's own reset waits for the turn under way to end, whatever its product takes
-    // in a turn (ADR-0154).
-    const last = waiting.at(-1);
-    const anew = last?.kind === "reset" && last.by?.id === agent.person.id;
+    // in a turn and whatever was taken after it (ADR-0154): taking it ends the session, so one
+    // sent since the open session began waits still, the last of them for those before it.
+    const anew = open
+      ? ownResetWaiting(signals ?? [], agent.person.id, session?.startedAt)
+      : undefined;
+    const waiting = [
+      ...waitingOf(
+        (signals ?? []).filter((signal) => !isOwnReset(signal, agent.person.id)),
+        floor,
+      ),
+      ...(anew === undefined ? [] : [anew]),
+    ];
     const why =
       state === "stopped"
         ? "stopped"
@@ -434,8 +444,8 @@ function AgentLive(props: {
           ? "unheard"
           : working === undefined
             ? "soon"
-            : anew
-              ? "anew"
+            : anew !== undefined
+              ? "turn"
               : agent.runner?.offers?.steer === false
                 ? "turn"
                 : "call";

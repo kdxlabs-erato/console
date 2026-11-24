@@ -356,14 +356,21 @@ describe("a runner and the console, together (ADR-0085, ADR-0086)", () => {
       });
       expect(asked).toMatchObject({ kind: "reset", source: "person", by: { handle: "mira" } });
       await sleep(400);
-      // Nothing ends while the turn is under way, and the record says that it waits.
+      // Nothing ends while the turn is under way: the session it was sent in is open still,
+      // which is how the account's page knows that it waits. The count of what is delivered
+      // is past it, so that what is taken after it is counted too; the runner keeps it.
       expect((await sessions())[0]).toMatchObject({ id: first.open.id, ended: null });
       expect(product.started).toHaveLength(1);
       const record = restSignalsSchema.parse(
         await (await get({ cookie: alice }, `${agentPath("mira", "signals")}?limit=1`)).json(),
       );
       expect(record.items[0]).toMatchObject({ number: asked.number, kind: "reset" });
-      expect(record.delivered).toBeLessThan(asked.number);
+      await until("the count", async () => {
+        const now = restSignalsSchema.parse(
+          await (await get({ cookie: alice }, `${agentPath("mira", "signals")}?limit=1`)).json(),
+        );
+        return (now.delivered ?? 0) >= asked.number ? now : undefined;
+      });
 
       // The turn is over: the session ends as reset, and the next begins at once, with a new
       // conversation whose first message says who began it, where why is, and what to read.

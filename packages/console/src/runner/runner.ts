@@ -620,7 +620,15 @@ export function createRunner(options: RunnerOptions): Runner {
    * product took them, and to be handed over again, since the agent never read them.
    */
   const keptOf = (): number[] =>
-    [...new Set([...reread, ...pending.map((signal) => signal.number), ...owed])]
+    [
+      ...new Set([
+        ...reread,
+        ...pending.map((signal) => signal.number),
+        ...owed,
+        // The account's own reset, which waits for its turn to end.
+        ...(ownReset === undefined ? [] : [ownReset.number]),
+      ]),
+    ]
       .filter((number) => number <= delivered)
       .sort((one, other) => one - other)
       .slice(0, MAX_KEPT);
@@ -1581,6 +1589,16 @@ export function createRunner(options: RunnerOptions): Runner {
       }
     }
     if (again) {
+      // The account's own reset, which a runner before this one held for its turn to end: it
+      // is taken as one, once no turn is under way, and never handed over as words alone.
+      if (
+        signal.kind === "reset" &&
+        options.account !== undefined &&
+        signal.by?.id === options.account
+      ) {
+        ownReset = signal;
+        return;
+      }
       if (!pending.some((kept) => kept.number === signal.number)) {
         pending = [...pending, signal].sort((one, other) => one.number - other.number);
         scheduleDeliver();
@@ -1617,14 +1635,23 @@ export function createRunner(options: RunnerOptions): Runner {
           signal.by?.id === options.account
         ) {
           // The account's own: taken by the loop once no turn is under way, the one it was
-          // sent in among them, and owed until then. A second stands for the first.
+          // sent in among them. Counted as delivered at once and kept by this runner until
+          // then, as what the agent never read is: owed, it would hold back the count of every
+          // signal taken after it, and a runner started meanwhile would be sent those again,
+          // into a conversation that knows nothing of having acted on them. A second stands
+          // for the first.
           const earlier = ownReset;
           ownReset = signal;
-          owed.add(signal.number);
-          if (earlier !== undefined) {
-            owed.delete(earlier.number);
-            await account(earlier);
+          if (earlier !== undefined && session !== undefined) {
+            record(
+              session,
+              "status",
+              `The account's own reset #${earlier.number} was let go: #${signal.number} stands for it.`,
+              { let_go: `#${earlier.number}` },
+            );
           }
+          await account(signal);
+          await persist();
           return;
         }
         held = false;
@@ -1861,10 +1888,10 @@ export function createRunner(options: RunnerOptions): Runner {
    */
   const beginAnew = async (signal: RestSignal): Promise<void> => {
     ownReset = undefined;
-    owed.delete(signal.number);
     if (held) {
       log(`#${signal.number} let go: the agent was stopped before its own reset was taken`);
       await account(signal);
+      await persist();
       return;
     }
     await end("reset");
@@ -2584,8 +2611,16 @@ export function createRunner(options: RunnerOptions): Runner {
                 await readSecrets();
               }
             }
-            // The account's own reset is taken between two turns, however the turn ended.
-            if (ownReset !== undefined && session?.turn !== true) {
+            // The account's own reset is taken between two turns, where the agent can go on:
+            // it changes nothing of how the agent stands, so one that could not go on, the
+            // model having refused or a usage limit standing, waits as it would without it,
+            // and the reset is taken once a turn completed again.
+            if (
+              ownReset !== undefined &&
+              session?.turn !== true &&
+              waits === undefined &&
+              limited === undefined
+            ) {
               await beginAnew(ownReset);
             }
           } catch (error) {

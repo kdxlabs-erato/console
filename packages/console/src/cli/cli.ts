@@ -5435,7 +5435,9 @@ const ownReset = async (args: readonly string[], io: CliIo): Promise<number> => 
   } catch (error) {
     // A console of before knows no such route: said as what it is.
     if (error instanceof ApiError && error.status === 404 && error.code === "not_found") {
-      throw failed("This console does not take an account's own reset yet: it does from 0.6.1 on.");
+      throw failed(
+        "This console does not take an account's own reset yet: it is older than the command.",
+      );
     }
     throw error;
   }

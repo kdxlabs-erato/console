@@ -2124,7 +2124,6 @@ export const en = {
         waiting: {
           call: "Delivered after the tool call under way.",
           turn: "Delivered when the turn under way ends.",
-          anew: "Delivered when the turn under way ends.",
           stopped: "Delivered once it is started again.",
           unheard: "Delivered once its runner is heard from.",
           soon: "On its way to the agent.",

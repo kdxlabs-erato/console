@@ -37,7 +37,9 @@ import {
   FOLLOW_SLACK,
   followsAfter,
   followsEnd,
+  isOwnReset,
   NO_WHOLE,
+  ownResetWaiting,
   pastedName,
   SignalComposer,
   saidLine,
@@ -3205,6 +3207,48 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
         7,
       ).map((one) => one.number),
     ).toEqual([10, 11]);
+    // The account's own reset waits for its turn to end, whatever was taken after it: a tell
+    // sent later and taken in the same turn moves the count of what was taken past it, and
+    // the reset waits still. It is told by the session it was sent in, which taking it ends.
+    const began = "2026-10-10T10:00:00.000Z";
+    const before = signal(9, {
+      kind: "reset",
+      by: own,
+      text: "Yesterday's.",
+      at: "2026-10-09T18:00:00.000Z",
+    });
+    const during = signal(12, {
+      kind: "reset",
+      by: own,
+      text: "The release is out.",
+      at: "2026-10-10T10:20:00.000Z",
+    });
+    const later = signal(13, { text: "Tag it before you go.", at: "2026-10-10T10:21:00.000Z" });
+    const all = [later, during, before];
+    expect(isOwnReset(during, own.id)).toBe(true);
+    expect(isOwnReset(signal(14, { kind: "reset", text: "A supervisor's." }), own.id)).toBe(false);
+    expect(isOwnReset(signal(15, { by: own }), own.id)).toBe(false);
+    // The tell was taken: nothing of it waits, and the count is past the reset.
+    expect(
+      waitingOf(
+        all.filter((one) => !isOwnReset(one, own.id)),
+        13,
+      ),
+    ).toEqual([]);
+    expect(ownResetWaiting(all, own.id, began)?.number).toBe(12);
+    // One of a session before waits no more, and none waits where no session is open.
+    expect(ownResetWaiting([before], own.id, began)).toBeUndefined();
+    expect(ownResetWaiting(all, own.id, undefined)).toBeUndefined();
+    // A second stands for the first, which is let go.
+    const second = signal(16, {
+      kind: "reset",
+      by: own,
+      text: "On second thought.",
+      at: "2026-10-10T10:30:00.000Z",
+    });
+    expect(ownResetWaiting([...all, second], own.id, began)?.number).toBe(16);
+    // Another account's is no reset of this one.
+    expect(ownResetWaiting(all, alice.id, began)).toBeUndefined();
     // A pane is followed while whoever reads is at its end, give or take a line.
     expect(followsEnd({ scrollHeight: 2000, scrollTop: 1400, clientHeight: 600 })).toBe(true);
     expect(
@@ -3273,7 +3317,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     // conversation begins and the way to have it begin now.
     const begins = renderToStaticMarkup(
       <ol>
-        <TalkWaiting signals={[signal(3), anew]} why="anew" onInterrupt={() => undefined} />
+        <TalkWaiting signals={[signal(3), anew]} why="turn" onInterrupt={() => undefined} />
       </ol>,
     );
     expect(begins).toContain('<pre class="sc-talk-text">The release is out.</pre>');
@@ -3297,7 +3341,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     const koreanAnew = renderToStaticMarkup(
       <LanguageContext.Provider value={KOREAN}>
         <ol>
-          <TalkWaiting signals={[anew]} why="anew" />
+          <TalkWaiting signals={[anew]} why="turn" />
         </ol>
       </LanguageContext.Provider>,
     );
