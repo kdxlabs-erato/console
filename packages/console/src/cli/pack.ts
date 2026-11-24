@@ -169,9 +169,14 @@ type Ready<T> = Extract<T, { readonly status: "ready" }>;
  * from what the pack says of itself in the one answer the console already has (ADR-0118, point
  * 5): the console's API takes no search without words, and a listing asked page by page through
  * a console that may be far would be several requests for the answer one gives. A folder's
- * README is marked as its overview by the rule @skillcdn/core exports.
+ * README is marked as its overview by the rule @skillcdn/core exports. With `limit`, as many of
+ * them from where `cursor` says, and the cursor of the next where more follow: the pages the
+ * command prints a long listing in (ADR-0124) are cut here, from the one answer.
  */
-function listingOf(mount: RestMount): Ready<RestFind> {
+function listingOf(
+  mount: RestMount,
+  page: { readonly cursor?: string | undefined; readonly limit?: number | undefined } = {},
+): Ready<RestFind> {
   const { index } = mount;
   if (index.status !== "ready") {
     throw new PackError(503, `index.${index.status}`, "The pack is not ready to read.");
@@ -200,16 +205,48 @@ function listingOf(mount: RestMount): Ready<RestFind> {
       ...(path.ok && isReadmePath(path.value) ? { overview: true } : {}),
     });
   }
+  const from = listingStart(page.cursor, mount.commit, items.length);
+  const end =
+    page.limit === undefined
+      ? items.length
+      : Math.min(items.length, from + Math.max(1, page.limit));
   return {
     status: "ready",
     query: null,
     commit: mount.commit,
-    items,
+    items: items.slice(from, end),
     diagnostics: index.diagnostics,
-    // The counts stand in the instructions above; without totals here, nothing suggests a cursor.
+    // The counts stand in the instructions above the first page.
     totals: null,
-    nextCursor: null,
+    nextCursor: end < items.length ? listingCursor(end, mount.commit) : null,
   };
+}
+
+/** What of a commit a cursor of the listing carries: enough to tell one index from the next. */
+const commitMark = (commit: string): string => commit.replace(/[^0-9A-Za-z]/g, "").slice(0, 12);
+
+/** The cursor of the listing's page that begins at `offset`, of the index at `commit`. */
+const listingCursor = (offset: number, commit: string): string => `${offset}-${commitMark(commit)}`;
+
+/**
+ * Where the page a cursor names begins, or the start without one. A cursor is of one index, as
+ * the pack's own are: one of another commit, or that is none, is refused in the pack's words, so
+ * that a page never goes on from a listing in another order.
+ */
+function listingStart(cursor: string | undefined, commit: string, count: number): number {
+  if (cursor === undefined) {
+    return 0;
+  }
+  const match = /^([0-9]{1,7})-([0-9A-Za-z]{0,12})$/.exec(cursor);
+  const offset = match === null ? Number.NaN : Number(match[1]);
+  if (match === null || match[2] !== commitMark(commit) || offset < 1 || offset >= count) {
+    throw new PackError(
+      400,
+      "request.invalid",
+      "This continuation does not match the repository snapshot. Start again without a cursor.",
+    );
+  }
+  return offset;
 }
 
 /**
@@ -249,14 +286,6 @@ const MAX_PAGES = 64;
 export interface ConsolePack extends Pack {
   /** The console's answer to the last read made of the pack: what `--json` prints around the pack's own answer, and what a refusal is said from. */
   answered(): PackAnswer | undefined;
-  /**
-   * How many pages of a skill follow the page that named `cursor` as the next, where the pack
-   * said (`pagesLeft`, SkillCDN 0.6.1): what the command says of a part that ends there.
-   * Nothing for a cursor no page of this pack named, or a pack that counts none.
-   */
-  pagesAfter(cursor: string): number | undefined;
-  /** Whether the last page of a skill this pack answered was the skill's last. */
-  skillEnded(): boolean;
 }
 
 /**
@@ -280,9 +309,6 @@ export function consolePack(
   }
   let last: PackAnswer | undefined;
   let pages = 0;
-  /** By the cursor a page of a skill named as the next: how many pages the pack said follow that page. */
-  const left = new Map<string, number>();
-  let ended = false;
   /** One more page of a read the command joins, within what one command follows. */
   const another = (what: string, path: string | undefined): void => {
     pages += 1;
@@ -335,7 +361,7 @@ export function consolePack(
     },
     find: async (query: FindQuery): Promise<RestFind> =>
       query.query === undefined
-        ? listingOf(mount)
+        ? listingOf(mount, { cursor: query.cursor, limit: query.limit })
         : ready(
             "search",
             await reader.skillFind(query.query, {
@@ -353,16 +379,8 @@ export function consolePack(
           "The pack answers more pages of a skill than one read takes.",
         );
       }
-      const read = ready("skill", await reader.skill(path, cursor));
-      const { nextCursor, pagesLeft, complete } = read.skill;
-      if (typeof nextCursor === "string" && pagesLeft !== undefined) {
-        left.set(nextCursor, pagesLeft);
-      }
-      ended = complete === true;
-      return read;
+      return ready("skill", await reader.skill(path, cursor));
     },
-    pagesAfter: (cursor: string) => left.get(cursor),
-    skillEnded: () => ended,
     file: async (query: FileQuery): Promise<RestFile> =>
       taken(
         "file",
@@ -393,22 +411,45 @@ export function formatSkills(
   owner: PackOwner = "project",
   words: ToolWords = CONSOLE_WORDS,
 ): string {
-  const own =
-    ownSkills === undefined
-      ? []
-      : ["", `The console's own skills, for working the board and keeping a desk: ${ownSkills}`];
+  const around = skillsAround(skills, ownSkills, words);
   if (text === undefined || skills.status !== "ready") {
-    return [refusalWords("skills", skills, owner), ...own].join("\n");
+    return [
+      refusalWords("skills", skills, owner),
+      ...around.own.flatMap((line) => ["", line]),
+    ].join("\n");
   }
-  const lines = [head("skills", skills), "", text];
-  if (skills.page !== null) {
-    lines.push(
-      "",
-      `A host with a SkillCDN connection of its own loads a skill by its URI, which a person makes at ${skills.page}; through the console, ${words.load} takes the URI too. --json adds the page of each skill, for a person.`,
-    );
-  }
-  lines.push(...own);
-  return lines.join("\n");
+  return [
+    around.head,
+    "",
+    text,
+    ...[...around.host, ...around.own].flatMap((line) => ["", line]),
+  ].join("\n");
+}
+
+/**
+ * The console's own lines around a listing, each where it has one to say: the line above it,
+ * where a person connects an agent of their own, and where the console's own skills are on this
+ * machine. A listing printed in pages has them above its first page (ADR-0124), so that the
+ * page ends with the command that lists the rest.
+ */
+export function skillsAround(
+  skills: RestSkills,
+  ownSkills?: string,
+  words: ToolWords = CONSOLE_WORDS,
+): { readonly head: string; readonly host: readonly string[]; readonly own: readonly string[] } {
+  return {
+    head: head("skills", skills),
+    host:
+      skills.page === null
+        ? []
+        : [
+            `A host with a SkillCDN connection of its own loads a skill by its URI, which a person makes at ${skills.page}; through the console, ${words.load} takes the URI too. --json adds the page of each skill, for a person.`,
+          ],
+    own:
+      ownSkills === undefined
+        ? []
+        : [`The console's own skills, for working the board and keeping a desk: ${ownSkills}`],
+  };
 }
 
 /**

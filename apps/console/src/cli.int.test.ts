@@ -162,10 +162,6 @@ async function console_(
   return { code, out: out.join(""), err: err.join("") };
 }
 
-// What the console adds after the library's line where a part of a skill is not its last.
-const PART_ENDS =
-  "This part stops in the middle of the skill: its later steps, its checkpoints and its rules are in the parts that follow, and nothing above is complete without them. Run that command now, before a plan, an answer or any other step, and each next one, until a part ends without these lines.";
-
 describe("the command line", () => {
   it("connects with a code a person approves, and holds the token from then on", async () => {
     const out: string[] = [];
@@ -1284,22 +1280,10 @@ describe("the command line", () => {
         `${await command({ read: "find", words: "review" })}\n${LOADING}\n`,
       );
       // A skill, in parts: each within what a host shows whole, ending with the command that
-      // reads the next, until the last. Each is what the skillcdn command prints, and after it
-      // the console's own words: after a part that is not the last, how many pages the pack
-      // says follow it (SkillCDN 0.6.1) and that the part stops in the middle; after the last,
-      // that the skill is complete.
+      // reads the next, until the last. Each is what the skillcdn command prints and nothing
+      // more (SkillCDN 0.6.2): how many pages follow a part, that it is read on from now, and
+      // that the last part is the last are that command's own words.
       const partsOf = async (path: string): Promise<string[]> => {
-        // By the cursor a page names as the next: how many pages the pack says follow that page.
-        const left = new Map<string, number>();
-        for (let at: string | undefined, page = 0; page < 16; page += 1) {
-          const answer = await opened.skill(path, at);
-          const next = answer.status === "ready" ? answer.skill.nextCursor : null;
-          if (answer.status !== "ready" || typeof next !== "string") {
-            break;
-          }
-          left.set(next, answer.skill.pagesLeft ?? 0);
-          at = next;
-        }
         const printedParts: string[] = [];
         const named = new RegExp(
           `console skill ${path.replace(/[/.]/g, "\\$&")} --cursor (\\S+)\\n`,
@@ -1313,20 +1297,13 @@ describe("the command line", () => {
           const theirs = await command({ read: "skill", path, cursor });
           const next = named.exec(printed)?.[1];
           expect(next !== undefined, `part ${part + 1} of ${path}`).toBe(
-            theirs.includes("The skill continues"),
+            theirs.includes("This part ends before the skill does"),
           );
-          const follow = next === undefined ? undefined : left.get(next);
-          expect(follow === undefined, `part ${part + 1} of ${path}`).toBe(next === undefined);
-          const closing =
-            follow === undefined
-              ? cursor === undefined
-                ? ""
-                : "The skill is complete: this was its last part.\n"
-              : `${follow} more ${follow === 1 ? "page" : "pages"} of the skill ${follow === 1 ? "follows" : "follow"} this part. ${PART_ENDS}\n`;
-          expect(printed).toBe(`${theirs}\n${closing}`);
-          // What the library prints stays within what a host shows whole; the console's own
-          // line comes after it.
-          expect(theirs.length).toBeLessThanOrEqual(28_000);
+          expect(printed).toBe(`${theirs}\n`);
+          // What is printed stays within what a host shows whole, counted in bytes as a host counts.
+          expect(Buffer.byteLength(printed), `part ${part + 1} of ${path}`).toBeLessThanOrEqual(
+            28_000 + 1,
+          );
           printedParts.push(printed);
           if (next === undefined) {
             break;
@@ -1344,10 +1321,14 @@ describe("the command line", () => {
       expect(parts[0]).toContain("skill://gh/acme/base/review/SKILL.md");
       expect(parts.join("")).toContain("Step 0190:");
       expect(parts.at(-1)).toContain("Check 0190:");
-      expect(parts.at(-1)).not.toContain("The skill continues");
-      expect(parts.at(-1)).not.toContain("This part stops in the middle");
-      expect(parts[0]?.endsWith(`${PART_ENDS}\n`)).toBe(true);
-      expect(parts.at(-1)?.endsWith("The skill is complete: this was its last part.\n")).toBe(true);
+      expect(parts.at(-1)).not.toContain("This part ends before the skill does");
+      // A part that is not the last says how far the skill goes on, and its last line is the
+      // command that reads the next; the last part says that it is the last.
+      expect(parts[0]).toMatch(/\d+ more pages? follows? this part/);
+      expect(parts[0]).toMatch(/\nconsole skill review\/SKILL\.md --cursor \S+\n$/);
+      expect(parts.at(-1)?.endsWith("Skill context is complete: this was its last part.\n")).toBe(
+        true,
+      );
       // The skill a page cuts: where a part ends is the pack's to say (SkillCDN 0.6), and
       // through the console each part is what the skillcdn command prints, so that nothing of
       // it is lost on the way.

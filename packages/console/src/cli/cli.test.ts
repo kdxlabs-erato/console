@@ -8041,9 +8041,16 @@ describe("the consoles the command is signed in to (ADR-0027)", () => {
   });
 });
 
-// What the console adds after the library's line where a part of a skill is not its last.
-const PART_ENDS =
-  "This part stops in the middle of the skill: its later steps, its checkpoints and its rules are in the parts that follow, and nothing above is complete without them. Run that command now, before a plan, an answer or any other step, and each next one, until a part ends without these lines.";
+// How a part of a skill that is not its last ends: the skillcdn command's own words (SkillCDN
+// 0.6.2), which say to read on now, then the command that reads the next part, alone on the
+// last line. The console prints nothing after it; the sentence itself is held by that
+// command's tests.
+const endsWithNext = (printed: string, line: string): boolean =>
+  printed.includes("This part ends before the skill does: ") &&
+  printed.endsWith(`until a part says the skill is complete:\n${line}\n`);
+
+/** What the last part of a skill read in parts ends with, in the same command's words. */
+const LAST_PART = "Skill context is complete: this was its last part.\n";
 
 describe("the pack of the project, through the console (ADR-0028)", () => {
   const AT = {
@@ -8627,6 +8634,87 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     expect(json.out()).not.toContain("A skill is loaded");
   });
 
+  it("prints a listing longer than one read in pages, each ending with the command that lists the rest (SkillCDN 0.6.2)", async () => {
+    // Four hundred documents in Hangul, three bytes a character: some sixty thousand bytes,
+    // more than twice what a host shows of one command.
+    const documents = Array.from({ length: 400 }, (_, at) => ({
+      path: `docs/page-${String(at).padStart(3, "0")}.md`,
+      title: `Page ${at}`,
+      summary: "가".repeat(40),
+    }));
+    const long = {
+      ...LISTING,
+      counts: { skills: 1, documents: documents.length },
+      mount: {
+        ...MOUNT,
+        index: { ...MOUNT.index, documentCount: documents.length, documents },
+      },
+    };
+    const { fetch, calls } = fakeConsole({ [`GET ${IN}/skills`]: { body: long } });
+    const bytes = (text: string): number => new TextEncoder().encode(text).length;
+    const page = async (...more: string[]): Promise<string> => {
+      const ran = harness({ fetch, env: SIGNED_IN });
+      expect(await runCli(["skills", ...more], ran.io), more.join(" ")).toBe(EXIT.ok);
+      return ran.out();
+    };
+    const first = await page();
+    // The whole output is one a host shows whole, the console's own lines counted with it.
+    expect(bytes(first)).toBeLessThanOrEqual(28_000 + 1);
+    // The console's lines stand above the listing here, so that the last line is the command.
+    expect(
+      first.startsWith("skills at /gh/acme/skills, served by https://skillcdn.test: ready\n"),
+    ).toBe(true);
+    expect(first.indexOf("A skill is loaded, its rules first")).toBeLessThan(
+      first.indexOf("docs/page-000.md"),
+    );
+    expect(first.indexOf("The plugins of this console have skills")).toBeLessThan(
+      first.indexOf("docs/page-000.md"),
+    );
+    const next = /\n\nThe listing goes on: (console skills --cursor (\S+))\n$/.exec(first);
+    expect(next, first.slice(-200)).not.toBeNull();
+    // Every page from a cursor is the pack's own words alone, within the bound, and the last
+    // says that it is the last.
+    const seen = [first];
+    let cursor = next?.[2];
+    while (cursor !== undefined) {
+      const more = await page("--cursor", cursor);
+      expect(bytes(more)).toBeLessThanOrEqual(28_000 + 1);
+      expect(more.startsWith("Continued from the page before. This page lists:\n")).toBe(true);
+      expect(more).not.toContain("A skill is loaded");
+      seen.push(more);
+      cursor = /\n\nThe listing goes on: console skills --cursor (\S+)\n$/.exec(more)?.[1];
+      expect(seen.length).toBeLessThan(10);
+    }
+    expect(seen.length).toBeGreaterThan(2);
+    expect(seen.at(-1)?.endsWith("The listing is complete: this was its last page.\n")).toBe(true);
+    // Nothing is listed twice and nothing is left out.
+    const listed = seen.join("\n").match(/docs\/page-\d{3}\.md/g) ?? [];
+    expect(listed).toEqual(documents.map((document) => document.path));
+    // One answer of the console for each command: the pages are cut from it here.
+    expect(calls.every((call) => call.key === `GET ${IN}/skills`)).toBe(true);
+    // The next page is asked as this one was.
+    const given = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skills", "--project", "web"], given.io)).toBe(EXIT.ok);
+    expect(given.out()).toMatch(
+      /\nThe listing goes on: console skills --cursor \S+ --project web\n$/,
+    );
+    // A cursor of another index, or one that is none, is refused in the pack's words.
+    for (const wrong of ["12-ffffffffffff", "nonsense", "0-0123456789ab", "9999-0123456789ab"]) {
+      const refused = harness({ fetch, env: SIGNED_IN });
+      expect(await runCli(["skills", "--cursor", wrong], refused.io), wrong).toBe(EXIT.failed);
+      expect(refused.out()).toBe("");
+      expect(refused.err()).toContain("request.invalid: This continuation does not match");
+    }
+    // --json is the console's answer, whole, as before.
+    const json = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skills", "--json"], json.io)).toBe(EXIT.ok);
+    expect((JSON.parse(json.out()) as typeof long).mount.index.documents).toHaveLength(400);
+    // A length is still a folder's or a search's to take.
+    const limited = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["skills", "--limit", "5"], limited.io)).toBe(EXIT.usage);
+    expect(limited.err()).toContain("--limit goes with a folder or with --search");
+  });
+
   it("reads the organization's pack where no project is named, and says whose pack it is (ADR-0113)", async () => {
     const ORG = "/api/v1/workspace/skills";
     const LINE =
@@ -9027,7 +9115,7 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     },
   });
 
-  it("says how many pages of a skill follow a part, where the pack counts them, and that the last part is the last (SkillCDN 0.6.1)", async () => {
+  it("prints how many pages of a skill follow a part, where the pack counts them, and that the last part is the last, in the skillcdn command's words", async () => {
     // Five pages of twelve thousand characters, two a part, and the pack says of each page how
     // many follow it, as one of SkillCDN 0.6.1 does.
     const page = (letter: string, nextCursor: string | null, pagesLeft: number) => {
@@ -9055,23 +9143,23 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     };
     // The first part holds two pages: what follows it is what follows its second page, and
     // not the page that was asked for to know that it did not fit.
-    expect(
-      (await part()).endsWith(
-        `console skill review --cursor three\n3 more pages of the skill follow this part. ${PART_ENDS}\n`,
-      ),
-    ).toBe(true);
-    expect(
-      (await part("three")).endsWith(
-        `console skill review --cursor five\n1 more page of the skill follows this part. ${PART_ENDS}\n`,
-      ),
-    ).toBe(true);
+    const first = await part();
+    expect(endsWithNext(first, "console skill review --cursor three")).toBe(true);
+    expect(first).toContain("3 more pages follow this part");
+    const second = await part("three");
+    expect(endsWithNext(second, "console skill review --cursor five")).toBe(true);
+    expect(second).toContain("1 more page follows this part");
     // The last part says that it is: the end is said, and not only what is missing.
     const last = await part("five");
-    expect(
-      last.endsWith(`${"e".repeat(12_000)}\n\nThe skill is complete: this was its last part.\n`),
-    ).toBe(true);
-    expect(last).not.toContain("This part stops in the middle");
+    expect(last).toContain("e".repeat(12_000));
+    expect(last.endsWith(`\n\n${LAST_PART}`)).toBe(true);
+    expect(last).not.toContain("This part ends before");
     expect(last).not.toContain("more page");
+    // The words are said once, by the library: the console's own sentence after them is gone.
+    for (const printed of [first, second, last]) {
+      expect(printed).not.toContain("This part stops in the middle");
+      expect(printed).not.toContain("The skill is complete: this was its last part.");
+    }
   });
 
   it("ends a skill of several pages that prints whole with none of a part's words", async () => {
@@ -9091,8 +9179,8 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     const printed = whole.out();
     expect(printed).toContain("a".repeat(6_000));
     expect(printed).toContain("c".repeat(6_000));
-    expect(printed).not.toContain("The skill continues");
-    expect(printed).not.toContain("This part stops in the middle");
+    expect(printed).not.toContain("This part ends before");
+    expect(printed).not.toContain("Skill context is incomplete");
     // Read in one command, it is whole as any short skill is, and says nothing of parts.
     expect(printed).not.toContain("this was its last part");
   });
@@ -9114,16 +9202,14 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     const part = first.out();
     // The first part: as many pages as fit, said to be incomplete at its head, and the command
     // that reads the next as its last line, with the skill as it was named.
-    expect(part.length).toBeLessThanOrEqual(28_000 + 1 + PART_ENDS.length + 1);
-    expect(part).toContain("Skill context is incomplete");
+    expect(new TextEncoder().encode(part).length).toBeLessThanOrEqual(28_000 + 1);
+    expect(part).toContain(
+      "Skill context is incomplete. Read the next part before using it: console skill review --cursor three",
+    );
     expect(part).toContain("a".repeat(12_000));
     expect(part).toContain("b".repeat(12_000));
     expect(part).not.toContain("ccc");
-    expect(
-      part.endsWith(
-        `\n\nThe skill continues. Read the next part before using it: console skill review --cursor three\n${PART_ENDS}\n`,
-      ),
-    ).toBe(true);
+    expect(endsWithNext(part, "console skill review --cursor three")).toBe(true);
     // The page that did not fit was asked for, to know it, and is asked again with its part.
     expect(calls.map((call) => call.key)).toEqual([
       `GET ${IN}/skills`,
@@ -9136,18 +9222,14 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     expect(await runCli(["skill", "review", "--cursor", "three"], second.io)).toBe(EXIT.ok);
     expect(second.out()).toContain("c".repeat(12_000));
     expect(second.out()).not.toContain("aaa");
-    expect(second.out()).not.toContain("The skill continues");
-    expect(second.out()).not.toContain("This part stops in the middle");
+    expect(second.out()).not.toContain("This part ends before");
     expect(second.out()).not.toContain("Skill context is incomplete");
+    expect(second.out().endsWith(LAST_PART)).toBe(true);
     // The next part is asked as this one was: the project, the console and the account as given.
     const given = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["skill", "review/SKILL.md", "--project", "web"], given.io)).toBe(EXIT.ok);
     expect(
-      given
-        .out()
-        .endsWith(
-          `Read the next part before using it: console skill review/SKILL.md --cursor three --project web\n${PART_ENDS}\n`,
-        ),
+      endsWithNext(given.out(), "console skill review/SKILL.md --cursor three --project web"),
     ).toBe(true);
     // --json is the console's answer with the skill whole in it, as the skillcdn command's is.
     const json = harness({ fetch, env: SIGNED_IN });
@@ -9183,13 +9265,9 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     expect(
       unbound.out().startsWith("The organization's pack, since no project is named here"),
     ).toBe(true);
-    expect(
-      unbound
-        .out()
-        .endsWith(
-          `Read the next part before using it: console skill review --cursor three\n${PART_ENDS}\n`,
-        ),
-    ).toBe(true);
+    expect(endsWithNext(unbound.out(), "console skill review --cursor three")).toBe(true);
+    // The line the console prints above the part is counted with it: the whole stays one a host shows whole.
+    expect(new TextEncoder().encode(unbound.out()).length).toBeLessThanOrEqual(28_000 + 1);
     // A plugin's pack is read with the plugin's own commands, and its parts name them.
     const PLUGIN = "/api/v1/plugins/hello";
     const plugin = fakeConsole({
@@ -9212,13 +9290,9 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     const ofPlugin = harness({ fetch: plugin.fetch, env: SIGNED_IN });
     expect(await runCli(["plugin", "hello", "skill", "review"], ofPlugin.io)).toBe(EXIT.ok);
     expect(ofPlugin.out()).toContain("readable with console plugin hello skill --file");
-    expect(
-      ofPlugin
-        .out()
-        .endsWith(
-          `Read the next part before using it: console plugin hello skill review --cursor three\n${PART_ENDS}\n`,
-        ),
-    ).toBe(true);
+    expect(endsWithNext(ofPlugin.out(), "console plugin hello skill review --cursor three")).toBe(
+      true,
+    );
     const rest = harness({ fetch: plugin.fetch, env: SIGNED_IN });
     expect(await runCli(["plugin", "hello", "skill", "review", "--cursor", "three"], rest.io)).toBe(
       EXIT.ok,
@@ -9245,9 +9319,9 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
       });
       const run = harness({ fetch, env: SIGNED_IN });
       expect(await runCli(["skill", path, ...more], run.io), path).toBe(EXIT.ok);
-      const out = run.out();
-      const line = "The skill continues. Read the next part before using it: ";
-      return out.slice(out.lastIndexOf(line) + line.length, out.lastIndexOf(`\n${PART_ENDS}`));
+      // The command that reads the next part is the last line printed, alone on it.
+      const out = run.out().trimEnd();
+      return out.slice(out.lastIndexOf("\n") + 1);
     };
     // `$`, a backtick and parentheses, which bash and PowerShell expand inside double quotes,
     // and a space: in single quotes, inside which neither reads anything.
@@ -9307,17 +9381,11 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     expect(await runCli(["skill", "review"], first.io)).toBe(EXIT.ok);
     expect(first.out()).toContain("a".repeat(15_000));
     expect(first.out()).not.toContain("bbb");
-    expect(
-      first
-        .out()
-        .endsWith(
-          `Read the next part before using it: console skill review --cursor two\n${PART_ENDS}\n`,
-        ),
-    ).toBe(true);
+    expect(endsWithNext(first.out(), "console skill review --cursor two")).toBe(true);
     const second = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["skill", "review", "--cursor", "two"], second.io)).toBe(EXIT.ok);
     expect(second.out()).toContain("b".repeat(15_000));
-    expect(second.out()).not.toContain("The skill continues");
+    expect(second.out()).not.toContain("This part ends before");
     const read = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["skill", "--file", "review/guide.md"], read.io)).toBe(EXIT.ok);
     expect(read.out()).toContain("--- content ---\nHow to review.");

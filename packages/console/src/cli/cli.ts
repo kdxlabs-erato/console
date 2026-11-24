@@ -15,6 +15,7 @@ import {
   FIND_MAX_LIMIT,
   READ_FILE_MAX_LIMIT,
   type ToolWords,
+  utf8Length,
 } from "@skillcdn/core";
 import { avatarScanlines, MAX_AVATAR_PIXELS, pngFile } from "../avatar.js";
 import {
@@ -216,6 +217,7 @@ import {
   packWords,
   refusalWords,
   skillPathIn,
+  skillsAround,
 } from "./pack.js";
 import { type RunnerHost, workPath } from "./runner-host.js";
 import { secretNotes } from "./secret-notes.js";
@@ -1853,7 +1855,9 @@ function whereGiven(values: Readonly<Record<string, unknown>>): readonly string[
  * with. What the pack refused ends the command as refused (ADR-0118): of one read, in the
  * pack's own code and words, as that command prints them; of the pack as a whole, in the
  * console's. A read not asked right is a command not understood. With `data`, nothing is
- * printed for a refusal even with `--json`: what a program takes is never one.
+ * printed for a refusal even with `--json`: what a program takes is never one. `beside` is the
+ * lines the command prints of its own around the text, which the read keeps room for, so that
+ * the whole output is one a host shows whole.
  */
 async function readThrough(
   io: CliIo,
@@ -1865,6 +1869,7 @@ async function readThrough(
     readonly words: ToolWords;
     readonly nextPart?: ((cursor: string) => string) | undefined;
     readonly data?: boolean | undefined;
+    readonly beside?: readonly (string | undefined)[] | undefined;
   },
 ): Promise<ReadOutput> {
   try {
@@ -1872,6 +1877,7 @@ async function readThrough(
       words: options.words,
       json: session.json,
       nextPart: options.nextPart,
+      room: roomFor(owner, options.beside ?? []),
     });
   } catch (error) {
     if (error instanceof ReadMisuse) {
@@ -1890,6 +1896,19 @@ async function readThrough(
       ? failed(refusal.words)
       : refusedRead(io, session, owner, refusal.answer, refusal.words);
   }
+}
+
+/**
+ * The bytes the command prints beside what a read of the pack prints (ADR-0124): each line of
+ * its own with the break that sets it apart, and the line that says the pack is the
+ * organization's where it is.
+ */
+function roomFor(owner: PackOwner, beside: readonly (string | undefined)[]): number {
+  const lines = [owner === "organization" ? ORGANIZATION_PACK_LINE : undefined, ...beside];
+  return lines.reduce(
+    (bytes, line) => (line === undefined ? bytes : bytes + utf8Length(line) + 1),
+    0,
+  );
 }
 
 /**
@@ -1980,6 +1999,8 @@ async function readSkills(
     readonly afterwards?: string | undefined;
     /** Whose pack it is: the organization's where no project is named (ADR-0113), else a project's. */
     readonly owner?: PackOwner | undefined;
+    /** What the command that lists the next page says after the cursor: where the pack is read, as it was said for this page. */
+    readonly again?: readonly string[] | undefined;
   },
 ): Promise<number> {
   const owner = extras.owner ?? "project";
@@ -2045,9 +2066,10 @@ async function readSkills(
   }
   const named = given ?? within;
   const folder = named === undefined || named === "/" || named === "." ? undefined : named;
-  if (words === undefined && given === undefined && (limit !== undefined || cursor !== undefined)) {
+  // The listing is as long as one read prints, and goes on from the cursor its page ended with.
+  if (words === undefined && given === undefined && limit !== undefined) {
     throw misuse(
-      `--limit and --cursor go with a folder or with --search: ${extras.command} <folder> [--limit <n>] [--cursor <cursor>]`,
+      `--limit goes with a folder or with --search: ${extras.command} <folder> [--limit <n>] [--cursor <cursor>]`,
     );
   }
   // A page of what words find, or of what a folder holds: the bounds of each, as the pack has them.
@@ -2086,15 +2108,52 @@ async function readSkills(
     );
   }
   if (words === undefined && given === undefined) {
-    // --json is the console's listing as it answered it; the words are the pack's own, read once more from that answer.
-    const told = session.json
-      ? undefined
-      : await readThrough(io, session, owner, pack, { read: "skills" }, { words: toolWords });
-    say(listing, () =>
-      [formatSkills(listing, told?.text, extras.own, owner, toolWords), loading, extras.afterwards]
-        .filter((part): part is string => part !== undefined)
-        .join("\n"),
+    // --json is the console's listing as it answered it, whole; the words are the pack's own,
+    // read once more from that answer, a listing longer than one read prints in pages.
+    if (session.json) {
+      say(listing, () => "");
+      return EXIT.ok;
+    }
+    // The console's own lines stand around the first page, and the read keeps room for them
+    // and for the empty lines that set them apart.
+    const around = skillsAround(listing, extras.own, toolWords);
+    const own = [
+      ...around.host,
+      ...around.own,
+      loading,
+      ...(extras.afterwards === undefined ? [] : [extras.afterwards]),
+    ];
+    const told = await readThrough(
+      io,
+      session,
+      owner,
+      pack,
+      { read: "skills", cursor },
+      {
+        words: toolWords,
+        beside: cursor === undefined ? [around.head, ...own, "", "", ""] : [],
+        nextPart: (next) =>
+          commandLine(extras.command, ["--cursor", next, ...(extras.again ?? [])]) ??
+          `${extras.command} with --cursor ${commandWord(next) ?? JSON.stringify(next)}, each word quoted for your shell. ${NO_LINE_TO_RUN}`,
+      },
     );
+    say(listing, () => {
+      // A page read from a cursor is the pack's own words alone: what stands around the
+      // listing was said with its first page.
+      if (cursor !== undefined) {
+        return told.text;
+      }
+      // Where the listing goes on, the command that lists the rest is the last line printed,
+      // as a part of a skill ends with the command that reads the next: the console's own
+      // lines stand above the listing then, and after it where it is whole.
+      return told.next === undefined
+        ? [
+            formatSkills(listing, told.text, extras.own, owner, toolWords),
+            loading,
+            ...(extras.afterwards === undefined ? [] : [extras.afterwards]),
+          ].join("\n")
+        : [around.head, ...own, "", told.text].join("\n");
+    });
     return EXIT.ok;
   }
   if (words !== undefined) {
@@ -2105,7 +2164,7 @@ async function readSkills(
       owner,
       pack,
       { read: "find", words, path: folder, cursor, limit },
-      { words: toolWords },
+      { words: toolWords, beside: [loading] },
     );
     say(jsonOfRead(session, pack, found), () => `${found.text}\n${loading}`);
     return EXIT.ok;
@@ -2181,6 +2240,7 @@ const skills: Command = async (args, io) => {
       own: io.skillsDir,
       afterwards: PLUGIN_SKILLS_LINE,
       owner,
+      again: whereGiven(values),
     }),
   );
 };
@@ -2266,11 +2326,9 @@ async function readSkill(
     throw misuse(wanted.error);
   }
   // The skill, its rules first, as load_skill lays them out: whole, or the part that begins at
-  // the cursor, ending with the command that reads the next, asked as this one was.
-  // The library asks for that line of every run of pages it tries, the runs it goes on from
-  // among them, so a line was asked for of a skill that is then printed to its end: the part
-  // goes on only where what is printed ends with the line.
-  const offered: { readonly cursor: string; readonly line: string }[] = [];
+  // the cursor. A part says how many pages of the skill follow it and ends with the command
+  // that reads the next, asked as this one was, and the last says that it is the last: the
+  // words are the skillcdn command's own (SkillCDN 0.6.2), and only the line is made here.
   const loaded = await readThrough(
     io,
     session,
@@ -2281,53 +2339,14 @@ async function readSkill(
       words: toolWords,
       // Spelled so that bash and PowerShell run it as it is; where a word has no such spelling,
       // the command that was run is run again, with the cursor, and the line says why.
-      nextPart: (next) => {
-        const line =
-          commandLine(command, [given, "--cursor", next, ...again]) ??
-          `the command you ran, with --cursor ${commandWord(next) ?? JSON.stringify(next)} in place of any it had, each word quoted for your shell. ${NO_LINE_TO_RUN}`;
-        offered.push({ cursor: next, line });
-        return line;
-      },
+      nextPart: (next) =>
+        commandLine(command, [given, "--cursor", next, ...again]) ??
+        `the command you ran, with --cursor ${commandWord(next) ?? JSON.stringify(next)} in place of any it had, each word quoted for your shell. ${NO_LINE_TO_RUN}`,
     },
   );
-  const goesOn = offered.findLast((one) => loaded.text.endsWith(one.line));
-  // A part that is not the last ends with the console's own words after the library's line: a
-  // fresh agent read one part of four, saw that the skill continued, and planned from that part,
-  // since "before using it" did not read as now to a session that meant only to plan. The last
-  // part of a skill read in parts says that it is the last, so that the end is said and not
-  // only missed.
-  const closing =
-    goesOn !== undefined
-      ? partEndsHere(pack.pagesAfter(goesOn.cursor))
-      : cursor !== undefined && pack.skillEnded()
-        ? SKILL_ENDS_HERE
-        : undefined;
-  say(jsonOfRead(session, pack, loaded), () =>
-    closing === undefined ? loaded.text : `${loaded.text}\n${closing}`,
-  );
+  say(jsonOfRead(session, pack, loaded), () => loaded.text);
   return EXIT.ok;
 }
-
-/**
- * What a part of a skill ends with where another follows: that the instructions stop here,
- * what the rest holds, and that the command above is run now.
- */
-const PART_ENDS_HERE =
-  "This part stops in the middle of the skill: its later steps, its checkpoints and its rules are in the parts that follow, and nothing above is complete without them. Run that command now, before a plan, an answer or any other step, and each next one, until a part ends without these lines.";
-
-/**
- * The same with how far the skill goes on before it, where the pack counts the pages left
- * (SkillCDN 0.6.1): a reader told how many pages follow reads a skill to its end far more often
- * than one told only that it continues. A part is a run of pages, so the count is the pack's
- * own, of pages, and falls from part to part.
- */
-const partEndsHere = (left: number | undefined): string =>
-  left === undefined || left < 1
-    ? PART_ENDS_HERE
-    : `${left} more ${left === 1 ? "page" : "pages"} of the skill ${left === 1 ? "follows" : "follow"} this part. ${PART_ENDS_HERE}`;
-
-/** What the last part of a skill read in parts ends with. */
-const SKILL_ENDS_HERE = "The skill is complete: this was its last part.";
 
 const skill: Command = async (args, io) => {
   const { values, positionals } = parse(args, SKILL_OPTIONS);
@@ -2453,6 +2472,7 @@ const plugin: Command = async (args, io) => {
       const parsed = parse(rest, SKILLS_OPTIONS);
       return readSkills(io, session, client, parsed.values, parsed.positionals, {
         command: `console plugin ${key} skills`,
+        again: whereGiven(values),
       });
     }
     case "skill": {
