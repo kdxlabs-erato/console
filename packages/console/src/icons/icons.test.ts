@@ -243,5 +243,25 @@ describe("a glyph as an element of a page that is not React's", () => {
       "aria-label": "Due",
     });
     expect(labelled.attributes["aria-hidden"]).toBeUndefined();
+    // A tinted part (ADR-0149) is filled and not stroked, by its class and on the element
+    // itself, under the lines, which carry nothing but their measures.
+    const tinted = iconElement("calendar", {}, fakeDocument()) as unknown as {
+      children: { tag: string; attributes: Record<string, string> }[];
+    };
+    const tints = GLYPHS.calendar.filter((shape) => shape[2] === "tint").length;
+    expect(tints).toBeGreaterThan(0);
+    expect(tinted.children).toHaveLength(GLYPHS.calendar.length);
+    for (const [place, child] of tinted.children.entries()) {
+      if (place < tints) {
+        expect(child.attributes).toMatchObject({
+          class: "sc-icon-tint",
+          fill: "currentColor",
+          "fill-opacity": "0.2",
+          stroke: "none",
+        });
+      } else {
+        expect(child.attributes).toEqual(GLYPHS.calendar[place]?.[1]);
+      }
+    }
   });
 });

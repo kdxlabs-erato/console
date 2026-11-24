@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { KOREAN, LanguageContext } from "../i18n/index.js";
-import type { IconName } from "../icons/index.js";
+import { GLYPHS, ICON_NAMES, type IconName } from "../icons/index.js";
 import { Icon, IconPicker } from "./icon.js";
 
 describe("Icon", () => {
@@ -22,6 +22,33 @@ describe("Icon", () => {
     expect(html).toContain('role="img"');
     expect(html).toContain('aria-label="Private"');
     expect(html).not.toContain("aria-hidden");
+  });
+
+  it("draws a tinted part filled and never stroked, under the lines, and lines alone where a glyph has none (ADR-0149)", () => {
+    const count = (html: string, part: string): number => html.split(part).length - 1;
+    const tinted = GLYPHS.calendar.filter((shape) => shape[2] === "tint").length;
+    expect(tinted).toBeGreaterThan(0);
+    const html = renderToStaticMarkup(<Icon name="calendar" />);
+    // By its class, which the stylesheet colours in the accent; and drawn on the element in
+    // the text's colour, faint, for a page without the stylesheet, where the glyph's own
+    // stroke would otherwise outline it.
+    expect(
+      count(html, 'class="sc-icon-tint" fill="currentColor" fill-opacity="0.2" stroke="none"'),
+    ).toBe(tinted);
+    // Under the lines: the tint comes first, and every line after it is a line of the glyph.
+    const shapes = html.match(/<(?:path|circle|ellipse|rect|line|polyline|polygon) [^>]*>/g) ?? [];
+    expect(shapes).toHaveLength(GLYPHS.calendar.length);
+    expect(shapes.slice(0, tinted).every((shape) => shape.includes("sc-icon-tint"))).toBe(true);
+    expect(shapes.slice(tinted).some((shape) => /sc-icon-tint|fill=|stroke=/.test(shape))).toBe(
+      false,
+    );
+    // A glyph with nothing to fill is its lines alone.
+    expect(renderToStaticMarkup(<Icon name="plus" />)).not.toContain("sc-icon-tint");
+    // And so for every glyph of the pack: as many tinted parts drawn as its data names.
+    for (const name of ICON_NAMES) {
+      const named = GLYPHS[name].filter((shape) => shape[2] === "tint").length;
+      expect(count(renderToStaticMarkup(<Icon name={name} />), "sc-icon-tint"), name).toBe(named);
+    }
   });
 
   it("draws an empty box of its size for a name the pack does not hold", () => {
