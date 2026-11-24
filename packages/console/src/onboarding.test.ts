@@ -26,7 +26,7 @@ describe("the onboarding task of an agent account", () => {
       body.indexOf("## What you do yourself"),
       body.indexOf("## What you ask for"),
     );
-    expect(own.split("\n").filter((line) => line.startsWith("- **"))).toHaveLength(10);
+    expect(own.split("\n").filter((line) => line.startsWith("- **"))).toHaveLength(9);
     // Where it signs in at a page, it is told how a sign-in stays, with nothing it signs in with
     // in a message; no sign-in is set aside for a person: it asks for help where it cannot go on.
     expect(own).toContain(
@@ -97,27 +97,6 @@ describe("the onboarding task of an agent account", () => {
     expect(body.endsWith("finish the task.\n")).toBe(true);
   });
 
-  it("has a token moved into the store unseen, where a service has the agent make one", () => {
-    const { body } = onboardingOf({ handle: "mira", workspace: WORKSPACE });
-    // By the clipboard, and with no tool reading a page that shows one: what a tool reads is on
-    // the agent's record.
-    expect(body).toContain(
-      "- **Move a token into your store unseen.** A token a page makes for you goes from the page into your store without passing through your session: copy it with the keys or the page's own button, pipe the clipboard in (`pbpaste | console secret <name> --set` on a Mac), and empty the clipboard. While a page shows a token, read that page with no tool and take no picture of it: what a tool reads is on your record, and a token that was read is made again.",
-    );
-    // Before the item on signing in at a page, after what the services have it do.
-    expect(body.indexOf("- **Move a token into your store unseen.**")).toBeGreaterThan(
-      body.indexOf("- **Connect the messenger to your product, and be woken by it.**"),
-    );
-    expect(body.indexOf("- **Move a token into your store unseen.**")).toBeLessThan(
-      body.indexOf("- **Sign in at a page in"),
-    );
-    // A workspace that names no service has it make none, and its task says the least.
-    expect(
-      onboardingOf({ handle: "mira", workspace: { handle: null, domain: null, services: {} } })
-        .body,
-    ).not.toContain("Move a token into your store unseen");
-  });
-
   it("says the one rule and how help is asked, whatever the services are (ADR-0152)", () => {
     const asking = (body: string) =>
       body.slice(body.indexOf("## What you ask for"), body.indexOf("## When you are done"));
@@ -136,13 +115,17 @@ describe("the onboarding task of an agent account", () => {
         services: { identity: { kind: "github" }, git: { kind: "github", organization: "acme" } },
       },
     ]) {
-      expect(asking(onboardingOf({ handle: "mira", workspace }).body)).toBe(
-        `## What you ask for\n\n${rule}\n\n`,
-      );
+      const said = asking(onboardingOf({ handle: "mira", workspace }).body);
+      expect(said).toBe(`## What you ask for\n\n${rule}\n\n`);
+      // What the task says there names no kind of work as a person's, and lists nothing an
+      // agent cannot do: that is the agent's own to judge.
+      expect(said).not.toMatch(/sign|password|phone|picture|product/i);
     }
-    // The rule names no kind of work as a person's, and lists nothing an agent cannot do: that
-    // is the agent's own to judge.
-    expect(rule).not.toMatch(/sign|password|phone|picture|product/i);
+    // Nor does any item of a task whose services ask for everything set a step aside for a
+    // person from the start.
+    expect(onboardingOf({ handle: "mira", workspace: WORKSPACE }).body).not.toMatch(
+      /wants a person|ask for a person|a person signs|by a person/i,
+    );
   });
 
   it("says what it cannot do itself as decisions to ask, with how a secret is handed back", () => {
