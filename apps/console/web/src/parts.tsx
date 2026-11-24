@@ -1595,10 +1595,10 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
     <Part
       name="icon"
       classes="sc-icon*"
-      use="A glyph of the icon pack by its name, in the colour of the text it stands in; and the way to choose one."
+      use="A glyph of the icon pack by its name, in the colour of the text it stands in, one part of it tinted in the accent; and the way to choose one."
     >
       <Specimen
-        label="The sizes: xs a caret, sm in a line of text, md by itself, lg in an empty state"
+        label="The sizes: xs a caret, its lines alone; sm in a line of text, md by itself, lg in an empty state"
         row
       >
         <Icon name="calendar" size="xs" />
@@ -1606,15 +1606,21 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
         <Icon name="calendar" size="md" />
         <Icon name="calendar" size="lg" />
       </Specimen>
-      <Specimen label="In a line of text, in the text's colour" row>
+      <Specimen
+        label="In a line of text, in the text's colour, its lines alone (sc-icon-plain)"
+        row
+      >
         <span>
-          <Icon name="clock" size="sm" /> Due on Friday
+          <Icon name="clock" size="sm" className="sc-icon-plain" /> Due on Friday
         </span>
         <span className="sc-muted">
-          <Icon name="lock" size="sm" /> Only those listed
+          <Icon name="lock" size="sm" className="sc-icon-plain" /> Only those listed
         </span>
         <Button variant="secondary" size="sm">
-          <Icon name="plus" size="sm" /> Add a task
+          <Icon name="folder" size="sm" /> Open the folder
+        </Button>
+        <Button variant="primary" size="sm">
+          <Icon name="document" size="sm" /> New document
         </Button>
       </Specimen>
       {ICON_GROUP_LIST.map((group) => (

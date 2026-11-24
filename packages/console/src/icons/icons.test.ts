@@ -26,7 +26,16 @@ describe("the icon pack", () => {
     for (const name of ICON_NAMES) {
       const shapes = GLYPHS[name];
       expect(shapes.length, name).toBeGreaterThan(0);
-      for (const [tag, measures] of shapes) {
+      // At most two tinted parts, under the lines, and at least one line.
+      const tints = shapes.filter((shape) => shape[2] === "tint").length;
+      expect(tints, name).toBeLessThanOrEqual(2);
+      expect(shapes.length - tints, name).toBeGreaterThan(0);
+      expect(
+        shapes.slice(0, tints).every((shape) => shape[2] === "tint"),
+        name,
+      ).toBe(true);
+      for (const [tag, measures, part] of shapes) {
+        expect([undefined, "tint"]).toContain(part);
         expect(["path", "circle", "ellipse", "rect", "line", "polyline", "polygon"]).toContain(tag);
         for (const [attribute, value] of Object.entries(measures)) {
           expect(attribute, name).toMatch(

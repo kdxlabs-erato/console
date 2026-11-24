@@ -184,10 +184,18 @@ export function iconElement(
     svg.setAttribute("aria-hidden", "true");
   }
   const shapes: readonly GlyphShape[] = isIconName(name) ? GLYPHS[name] : [];
-  for (const [tag, measures] of shapes) {
+  for (const [tag, measures, part] of shapes) {
     const shape = doc.createElementNS(space, tag);
     for (const [attribute, value] of Object.entries(measures)) {
       shape.setAttribute(attribute, value);
+    }
+    // A tinted part, filled and not stroked: in the accent where the console's stylesheet is,
+    // in the text's colour, faint, where it is not.
+    if (part === "tint") {
+      shape.setAttribute("class", "sc-icon-tint");
+      shape.setAttribute("fill", "currentColor");
+      shape.setAttribute("fill-opacity", "0.2");
+      shape.setAttribute("stroke", "none");
     }
     svg.append(shape);
   }

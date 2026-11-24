@@ -14,6 +14,8 @@
         "filter",
         "sort",
         "refresh",
+        "undo",
+        "redo",
         "download",
         "upload",
         "external-link",
@@ -50,7 +52,18 @@
     },
     {
       "key": "files",
-      "icons": ["document", "file", "folder", "image", "video", "attachment", "link", "code"]
+      "icons": [
+        "document",
+        "file",
+        "folder",
+        "image",
+        "video",
+        "attachment",
+        "link",
+        "code",
+        "list-numbered",
+        "quote"
+      ]
     },
     {
       "key": "messages",

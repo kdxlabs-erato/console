@@ -86,6 +86,44 @@ test("a glyph off the grid, or drawn another way than the pack's, is refused", (
   refuses("bad", glyph('<path d=""/>'), /empty/);
 });
 
+test("a tinted part is a filled shape under the lines, kept as such and no more than two", () => {
+  const tint = 'fill="#3b6fd4" fill-opacity="0.3" stroke="none"';
+  assert.deepEqual(
+    parseGlyph(
+      "lock",
+      glyph(
+        `<rect ${tint} x="4" y="8.75" width="12" height="8.5" rx="2.5"/>\n  <rect x="4" y="8.75" width="12" height="8.5" rx="2.5"/>`,
+      ),
+    ),
+    [
+      ["rect", { x: "4", y: "8.75", width: "12", height: "8.5", rx: "2.5" }, "tint"],
+      ["rect", { x: "4", y: "8.75", width: "12", height: "8.5", rx: "2.5" }],
+    ],
+  );
+  // The tint's colour is the accent's or the text's, and a filled shape is never also a line.
+  refuses(
+    "bad",
+    glyph('<path fill="#ff0000" stroke="none" d="M1 1h2"/><path d="M1 1h2"/>'),
+    /tinted part/,
+  );
+  refuses("bad", glyph('<path fill="#3b6fd4" d="M1 1h2"/><path d="M1 1h2"/>'), /tinted part/);
+  refuses(
+    "bad",
+    glyph(`<path ${tint.replace("0.3", "3")} d="M1 1h2"/><path d="M1 1h2"/>`),
+    /0 to 1/,
+  );
+  // It stands under the lines, a glyph has at most two, and a tint alone is no glyph.
+  refuses("bad", glyph(`<path d="M1 1h2"/><path ${tint} d="M1 1h2"/>`), /put it first/);
+  refuses(
+    "bad",
+    glyph(
+      `${Array.from({ length: 3 }, () => `<path ${tint} d="M1 1h2"/>`).join("")}<path d="M1 1h2"/>`,
+    ),
+    /3 tinted parts/,
+  );
+  refuses("bad", glyph(`<path ${tint} d="M1 1h2"/>`), /0 shapes/);
+});
+
 test("a file that is too large, or holds too much, or nothing, is refused", () => {
   refuses("bad", glyph(`<path d="M1 1${"h1".repeat(3000)}"/>`), /larger than/);
   refuses(

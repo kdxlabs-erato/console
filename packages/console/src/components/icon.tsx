@@ -42,6 +42,14 @@ export interface IconProps {
 /** The side a glyph is drawn at where no stylesheet says: a line of text's. */
 const PLAIN_SIDE = 20;
 
+/** How a tinted part stands on its element, for a page without the console's stylesheet. */
+const TINT_DRAWN = {
+  className: "sc-icon-tint",
+  fill: "currentColor",
+  fillOpacity: "0.2",
+  stroke: "none",
+} as const;
+
 export function Icon(props: IconProps) {
   const shapes: readonly GlyphShape[] = isIconName(props.name) ? GLYPHS[props.name] : [];
   // The measures and the stroke stand on the element too, so that a page without the console's
@@ -58,9 +66,14 @@ export function Icon(props: IconProps) {
     strokeLinejoin: "round",
     focusable: "false",
   } as const;
-  // A glyph's shapes are fixed, in a fixed order: each is told apart by its place.
-  const lines = shapes.map(([tag, measures], index) =>
-    createElement(tag, { key: index, ...measures }),
+  // A glyph's shapes are fixed, in a fixed order: each is told apart by its place. A tinted part
+  // is filled and not stroked, in the accent where the stylesheet is and the text's colour,
+  // faint, where it is not.
+  const lines = shapes.map(([tag, measures, part], index) =>
+    createElement(
+      tag,
+      part === "tint" ? { key: index, ...measures, ...TINT_DRAWN } : { key: index, ...measures },
+    ),
   );
   return props.label !== undefined && props.label.length > 0 ? (
     <svg {...drawn} role="img" aria-label={props.label}>

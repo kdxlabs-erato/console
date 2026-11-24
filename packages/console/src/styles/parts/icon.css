@@ -13,6 +13,36 @@
   vertical-align: middle;
 }
 
+/* The tinted part: the one area of a glyph that tells what it is (a calendar's head, a folder's
+   front, a lock's body), filled in the accent under the lines. It is a hint of colour and never
+   the glyph: it goes where it would muddy (the smallest size, a glyph in a line of text, on a
+   filled button, on a project's mark), deepens on the thing chosen, and greys where a thing
+   cannot be used. */
+.sc-icon-tint {
+  fill: var(--sc-color-accent-solid);
+  fill-opacity: 0.3;
+  stroke: none;
+}
+
+.sc-icon-xs .sc-icon-tint,
+.sc-icon-plain .sc-icon-tint,
+.sc-button-primary .sc-icon-tint,
+.sc-mark .sc-icon-tint {
+  display: none;
+}
+
+[aria-current] > .sc-icon .sc-icon-tint,
+[aria-selected="true"] > .sc-icon .sc-icon-tint,
+.sc-icon-tile-chosen .sc-icon-tint {
+  fill-opacity: 0.45;
+}
+
+:disabled > .sc-icon .sc-icon-tint,
+[aria-disabled="true"] > .sc-icon .sc-icon-tint {
+  fill: currentColor;
+  fill-opacity: 0.16;
+}
+
 /* The smallest: a caret beside a word. */
 .sc-icon-xs {
   width: 0.75rem;

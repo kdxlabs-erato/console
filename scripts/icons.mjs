@@ -27,9 +27,29 @@ export const GRID = 20;
 const VIEW_BOX = `0 0 ${GRID} ${GRID}`;
 const STROKE_WIDTH = "1.5";
 
-/** The most a glyph's file is, and the most shapes it has: a glyph is a few lines. */
+/** The most a glyph's file is, and the most shapes it has: a glyph is a few lines, and at most two tinted parts under them. */
 const MAX_FILE_BYTES = 4096;
 const MAX_SHAPES = 12;
+const MAX_TINTS = 2;
+
+/**
+ * A tinted part: the one area of a glyph that is filled, under its lines, in the accent at a
+ * fraction (the part's stylesheet says the colour and how much). A drawing tool writes it as a
+ * shape filled and not stroked; the fill it writes is taken where it is the accent or the text's
+ * colour, and its opacity is the tool's own and not kept.
+ */
+const TINT_FILLS = [
+  "currentColor",
+  "currentcolor",
+  "#3b6fd4",
+  "#3a6dd4",
+  "#2c5bc4",
+  "black",
+  "#000",
+  "#000000",
+];
+const TINT_SAY =
+  'a filled shape is a tinted part: fill="#3b6fd4" (the accent) and stroke="none", under the lines; anything else is lines only';
 const MAX_PATH_LENGTH = 1200;
 
 const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
@@ -51,7 +71,7 @@ const SHAPES = new Map(
 /** What a drawing tool writes of the stroke, on the root or on a shape: taken where it says the pack's own, refused otherwise. */
 const STROKE = new Map(
   Object.entries({
-    fill: { values: ["none"], say: 'lines only: fill="none"' },
+    fill: { values: ["none"], say: TINT_SAY },
     stroke: {
       values: ["currentColor", "currentcolor", "black", "#000", "#000000"],
       say: 'one colour, the text\'s: stroke="currentColor"',
@@ -142,11 +162,41 @@ function withoutStroke(name, tag, attributes) {
 
 const inGrid = (value) => NUMBER.test(value) && Number(value) >= 0 && Number(value) <= GRID;
 
-/** One shape as the package draws it: its element and its measures, each held to the grid. */
+/** Whether a shape is a tinted part, and its attributes without what says so. */
+function tintOf(name, tag, attributes) {
+  const fill = attributes.get("fill")?.trim();
+  if (fill === undefined || fill === "none") {
+    return { tint: false, rest: attributes };
+  }
+  if (!TINT_FILLS.includes(fill) || attributes.get("stroke")?.trim() !== "none") {
+    throw new GlyphError(
+      name,
+      `has fill="${fill}" on <${tag}>. The pack draws every glyph one way (${TINT_SAY}).`,
+    );
+  }
+  const opacity = attributes.get("fill-opacity");
+  if (
+    opacity !== undefined &&
+    !(NUMBER.test(opacity.trim()) && Number(opacity) >= 0 && Number(opacity) <= 1)
+  ) {
+    throw new GlyphError(
+      name,
+      `has fill-opacity="${opacity}" on <${tag}>, which is no number from 0 to 1.`,
+    );
+  }
+  const rest = new Map(attributes);
+  rest.delete("fill");
+  rest.delete("stroke");
+  rest.delete("fill-opacity");
+  return { tint: true, rest };
+}
+
+/** One shape as the package draws it: its element and its measures, each held to the grid, and "tint" where it is a tinted part. */
 function shapeOf(name, tag, attributes) {
   const measures = SHAPES.get(tag);
   const kept = {};
-  for (const [attribute, value] of withoutStroke(name, tag, attributes)) {
+  const { tint, rest } = tintOf(name, tag, attributes);
+  for (const [attribute, value] of withoutStroke(name, tag, rest)) {
     if (!measures.includes(attribute)) {
       throw new GlyphError(
         name,
@@ -187,7 +237,11 @@ function shapeOf(name, tag, attributes) {
   }
   // The measures in the order the element lists them, so that the written module never changes
   // with the order a tool wrote them in.
-  return [tag, Object.fromEntries(measures.flatMap((m) => (m in kept ? [[m, kept[m]]] : [])))];
+  const shape = [
+    tag,
+    Object.fromEntries(measures.flatMap((m) => (m in kept ? [[m, kept[m]]] : []))),
+  ];
+  return tint ? [...shape, "tint"] : shape;
 }
 
 /**
@@ -274,8 +328,22 @@ export function parseGlyph(name, source) {
   if (depth !== 0) {
     throw new GlyphError(name, "leaves a group open.");
   }
-  if (shapes.length === 0 || shapes.length > MAX_SHAPES) {
-    throw new GlyphError(name, `has ${shapes.length} shapes. A glyph has one to ${MAX_SHAPES}.`);
+  const tints = shapes.filter((shape) => shape[2] === "tint").length;
+  const lines = shapes.length - tints;
+  if (lines === 0 || lines > MAX_SHAPES) {
+    throw new GlyphError(name, `has ${lines} shapes. A glyph has one to ${MAX_SHAPES}.`);
+  }
+  if (tints > MAX_TINTS) {
+    throw new GlyphError(
+      name,
+      `has ${tints} tinted parts. A glyph has at most ${MAX_TINTS}, one thing tinted.`,
+    );
+  }
+  if (shapes.findIndex((shape) => shape[2] !== "tint") < tints) {
+    throw new GlyphError(
+      name,
+      "has a tinted part after a line. The tint stands under the lines: put it first.",
+    );
   }
   return shapes;
 }
@@ -348,10 +416,10 @@ const quoted = (text) => JSON.stringify(text);
 
 /** The module the package draws from, as text: the same text for the same folder, every time. */
 export function renderPack(pack) {
-  const shape = ([tag, measures]) =>
+  const shape = ([tag, measures, part]) =>
     `[${quoted(tag)}, { ${Object.entries(measures)
       .map(([name, value]) => `${name}: ${quoted(value)}`)
-      .join(", ")} }]`;
+      .join(", ")} }${part === undefined ? "" : `, ${quoted(part)}`}]`;
   return [
     "// Written by `pnpm icons` from packages/console/icons, one SVG file a glyph. Do not edit it:",
     "// change the glyph's file, or groups.json beside it, and run `pnpm icons` again.",
@@ -361,8 +429,8 @@ export function renderPack(pack) {
     "/** The elements a glyph is made of. */",
     `export type GlyphTag = ${[...SHAPES.keys()].map(quoted).join(" | ")};`,
     "",
-    "/** One shape of a glyph: an element by its name, with its measures on the grid. */",
-    "export type GlyphShape = readonly [tag: GlyphTag, measures: Readonly<Record<string, string>>];",
+    '/** One shape of a glyph: an element by its name, with its measures on the grid, and "tint" where it is the part filled in the accent under the lines. */',
+    'export type GlyphShape = readonly [tag: GlyphTag, measures: Readonly<Record<string, string>>, part?: "tint"];',
     "",
     "/** The side of the grid every glyph is drawn on. */",
     `export const ICON_GRID = ${GRID};`,
