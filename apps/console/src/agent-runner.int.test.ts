@@ -869,6 +869,25 @@ describe("an agent account's runner (ADR-0085)", () => {
       .items.filter((event) => event.kind === "agent.state_changed")
       .at(-1);
     expect(told?.data).toMatchObject({ state: "failed", detail: "usage_limit", until });
+    // Told as the limit's moment moves, and not again while it stands: the week's window
+    // refuses at the reset of the short one, and whoever tells people says the new moment.
+    const stateChanges = async () =>
+      restEventsSchema
+        .parse(await (await get({ cookie: alice }, `${REST_ROUTES.events}?after=0`)).json())
+        .items.filter((event) => event.kind === "agent.state_changed");
+    const before = (await stateChanges()).length;
+    await heartbeat({ state: "failed", reason: "usage_limit", until });
+    expect(await stateChanges()).toHaveLength(before);
+    const later = "2026-11-23T03:00:00.000Z";
+    await heartbeat({ state: "failed", reason: "usage_limit", until: later });
+    const moved = await stateChanges();
+    expect(moved).toHaveLength(before + 1);
+    expect(moved.at(-1)?.data).toMatchObject({
+      state: "failed",
+      was: "failed",
+      detail: "usage_limit",
+      until: later,
+    });
     // A moment is data: an instant, or nothing.
     for (const moment of ["3am", 1795458600, "2026-11-20"]) {
       const refused = await send(bearer(command), "PUT", RUNNER, beat({ until: moment }));

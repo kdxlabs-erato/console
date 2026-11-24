@@ -91,6 +91,14 @@ const SLEPT_MS = 60_000;
 const ANSWERS: ReadonlySet<TranscriptKind> = new Set(["assistant", "thinking", "tool_call"]);
 /** How many signals the runner writes down as kept for the agent beside what the record sends again. */
 const MAX_KEPT = 50;
+/** How long before its moment a timer may ring: a delivery asked for at a moment is taken within it. */
+const TIMER_EARLY_MS = 20;
+/**
+ * The furthest off a product's usage limit is waited for at the moment it names: longer than
+ * any window a subscription counts in, a month. A moment past it is taken for none, and the
+ * runner tries after the cool-down instead.
+ */
+const MAX_LIMIT_MS = 32 * 24 * 3_600_000;
 /** How many messages a turn took are remembered, for a turn that ends on the usage limit: the oldest is let go past it. */
 const MAX_TAKEN = 200;
 /** The kinds of file a console keeps as a picture: what a product is handed as one. */
@@ -529,9 +537,13 @@ export function createRunner(options: RunnerOptions): Runner {
   /**
    * The product's usage limit stopped the agent (ADR-0150): since when, until when where the
    * product said, and whether the agent was handed word of it since the product last refused.
-   * It stands until the agent answers again.
+   * `tried` is the supervisor's signals that were tried ahead of the reset and refused, by
+   * number: each is tried so once, and waits with the rest from then on. It stands until the
+   * agent answers again.
    */
-  let limited: { since: number; until: number | undefined; handed: boolean } | undefined;
+  let limited:
+    | { since: number; until: number | undefined; handed: boolean; readonly tried: Set<number> }
+    | undefined;
   /** What the agent was told of each window of its product's allowance: the mark it had reached, and when that window resets. */
   let usageTold = new Map<string, ToldOfUsage>();
   /**
@@ -1164,8 +1176,12 @@ export function createRunner(options: RunnerOptions): Runner {
       return;
     }
     // An agent that could not go on is tried at once for a supervisor, and after the cool-down
-    // for the rest: for one a usage limit stopped, when the limit resets.
-    if (waits !== undefined && !pending.some((signal) => signal.source === "person")) {
+    // for the rest: for one a usage limit stopped, when the limit resets. Under a usage limit
+    // a supervisor's signal is tried so once: one the product refused waits with the rest, or
+    // everything that arrived afterwards would hand it to a product that refuses again.
+    const ahead = (signal: RestSignal): boolean =>
+      signal.source === "person" && limited?.tried.has(signal.number) !== true;
+    if (waits !== undefined && !pending.some(ahead)) {
       if (options.now() < waits.until) {
         scheduleDeliver(waits.until);
         return;
@@ -1194,9 +1210,18 @@ export function createRunner(options: RunnerOptions): Runner {
     }
     // Under a usage limit, before the runner's own try, a supervisor's signals alone are tried:
     // what else is kept stays kept, and undelivered, for a product that most likely refuses.
-    const early = limited !== undefined && waits !== undefined && options.now() < waits.until;
-    const batch = early ? pending.filter((signal) => signal.source === "person") : pending;
-    pending = early ? pending.filter((signal) => signal.source !== "person") : [];
+    // The runner's own try is the one its timer rings for, which may be a moment before the
+    // clock says it is time: taken for a supervisor's, it would be said in the words of a try
+    // that is ahead of the reset, and counted as one.
+    const early =
+      limited !== undefined && waits !== undefined && options.now() < waits.until - TIMER_EARLY_MS;
+    const batch = early ? pending.filter(ahead) : pending;
+    pending = early ? pending.filter((signal) => !ahead(signal)) : [];
+    if (early) {
+      for (const signal of batch) {
+        limited?.tried.add(signal.number);
+      }
+    }
     // The files a supervisor sent, read from the console and written in the desk, under its
     // ignored work/, for the agent to open; a picture is handed to the product as a picture
     // too, where the product takes one. What could not be handed over is said to the agent in
@@ -1707,13 +1732,26 @@ export function createRunner(options: RunnerOptions): Runner {
     // try of the runner's, a message the product still had on its input say, is the same
     // stretch, and waits no longer for it.
     const tried = before === undefined || before.handed;
-    const named = until !== undefined && until > now ? until : undefined;
+    // A moment further off than any window lasts is no moment to wait for: the agent would
+    // stand stopped until then with nothing tried, for a number read wrongly.
+    const named =
+      until !== undefined && until > now && until - now <= MAX_LIMIT_MS ? until : undefined;
     const known = named ?? (tried ? undefined : before.until);
     if (before === undefined) {
       // A limit met anew is said in its own word first, whatever a console of before took last.
       plainWords = false;
     }
-    limited = { since: before?.since ?? now, until: known, handed: false };
+    limited = {
+      since: before?.since ?? now,
+      until: known,
+      handed: false,
+      // What a supervisor said and the limit kept from being read was tried, and refused with
+      // the limit itself: it waits for the reset as what was tried ahead of it does.
+      tried: new Set([
+        ...(before?.tried ?? []),
+        ...again.filter((signal) => signal.source === "person").map((signal) => signal.number),
+      ]),
+    };
     if (tried || waits === undefined || known !== before.until) {
       waits =
         known === undefined
@@ -1913,6 +1951,17 @@ export function createRunner(options: RunnerOptions): Runner {
       }
       case "ended": {
         await end(event.how, true);
+        // A product that ended before it answered the word that it is back, or refused it, was
+        // not brought back: the word is owed still, at the moment the runner waits for, or
+        // after the cool-down where that moment is past, longer each time it ends so.
+        if (limited?.handed === true) {
+          limited.handed = false;
+          if (waits === undefined || options.now() >= waits.until) {
+            waits = cooled(waits);
+          }
+          scheduleDeliver(waits.until);
+          return;
+        }
         if (pending.length > 0 && waits === undefined) {
           scheduleDeliver();
         }
@@ -2337,20 +2386,25 @@ export function createRunner(options: RunnerOptions): Runner {
           `the conversation kept was begun under the driver ${kept.driver}: a new one begins under ${driver.name}`,
         );
       }
+      // What a runner before this one held for the agent alone is taken from the stream once
+      // more, whether or not a limit still stands: a supervisor's restart under a limit lifts
+      // the limit and leaves them kept, and a runner started before they were handed over
+      // again would otherwise read on from after them.
+      for (const number of kept?.kept ?? []) {
+        reread.add(number);
+      }
       if (kept?.limited !== undefined) {
         // A usage limit stopped the agent under a runner before this one: it is brought back
         // all the same, when the limit resets or after the cool-down where no moment is known.
         const now = options.now();
-        limited = { ...kept.limited, handed: false };
-        for (const number of kept.kept ?? []) {
-          reread.add(number);
-        }
+        const known =
+          kept.limited.until !== undefined && kept.limited.until - now <= MAX_LIMIT_MS
+            ? kept.limited.until
+            : undefined;
+        limited = { since: kept.limited.since, until: known, handed: false, tried: new Set() };
         waits = {
           tries: 1,
-          until:
-            kept.limited.until === undefined
-              ? now + timing.coolDownMs
-              : kept.limited.until + timing.resetMarginMs,
+          until: known === undefined ? now + timing.coolDownMs : known + timing.resetMarginMs,
         };
         stands = { state: "failed", reason: "usage_limit" };
         log(
@@ -2458,7 +2512,7 @@ export function createRunner(options: RunnerOptions): Runner {
               await onAnswered(message.session);
             } else if (message.t === "deliver") {
               // A timer may fire a moment before the clock says it is time.
-              if (deliverAt !== undefined && options.now() >= deliverAt - 20) {
+              if (deliverAt !== undefined && options.now() >= deliverAt - TIMER_EARLY_MS) {
                 await deliver("next");
               }
             } else if (message.t === "flush") {

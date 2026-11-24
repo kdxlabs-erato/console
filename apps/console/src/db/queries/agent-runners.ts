@@ -275,7 +275,8 @@ async function toldOf(
  * Notes a heartbeat: when the runner was heard from, what it said of itself, and how its agent
  * stands. While a supervisor's `stop` stands the agent is `stopped` whatever the runner says,
  * since the runner may not have received it yet. A change of state is told to the workspace,
- * by the account, whose runner reported it; so many times an hour and no more (ADR-0132),
+ * and so is a usage limit that comes, or whose moment moves, while the state stays, by the
+ * account, whose runner reported it; so many times an hour and no more (ADR-0132),
  * where `changesPerHour` says how many: a change beyond that is kept with the account, which
  * its page reads, and told by a later heartbeat once the hour has room, as how the account
  * stands then, so that the feed's last word of an account is how it stands.
@@ -303,6 +304,17 @@ export async function recordHeartbeat(
         ? undefined
         : new Date(heartbeat.until);
     const changed = before.state !== state;
+    // A usage limit is told as it comes and as its moment moves, where the state itself stays
+    // (ADR-0150): an account that stood as failed for another reason, or was refused again at
+    // the reset with a later moment, the week's after the short window's say, would otherwise
+    // leave whoever tells people with the moment of before.
+    const limitMoved =
+      !changed &&
+      state === "failed" &&
+      reason === "usage_limit" &&
+      (before.reason !== "usage_limit" ||
+        (until?.getTime() ?? null) !== (before.stateUntil?.getTime() ?? null));
+    const tell = changed || limitMoved;
     // What was chosen is kept among what the product offers, as a `set` holds it: a runner that
     // says another product since, a desk whose driver changed, offers other models, and a model
     // it does not offer would be refused at every turn. Such a choice is the product's own again;
@@ -337,7 +349,7 @@ export async function recordHeartbeat(
       throw new Error("agent runner update returned no row");
     }
     if (input.changesPerHour === undefined) {
-      if (changed) {
+      if (tell) {
         await tellState(tx, {
           account,
           actor: { id: account.id },
@@ -352,17 +364,17 @@ export async function recordHeartbeat(
     }
     // The feed is looked at where the state changed now, or changed a while ago and may not
     // have been told: a runner that says the same for hours costs the feed no look.
-    const since = changed ? now : before.stateAt;
+    const since = tell ? now : before.stateAt;
     if (since !== null && now.getTime() - since.getTime() <= TOLD_WITHIN_MS) {
       const told = await toldOf(tx, account, now);
-      const untold = changed || (told.last !== undefined && told.last !== state);
+      const untold = tell || (told.last !== undefined && told.last !== state);
       if (untold && told.count < input.changesPerHour) {
         await tellState(tx, {
           account,
           actor: { id: account.id },
           state,
           // What the feed said last, where a change before this one went untold.
-          was: changed ? before.state : ((told.last as AgentState | undefined) ?? before.state),
+          was: tell ? before.state : ((told.last as AgentState | undefined) ?? before.state),
           reason,
           until,
           now,

@@ -31,10 +31,19 @@ const MAX_WINDOWS = 16;
  * reached its length are limits too, and neither is this one.
  */
 const USAGE_LIMIT =
-  /\byou['\u2019]?ve (?:hit|reached) your (?:[\w-]+ ){0,3}limit\b|\b(?:hit|reached) your (?:[\w-]+ ){0,2}usage limit\b|\busage limit (?:has been )?(?:reached|exceeded)\b|\busage_limit_reached\b/i;
+  /\byou['\u2019]?ve (?:hit|reached) your ((?:[\w-]+ ){0,3})limit\b|\b(?:hit|reached) your (?:[\w-]+ ){0,2}usage limit\b|\busage limit (?:has been )?(?:reached|exceeded)\b|\busage_limit_reached\b/i;
+/** What stands before "limit" in a limit that is another: a throttle, or a conversation's length. */
+const ANOTHER_LIMIT = /\b(?:rate|request|context|token|output|length|size|message)\b/i;
 
-/** Whether an error of a product's own says its usage limit is reached. */
-export const saysUsageLimit = (text: string): boolean => USAGE_LIMIT.test(text.slice(0, 2000));
+/**
+ * Whether an error of a product's own says its usage limit is reached. Under a driver whose
+ * product names no reason, these words alone decide, and a limit read wrongly would be waited
+ * out for hours: "you've hit your rate limit" and "your context window limit" are not it.
+ */
+export const saysUsageLimit = (text: string): boolean => {
+  const found = USAGE_LIMIT.exec(text.slice(0, 2000));
+  return found !== null && !(found[1] !== undefined && ANOTHER_LIMIT.test(found[1]));
+};
 
 /** What the agent was told of a window: the mark it had reached, and when that window resets. */
 export interface ToldOfUsage {
@@ -73,8 +82,11 @@ function markOf(window: UsageWindow): number | undefined {
  * Of what a product says of its windows, what the agent is to be told now, and what it then
  * was told. A window is told once at each mark it reaches, at the highest alone where it passed
  * several between two looks. What was told of a window stands until that window resets: until
- * the moment it named has come, or its share is below the first mark again, so that a product
- * whose reset moves with every look is told of once all the same.
+ * the moment it named has come and the product names a later one, or none, or its share is
+ * below the first mark again, so that a product whose reset moves with every look is told of
+ * once all the same. A moment that is past and named again is the same window still, a clock
+ * that runs ahead of the product's say: told of at every look, each telling would be a turn
+ * that spends the allowance it speaks of.
  */
 export function usageToTell(
   windows: readonly UsageWindow[],
@@ -88,7 +100,9 @@ export function usageToTell(
     const mark = markOf(window);
     const reset =
       before !== undefined &&
-      ((before.resetsAt !== undefined && now >= before.resetsAt) ||
+      ((before.resetsAt !== undefined &&
+        now >= before.resetsAt &&
+        (window.resetsAt === undefined || window.resetsAt > before.resetsAt)) ||
         (window.used !== undefined && window.used < USAGE_MARKS[0] && window.near !== true));
     if (reset) {
       next.delete(window.name);

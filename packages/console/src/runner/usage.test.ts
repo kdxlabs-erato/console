@@ -47,6 +47,12 @@ describe("what a product's error says of its usage limit", () => {
       "429 Too Many Requests",
       "Overloaded",
       "Not logged in · Please run /login",
+      // A throttle and a conversation's length in the words a usage limit is said in: under a
+      // driver whose product names no reason, the words alone decide, and either waited out
+      // as a usage limit would stop the agent for hours.
+      "You've hit your rate limit. Try again in a moment.",
+      "You've reached your context window limit",
+      "You've hit your output token limit for this request",
     ]) {
       expect(saysUsageLimit(text), text).toBe(false);
     }
@@ -90,6 +96,28 @@ describe("when the agent is told of its allowance", () => {
         (one) => one.mark,
       ),
     ).toEqual([0.9]);
+  });
+
+  it("tells once of a window whose moment is past and named again, however often it is looked at", () => {
+    // A clock that runs ahead of the product's, or a window the product has not moved on yet:
+    // the same moment, already past, at every look. Outside a turn each telling is a turn of
+    // its own, whose request brings the next look.
+    const stale = short(0.85, { resetsAt: NOW - 60_000 });
+    let told = none;
+    let times = 0;
+    for (let look = 0; look < 20; look += 1) {
+      const looked = usageToTell([stale], told, NOW + look * 1000);
+      told = looked.told;
+      times += looked.tell.length;
+    }
+    expect(times).toBe(1);
+    // The next mark of that window is still told, and so is the window after it.
+    const higher = usageToTell([short(0.93, { resetsAt: NOW - 60_000 })], told, NOW + 30_000);
+    expect(higher.tell.map((one) => one.mark)).toEqual([0.9]);
+    const next = short(0.85, { resetsAt: NOW + 5 * 3_600_000 });
+    expect(usageToTell([next], higher.told, NOW + 60_000).tell.map((one) => one.mark)).toEqual([
+      0.8,
+    ]);
   });
 
   it("tells once of a product whose reset moves with every look", () => {

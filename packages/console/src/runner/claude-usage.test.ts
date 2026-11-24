@@ -170,6 +170,61 @@ describe("the claude driver and the product's allowance", () => {
     expect(events.at(-2)).toEqual({ type: "turn_completed" });
   });
 
+  it("reads the lines as Claude Code 2.1.322 wrote them, and tells nothing by a window beyond the subscription", async () => {
+    // Recorded from the product on Windows, a turn of one word: the two lines it wrote of the
+    // allowance, with their ids left out. The week's window alone at first, then a second
+    // one beside it, counted with what the product allows beyond the subscription, at twice
+    // the share, on an account that has no such allowance.
+    const first = {
+      type: "rate_limit_event",
+      rate_limit_info: {
+        status: "allowed",
+        resetsAt: 1795690800,
+        rateLimitType: "seven_day",
+        overageStatus: "rejected",
+        overageDisabledReason: "org_level_disabled",
+        isUsingOverage: false,
+        unifiedWindows: {
+          seven_day: { utilization: 0.13, resetsAt: 1795690800, status: "allowed" },
+        },
+      },
+    };
+    const second = {
+      ...first,
+      rate_limit_info: {
+        ...first.rate_limit_info,
+        unifiedWindows: {
+          seven_day: { utilization: 0.13, resetsAt: 1795690800, status: "allowed" },
+          seven_day_overage_included: {
+            utilization: 0.26,
+            resetsAt: 1795690800,
+            status: "allowed",
+          },
+        },
+      },
+    };
+    const events = await product([first, INIT, replay("m1"), says("ok"), second, RESULT]).events();
+    const week = { name: "weekly", used: 0.13, resetsAt: 1795690800 * 1000 };
+    expect(events.filter((event) => event.type === "usage")).toEqual([
+      { type: "usage", windows: [week] },
+      { type: "usage", windows: [week] },
+    ]);
+    // A window of that kind alone says nothing: its share is no warning of a stop.
+    const alone = {
+      ...first,
+      rate_limit_info: {
+        ...first.rate_limit_info,
+        rateLimitType: "seven_day_overage_included",
+        utilization: 0.95,
+        unifiedWindows: {
+          seven_day_overage_included: { utilization: 0.95, resetsAt: 1795690800 },
+        },
+      },
+    };
+    const none = await product([INIT, replay("m1"), says("ok"), alone, RESULT]).events();
+    expect(none.filter((event) => event.type === "usage")).toEqual([]);
+  });
+
   it("says a window the product itself calls near its limit, and one of a model by its name", async () => {
     const events = await product([
       INIT,

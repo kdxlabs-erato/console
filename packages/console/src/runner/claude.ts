@@ -64,6 +64,14 @@ const listOf = (value: unknown): readonly unknown[] => (Array.isArray(value) ? v
 const MAX_WINDOWS = 8;
 /** The product's word for a window, as it spells one. */
 const WINDOW = /^[a-z][a-z0-9_]{0,39}$/;
+/**
+ * A window the product counts with what it allows beyond the subscription: seen beside the
+ * week's own (2.1.322, `seven_day_overage_included`) at twice its share, on an account that
+ * has no such allowance. Nothing here knows its limit to be one that ends a turn, so the agent
+ * is told nothing by it: a share of it said as "used" would be a warning of a stop that does
+ * not come.
+ */
+const BEYOND = /overage/;
 
 /** A window's name in plain words: the product's `five_hour` and `seven_day` as a person calls them, the rest as it comes. */
 const windowName = (word: string): string =>
@@ -99,7 +107,12 @@ const shareOf = (value: unknown): number | undefined =>
 function windowsOf(info: Json): UsageWindow[] {
   const windows: UsageWindow[] = [];
   const add = (word: unknown, one: Json): void => {
-    if (typeof word !== "string" || !WINDOW.test(word) || windows.length >= MAX_WINDOWS) {
+    if (
+      typeof word !== "string" ||
+      !WINDOW.test(word) ||
+      BEYOND.test(word) ||
+      windows.length >= MAX_WINDOWS
+    ) {
       return;
     }
     const used = shareOf(one.utilization);

@@ -1083,7 +1083,7 @@ describe("the runner", () => {
     console.signal({ text: "Begin." });
     const session = await sessionOf(product);
     await until("the message", () => session.sent.length === 1);
-    const resets = Date.now() + 400;
+    const resets = Date.now() + 2000;
     const limit: DriverEvent = {
       type: "cannot_go_on",
       state: "failed",
@@ -1116,6 +1116,22 @@ describe("the runner", () => {
     expect(console.says.delivered).toBe(1);
     expect(saved.at(-1)).toMatchObject({ delivered: 1, limited: { until: resets } });
     expect(saved.at(-1)?.kept).toBeUndefined();
+    // The word that was refused is tried so once: what arrives afterwards is kept beside it,
+    // and hands nothing to a product that would refuse again. Another word of a supervisor's
+    // is tried, once too, and alone.
+    console.signal({ kind: "wake", by: null, source: "messenger", key: "C1/2", text: "Hello?" });
+    console.signal({ kind: "wake", by: null, source: "board", key: "#8" });
+    await sleep(80);
+    expect(session.sent).toHaveLength(2);
+    console.signal({ text: "Still there?" });
+    await until("the second word", () => session.sent.length === 3);
+    expect(session.sent[2]?.text).toContain("Still there?");
+    expect(session.sent[2]?.text).not.toContain("Are you there?");
+    expect(session.sent[2]?.text).not.toContain("· wake");
+    session.emit({ type: "taken" }, limit);
+    await sleep(80);
+    expect(session.sent).toHaveLength(3);
+    expect(Date.now()).toBeLessThan(resets);
     // A supervisor's restart starts it now, whatever the limit said, with what was kept, in order.
     console.signal({ kind: "restart", text: "" });
     const second = await sessionOf(product, 2);
@@ -1124,9 +1140,45 @@ describe("the runner", () => {
     const text = second.sent[0]?.text ?? "";
     expect(text.indexOf("#2 · wake · board: #7")).toBeGreaterThan(0);
     expect(text.indexOf("Are you there?")).toBeGreaterThan(text.indexOf("#2 · wake"));
+    expect(text.indexOf("Still there?")).toBeGreaterThan(text.indexOf("#5 · wake"));
     expect(text).not.toContain("usage limit");
     expect(console.beats.at(-1)).toMatchObject({ state: "running" });
     expect(console.beats.at(-1)).not.toHaveProperty("until");
+  });
+
+  it("brings the agent back again where the product ended before it answered the word that it is back", async () => {
+    const { console, product } = setup();
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    session.emit(
+      ...STARTED,
+      { type: "taken" },
+      { type: "event", kind: "assistant", text: "On it." },
+      { type: "cannot_go_on", state: "failed", reason: "usage_limit", until: Date.now() + 100 },
+    );
+    // Brought back at the reset, and the product ends there and then, having answered nothing
+    // and refused nothing: a crash, say.
+    await until("the agent to be brought back", () => session.sent.length === 2);
+    expect(session.sent[1]?.text).toContain("Your product's usage limit stopped you at");
+    session.emit({ type: "ended", how: "crashed" });
+    // The word is owed still: a new session is handed it after the cool-down, in the
+    // conversation the agent was stopped in, with nothing having arrived to bring that about.
+    const second = await sessionOf(product, 2);
+    await until("the word again", () => second.sent.length === 1);
+    // Under the new session's own first lines, the runner's word again.
+    expect(second.sent[0]?.text).toMatch(
+      /\n\[console \w{6} · runner\]\nYour product's usage limit stopped you at /,
+    );
+    expect(second.options.resume).toBeDefined();
+    expect(console.beats.at(-1)).toMatchObject({ state: "failed", reason: "usage_limit" });
+    second.emit(
+      ...STARTED,
+      { type: "taken" },
+      { type: "event", kind: "assistant", text: "Back." },
+      { type: "turn_completed" },
+    );
+    await until("the state", () => console.beats.at(-1)?.state === "running");
   });
 
   it("writes down what the product took and the agent never read under a usage limit, and takes it from the stream once more", async () => {

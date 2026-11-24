@@ -4685,9 +4685,14 @@ function runnerStateOf(text: string | undefined): RunnerState | undefined {
   if (typeof delivered !== "number" || !Number.isSafeInteger(delivered) || delivered < 0) {
     return undefined;
   }
-  /** A moment in milliseconds since the epoch, or nothing for anything else. */
+  /**
+   * A moment in milliseconds since the epoch, or nothing for anything else: a number past what
+   * a date holds would fail the runner at every start, where it says the moment in words.
+   */
   const momentOf = (value: unknown): number | undefined =>
-    typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+    typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value < 1e14
+      ? value
+      : undefined;
   const since =
     typeof limited === "object" && limited !== null && "since" in limited
       ? momentOf(limited.since)
