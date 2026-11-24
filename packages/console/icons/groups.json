@@ -17,7 +17,6 @@
         "download",
         "upload",
         "external-link",
-        "send",
         "more",
         "more-vertical"
       ]
@@ -39,38 +38,23 @@
     },
     {
       "key": "people",
-      "icons": ["person", "people", "agent", "team", "admin"]
+      "icons": ["person", "people", "agent", "team", "admin", "customer"]
     },
     {
       "key": "work",
-      "icons": [
-        "task",
-        "decision",
-        "run",
-        "goal",
-        "calendar",
-        "clock",
-        "flag",
-        "board",
-        "list",
-        "chart"
-      ]
+      "icons": ["task", "decision", "run", "goal", "project", "board", "list", "chart"]
+    },
+    {
+      "key": "office",
+      "icons": ["calendar", "clock", "leave", "approval", "finance"]
     },
     {
       "key": "files",
-      "icons": [
-        "document",
-        "file",
-        "folder",
-        "image",
-        "video",
-        "attachment",
-        "link",
-        "comment",
-        "code",
-        "mail",
-        "bookmark"
-      ]
+      "icons": ["document", "file", "folder", "image", "video", "attachment", "link", "code"]
+    },
+    {
+      "key": "messages",
+      "icons": ["comment", "mail", "messenger", "notice", "bell", "send"]
     },
     {
       "key": "states",
@@ -83,22 +67,19 @@
         "unlock",
         "eye",
         "eye-off",
-        "bell",
+        "flag",
+        "bookmark",
         "star",
         "spark"
       ]
     },
     {
       "key": "tools",
-      "icons": ["settings", "plugin", "key", "token", "skill", "pack", "home", "project", "globe"]
+      "icons": ["settings", "plugin", "key", "token", "skill", "pack", "home", "globe"]
     },
     {
       "key": "devices",
       "icons": ["desktop", "handheld", "server"]
-    },
-    {
-      "key": "plugins",
-      "icons": ["leave", "notice", "approval", "messenger", "finance", "customer"]
     }
   ]
 }

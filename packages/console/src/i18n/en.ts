@@ -1469,11 +1469,12 @@ export const en = {
       directions: "Directions",
       people: "People and organization",
       work: "Work",
+      office: "Dates and office",
       files: "Text and files",
-      states: "States",
+      messages: "Messages",
+      states: "States and marks",
       tools: "Settings and tools",
       devices: "Devices",
-      plugins: "Plugins",
     },
     // The words a glyph is also found by, beside its name. A glyph without a line here is
     // found by its name alone; one added here is added to every other pack.

@@ -100,13 +100,14 @@ export const GLYPHS = {
 
 /** The groups the glyphs stand in, in the order a picker and the catalogue show them. */
 export const ICON_GROUPS = [
-  { key: "actions", icons: ["plus", "minus", "close", "check", "edit", "trash", "copy", "search", "filter", "sort", "refresh", "download", "upload", "external-link", "send", "more", "more-vertical"] },
+  { key: "actions", icons: ["plus", "minus", "close", "check", "edit", "trash", "copy", "search", "filter", "sort", "refresh", "download", "upload", "external-link", "more", "more-vertical"] },
   { key: "directions", icons: ["arrow-up", "arrow-down", "arrow-left", "arrow-right", "chevron-up", "chevron-down", "chevron-left", "chevron-right", "collapse", "expand"] },
-  { key: "people", icons: ["person", "people", "agent", "team", "admin"] },
-  { key: "work", icons: ["task", "decision", "run", "goal", "calendar", "clock", "flag", "board", "list", "chart"] },
-  { key: "files", icons: ["document", "file", "folder", "image", "video", "attachment", "link", "comment", "code", "mail", "bookmark"] },
-  { key: "states", icons: ["info", "warning", "error", "success", "lock", "unlock", "eye", "eye-off", "bell", "star", "spark"] },
-  { key: "tools", icons: ["settings", "plugin", "key", "token", "skill", "pack", "home", "project", "globe"] },
+  { key: "people", icons: ["person", "people", "agent", "team", "admin", "customer"] },
+  { key: "work", icons: ["task", "decision", "run", "goal", "project", "board", "list", "chart"] },
+  { key: "office", icons: ["calendar", "clock", "leave", "approval", "finance"] },
+  { key: "files", icons: ["document", "file", "folder", "image", "video", "attachment", "link", "code"] },
+  { key: "messages", icons: ["comment", "mail", "messenger", "notice", "bell", "send"] },
+  { key: "states", icons: ["info", "warning", "error", "success", "lock", "unlock", "eye", "eye-off", "flag", "bookmark", "star", "spark"] },
+  { key: "tools", icons: ["settings", "plugin", "key", "token", "skill", "pack", "home", "globe"] },
   { key: "devices", icons: ["desktop", "handheld", "server"] },
-  { key: "plugins", icons: ["leave", "notice", "approval", "messenger", "finance", "customer"] },
 ] as const;
