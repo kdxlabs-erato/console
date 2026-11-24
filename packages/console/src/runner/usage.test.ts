@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { restRunnerHeartbeatInputSchema } from "../schemas.js";
 import type { UsageWindow } from "./types.js";
 import {
   limitWords,
@@ -305,6 +306,26 @@ describe("what the console is told of the allowance (ADR-0156)", () => {
     for (const window of said) {
       expect(window.name.length).toBeLessThanOrEqual(40);
       expect(window.name).toBe(window.name.trim());
+    }
+    // A name cut at its length is cut between letters, never through one of two units, and a
+    // moment past what a console reads as one is none: either would cost the whole heartbeat.
+    const wide = String.fromCodePoint(0x1d4d0);
+    const cut: UsageSeen = new Map();
+    noteUsage(
+      cut,
+      [
+        short(0.1, { name: `${"a".repeat(39)}${wide}` }),
+        short(0.1, { name: "far", resetsAt: Date.UTC(10_000, 0, 1) }),
+        short(0.1, { name: "near", resetsAt: Date.UTC(9999, 11, 31) }),
+      ],
+      NOW,
+    );
+    const taken = usageSaid(cut, NOW);
+    expect(taken.map((window) => window.name)).toEqual(["a".repeat(39), "far", "near"]);
+    expect(taken[1]?.resetsAt).toBeNull();
+    expect(taken[2]?.resetsAt).toBe("9999-12-31T00:00:00.000Z");
+    for (const window of taken) {
+      expect(restRunnerHeartbeatInputSchema.shape.usage.safeParse([window]).success).toBe(true);
     }
     // No more windows than a heartbeat carries, the first said: one more is not kept, and one
     // of those kept is still said anew.

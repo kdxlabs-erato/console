@@ -386,9 +386,15 @@ describe("a plugin's settings page", () => {
   it("begins the project to make with the mark the plugin names, to keep or to change (ADR-0155)", () => {
     const disabled = { ...DETAIL, state: "disabled" as const, board: null };
     const defaults = { key: "leave-board", name: { en: "Leave" }, description: { en: "" } };
+    // A console of before answers nothing of a mark, and would make the project without one:
+    // nothing of it is offered, so that the form shows no mark that will not be.
+    const before = render(disabled);
+    expect(before).toContain('value="leave-board"');
+    expect(before).not.toContain("sc-mark-row");
+    expect(before).not.toContain(">아이콘</label>");
     // A plugin that names none: the mark is what a project's is without one, the first letter
     // of its name on a colour from its key, and nothing of a mark is sent.
-    const plain = render(disabled);
+    const plain = render({ ...disabled, boardDefaults: { ...defaults, glyph: null, color: null } });
     expect(plain).toContain('<span class="sc-mark sc-mark-lg sc-category-');
     expect(plain).toContain(">아이콘</label>");
     expect(plain).toContain('<option value="" selected="">키에서 정해진 색</option>');

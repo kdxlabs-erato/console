@@ -24,6 +24,7 @@ import {
   type RestSignal,
   type RestTranscriptEvent,
   usageNear,
+  usageSaidTogether,
   usedHundredths,
 } from "../api.js";
 import { today } from "../dates.js";
@@ -63,16 +64,24 @@ export function AgentUsage(props: {
   readonly said?: boolean | undefined;
 }) {
   const words = useWords().agents.usage;
-  const names: Readonly<Record<string, string>> = words.windows;
-  const newest = props.usage
-    .map((window) => window.at)
-    .sort()
-    .at(-1);
+  // When they were said: once for all where the product said them together, and beside each
+  // where it did not, so that a window kept from days ago does not read as said just now.
+  const together = usageSaidTogether(props.usage);
+  const said = (iso: string) => (
+    <span className="sc-note">
+      {words.said.before}
+      <Time iso={iso} precision="clock" />
+      {words.said.after}
+    </span>
+  );
   return (
     <span className="sc-agent-usage">
-      {props.usage.map((window) => (
-        <span key={window.name} className="sc-agent-product">
-          <span>{names[window.name] ?? window.name}</span>
+      {props.usage.map((window, place) => (
+        // A name is what a runner sent: read as a word of the pack only where the pack itself
+        // holds it, and no key by itself, since two windows may be named alike.
+        // biome-ignore lint/suspicious/noArrayIndexKey: the windows are told apart by their place
+        <span key={place} className="sc-agent-product">
+          <span>{wordOf(words.windows, window.name)}</span>
           {window.used !== null ? (
             <Badge tone={window.used >= 1 ? "danger" : usageNear(window) ? "warning" : "neutral"}>
               {words.used(usedHundredths(window.used))}
@@ -87,15 +96,10 @@ export function AgentUsage(props: {
               {words.resets.after}
             </span>
           )}
+          {props.said === true && together === undefined && said(window.at)}
         </span>
       ))}
-      {props.said === true && newest !== undefined && (
-        <span className="sc-note">
-          {words.said.before}
-          <Time iso={newest} precision="clock" />
-          {words.said.after}
-        </span>
-      )}
+      {props.said === true && together !== undefined && said(together)}
     </span>
   );
 }

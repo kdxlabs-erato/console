@@ -102,8 +102,10 @@ export interface UsageKept {
  * product told it since it started, and a product says a window at a time: so a window the
  * heartbeat names takes the place of the one kept under that name, and one it does not name
  * stands while its reset is still to come. One whose reset has passed, or that never named a
- * reset and is named no more, is let go: nothing says it is still so. A heartbeat that says no
- * usage at all, a runner of before or one that just started, changes nothing.
+ * reset and is named no more, is let go: nothing says it is still so. A runner that just
+ * started says an empty list, which lets go what named no reset and keeps the rest; a heartbeat
+ * that says nothing of usage, a runner of before, changes nothing. A name is kept once, as it
+ * was first said in the heartbeat.
  */
 export function usageAfter(
   kept: readonly UsageKept[] | null,
@@ -113,14 +115,21 @@ export function usageAfter(
   if (said === undefined) {
     return kept === null ? null : [...kept];
   }
-  const named = new Set(said.map((window) => window.name));
+  const named = new Set<string>();
+  const once = said.filter((window) => {
+    if (named.has(window.name)) {
+      return false;
+    }
+    named.add(window.name);
+    return true;
+  });
   const standing = (kept ?? []).filter(
     (window) =>
       !named.has(window.name) &&
       window.resetsAt !== null &&
       Date.parse(window.resetsAt) > now.getTime(),
   );
-  const after = [...said, ...standing].slice(0, MAX_RUNNER_USAGE_WINDOWS);
+  const after = [...once, ...standing].slice(0, MAX_RUNNER_USAGE_WINDOWS);
   return after.length === 0 ? null : after;
 }
 
@@ -384,7 +393,17 @@ export async function recordHeartbeat(
         running: heartbeat.running,
         // A runner of before says none: what stood is not kept for it, since it is no longer known.
         sources: heartbeat.sources ?? null,
-        usage: usageAfter(before.usage, heartbeat.usage, now),
+        // What was said of one product's allowance says nothing of another's: a desk whose
+        // driver changed begins with none, as it does with the model chosen.
+        usage: usageAfter(
+          before.product === null ||
+            (before.product.driver === heartbeat.product.driver &&
+              before.product.name === heartbeat.product.name)
+            ? before.usage
+            : null,
+          heartbeat.usage,
+          now,
+        ),
         ...(gone(before.model, heartbeat.offers.models) ? { model: null } : {}),
         ...(gone(before.effort, heartbeat.offers.efforts) ? { effort: null } : {}),
         ...(changed ? { state, reason, stateAt: now } : { reason }),

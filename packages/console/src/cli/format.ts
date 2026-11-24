@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { usageStanding, usedHundredths } from "../agent-usage.js";
+import { usageNear, usageSaidTogether, usageStanding, usedHundredths } from "../agent-usage.js";
 import { argUsage } from "../plugin/args.js";
 import type {
   RestAgent,
@@ -251,21 +251,19 @@ export function formatAgentUsage(usage: RestAgent["usage"], now: number): string
   if (standing.length === 0) {
     return [];
   }
+  // When they were said: once where the product said them together, beside each where not.
+  const together = usageSaidTogether(standing);
   const windows = standing.map((window) => {
     const share =
       window.used === null
-        ? window.near === true
+        ? usageNear(window)
           ? "near its limit"
           : "of a share its product did not say"
-        : `${usedHundredths(window.used)}% used`;
-    return `${window.name} ${share}${window.resetsAt === null ? "" : `, resets ${moment(window.resetsAt)}`}`;
+        : `${usedHundredths(window.used)}% used${window.used < 1 && usageNear(window) ? ", near its limit" : ""}`;
+    return `${window.name} ${share}${window.resetsAt === null ? "" : `, resets ${moment(window.resetsAt)}`}${together === undefined ? `, said ${moment(window.at)}` : ""}`;
   });
-  const said = standing
-    .map((window) => window.at)
-    .sort()
-    .at(-1);
   return [
-    `usage: ${windows.join("; ")}${said === undefined ? "" : ` (as its product said ${moment(said)})`}`,
+    `usage: ${windows.join("; ")}${together === undefined ? "" : ` (as its product said ${moment(together)})`}`,
   ];
 }
 
@@ -1280,7 +1278,23 @@ export function formatPlugin(
   if (detail.board !== null) {
     lines.push(`Board project: ${detail.board.key} (${detail.board.name}).`);
   } else if (detail.boardNeeds !== "none") {
-    lines.push("Board project: none yet.");
+    // What `enable --board new` would make, where the plugin proposes one: its key and name,
+    // and the mark it names for it (ADR-0155).
+    const proposed = detail.boardDefaults;
+    const mark =
+      proposed === null
+        ? ""
+        : [
+            proposed.glyph == null ? undefined : `the icon ${proposed.glyph}`,
+            proposed.color == null ? undefined : `on ${proposed.color}`,
+          ]
+            .filter((word) => word !== undefined)
+            .join(" ");
+    lines.push(
+      proposed === null
+        ? "Board project: none yet."
+        : `Board project: none yet. enable --board new makes ${proposed.key} (${localized(proposed.name, language)})${mark === "" ? "" : `, marked with ${mark}`}.`,
+    );
   }
   lines.push("");
   if (detail.operations.length === 0) {

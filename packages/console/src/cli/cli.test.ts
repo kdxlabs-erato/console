@@ -4524,7 +4524,7 @@ describe("configuring, as the person", () => {
             // What its product last said of its allowance (ADR-0156): a share, a window the
             // product only calls near its limit, and one whose reset has passed.
             usage: [
-              { name: "5-hour", used: 0.429, resetsAt: "2026-10-09T13:00:00.000Z", at: WHEN },
+              { name: "5-hour", used: 0.829, resetsAt: "2026-10-09T13:00:00.000Z", at: WHEN },
               { name: "weekly", used: null, resetsAt: null, near: true, at: WHEN },
               { name: "gone", used: 0.9, resetsAt: "2026-10-09T09:00:00.000Z", at: WHEN },
             ],
@@ -4542,7 +4542,7 @@ describe("configuring, as the person", () => {
     expect(full.out()).toContain(
       [
         `state: refused (model refused) since ${WHEN}; its runner was last heard from ${WHEN}`,
-        `usage: 5-hour 42% used, resets 2026-10-09T13:00:00.000Z; weekly near its limit (as its product said ${WHEN})`,
+        `usage: 5-hour 82% used, near its limit, resets 2026-10-09T13:00:00.000Z; weekly near its limit (as its product said ${WHEN})`,
         "runner: 0.5.0 on mac-mini (macOS 15.1), as mira",
         "product: Claude Code 2.1.0, a version the driver was not tried with",
         "set to: model sonnet, effort high",
@@ -9795,7 +9795,9 @@ describe("the plugins on the command line (ADR-0049, ADR-0053)", () => {
     expect(one.out()).toContain("hello: Hello 0.1.0, enabled");
     expect(one.out()).toContain("For agents: Keeps greetings as records");
     expect(one.out()).toContain("Your roles in it: greeter.");
-    expect(one.out()).toContain("Board project: none yet.");
+    expect(one.out()).toContain(
+      "Board project: none yet. enable --board new makes hello-board (Hello board).",
+    );
     // The listing, which an agent reads whole at every first use, shows the positionals and the
     // required flags and folds the rest into [options]; help <command> has them all.
     expect(one.out()).toContain("  console plugin hello greet <to> [options]");

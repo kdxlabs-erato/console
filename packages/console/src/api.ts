@@ -6,8 +6,10 @@
 export { agentLabel } from "./agent-name.js";
 export {
   USAGE_NEAR,
+  USAGE_SAID_TOGETHER_MS,
   type UsageReading,
   usageNear,
+  usageSaidTogether,
   usageStanding,
   usedHundredths,
 } from "./agent-usage.js";

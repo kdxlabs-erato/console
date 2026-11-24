@@ -2245,6 +2245,23 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     expect(seen).not.toContain("<b>bold</b>");
     // The card stays short: when the product said so is on the account's page.
     expect(seen).not.toContain("as its product said");
+    // A name is what a runner sent: one that every object has is no word of the pack, and
+    // draws as the text it is; two windows of one name are two lines.
+    const hostile = card({
+      usage: [
+        { name: "__proto__", used: 0.1, resetsAt: null, at },
+        { name: "constructor", used: 0.2, resetsAt: null, at },
+        { name: "toString", used: 0.3, resetsAt: null, at },
+        { name: "weekly", used: 0.4, resetsAt: null, at },
+        { name: "weekly", used: 0.5, resetsAt: null, at },
+      ],
+    });
+    expect(hostile).toContain("<span>__proto__</span>");
+    expect(hostile).toContain("<span>constructor</span>");
+    expect(hostile).toContain("<span>toString</span>");
+    expect(hostile.split("<span>Week</span>")).toHaveLength(3);
+    expect(hostile).toContain("40% used");
+    expect(hostile).toContain("50% used");
     // Nothing of it where its runner said none, or where every window is over.
     expect(card({})).not.toContain("<dt>Usage</dt>");
     expect(card({ usage: [] })).not.toContain("<dt>Usage</dt>");
@@ -2254,6 +2271,22 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     // On the account's page, with when the product said so; and in Korean.
     const full = renderToStaticMarkup(<AgentUsage usage={usage.slice(0, 2)} said />);
     expect(full).toContain(`as its product said <time class="sc-time" dateTime="${at}"`);
+    expect(full.split("as its product said")).toHaveLength(2);
+    // The console keeps a window until its reset: where one was said days before another,
+    // each says its own moment, so that the old one does not read as said just now.
+    const old = "2026-11-21T02:58:00.000Z";
+    const apart = renderToStaticMarkup(
+      <AgentUsage
+        usage={[
+          { name: "5-hour", used: 0.42, resetsAt: "2026-11-24T05:00:00.000Z", at },
+          { name: "weekly", used: 0.61, resetsAt: "2026-11-27T05:00:00.000Z", at: old },
+        ]}
+        said
+      />,
+    );
+    expect(apart.split("as its product said")).toHaveLength(3);
+    expect(apart).toContain(`dateTime="${old}"`);
+    expect(apart).toContain(`dateTime="${at}"`);
     const korean = renderToStaticMarkup(
       <LanguageContext.Provider value={KOREAN}>
         <AgentUsage usage={usage.slice(0, 2)} said />

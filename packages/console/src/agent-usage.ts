@@ -27,6 +27,26 @@ export function usageStanding<T extends { readonly resetsAt: string | null }>(
   );
 }
 
+/** How far apart two windows may have been said and still be said together: one answer of the product. */
+export const USAGE_SAID_TOGETHER_MS = 60_000;
+
+/**
+ * When the windows were said, where they were said together: the latest of their moments, all
+ * within a minute. Nothing where they were not, or where a moment does not read: the console
+ * keeps a window until its reset, so one may be days older than another, and each then says its
+ * own moment, since one moment for all would make the old one read as new.
+ */
+export function usageSaidTogether(usage: readonly { readonly at: string }[]): string | undefined {
+  const moments = usage.map((window) => Date.parse(window.at));
+  if (moments.length === 0 || moments.some((moment) => !Number.isFinite(moment))) {
+    return undefined;
+  }
+  const latest = Math.max(...moments);
+  return latest - Math.min(...moments) <= USAGE_SAID_TOGETHER_MS
+    ? usage[moments.indexOf(latest)]?.at
+    : undefined;
+}
+
 /** A share as a whole number of hundredths, never more than was said: 0.899 is 89. */
 export const usedHundredths = (share: number): number =>
   Math.min(100, Math.max(0, Math.floor(share * 100 + 1e-9)));

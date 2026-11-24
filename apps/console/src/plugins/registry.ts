@@ -6,7 +6,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { join } from "node:path";
 import {
+  COLOR_NAMES,
   CONSOLE_LANGUAGES,
+  type ColorName,
   isIconName,
   type PluginState,
   pluginPath,
@@ -238,6 +240,12 @@ export interface Invocation {
 }
 
 const EMPTY_DISCOVERY: Discovery = { plugins: [], failed: [] };
+
+/** A colour of the console's vocabulary by its name, or none: one a manifest names and this console does not know is none. */
+const colorOf = (name: string | undefined): ColorName | null =>
+  name !== undefined && (COLOR_NAMES as readonly string[]).includes(name)
+    ? (name as ColorName)
+    : null;
 /** An id as the console keeps one: what plugin code names otherwise is refused before a query. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** The headers an endpoint may set on its answer. */
@@ -1064,8 +1072,9 @@ export class Plugins {
               name: entry.manifest.board.defaults.name,
               description: entry.manifest.board.defaults.description,
               // The mark the manifest names for it (ADR-0155): an icon this console's pack does
-              // not have is none here, a plugin written for a later pack say.
-              color: entry.manifest.board.defaults.color ?? null,
+              // not have, or a colour it does not know, is none here, a plugin written for a
+              // later console say.
+              color: colorOf(entry.manifest.board.defaults.color),
               glyph: isIconName(entry.manifest.board.defaults.glyph)
                 ? entry.manifest.board.defaults.glyph
                 : null,

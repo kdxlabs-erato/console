@@ -251,6 +251,8 @@ describe("parsePluginManifest", () => {
       glyph: "leave",
       color: "green",
     });
+    // A colour is held as an icon is: a name the console may not know yet is a name.
+    expect(marked({ color: "crimson" })).toEqual([]);
     // What is no name, what an agent could write on purpose, and a colour of its own.
     for (const glyph of [
       "",
@@ -265,7 +267,7 @@ describe("parsePluginManifest", () => {
     ]) {
       expect(marked({ glyph })[0], String(glyph)).toMatch(/^board\.defaults\.glyph: /);
     }
-    for (const color of ["", "red", "#00ff00", "var(--sc-color-accent)", 3, null]) {
+    for (const color of ["", "Red", "#00ff00", "var(--sc-color-accent)", "a".repeat(21), 3, null]) {
       expect(marked({ color })[0], String(color)).toMatch(/^board\.defaults\.color: /);
     }
     // Nothing else of a mark: a symbol or an image is the administrator's to give the project.

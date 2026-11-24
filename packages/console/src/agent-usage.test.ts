@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { USAGE_NEAR, usageNear, usageStanding, usedHundredths } from "./agent-usage.js";
+import {
+  USAGE_NEAR,
+  usageNear,
+  usageSaidTogether,
+  usageStanding,
+  usedHundredths,
+} from "./agent-usage.js";
 
 // How the pages and the command read what an agent account's product said of its allowance
 // (ADR-0156): which windows still stand, and how a share is said.
@@ -22,6 +28,32 @@ describe("the windows of an allowance that still stand", () => {
 
   it("keeps a window whose moment does not read: what a console answers is shown as it came", () => {
     expect(usageStanding([{ name: "weekly", resetsAt: "later" }], NOW)).toHaveLength(1);
+  });
+});
+
+describe("when the windows were said", () => {
+  const at = (iso: string) => ({ at: iso });
+
+  it("is one moment where the product said them together, the latest of them", () => {
+    expect(usageSaidTogether([at("2026-11-24T02:58:00.000Z")])).toBe("2026-11-24T02:58:00.000Z");
+    expect(
+      usageSaidTogether([at("2026-11-24T02:58:00.000Z"), at("2026-11-24T02:58:40.000Z")]),
+    ).toBe("2026-11-24T02:58:40.000Z");
+    expect(
+      usageSaidTogether([at("2026-11-24T02:59:00.000Z"), at("2026-11-24T02:58:00.000Z")]),
+    ).toBe("2026-11-24T02:59:00.000Z");
+  });
+
+  it("is no one moment where a window was kept from before: each then says its own", () => {
+    expect(
+      usageSaidTogether([at("2026-11-24T02:58:00.000Z"), at("2026-11-21T02:58:00.000Z")]),
+    ).toBeUndefined();
+    expect(
+      usageSaidTogether([at("2026-11-24T02:58:00.000Z"), at("2026-11-24T02:59:00.001Z")]),
+    ).toBeUndefined();
+    // Nor where there is none, or a moment does not read.
+    expect(usageSaidTogether([])).toBeUndefined();
+    expect(usageSaidTogether([at("2026-11-24T02:58:00.000Z"), at("lately")])).toBeUndefined();
   });
 });
 

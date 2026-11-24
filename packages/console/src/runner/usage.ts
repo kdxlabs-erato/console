@@ -145,6 +145,8 @@ const plain = (text: string): string =>
     .replaceAll(/[^\p{L}\p{N}._-]+/gu, " ")
     .trim()
     .slice(0, MAX_USAGE_WINDOW_NAME_LENGTH)
+    // Cut by its length in units, a letter of two may be cut in half: half a letter is no text.
+    .replace(/[\uD800-\uDBFF]$/u, "")
     .trim();
 
 /** A share as a whole number of hundredths, never more than was said: 0.899 is 89%. */
@@ -221,9 +223,14 @@ export interface UsageSaid {
   readonly at: string;
 }
 
-/** A moment a date can hold, or nothing: what a product says is its own, and one number out of range would cost the heartbeat. */
+/** The first moment a console no longer reads as one: the year 10000, which a moment written out has no place for. */
+const MOMENTS_END = Date.UTC(10_000, 0, 1);
+
+/** A moment the console takes, or nothing: what a product says is its own, and one number out of range would cost the heartbeat. */
 const momentOf = (ms: number | undefined): number | undefined =>
-  ms !== undefined && Number.isFinite(ms) && ms > 0 && ms < 8.64e15 ? Math.floor(ms) : undefined;
+  ms !== undefined && Number.isFinite(ms) && ms > 0 && ms < MOMENTS_END
+    ? Math.floor(ms)
+    : undefined;
 
 /**
  * Notes what the product says of its windows, for the console to be told (ADR-0156). What a

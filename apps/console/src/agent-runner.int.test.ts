@@ -336,8 +336,7 @@ describe("an agent account's runner (ADR-0085)", () => {
       { name: "5-hour", used: 0.9, resetsAt: soon, near: true, at: later },
       { name: "weekly", used: 0.13, resetsAt: week, at: said },
     ]);
-    // A heartbeat that says nothing of it, a runner that just started or one of before, takes
-    // nothing away.
+    // A heartbeat that says nothing of it, a runner of before, takes nothing away.
     await heartbeat({ reason: "resumed" });
     expect((await agentOf({ cookie: alice })).usage).toHaveLength(2);
     // One that names no window keeps what is still to reset, and lets go what never said when.
@@ -379,6 +378,24 @@ describe("an agent account's runner (ADR-0085)", () => {
       const refused = await send(bearer(command), "PUT", RUNNER, beat({ usage }));
       expect(refused.status, JSON.stringify(usage).slice(0, 60)).toBe(400);
     }
+    // What was said of one product's allowance says nothing of another's: a runner that says
+    // another product begins with none, whether or not it says any usage with it.
+    await heartbeat({
+      reason: "resumed",
+      product: { driver: "codex", name: "Codex", version: "0.171.0", tried: true },
+    });
+    expect((await agentOf({ cookie: alice })).usage).toBeUndefined();
+    await heartbeat({
+      reason: "resumed",
+      usage: [
+        { name: "5-hour", used: 0.3, resetsAt: soon, at: said },
+        { name: "5-hour", used: 0.8, resetsAt: soon, at: said },
+      ],
+    });
+    // A name is kept once, as it was first said.
+    expect((await agentOf({ cookie: alice })).usage).toEqual([
+      { name: "5-hour", used: 0.3, resetsAt: soon, at: said },
+    ]);
     // A window whose reset has passed is let go when the runner next says its windows.
     await heartbeat({
       reason: "resumed",

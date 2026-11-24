@@ -1107,6 +1107,11 @@ function EnableForm(props: {
   );
   // The mark the plugin names for its project (ADR-0155), to keep or to change before it is made.
   const named = boardMarkOf(detail.boardDefaults);
+  // A console of before answers nothing of a mark, and would make the project without the one
+  // shown: the mark is offered where the console says it, `null` for none.
+  const marked =
+    detail.boardDefaults !== null &&
+    (detail.boardDefaults.glyph !== undefined || detail.boardDefaults.color !== undefined);
   const [boardGlyph, setBoardGlyph] = useState<IconName | null>(named.glyph);
   const [boardColor, setBoardColor] = useState<ColorName | "">(named.color);
   const [chosen, setChosen] = useState(detail.board?.key ?? props.projects[0]?.key ?? "");
@@ -1143,8 +1148,8 @@ function EnableForm(props: {
                     key: boardKey,
                     name: boardName,
                     description: boardDescription,
-                    glyph: boardGlyph,
-                    color: boardColor,
+                    glyph: marked ? boardGlyph : null,
+                    color: marked ? boardColor : "",
                   }),
                 }
               : { project: chosen },
@@ -1277,47 +1282,49 @@ function EnableForm(props: {
                   onChange={(event) => setBoardDescription(event.target.value)}
                 />
               </div>
-              <div className="sc-field-row sc-mark-row">
-                <ProjectMark
-                  project={{
-                    key: boardKey,
-                    name: boardName,
-                    color: boardColor === "" ? null : boardColor,
-                    symbol: null,
-                    glyph: boardGlyph,
-                  }}
-                  size="lg"
-                />
-                <div className="sc-field">
-                  <label className="sc-field-label" htmlFor={ids.icon}>
-                    {words.projects.form.icon}
-                  </label>
-                  <IconPicker
-                    id={ids.icon}
-                    value={boardGlyph}
-                    label={words.projects.form.icon}
-                    onChange={setBoardGlyph}
+              {marked && (
+                <div className="sc-field-row sc-mark-row">
+                  <ProjectMark
+                    project={{
+                      key: boardKey,
+                      name: boardName,
+                      color: boardColor === "" ? null : boardColor,
+                      symbol: null,
+                      glyph: boardGlyph,
+                    }}
+                    size="lg"
                   />
+                  <div className="sc-field">
+                    <label className="sc-field-label" htmlFor={ids.icon}>
+                      {words.projects.form.icon}
+                    </label>
+                    <IconPicker
+                      id={ids.icon}
+                      value={boardGlyph}
+                      label={words.projects.form.icon}
+                      onChange={setBoardGlyph}
+                    />
+                  </div>
+                  <div className="sc-field">
+                    <label className="sc-field-label" htmlFor={ids.color}>
+                      {words.projects.form.color}
+                    </label>
+                    <select
+                      id={ids.color}
+                      className="sc-input"
+                      value={boardColor}
+                      onChange={(event) => setBoardColor(event.target.value as ColorName | "")}
+                    >
+                      <option value="">{words.projects.form.colorAuto}</option>
+                      {COLOR_NAMES.map((candidate) => (
+                        <option key={candidate} value={candidate}>
+                          {words.vocabulary.categoryColor[candidate]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <div className="sc-field">
-                  <label className="sc-field-label" htmlFor={ids.color}>
-                    {words.projects.form.color}
-                  </label>
-                  <select
-                    id={ids.color}
-                    className="sc-input"
-                    value={boardColor}
-                    onChange={(event) => setBoardColor(event.target.value as ColorName | "")}
-                  >
-                    <option value="">{words.projects.form.colorAuto}</option>
-                    {COLOR_NAMES.map((candidate) => (
-                      <option key={candidate} value={candidate}>
-                        {words.vocabulary.categoryColor[candidate]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              )}
             </div>
           )}
           {boardMode === "choose" && (

@@ -50,6 +50,16 @@ describe("what a heartbeat leaves of an account's allowance", () => {
     expect(usageAfter(null, [], NOW)).toBeNull();
   });
 
+  it("keeps a name once, as it was first said in the heartbeat", () => {
+    expect(
+      usageAfter(
+        [window("weekly", SOON, 0.1)],
+        [window("weekly", SOON, 0.4), window("5-hour", SOON, 0.2), window("weekly", SOON, 0.9)],
+        NOW,
+      ),
+    ).toEqual([window("weekly", SOON, 0.4), window("5-hour", SOON, 0.2)]);
+  });
+
   it("keeps what the runner names as it said it, a window that is over among it, and no more than a heartbeat carries", () => {
     // What the runner says now is the runner's to say: the pages leave out what is over.
     expect(usageAfter(null, [window("5-hour", PAST)], NOW)).toEqual([window("5-hour", PAST)]);
