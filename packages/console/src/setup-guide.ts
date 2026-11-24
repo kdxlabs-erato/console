@@ -36,11 +36,12 @@ export function setupSentenceOf(command: string): string {
 }
 
 /**
- * What a product's browser tool needs, for the products whose tool the package knows: said to
- * the agent where it is told to sign in at pages, and looked for by the setup on the machine.
+ * The browsers an agent's `runner.json` names (ADR-0151), as the agent is told of them where it
+ * is told to sign in at pages: what each is, and that which of them it uses is its own to
+ * choose. The setup looks for the one asked for on the machine.
  */
-export const BROWSER_TOOL_OF_A_PRODUCT =
-  'For Claude Code that tool works in Google Chrome with the Claude in Chrome extension, and is turned on by "browser": "chrome" in runner.json.';
+export const BROWSER_OF_AN_AGENT =
+  '"headless", which is yours where the file names none, is a Google Chrome with no window and a profile of its own, driven with the tools of the server chrome-devtools: nothing is installed in it and nothing signed in for it. "chrome" is, for Claude Code, its own browser tool in the Google Chrome of your OS account, which takes the Claude in Chrome extension there, signed in with your subscription. Which of the two you use is yours to choose.';
 
 /** Whose part of a setup something is (ADR-0088): whoever prepares the machine, the agent, its manager. */
 export type SetupRole = "operator" | "agent" | "manager";
@@ -200,7 +201,7 @@ export function setupGuideOf(setup: RestAgentSetup, code: string): SetupGuide {
   const machine: SetupGuideStep[] = [
     {
       title: "What the machine needs",
-      body: "The command looks at the machine first and names everything that is missing at once: git, the product's command, the browser its browser tool works in. Install each yourself, without asking, and run the line again.",
+      body: "The command looks at the machine first and names everything that is missing at once: git, the product's command, the agent's browser and the program that drives it. Install each yourself, without asking, and run the line again.",
     },
     {
       title: "The sign-in",
@@ -220,20 +221,17 @@ export function setupGuideOf(setup: RestAgentSetup, code: string): SetupGuide {
     one.onboarding.map((item) => ({ title: item.title, body: item.body })),
   );
   // How the agent signs in at the services it works with, said once for all of them: a sign-in
-  // is the agent's own, kept in the machine's own browser, and where it wants a person, a person
-  // signs in inside the agent's session and nothing is sent in a message.
+  // is the agent's own, kept in the browser its runner starts it with, and nothing it signs in
+  // with is sent in a message. No sign-in is set aside for a person: a headless browser has no
+  // window for one, and the agent asks for help where it cannot go on, as with anything else.
   const browser: SetupGuideStep[] = [
     {
-      title: "Use the machine's own browser, and keep it",
-      body: `Sign in at a service in the ordinary browser of your OS account, with a browser tool of your product that attaches to that browser. A sign-in stays there from one session to the next, as a person's does. A browser a tool starts anew each time keeps none, and a service takes it for a stranger each time and asks again. ${BROWSER_TOOL_OF_A_PRODUCT}`,
-    },
-    {
-      title: "Where a sign-in wants a person",
-      body: "A code sent to a phone, a picture to solve, a key to touch: ask for a person to sign in inside your session. They reach your OS account over a remote desktop, or sit at the machine, sign in as you in that same browser, and leave. Ask as a decision on the board, or at the messenger where it is quick, and say which service and which account. Nothing you sign in with is sent in a message, a task or a comment.",
+      title: "Use the browser you are started with, and keep it",
+      body: `Sign in at a service in the browser your runner.json names as "browser". It keeps a profile, so a sign-in stays there from one session to the next, as a person's does. A browser a tool starts anew each time, with no profile kept, keeps none, and a service takes it for a stranger each time and asks again. ${BROWSER_OF_AN_AGENT}`,
     },
     {
       title: "Keep what you sign in with",
-      body: "A password you chose or were handed goes into your store, with the day it ends where it has one: `console secret <service>.password --set --expires <day>`. Turn on a second step you can answer yourself where the service has one.",
+      body: "Nothing you sign in with is sent in a message, a task or a comment. A password you chose or were handed goes into your store, with the day it ends where it has one: `console secret <service>.password --set --expires <day>`. Turn on a second step you can answer yourself where the service has one.",
     },
   ];
   const asked: SetupGuideStep[] = described.flatMap((one) =>

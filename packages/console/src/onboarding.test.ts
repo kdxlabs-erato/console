@@ -27,12 +27,12 @@ describe("the onboarding task of an agent account", () => {
       body.indexOf("## What you ask for"),
     );
     expect(own.split("\n").filter((line) => line.startsWith("- **"))).toHaveLength(9);
-    // Where it signs in at a page, it is told how a sign-in stays and what to do where one
-    // wants a person, with nothing it signs in with in a message.
+    // Where it signs in at a page, it is told how a sign-in stays, with nothing it signs in with
+    // in a message; no sign-in is set aside for a person: it asks for help where it cannot go on.
     expect(own).toContain(
-      "- **Sign in at a page in the machine's own browser.** Use a browser tool of your product that attaches to the ordinary browser of your OS account",
+      '- **Sign in at a page in the browser you are started with.** Use the browser your runner.json names as "browser": it keeps a profile, so a sign-in stays there from one session to the next.',
     );
-    expect(own).toContain("ask for a person to sign in inside your session");
+    expect(own).not.toContain("ask for a person to sign in");
     expect(own).toContain(
       "- **Make the account your own.** Sign in as `mira@acme.example`, change the first password",
     );
@@ -50,10 +50,18 @@ describe("the onboarding task of an agent account", () => {
     expect(own).toContain(
       "Set your working hours there too, to every day from 12:00 AM to midnight, under Availability in your preferences, in the browser: outside them the messenger pauses your notifications and shows you as paused.",
     );
-    // The browser tool of the one product the package knows, said where the agent is told to use one.
+    // The browsers a runner.json names, said where the agent is told to sign in at a page: the
+    // one with no window, which it has where the file names none, and the product's own tool
+    // (ADR-0151). Which of them it uses is its own to choose: the task says what each is, and
+    // sends it to neither.
     expect(own).toContain(
-      'For Claude Code that tool works in Google Chrome with the Claude in Chrome extension, and is turned on by "browser": "chrome" in runner.json.',
+      '"headless", which is yours where the file names none, is a Google Chrome with no window and a profile of its own, driven with the tools of the server chrome-devtools',
     );
+    expect(own).toContain(
+      '"chrome" is, for Claude Code, its own browser tool in the Google Chrome of your OS account, which takes the Claude in Chrome extension there',
+    );
+    expect(own).toContain("Which of the two you use is yours to choose.");
+    expect(own).not.toMatch(/ask for "chrome"|has none for/);
     // The wake source is taken by the runner by itself, and where to see that it is.
     expect(own).toContain(
       'add "slack" to "wake" in runner.json. The runner takes the change by itself once your turn is over: console agent <handle> then says the source is connected.',
@@ -128,7 +136,7 @@ describe("the onboarding task of an agent account", () => {
       workspace: { handle: null, domain: null, services: {} },
     });
     expect(body.split("\n").filter((line) => line.startsWith("- **"))).toEqual([
-      expect.stringContaining("Sign in at a page in the machine's own browser"),
+      expect.stringContaining("Sign in at a page in the browser you are started with"),
       expect.stringContaining("Put your picture on your profiles"),
       expect.stringContaining("Record the accounts you hold elsewhere"),
       expect.stringContaining("Introduce yourself to your manager"),

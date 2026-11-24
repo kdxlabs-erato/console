@@ -32,8 +32,14 @@ const channel = z
     z.regex(/^[A-Z0-9]{2,24}$/, "is a channel's id at the messenger, as C0123ABCD, never its name"),
   );
 const MAX_ENTRIES = 50;
-/** The browsers a desk may name for its product's browser tool. */
-export const RUNNER_BROWSERS = ["chrome"] as const;
+/**
+ * The browsers a desk may name (ADR-0151): `headless`, a Google Chrome with no window and a
+ * profile of its own, driven by a program the product is started with; `chrome`, the
+ * product's own browser tool, in the Chrome of the OS account with its window; and `none`, for
+ * an agent that is to have no browser.
+ */
+export const RUNNER_BROWSERS = ["headless", "chrome", "none"] as const;
+export type RunnerBrowser = (typeof RUNNER_BROWSERS)[number];
 const bounded = <T extends Record<string, string>>(entries: T): boolean =>
   Object.keys(entries).length <= MAX_ENTRIES;
 
@@ -70,12 +76,12 @@ export const runnerConfigSchema = z.object({
    */
   permissions: z.optional(z.string().check(z.regex(/^[A-Za-z][A-Za-z0-9-]{0,39}$/))),
   /**
-   * The browser the product's own browser tool works in, for a driver whose product has such a
-   * tool and turns it on when it is started (ADR-0140): a name of a short list, and never words
-   * for the product's command line. Left out, a session has no browser tool but what the
-   * product gives it by itself.
+   * The agent's browser, for a driver that starts its product with one (ADR-0140, ADR-0151): a
+   * name of a short list, and never words for the product's command line. `headless` where the
+   * file names none, a desk written before the name was there among them; `none` is said, and
+   * never meant by saying nothing.
    */
-  browser: z.optional(z.enum(RUNNER_BROWSERS)),
+  browser: z._default(z.enum(RUNNER_BROWSERS), "headless"),
   /**
    * The channels of a messenger the agent listens to, by their ids there: what a person says in
    * one wakes the agent through that messenger's wake source, named or not. Left out, a channel

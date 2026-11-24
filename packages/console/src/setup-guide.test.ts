@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RestAgentSetup } from "./schemas.js";
 import {
-  BROWSER_TOOL_OF_A_PRODUCT,
+  BROWSER_OF_AN_AGENT,
   SETUP_INSTALL,
   setupCommandOf,
   setupGuideOf,
@@ -109,7 +109,7 @@ describe("the guide of an agent account's setup (ADR-0088)", () => {
       "Then stop",
     ]);
     expect(machine?.steps[0]?.body).toContain(
-      "names everything that is missing at once: git, the product's command, the browser its browser tool works in. Install each yourself, without asking",
+      "names everything that is missing at once: git, the product's command, the agent's browser and the program that drives it. Install each yourself, without asking",
     );
     // The person signs in themselves, at this console and as nobody else; no password is
     // written in a chat, and a secret is seeded from the person's own machine.
@@ -124,17 +124,26 @@ describe("the guide of an agent account's setup (ADR-0088)", () => {
     // What comes after is the agent's own, and the way to tell it what changed on the machine.
     expect(machine?.steps[3]?.body).toContain("Do none of it for it.");
     expect(machine?.steps[3]?.body).toContain('`console agent wake me "<what changed>"`');
-    // How it signs in elsewhere, at a page: in the machine's own browser, where a sign-in
-    // stays; a person signing in inside its session where it cannot; nothing in a message.
+    // How it signs in elsewhere, at a page: in the browser its runner starts it with, where a
+    // sign-in stays, of the two it chooses between itself (ADR-0151); nothing in a message, and
+    // no sign-in set aside for a person.
     expect(browser?.title).toBe("Signing in elsewhere, in a browser");
     expect(browser?.steps.map((step) => step.title)).toEqual([
-      "Use the machine's own browser, and keep it",
-      "Where a sign-in wants a person",
+      "Use the browser you are started with, and keep it",
       "Keep what you sign in with",
     ]);
-    expect(browser?.steps[0]?.body).toContain("a browser tool of your product that attaches");
-    expect(browser?.steps[0]?.body).toContain(BROWSER_TOOL_OF_A_PRODUCT);
-    expect(browser?.steps[1]?.body).toContain("over a remote desktop");
+    expect(browser?.steps[0]?.body).toContain('the browser your runner.json names as "browser"');
+    expect(browser?.steps[0]?.body).toContain(BROWSER_OF_AN_AGENT);
+    expect(BROWSER_OF_AN_AGENT).toContain('"headless", which is yours where the file names none');
+    expect(BROWSER_OF_AN_AGENT).toContain("the Claude in Chrome extension");
+    expect(BROWSER_OF_AN_AGENT).toContain("Which of the two you use is yours to choose.");
+    expect(browser?.steps.map((step) => step.body).join(" ")).not.toContain(
+      "over a remote desktop",
+    );
+    // What a sign-in is like sends the agent to neither browser.
+    expect(browser?.steps.map((step) => step.body).join(" ")).not.toMatch(
+      /ask for "chrome"|has none for/,
+    );
     expect(browser?.steps[1]?.body).toContain(
       "Nothing you sign in with is sent in a message, a task or a comment.",
     );

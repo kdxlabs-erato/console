@@ -60,7 +60,13 @@ import { PLUGIN_LIST_LIMIT } from "../plugin/limits.js";
 import { checkRecords, RECORDS_DIR, RECORDS_INDEX_FILE, type RecordsFiles } from "../records.js";
 import { agentHref, decisionHref, docHref, myDecisionHref, taskHref } from "../router.js";
 import { fillRules, RULES_PATH, RULES_TITLE } from "../rules.js";
-import { DEFAULT_RUNNER_CONFIG, parseRunnerConfig } from "../runner/config.js";
+import { HEADLESS_TOOL } from "../runner/browser.js";
+import {
+  DEFAULT_RUNNER_CONFIG,
+  parseRunnerConfig,
+  RUNNER_BROWSERS,
+  type RunnerBrowser,
+} from "../runner/config.js";
 import {
   DESK_FOLDER,
   deskFiles,
@@ -4834,6 +4840,7 @@ const runner: Command = async (args, io) => {
         command: read.config.product?.command,
         args: read.config.product?.args,
         version: io.version,
+        platform: host.platform,
       }),
       config: read.config,
       reconfigured: async () => {
@@ -5627,10 +5634,21 @@ const SETUP_FLAGS: OptionSpec = {
   "new-desk": { type: "boolean" },
   "no-service": { type: "boolean" },
   driver: { type: "string" },
+  browser: { type: "string" },
   "no-browser": { type: "boolean" },
 };
 
 type Me = Awaited<ReturnType<ConsoleClient["me"]>>;
+
+/** The browsers a setup looks for where it is asked for one: every name of `runner.json` but the one for none. */
+const SETUP_BROWSERS = RUNNER_BROWSERS.filter((one) => one !== "none");
+
+/** What a setup says it found of the agent's browser, by the name a new desk gives it; nothing of none. */
+const BROWSER_FOUND: Readonly<Record<RunnerBrowser, string>> = {
+  headless: `, Google Chrome and ${HEADLESS_TOOL.command}, which drives it with no window`,
+  chrome: ", Google Chrome",
+  none: "",
+};
 
 /** The end of what a program said, for a refusal to carry: one line, bounded. */
 function lastWords(ran: Ran): string {
@@ -6195,14 +6213,28 @@ const agentSetup = async (args: readonly string[], io: CliIo): Promise<number> =
       `Not a driver this command has: ${driver}. It has: ${ownRunnerModules({ user: machine.user }).drivers.names().join(", ")}.`,
     );
   }
-  const look = await lookAtMachine(machine, { driver, browser: !on(values, "no-browser") });
+  // The agent's browser (ADR-0151): a Chrome with no window where nobody says another.
+  const named = text(values, "browser");
+  const browser = SETUP_BROWSERS.find((one) => one === named);
+  if (named !== undefined && browser === undefined) {
+    throw misuse(
+      `Not a browser this command sets up: ${named}. It has: ${SETUP_BROWSERS.join(", ")}; --no-browser is for none.`,
+    );
+  }
+  if (named !== undefined && on(values, "no-browser")) {
+    throw misuse("Say one of --browser <name> and --no-browser.");
+  }
+  const look = await lookAtMachine(machine, {
+    driver,
+    browser: on(values, "no-browser") ? "none" : (browser ?? "headless"),
+  });
   if (look.missing.length > 0) {
     throw failed(
       `This machine lacks what the setup needs. Install each yourself, without asking, and run the line again:\n${look.missing.map((line) => `- ${line}`).join("\n")}`,
     );
   }
   io.stdout(
-    `The machine has what the setup needs: git${look.product === undefined ? "" : `, ${look.product}`}${look.browser === undefined ? "" : ", Google Chrome"}.\n${look.notes.map((line) => `${line}\n`).join("")}`,
+    `The machine has what the setup needs: git${look.product === undefined ? "" : `, ${look.product}`}${look.browser === undefined ? "" : BROWSER_FOUND[look.browser]}.\n${look.notes.map((line) => `${line}\n`).join("")}`,
   );
   const client = await signInAsAccount(io, machine, url, setup);
   const me = await client.me();
