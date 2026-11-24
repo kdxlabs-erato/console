@@ -4723,17 +4723,33 @@ describe("configuring, as the person", () => {
         },
       },
     });
-    const written: { path: string; name: string; words: string }[] = [];
-    const writeBytes: CliIo["writeBytes"] = async (path, bytes, name) => {
-      written.push({ path, name, words: new TextDecoder().decode(bytes) });
-      return `/home/bob/${path}`;
+    const written: { path: string; name: string; words: string; own: boolean; posted: number }[] =
+      [];
+    const writeBytes: CliIo["writeBytes"] = async (path, bytes, name, options) => {
+      written.push({
+        path,
+        name,
+        words: new TextDecoder().decode(bytes),
+        own: options?.private === true,
+        posted: calls.filter((call) => call.key.startsWith("POST")).length,
+      });
+      return path.startsWith("/") ? path : `/home/bob/${path}`;
     };
     const made = harness({ fetch, env: SIGNED_IN, terminal: false, writeBytes });
     expect(await runCli(["agent", "invite", "mira", "--out", "line.md"], made.io)).toBe(EXIT.ok);
+    // The path is tried first, with nothing in it and before the invitation is made, and the
+    // line is then written where the try landed; the file is the account's alone to read.
+    expect(written).toHaveLength(2);
+    expect(written[0]).toEqual({
+      path: "line.md",
+      name: "mira-invitation.md",
+      words: "",
+      own: true,
+      posted: 0,
+    });
+    expect(written[1]).toMatchObject({ path: "/home/bob/line.md", own: true, posted: 1 });
     // The file holds what the command would have printed: the line, to be copied, and the guide.
-    expect(written).toHaveLength(1);
-    expect(written[0]).toMatchObject({ path: "line.md", name: "mira-invitation.md" });
-    const words = written[0]?.words ?? "";
+    const words = written[1]?.words ?? "";
     expect(words).toContain("An invitation for @mira, good until 2026-10-16T10:00:00.000Z");
     expect(words).toContain(
       "\n```\nSet this machine up for an agent account. Install what is missing yourself, without asking: first Node.js 24 or later and the command (npm i -g @skillcdn/console). Then run console agent setup --console https://console.test --code ABCD-EFGH and do what it prints. Ask me only for a sign-in or an administrator's password.\n```\n",
@@ -4743,6 +4759,12 @@ describe("configuring, as the person", () => {
     expect(made.out()).toContain("An invitation for @mira, good until 2026-10-16T10:00:00.000Z");
     expect(made.out()).toContain("Its line is written to /home/bob/line.md and is not shown here");
     expect(made.out()).toContain("--file /home/bob/line.md --to <login>");
+    // A comment carries the file as an attachment: its own words are printed back by the command
+    // that writes them, which would put the line in the record all the same.
+    expect(made.out()).toContain(
+      'console comment <number> "<a line for them>" --attach /home/bob/line.md',
+    );
+    expect(made.out()).not.toContain("console comment <number> --file");
     expect(made.out() + made.err()).not.toContain("ABCD");
     expect(made.out() + made.err()).not.toContain("EFGH");
     // As data too: the invitation and the file, never the code or the command.
@@ -4755,15 +4777,44 @@ describe("configuring, as the person", () => {
       invitation: { createdAt: WHEN, expiresAt: "2026-10-16T10:00:00.000Z", by: BOB },
       file: "/home/bob/line.md",
     });
-    // A file that cannot be written leaves an invitation nobody holds the line of: said, with
-    // what to do, and still without the code.
+    // A path that cannot be written is said before anything is asked of the console: the
+    // invitation before stands, and no code was made for nobody to hold.
+    const asked = calls.length;
     const nowhere = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["agent", "invite", "mira", "--out", "/none/line.md"], nowhere.io)).toBe(
       EXIT.failed,
     );
-    expect(nowhere.err()).toContain("could not be written at /none/line.md");
-    expect(nowhere.err()).toContain("Make the invitation again");
-    expect(nowhere.out() + nowhere.err()).not.toContain("ABCD");
+    expect(nowhere.err()).toContain("Nothing can be written at /none/line.md");
+    expect(nowhere.err()).toContain("no invitation was made");
+    expect(calls.slice(asked).some((call) => call.key.startsWith("POST"))).toBe(false);
+    // A file that takes the try and not the line leaves an invitation nobody holds the line of:
+    // said, with what to do, and still without the code.
+    let tries = 0;
+    const halfway = harness({
+      fetch,
+      env: SIGNED_IN,
+      writeBytes: async (path) => {
+        tries += 1;
+        if (tries > 1) {
+          throw new Error("no room");
+        }
+        return path;
+      },
+    });
+    expect(await runCli(["agent", "invite", "mira", "--out", "/full/line.md"], halfway.io)).toBe(
+      EXIT.failed,
+    );
+    expect(halfway.err()).toContain("could not be written at /full/line.md");
+    expect(halfway.err()).toContain("Make the invitation again");
+    expect(halfway.out() + halfway.err()).not.toContain("ABCD");
+    // A path a shell would split is spelled so that both shells take it whole.
+    const spaced = harness({
+      fetch,
+      env: SIGNED_IN,
+      writeBytes: async () => String.raw`C:\Users\mira lee\line.md`,
+    });
+    expect(await runCli(["agent", "invite", "mira", "--out", "line.md"], spaced.io)).toBe(EXIT.ok);
+    expect(spaced.out()).toContain(String.raw`--attach 'C:\Users\mira lee\line.md'`);
     // Taking one away writes nothing: the two are not said together, and nothing is asked.
     const before = calls.length;
     const both = harness({ fetch, env: SIGNED_IN, writeBytes });

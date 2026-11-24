@@ -1,4 +1,4 @@
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import process from "node:process";
 import { secretKeys } from "./keys.js";
@@ -70,10 +70,23 @@ export function readBytesAt(path: string): Promise<Uint8Array> {
 
 /**
  * A file read from the console, written at the path, or into it under the file's name when
- * the path is a directory; says where it went, in full.
+ * the path is a directory; says where it went, in full. With `private`, the file is the OS
+ * account's alone to read (mode 600), one that was there before too: what holds a line that is
+ * shown once is no other account's of the machine to read. Windows keeps a file to its account's
+ * own folders by itself and has no such mode.
  */
-export async function writeBytesAt(path: string, bytes: Uint8Array, name: string): Promise<string> {
+export async function writeBytesAt(
+  path: string,
+  bytes: Uint8Array,
+  name: string,
+  options: { readonly private?: boolean } = {},
+): Promise<string> {
   const target = (await stat(path).catch(() => undefined))?.isDirectory() ? join(path, name) : path;
-  await writeFile(target, bytes);
+  if (options.private === true) {
+    await writeFile(target, bytes, { mode: 0o600 });
+    await chmod(target, 0o600);
+  } else {
+    await writeFile(target, bytes);
+  }
   return resolve(target);
 }

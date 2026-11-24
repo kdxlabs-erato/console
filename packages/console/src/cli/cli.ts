@@ -301,8 +301,16 @@ export interface CliIo {
   readonly readFile: (path: string) => Promise<string>;
   /** A file handed in, as bytes. */
   readonly readBytes: (path: string) => Promise<Uint8Array>;
-  /** A file read from the console, written at a path, or into a directory under its name; says where. */
-  readonly writeBytes: (path: string, bytes: Uint8Array, name: string) => Promise<string>;
+  /**
+   * A file read from the console, written at a path, or into a directory under its name; says
+   * where. With `private`, the file is the OS account's alone to read, whatever was there.
+   */
+  readonly writeBytes: (
+    path: string,
+    bytes: Uint8Array,
+    name: string,
+    options?: { readonly private?: boolean },
+  ) => Promise<string>;
   readonly store: CredentialStore;
   /** What the working directory says of the project, and the way to write it. */
   readonly directory: DirectoryStore;
@@ -5510,7 +5518,8 @@ const agentSignals = async (args: readonly string[], io: CliIo): Promise<number>
 // account a setup is for and opens the guide, and the account is entered through its own sign-in.
 // What the command prints under an agent is in that agent's record from then on, and an agent
 // account that supervises another has nobody reading along: with --out the line goes to a file,
-// which the commands that take one (--file) carry to a person, and the output names no code.
+// which a decision's body or a comment's attachment carries to a person, and the output names no
+// code. Never the words of a comment (`comment --file`): the command prints those back.
 const agentInvite = async (args: readonly string[], io: CliIo): Promise<number> => {
   const { values, positionals } = parse(args, {
     revoke: { type: "boolean" },
@@ -5536,10 +5545,24 @@ const agentInvite = async (args: readonly string[], io: CliIo): Promise<number> 
     );
     return EXIT.ok;
   }
+  // The path is tried before the invitation is made: a new invitation takes the place of the
+  // one before and its code comes once, so one made for a path that cannot be written would
+  // leave the account with an invitation nobody holds. The file is the account's alone to read.
+  const name = `${handle}-invitation.md`;
+  let file: string | undefined;
+  if (out !== undefined) {
+    try {
+      file = await io.writeBytes(out, new Uint8Array(), name, { private: true });
+    } catch {
+      throw failed(
+        `Nothing can be written at ${out}, so no invitation was made and the one before stands. Say a path that can be written.`,
+      );
+    }
+  }
   const made = await session.client.inviteAgent(handle);
   const until = `good until ${moment(made.invitation.expiresAt)} or until its command has signed in`;
   const guide = `${session.url}/setup/${made.code}`;
-  if (out === undefined) {
+  if (file === undefined) {
     answer(io, session, made, () =>
       [
         `An invitation for @${handle}, ${until}. The code is shown this once. It is no credential: it says which account a setup is for, and gives nobody the account.`,
@@ -5566,17 +5589,19 @@ const agentInvite = async (args: readonly string[], io: CliIo): Promise<number> 
   ].join("\n");
   let written: string;
   try {
-    written = await io.writeBytes(out, new TextEncoder().encode(words), `${handle}-invitation.md`);
+    written = await io.writeBytes(file, new TextEncoder().encode(words), name, { private: true });
   } catch {
     // The code came this once and went nowhere: the invitation stands and nobody holds its line.
     throw failed(
-      `The invitation of @${handle} is made, and its line could not be written at ${out}, so nobody has it. Make the invitation again with a path that can be written: it takes the place of this one.`,
+      `The invitation of @${handle} is made, and its line could not be written at ${file}, so nobody has it. Make the invitation again with a path that can be written: it takes the place of this one.`,
     );
   }
+  // The path as both shells take it whole; where it has no such spelling, it is named in words.
+  const path = commandWord(written) ?? "<the file's path, quoted for your shell>";
   answer(io, session, { handle, invitation: made.invitation, file: written }, () =>
     [
       `An invitation for @${handle}, ${until}. Its line is written to ${written} and is not shown here: it carries the code, which is shown nowhere else.`,
-      `Hand the file on unread to whoever prepares the machine: as the body of a decision for them (console ask "<question>" --option "<one>" --option "<another>" --file ${written} --to <login>), in a comment on a task (console comment <number> --file ${written}), or as a file at the messenger. A decision or a comment read with the command afterwards shows the line.`,
+      `Hand the file on unread to whoever prepares the machine: as the body of a decision for them (console ask "<question>" --option "<one>" --option "<another>" --file ${path} --to <login>), attached to a comment on a task (console comment <number> "<a line for them>" --attach ${path}), or as a file at the messenger. Never as a comment's own words (--file there): the command prints them back. A decision read with the command afterwards shows the line. Remove the file once it is handed on: one left in a desk outside work/ is committed and pushed with it.`,
     ].join("\n"),
   );
   return EXIT.ok;

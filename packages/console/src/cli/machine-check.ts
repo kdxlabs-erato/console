@@ -260,24 +260,30 @@ export async function standsInTheWay(machine: SetupMachine): Promise<readonly st
   }
 
   // A launch agent runs while its account is logged in, and macOS logs one account in by
-  // itself, and none while the disk is encrypted.
-  const encrypted = /FileVault is On/i.test((await setting(machine, "fdesetup", ["status"])) ?? "");
+  // itself, and none while the disk is encrypted. Whether it is encrypted is not guessed: where
+  // the program that says so does not answer, nothing is said of a restart, since the advice
+  // for a disk that is not encrypted is one an encrypted Mac cannot follow.
+  const vault = await setting(machine, "fdesetup", ["status"]);
+  const encrypted = vault === undefined ? undefined : /FileVault is On/i.test(vault);
+  // The key is not there where nobody set a login, and reading it then fails: that is an answer.
   const auto =
     (await setting(machine, "defaults", [
       "read",
       "/Library/Preferences/com.apple.loginwindow",
       "autoLoginUser",
     ])) ?? "";
-  const back = auto === machine.user;
-  if (encrypted) {
+  // What a program printed is said back only where it reads as an account's name.
+  const other = /^[\w.-]{1,64}$/.test(auto) ? auto : "another account";
+  const back = encrypted === false && auto === machine.user;
+  if (encrypted === true) {
     lines.push(
-      `A restart: FileVault is on, and with it macOS logs no account in by itself, so after every restart the runner waits until someone logs in as ${machine.user} at the machine. To come back by itself the machine gives FileVault up (sudo fdesetup disable) and logs ${machine.user} in automatically (System Settings, Users & Groups; an administrator). The cost: the disk is no longer encrypted, so whoever takes the machine or its disk reads all of it, the agent's sign-ins among it. Keep FileVault where that weighs more, and name who logs in after a restart.`,
+      `A restart: FileVault is on, and with it macOS logs no account in by itself, so after every restart the runner waits until someone logs in as ${machine.user} at the machine. To come back by itself the machine gives FileVault up (sudo fdesetup disable) and logs ${machine.user} in automatically (System Settings, Users & Groups; an administrator). The cost: the disk is no longer locked with a password, so whoever takes the machine reads all of it, the agent's sign-ins among it. Keep FileVault where that weighs more, and name who logs in after a restart.`,
     );
-  } else if (!back) {
+  } else if (encrypted === false && !back) {
     lines.push(
       auto.length === 0
         ? `A restart: no account is logged in by itself, so after every restart the runner waits until someone logs in as ${machine.user} at the machine. Turn automatic login on for ${machine.user} (System Settings, Users & Groups; an administrator). The cost: whoever starts the machine is in that account without its password. macOS logs one account in so: where several agents share the machine, choose which, and name who logs the others in after a restart.`
-        : `A restart: macOS logs one account in by itself, and here that is ${auto}, so after every restart the runner of ${machine.user} waits until someone logs in as ${machine.user} at the machine. Choose which account the machine logs in by itself, and name who logs the others in after a restart.`,
+        : `A restart: macOS logs one account in by itself, and here that is ${other}, so after every restart the runner of ${machine.user} waits until someone logs in as ${machine.user} at the machine. Choose which account the machine logs in by itself, and name who logs the others in after a restart.`,
     );
   }
   const updates = await setting(machine, "defaults", [

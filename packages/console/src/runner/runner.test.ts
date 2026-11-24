@@ -2345,7 +2345,7 @@ describe("the runner", () => {
     const text = session.sent[1]?.text ?? "";
     // Ahead of what woke the agent, under a header that carries the session's mark.
     expect(text).toMatch(
-      /^\[console [a-z0-9]{6} · runner\]\nThe runner did not run from \S+Z to \S+Z, 3 hours: this machine was asleep, most likely, and nothing reached you meanwhile\. Say so to whom you report to, from when to when: [^\n]+\n\n\[console [a-z0-9]{6} #2 · tell · Jane · 14:02\]\nGo on\.$/,
+      /^\[console [a-z0-9]{6} · runner\]\nThe runner did not run from \S+Z to \S+Z, 3 hours: this machine was asleep, most likely, and nothing reached you meanwhile\. Say so to whom you report to, from when to when\.\n\n\[console [a-z0-9]{6} #2 · tell · Jane · 14:02\]\nGo on\.$/,
     );
     // Said once: the message after says nothing of it.
     session.emit({ type: "turn_completed" });

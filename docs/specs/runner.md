@@ -291,7 +291,7 @@ interface Service {
 
 ```
 [console k3f9a2 · runner]
-The runner did not run from 2026-11-10T23:12:40+09:00 to 2026-11-11T08:57:05+09:00, 9 hours 44 minutes: this machine was asleep, most likely, and nothing reached you meanwhile. Say so to whom you report to, from when to when: a machine that sleeps leaves you unheard until something wakes it.
+The runner did not run from 2026-11-10T23:12:40+09:00 to 2026-11-11T08:57:05+09:00, 9 hours 44 minutes: this machine was asleep, most likely, and nothing reached you meanwhile. Say so to whom you report to, from when to when.
 ```
 
 Each moment is written as the command prints one, with its day, in the workspace's zone where the login kept one. Stretches that follow one another before a message is handed over, as on a machine that wakes for a moment and sleeps again, are said together: how long they lasted in all, between when, and how many they were. It is said once, in the turn that follows anyway: the runner begins no turn for it, since a turn begun the moment a machine wakes may find no network yet, and a machine that wakes for moments would begin one each time. It counts as said when it was handed over, as everything the runner says of its own does: a message that could not be handed over leaves it for the next one, a product that never took the message it was in is not told again, and a runner that ends keeps nothing of it. The line says whom to tell, and the desk's template says nothing of it ([ADR-0146](../adr/0146-the-desks-template-spends-no-sentence-on-what-an-agent-does-by-itself.md)): it is read when there is something to tell, in a desk written before too. Held by tests against a clock of their own, and not seen on a machine that slept yet.

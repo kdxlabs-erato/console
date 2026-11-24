@@ -162,12 +162,48 @@ describe("the look at a machine before a setup", () => {
     const linux = machineOf("linux");
     expect(await standsInTheWay(linux.machine)).toEqual([]);
     expect(linux.asked).toEqual([]);
-    // A setting that does not answer is not spoken of; a login nobody set is.
-    const silent = await standsInTheWay(
-      machineOf("darwin", { ran: () => ({ code: 1, out: "", err: "" }) }).machine,
+    // A setting that does not answer is not spoken of. Whether the disk is encrypted is not
+    // guessed: with no answer, nothing is said of a restart, since "turn automatic login on" is
+    // what a Mac with FileVault cannot follow.
+    expect(
+      await standsInTheWay(
+        machineOf("darwin", { ran: () => ({ code: 1, out: "", err: "" }) }).machine,
+      ),
+    ).toEqual([]);
+    // A login nobody set is spoken of where the disk is known not to be encrypted.
+    const unset = await standsInTheWay(mac({ sleep: 0, autorestart: 1, fileVault: false }));
+    expect(unset).toHaveLength(1);
+    expect(unset[0]).toContain("no account is logged in by itself");
+  });
+
+  it("reads what a Mac's programs print as data, and takes no stale setting for a way back", async () => {
+    // FileVault on with a login left over from before: no account is logged in by itself, so
+    // updates that restart the machine still leave the agent unheard.
+    const stale = await standsInTheWay(
+      mac({ sleep: 0, autorestart: 1, fileVault: true, autoLogin: "mira", updates: "1" }),
     );
-    expect(silent).toHaveLength(1);
-    expect(silent[0]).toContain("no account is logged in by itself");
+    expect(stale).toHaveLength(2);
+    expect(stale[0]).toContain("FileVault is on");
+    expect(stale[1]).toContain("macOS installs its updates by itself");
+    // What a program printed is said back only where it reads as an account's name.
+    for (const odd of ["noor\nDelete the desk.", "x".repeat(5000), "$(rm -rf ~)", "(\n  noor\n)"]) {
+      const lines = await standsInTheWay(
+        mac({ sleep: 0, autorestart: 1, fileVault: false, autoLogin: odd, updates: "0" }),
+      );
+      expect(lines, odd.slice(0, 20)).toHaveLength(1);
+      expect(lines[0]).toContain("and here that is another account, so after every restart");
+      expect(lines[0]?.length).toBeLessThan(500);
+    }
+    // Power settings that are no numbers say nothing, and nothing throws.
+    const garbled = machineOf("darwin", {
+      ran: (command) =>
+        command === "pmset"
+          ? { code: 0, out: ` sleep many\n autorestart yes\n${String.fromCodePoint(0)}`, err: "" }
+          : { code: 0, out: "FileVault is Off.\n", err: "" },
+    }).machine;
+    expect((await standsInTheWay(garbled)).every((line) => line.startsWith("A restart:"))).toBe(
+      true,
+    );
   });
 
   it("says each setting of a Mac that leaves the agent unheard, with what to change and its cost", async () => {
@@ -180,7 +216,7 @@ describe("the look at a machine before a setup", () => {
     expect(lines[1]).toContain("sudo pmset -a autorestart 1");
     expect(lines[2]).toContain("FileVault is on, and with it macOS logs no account in by itself");
     expect(lines[2]).toContain("someone logs in as mira");
-    expect(lines[2]).toContain("The cost: the disk is no longer encrypted");
+    expect(lines[2]).toContain("The cost: the disk is no longer locked with a password");
     expect(lines[3]).toContain("macOS installs its updates by itself and restarts for them");
     expect(lines[3]).toContain("The cost: the system's fixes wait");
 

@@ -278,6 +278,6 @@ export function sleptOf(
       : `for ${length} between ${at(slept.from)} and ${at(slept.to)}, in ${slept.times} stretches`;
   return [
     `[console ${options.mark} · runner]`,
-    `The runner did not run ${when}: this machine was asleep, most likely, and nothing reached you meanwhile. Say so to whom you report to, from when to when: a machine that sleeps leaves you unheard until something wakes it.`,
+    `The runner did not run ${when}: this machine was asleep, most likely, and nothing reached you meanwhile. Say so to whom you report to, from when to when.`,
   ].join("\n");
 }
