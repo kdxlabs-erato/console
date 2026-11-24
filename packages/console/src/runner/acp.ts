@@ -17,6 +17,7 @@ import {
   plainCutEnd,
   type StartOptions,
 } from "./types.js";
+import { saysUsageLimit } from "./usage.js";
 
 // The driver for any product that speaks the Agent Client Protocol (ADR-0085): the product's
 // command, which `runner.json` names, started once for a session and spoken to over its standard
@@ -915,6 +916,15 @@ function sessionOf(
             gaveUp = true;
             waiting = [];
             emit({ type: "cannot_go_on", state: "failed", reason: "sign_in" });
+            return;
+          }
+          // A turn refused on the product's usage limit: nothing goes better before a window
+          // resets, and the protocol has no word for when that is. The session stays open; the
+          // runner waits, tries again by itself, and hands over again what was not answered.
+          // Read by pattern, of the agent's own error alone: not seen with an agent yet.
+          if (saysUsageLimit(words)) {
+            waiting = [];
+            emit({ type: "cannot_go_on", state: "failed", reason: "usage_limit" });
             return;
           }
           // A turn the agent itself said failed is a turn that ended: it takes the next message.

@@ -1898,6 +1898,7 @@ export const ko: Messages = {
         failed: "실패",
         unheard: "응답 없음",
         since: { before: "", after: "부터" },
+        until: { before: "", after: "까지" },
         heard: "러너의 마지막 응답",
         reasons: {
           started: "러너가 시작했습니다",
@@ -1909,6 +1910,7 @@ export const ko: Messages = {
           sign_in: "제품이 로그인되어 있지 않습니다",
           start: "제품이 시작되지 않았습니다",
           crashed: "제품이 비정상 종료했습니다",
+          usage_limit: "제품의 사용량 한도에 닿았습니다",
           no_heartbeat: "러너가 응답하지 않습니다",
         },
       },

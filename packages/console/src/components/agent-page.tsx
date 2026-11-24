@@ -92,6 +92,14 @@ export function AgentStateBadge(props: {
         {words.since.before}
         <Time iso={state.since} precision="clock" />
         {words.since.after}
+        {state.until !== undefined && state.until !== null && (
+          <>
+            {" · "}
+            {words.until.before}
+            <Time iso={state.until} precision="clock" />
+            {words.until.after}
+          </>
+        )}
         {state.heardAt !== null && (
           <>
             {" · "}

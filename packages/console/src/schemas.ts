@@ -857,6 +857,12 @@ export const restRunnerHeartbeatInputSchema = z.object({
   running: z.object({ model: z.nullable(runnerChoice), effort: z.nullable(runnerChoice) }),
   /** The wake sources the runner keeps beside the console's own, and how each stands (ADR-0144); left out by a runner of before. */
   sources: z.optional(z.array(runnerSource).check(z.maxLength(MAX_RUNNER_SOURCES))),
+  /**
+   * Until when the agent stands so, where the runner knows (ADR-0150): for `usage_limit`, when
+   * the product says its limit resets, which is when the runner brings the agent back. `null`
+   * or left out where nothing says, and by a runner of before.
+   */
+  until: z.optional(z.nullable(instant)),
 });
 export type RestRunnerHeartbeatInput = z.infer<typeof restRunnerHeartbeatInputSchema>;
 
@@ -909,6 +915,11 @@ export const restAgentStateSchema = z.object({
   reason: z.nullable(z.string()),
   since: instant,
   heardAt: z.nullable(instant),
+  /**
+   * Until when it stands so, where its runner said (ADR-0150): when a usage limit resets.
+   * Left out by a console of before, and `null` where nothing says.
+   */
+  until: z.optional(z.nullable(instant)),
 });
 export type RestAgentState = z.infer<typeof restAgentStateSchema>;
 
@@ -2211,6 +2222,8 @@ export const restEventDataSchema = z.object({
   state: z.optional(z.enum(AGENT_STATES)),
   was: z.optional(z.nullable(z.enum(AGENT_STATES))),
   detail: z.optional(z.string()),
+  /** For `agent.state_changed`: until when the account stands so, where its runner said, as when a usage limit resets (ADR-0150). */
+  until: z.optional(instant),
   /** For the events about a project: its key and its name. */
   key: z.optional(z.string()),
   name: z.optional(z.string()),

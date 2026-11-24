@@ -194,6 +194,14 @@ export function AgentAccountList(props: AgentAccountListProps) {
                         {states.since.before}
                         <Time iso={state.since} precision="clock" />
                         {states.since.after}
+                        {state.until !== undefined && state.until !== null && (
+                          <>
+                            {" · "}
+                            {states.until.before}
+                            <Time iso={state.until} precision="clock" />
+                            {states.until.after}
+                          </>
+                        )}
                       </span>
                     </span>
                   )}

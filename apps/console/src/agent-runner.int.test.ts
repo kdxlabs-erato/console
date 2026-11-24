@@ -850,4 +850,35 @@ describe("an agent account's runner (ADR-0085)", () => {
     expect(silent.status).toBe(400);
     expect(await errorOf(silent)).toBe("request.invalid");
   });
+
+  it("keeps until when a usage limit stops the agent, as its runner said, and tells the feed (ADR-0150)", async () => {
+    const until = "2026-11-20T18:30:00.000Z";
+    await heartbeat({ reason: "resumed" });
+    // A runner of before says no moment, and the account's line holds none.
+    expect((await agentOf({ cookie: alice })).state?.until).toBeNull();
+    await heartbeat({ state: "failed", reason: "usage_limit", until });
+    // Whoever sees the account reads why it stands so and until when.
+    expect((await agentOf({ cookie: bob })).state).toMatchObject({
+      state: "failed",
+      reason: "usage_limit",
+      until,
+    });
+    // The feed is told with the moment, for whoever tells people when the agent is back.
+    const told = restEventsSchema
+      .parse(await (await get({ cookie: alice }, `${REST_ROUTES.events}?after=0`)).json())
+      .items.filter((event) => event.kind === "agent.state_changed")
+      .at(-1);
+    expect(told?.data).toMatchObject({ state: "failed", detail: "usage_limit", until });
+    // A moment is data: an instant, or nothing.
+    for (const moment of ["3am", 1795458600, "2026-11-20"]) {
+      const refused = await send(bearer(command), "PUT", RUNNER, beat({ until: moment }));
+      expect(refused.status, String(moment)).toBe(400);
+    }
+    // The agent is back: the next heartbeat says no moment, and none stands.
+    await heartbeat({ reason: "resumed" });
+    expect((await agentOf({ cookie: alice })).state).toMatchObject({
+      state: "running",
+      until: null,
+    });
+  });
 });

@@ -49,6 +49,8 @@ export interface RunnerRecord {
   readonly state: AgentState | undefined;
   readonly reason: string | undefined;
   readonly stateAt: Date | undefined;
+  /** Until when it stands so, where its runner said: when a usage limit resets (ADR-0150). */
+  readonly stateUntil: Date | undefined;
   readonly heardAt: Date | undefined;
   readonly delivered: number;
   /** The number of the newest signal of the account; 0 for none. */
@@ -83,6 +85,7 @@ const toRunner = (row: RunnerRow): RunnerRecord => ({
   state: row.state ?? undefined,
   reason: row.reason ?? undefined,
   stateAt: row.stateAt ?? undefined,
+  stateUntil: row.stateUntil ?? undefined,
   heardAt: row.heardAt ?? undefined,
   delivered: row.delivered,
   latest: row.nextSignal - 1,
@@ -188,6 +191,8 @@ async function tellState(
     readonly state: AgentState;
     readonly was: AgentState | null;
     readonly reason: string;
+    /** Until when it stands so, where its runner said: a plugin that tells people says when the agent is back. */
+    readonly until?: Date | undefined;
     readonly now: Date;
   },
 ): Promise<void> {
@@ -201,6 +206,7 @@ async function tellState(
       state: change.state,
       was: change.was,
       detail: change.reason,
+      ...(change.until === undefined ? {} : { until: change.until.toISOString() }),
     },
     now: change.now,
   });
@@ -290,6 +296,12 @@ export async function recordHeartbeat(
     const stopped = before.stopSignal !== null;
     const state: AgentState = stopped ? "stopped" : heartbeat.state;
     const reason: AgentStateReason = stopped ? "stop" : heartbeat.reason;
+    // Until when the runner says its agent stands so (ADR-0150): its own word alone, and none
+    // while a supervisor's stop stands, which no moment ends.
+    const until =
+      stopped || heartbeat.until === undefined || heartbeat.until === null
+        ? undefined
+        : new Date(heartbeat.until);
     const changed = before.state !== state;
     // What was chosen is kept among what the product offers, as a `set` holds it: a runner that
     // says another product since, a desk whose driver changed, offers other models, and a model
@@ -316,6 +328,7 @@ export async function recordHeartbeat(
         ...(gone(before.model, heartbeat.offers.models) ? { model: null } : {}),
         ...(gone(before.effort, heartbeat.offers.efforts) ? { effort: null } : {}),
         ...(changed ? { state, reason, stateAt: now } : { reason }),
+        stateUntil: until ?? null,
         updatedAt: now,
       })
       .where(eq(agentRunners.personId, account.id))
@@ -331,6 +344,7 @@ export async function recordHeartbeat(
           state,
           was: before.state,
           reason,
+          until,
           now,
         });
       }
@@ -350,6 +364,7 @@ export async function recordHeartbeat(
           // What the feed said last, where a change before this one went untold.
           was: changed ? before.state : ((told.last as AgentState | undefined) ?? before.state),
           reason,
+          until,
           now,
         });
       }
@@ -519,7 +534,9 @@ export async function sendSignal(
         nextSignal: next + 1,
         ...(stops ? { stopSignal: next } : {}),
         ...(starts ? { stopSignal: null } : {}),
-        ...(becomesStopped ? { state: "stopped", reason: "stop", stateAt: now } : {}),
+        ...(becomesStopped
+          ? { state: "stopped", reason: "stop", stateAt: now, stateUntil: null }
+          : {}),
         ...(chosen === undefined ? {} : { model: chosen.model, effort: chosen.effort }),
         updatedAt: now,
       })
@@ -679,7 +696,14 @@ export async function noteUnheardRunners(
     for (const { runner, account } of quiet) {
       await tx
         .update(agentRunners)
-        .set({ state: "unheard", reason: "no_heartbeat", stateAt: now, updatedAt: now })
+        .set({
+          state: "unheard",
+          reason: "no_heartbeat",
+          stateAt: now,
+          // What a runner said of a moment to come is no longer known to hold.
+          stateUntil: null,
+          updatedAt: now,
+        })
         .where(eq(agentRunners.personId, runner.personId));
       await tellState(tx, {
         account: toPerson(account),

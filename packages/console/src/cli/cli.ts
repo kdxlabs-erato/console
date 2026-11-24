@@ -4680,9 +4680,18 @@ function runnerStateOf(text: string | undefined): RunnerState | undefined {
   const delivered = "delivered" in json ? json.delivered : undefined;
   const conversation = "conversation" in json ? json.conversation : undefined;
   const driver = "driver" in json ? json.driver : undefined;
+  const limited = "limited" in json ? json.limited : undefined;
+  const kept: unknown = "kept" in json ? json.kept : undefined;
   if (typeof delivered !== "number" || !Number.isSafeInteger(delivered) || delivered < 0) {
     return undefined;
   }
+  /** A moment in milliseconds since the epoch, or nothing for anything else. */
+  const momentOf = (value: unknown): number | undefined =>
+    typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  const since =
+    typeof limited === "object" && limited !== null && "since" in limited
+      ? momentOf(limited.since)
+      : undefined;
   return {
     delivered,
     conversation:
@@ -4692,6 +4701,23 @@ function runnerStateOf(text: string | undefined): RunnerState | undefined {
     // The driver the conversation was begun under, as a registry spells one.
     driver:
       typeof driver === "string" && /^[a-z][a-z0-9-]{0,39}$/.test(driver) ? driver : undefined,
+    // The usage limit the agent is not back from (ADR-0150): since when, and until when where the product said.
+    ...(since === undefined || typeof limited !== "object" || limited === null
+      ? {}
+      : {
+          limited: {
+            since,
+            until: "until" in limited ? momentOf(limited.until) : undefined,
+          },
+        }),
+    // The signals the record has as delivered that the agent never read: taken from the stream once more.
+    ...(Array.isArray(kept)
+      ? {
+          kept: kept
+            .filter((number): number is number => momentOf(number) !== undefined)
+            .slice(0, 50),
+        }
+      : {}),
   };
 }
 
@@ -4857,8 +4883,9 @@ const runner: Command = async (args, io) => {
       now: io.now,
       random: host.random,
       time: (iso) => clock.format(new Date(iso)),
-      // A stretch the runner did not run in is said as the command prints any moment: with its
-      // day, in the workspace's zone where the login kept one.
+      // A moment that may be on another day, a stretch the runner did not run in or when a
+      // usage limit resets, is said as the command prints any moment: with its day, in the
+      // workspace's zone where the login kept one.
       moment,
       files: {
         write: (path, text) => host.writePrivate(workPath(path), text),

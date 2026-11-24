@@ -49,14 +49,41 @@ export type DriverEvent =
   | { readonly type: "taken" }
   /** A turn completed: the agent is done with what it was sent, and waits for more. */
   | { readonly type: "turn_completed" }
-  /** The agent cannot go on: the model refused, or the product failed; with why, in the heartbeat's words. */
+  /**
+   * The agent cannot go on: the model refused, or the product failed; with why, in the
+   * heartbeat's words. For a usage limit (`usage_limit`), `until` is when the product says the
+   * limit resets, where it says: the runner brings the agent back then by itself.
+   */
   | {
       readonly type: "cannot_go_on";
       readonly state: "refused" | "failed";
       readonly reason: AgentStateReason;
+      readonly until?: number | undefined;
     }
+  /**
+   * How much of what the product's subscription allows is used, as the product said it: a
+   * window each. Said whenever the product says so, and never by a driver whose product says
+   * nothing of it, of which the runner then knows nothing.
+   */
+  | { readonly type: "usage"; readonly windows: readonly UsageWindow[] }
   /** The product's process is gone: by itself, or mid-turn. Always the last. */
   | { readonly type: "ended"; readonly how: "exited" | "crashed" };
+
+/**
+ * A window of what a product's subscription allows, which resets: the short one and the week
+ * of Claude Code, say. Everything signed in with the subscription draws on it, a session and
+ * each of its sub-agents alike.
+ */
+export interface UsageWindow {
+  /** What the window is called, in a few plain words of the driver's for the product's own. */
+  readonly name: string;
+  /** How much of it is used, from 0 to 1; nothing where the product does not say. */
+  readonly used: number | undefined;
+  /** When it resets, in milliseconds since the epoch; nothing where the product does not say. */
+  readonly resetsAt: number | undefined;
+  /** Whether the product itself says the window is near its limit, whatever the share used. */
+  readonly near?: boolean | undefined;
+}
 
 /** A message for the agent: `now` stops the turn first, `next` goes after the tool call under way. */
 export interface DriverMessage {

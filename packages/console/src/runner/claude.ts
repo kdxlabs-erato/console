@@ -17,7 +17,9 @@ import {
   plainCut,
   plainCutEnd,
   type StartOptions,
+  type UsageWindow,
 } from "./types.js";
+import { saysUsageLimit } from "./usage.js";
 
 // The `claude` driver (docs/specs/runner.md): the Claude Code binary, unmodified, over its
 // streaming JSON input and output. One message a line on its standard input, one event a line
@@ -57,6 +59,86 @@ const isObject = (value: unknown): value is Json =>
 const textOf = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined;
 const listOf = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
+
+/** How many windows of the product's allowance a line is read for: more than it has. */
+const MAX_WINDOWS = 8;
+/** The product's word for a window, as it spells one. */
+const WINDOW = /^[a-z][a-z0-9_]{0,39}$/;
+
+/** A window's name in plain words: the product's `five_hour` and `seven_day` as a person calls them, the rest as it comes. */
+const windowName = (word: string): string =>
+  word
+    .replace(/^five_hour/, "5-hour")
+    .replace(/^seven_day/, "weekly")
+    .replaceAll("_", " ");
+
+/**
+ * A moment the product gives in seconds since the epoch, in milliseconds; nothing for anything
+ * that is no such number. One past the year 5000 as seconds was given in milliseconds already.
+ */
+function momentOf(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  const ms = value < 1e11 ? value * 1000 : value;
+  return ms < 1e14 ? Math.floor(ms) : undefined;
+}
+
+/** A share used, from 0 to 1, or nothing for anything that is no such number. */
+const shareOf = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.min(1, value)
+    : undefined;
+
+/**
+ * The windows of the allowance as the product says them of a request (`rate_limit_info`): each
+ * of `unifiedWindows` with how much of it is used and when it resets, or the one window the
+ * line itself is of where it names no others. The product marks these fields as its own and no
+ * contract (seen with 2.1.330): read by shape, bounded, and nothing where they are not there.
+ */
+function windowsOf(info: Json): UsageWindow[] {
+  const windows: UsageWindow[] = [];
+  const add = (word: unknown, one: Json): void => {
+    if (typeof word !== "string" || !WINDOW.test(word) || windows.length >= MAX_WINDOWS) {
+      return;
+    }
+    const used = shareOf(one.utilization);
+    const resetsAt = momentOf(one.resetsAt);
+    const near = one.status === "allowed_warning";
+    if (used !== undefined || near) {
+      windows.push({ name: windowName(word), used, resetsAt, ...(near ? { near } : {}) });
+    }
+  };
+  if (isObject(info.unifiedWindows)) {
+    for (const [word, one] of Object.entries(info.unifiedWindows)) {
+      if (isObject(one)) {
+        add(word, one);
+      }
+    }
+  }
+  if (windows.length === 0) {
+    add(info.rateLimitType, info);
+  }
+  return windows;
+}
+
+/**
+ * Whether a line of the product's says that what the subscription allows is used up, and until
+ * when where it says: its typed word for it (`api_error`, with what the refused request said of
+ * the limit beside it), which the product marks as its own and no contract, or its words, which
+ * it says stay the fallback. `said` is the text of a line that is an error of the product's
+ * own. Written down from the product's record of a limit reached (2.1.330): no stream of one
+ * was recorded, since that takes using an allowance up.
+ */
+function limitOf(line: Json, said: string): { readonly until: number | undefined } | undefined {
+  const typed = line.api_error === "usage_limit_reached";
+  if (!typed && !saysUsageLimit(said)) {
+    return undefined;
+  }
+  const params = isObject(line.api_error_params) ? line.api_error_params : undefined;
+  const info = isObject(params?.rate_limit_info) ? params.rate_limit_info : undefined;
+  return { until: momentOf(info?.resetsAt) };
+}
 
 /** One line of the product's output as an object with a type, or nothing for anything else. */
 function lineOf(line: string): Json | undefined {
@@ -201,6 +283,13 @@ interface Read {
   readonly denied: Set<string>;
   /** The calls that started a sub-agent, by their ids, with what each calls it. */
   readonly subagents: Map<string, string>;
+  /**
+   * The usage limit the turn under way ran into, where it did: until when, where the product
+   * said, and the words it was said in, which the turn's result says again.
+   */
+  limit: { until: number | undefined; said: string | undefined } | undefined;
+  /** When the limit resets that a request of the turn under way was refused by, where the product said so of the request. */
+  resets: number | undefined;
   /** What cuts a text to what is shown of it. */
   readonly cut: Cut;
 }
@@ -354,6 +443,32 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
       const whose = whoseOf(line, state);
       // A fact is said only where there is one: a line of the session's own carries none.
       const said = Object.keys(whose).length === 0 ? {} : { data: whose };
+      // An error of the product's own, which it writes in the model's place: where it says the
+      // usage limit is reached, in the session's own turn, it is the product's word and no
+      // answer of the agent's, and the turn's result is read by it.
+      if (
+        (typeof line.error === "string" || line.is_api_error_message === true) &&
+        Object.keys(whose).length === 0
+      ) {
+        const words = blocks
+          .flatMap((block) =>
+            isObject(block) && block.type === "text" && typeof block.text === "string"
+              ? [block.text]
+              : [],
+          )
+          .join("\n");
+        const limit = limitOf(line, words);
+        if (limit !== undefined) {
+          state.limit = { until: limit.until, said: words };
+          events.push({
+            type: "event",
+            kind: "error",
+            text: words.length === 0 ? "The product's usage limit is reached." : words,
+            data: { limit: "reached" },
+          });
+          return events;
+        }
+      }
       for (const block of blocks) {
         if (!isObject(block)) {
           continue;
@@ -453,6 +568,36 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
       // A turn that was stopped says so in the product's word for how it ended, and is no
       // error, whatever else its result says: it is what was asked for.
       const stopped = textOf(line.terminal_reason)?.startsWith("aborted") === true;
+      // A turn that ended on the usage limit: the agent cannot go on until a window resets, and
+      // whatever it was handed and had not answered is the runner's to hand over again. Said
+      // once, though the product writes it twice, in the model's place and as the result.
+      const met = state.limit;
+      const resets = state.resets;
+      state.limit = undefined;
+      state.resets = undefined;
+      const limit = line.is_error === true && !stopped ? (limitOf(line, said) ?? met) : undefined;
+      if (limit !== undefined) {
+        // A build that says no message back: what it was written is not waited for here, and
+        // is the runner's to hand over again.
+        if (!state.acknowledges) {
+          state.waiting.clear();
+        }
+        if (met?.said === undefined || (said.length > 0 && said !== met.said)) {
+          events.push({
+            type: "event",
+            kind: "error",
+            text: said.length === 0 ? "The product's usage limit is reached." : said,
+            data: { limit: "reached" },
+          });
+        }
+        events.push({
+          type: "cannot_go_on",
+          state: "failed",
+          reason: "usage_limit",
+          until: limit.until ?? met?.until ?? resets,
+        });
+        return events;
+      }
       if (line.is_error === true && !stopped) {
         events.push({
           type: "event",
@@ -489,6 +634,22 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
         events.push({ type: "event", kind: "status", text: "The turn was stopped." });
       }
       events.push({ type: "turn_completed" });
+      return events;
+    }
+    case "rate_limit_event": {
+      // What the product says of the allowance after a request: said on as it is, for the
+      // runner to tell its agent by. A request the limit refused says when the limit resets.
+      const info = isObject(line.rate_limit_info) ? line.rate_limit_info : undefined;
+      if (info === undefined) {
+        return events;
+      }
+      const windows = windowsOf(info);
+      if (windows.length > 0) {
+        events.push({ type: "usage", windows });
+      }
+      if (info.status === "rejected") {
+        state.resets = momentOf(info.resetsAt) ?? state.resets;
+      }
       return events;
     }
     case "command_lifecycle": {
@@ -577,6 +738,8 @@ function sessionOf(
     denied: new Set(),
     acknowledges: false,
     subagents: new Map(),
+    limit: undefined,
+    resets: undefined,
     cut,
   };
 

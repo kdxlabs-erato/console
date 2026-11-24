@@ -947,4 +947,27 @@ describe("the codex driver", () => {
     });
     expect(await odd.probe()).toEqual({ version: "1.2.3", models: [], efforts: [] });
   });
+
+  it("says a usage limit as that, by the words of a turn that failed, and leaves what was sent to the runner", async () => {
+    // Its words for it were not seen: these are invented, in the shape of an error it writes.
+    const limited = started();
+    await limited.session.send(message("Go."));
+    await limited.session.send(message("And this."));
+    const turn = await limited.turn(0);
+    turn.says(...BEGAN, {
+      type: "turn.failed",
+      error: { message: "You've hit your usage limit. Try again at 3:15 PM." },
+    });
+    turn.exits(1);
+    expect((await limited.said(5)).slice(3)).toEqual([
+      {
+        type: "event",
+        kind: "error",
+        text: "You've hit your usage limit. Try again at 3:15 PM.",
+      },
+      { type: "cannot_go_on", state: "failed", reason: "usage_limit" },
+    ]);
+    await tick();
+    expect(limited.turns).toHaveLength(1);
+  });
 });

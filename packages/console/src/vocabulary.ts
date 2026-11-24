@@ -118,7 +118,9 @@ export type SessionKind = (typeof SESSION_KINDS)[number];
 /**
  * Why an agent account stands as it does (ADR-0085), one of a short list and never what was
  * said: the runner's word for what it reports, `stop` for a supervisor's, `no_heartbeat` for an
- * account the console has not heard from.
+ * account the console has not heard from. `usage_limit` is the product's subscription used up
+ * until a window of it resets (ADR-0150): the one the runner brings the agent back from by
+ * itself.
  */
 export const AGENT_STATE_REASONS = [
   "started",
@@ -130,6 +132,7 @@ export const AGENT_STATE_REASONS = [
   "sign_in",
   "start",
   "crashed",
+  "usage_limit",
   "no_heartbeat",
 ] as const;
 

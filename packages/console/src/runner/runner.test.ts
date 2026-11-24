@@ -478,6 +478,7 @@ function setup(
       reconnectMs: 10,
       holdMs: 150,
       maxHoldMs: 300,
+      resetMarginMs: 30,
     },
   });
   const done = runner.run();
@@ -918,6 +919,481 @@ describe("the runner", () => {
     expect(second.sent[0]?.text).toContain("#1 · tell · Jane · 14:02]\nBegin.");
     second.emit(...STARTED, { type: "turn_completed" });
     await until("the state", () => console.beats.at(-1)?.state === "running");
+  });
+
+  it("waits out a usage limit: says until when, keeps what arrives, and brings the agent back by itself", async () => {
+    const { console, product, saved, log } = setup();
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    // The agent read it and worked, and then a request was refused: the limit resets in a moment.
+    const resets = Date.now() + 250;
+    session.emit(
+      ...STARTED,
+      { type: "taken" },
+      { type: "event", kind: "assistant", text: "On it." },
+      { type: "event", kind: "error", text: "You've hit your 5-hour limit" },
+      { type: "cannot_go_on", state: "failed", reason: "usage_limit", until: resets },
+    );
+    await until("the state", () => console.beats.at(-1)?.reason === "usage_limit");
+    expect(console.beats.at(-1)).toMatchObject({
+      state: "failed",
+      reason: "usage_limit",
+      until: new Date(resets).toISOString(),
+    });
+    // Kept between the runner's own restarts, so that one started meanwhile brings it back too.
+    expect(saved.at(-1)?.limited).toMatchObject({ until: resets });
+    // What arrives by itself meanwhile is kept, and nothing is handed over.
+    console.signal({
+      kind: "wake",
+      by: null,
+      source: "messenger",
+      key: "C1/1",
+      text: "Are you there?",
+    });
+    console.signal({ kind: "wake", by: null, source: "board", key: "#7" });
+    await sleep(120);
+    expect(session.sent).toHaveLength(1);
+    expect(console.says.delivered).toBe(1);
+    // At the reset, a little after, the runner hands it all over by itself, under its own header.
+    await until("the agent to be brought back", () => session.sent.length === 2);
+    expect(Date.now()).toBeGreaterThanOrEqual(resets);
+    const back = session.sent[1]?.text ?? "";
+    expect(back).toMatch(/^\[console \w{6} · runner\]\nYour product's usage limit stopped you at /);
+    expect(back).toContain(`The limit reset ${new Date(resets).toISOString()}`);
+    expect(back).toContain("What reached you meanwhile follows");
+    // What it had read before the limit is not handed over again: what came since is, in order.
+    expect(back).not.toContain("Begin.");
+    expect(back.indexOf("#2 · wake · messenger: C1/1")).toBeGreaterThan(0);
+    expect(back.indexOf("#3 · wake · board: #7")).toBeGreaterThan(back.indexOf("#2 · wake"));
+    // It stands as stopped until it answers, and as running from then on.
+    session.emit({ type: "taken" });
+    await sleep(60);
+    expect(console.beats.at(-1)).toMatchObject({ state: "failed", reason: "usage_limit" });
+    session.emit({ type: "event", kind: "assistant", text: "Back." });
+    await until("the state", () => console.beats.at(-1)?.state === "running");
+    expect(console.beats.at(-1)).toMatchObject({ state: "running", reason: "resumed" });
+    expect(console.beats.at(-1)).not.toHaveProperty("until");
+    expect(saved.at(-1)?.limited).toBeUndefined();
+    expect(console.says.delivered).toBe(3);
+    session.emit({ type: "turn_completed" });
+    await until("the record", () =>
+      console.events().some(([, , text]) => text === "The turn completed."),
+    );
+    expect(console.events().map(([, kind, text]) => `${kind}: ${text}`)).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^status: The product's usage limit stopped the agent until /),
+        expect.stringMatching(
+          /^status: The runner handed the agent word that its usage limit stopped it/,
+        ),
+      ]),
+    );
+    expect(
+      log.some((line) => line.startsWith("the product's usage limit stopped the agent until")),
+    ).toBe(true);
+    expect(product.sessions).toHaveLength(1);
+  });
+
+  it("hands over again what the agent never read when a usage limit stopped it, and nothing it had answered", async () => {
+    const { console, product } = setup();
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    session.emit(...STARTED, { type: "taken" }, { type: "event", kind: "tool_call", text: "ls" });
+    // Handed over in the turn: one the product took and the agent never came to, a sub-agent's
+    // line being no answer of its own, and one the product had not taken yet.
+    console.signal({ text: "And this." });
+    await until("the second", () => session.sent.length === 2);
+    session.emit(
+      { type: "taken" },
+      { type: "event", kind: "assistant", text: "A sub-agent's.", data: { parent: "toolu_01" } },
+    );
+    console.signal({ text: "And that." });
+    await until("the third", () => session.sent.length === 3);
+    session.emit({
+      type: "cannot_go_on",
+      state: "failed",
+      reason: "usage_limit",
+      until: Date.now() + 120,
+    });
+    await until("the agent to be brought back", () => session.sent.length === 4);
+    const back = session.sent[3]?.text ?? "";
+    expect(back).not.toContain("Begin.");
+    expect(back).toContain("#2 · tell · Jane · 14:02]\nAnd this.");
+    expect(back).toContain("#3 · tell · Jane · 14:02]\nAnd that.");
+    expect(back).toContain(
+      "what you were handed as the limit was reached and had not read among it",
+    );
+    // A message the product still had on its input is refused too: the same stretch, said once.
+    session.emit(
+      { type: "taken" },
+      { type: "taken" },
+      { type: "event", kind: "assistant", text: "Back." },
+      { type: "turn_completed" },
+    );
+    await until("the state", () => console.beats.at(-1)?.state === "running");
+    await until("the count", () => console.says.delivered === 3);
+    expect(
+      console
+        .events()
+        .filter(([, , text]) => String(text).startsWith("The product's usage limit stopped")),
+    ).toHaveLength(1);
+  });
+
+  it("brings the agent back with nothing to hand it, after the cool-down where the product names no reset", async () => {
+    const { console, product } = setup();
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    const stopped = Date.now();
+    session.emit(
+      ...STARTED,
+      { type: "taken" },
+      { type: "event", kind: "assistant", text: "On it." },
+      // A moment that is past names no reset: neither does a product that says none.
+      { type: "cannot_go_on", state: "failed", reason: "usage_limit", until: stopped - 5000 },
+    );
+    await until("the state", () => console.beats.at(-1)?.reason === "usage_limit");
+    expect(console.beats.at(-1)).toMatchObject({ until: null });
+    await until("the runner to try again", () => session.sent.length === 2);
+    // The cool-down is 200 milliseconds here.
+    expect(Date.now() - stopped).toBeGreaterThanOrEqual(170);
+    expect(session.sent[1]?.text).toContain(
+      "The product did not say when the limit resets, so the runner tries now",
+    );
+    expect(session.sent[1]?.text).toContain("Nothing reached you meanwhile.");
+    expect(session.sent[1]?.text).not.toContain("#");
+    // Refused again: twice as long, and the agent is told from when the first refusal stopped it.
+    const again = Date.now();
+    session.emit(
+      { type: "taken" },
+      { type: "cannot_go_on", state: "failed", reason: "usage_limit" },
+    );
+    await until("the runner to try once more", () => session.sent.length === 3);
+    expect(Date.now() - again).toBeGreaterThanOrEqual(370);
+    expect(session.sent[2]?.text).toContain(
+      `stopped you at ${new Date(stopped).toISOString().slice(0, 17)}`,
+    );
+    session.emit({ type: "taken" }, { type: "turn_completed" });
+    await until("the state", () => console.beats.at(-1)?.state === "running");
+  });
+
+  it("tries a supervisor's word alone under a usage limit, keeps the rest undelivered, and starts at once for a restart", async () => {
+    const { console, product, saved } = setup();
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    const resets = Date.now() + 400;
+    const limit: DriverEvent = {
+      type: "cannot_go_on",
+      state: "failed",
+      reason: "usage_limit",
+      until: resets,
+    };
+    session.emit(
+      ...STARTED,
+      { type: "taken" },
+      { type: "event", kind: "assistant", text: "On it." },
+      limit,
+    );
+    await until("the state", () => console.beats.at(-1)?.reason === "usage_limit");
+    // A wake is kept; a supervisor's word after it is tried at once, and alone.
+    console.signal({ kind: "wake", by: null, source: "board", key: "#7" });
+    await sleep(60);
+    console.signal({ text: "Are you there?" });
+    await until("the supervisor's word", () => session.sent.length === 2);
+    expect(Date.now()).toBeLessThan(resets);
+    expect(session.sent[1]?.text).toContain("a supervisor's message is tried now all the same");
+    expect(session.sent[1]?.text).toContain("what else reached you meanwhile is kept");
+    expect(session.sent[1]?.text).toContain("#3 · tell · Jane · 14:02]\nAre you there?");
+    expect(session.sent[1]?.text).not.toContain("#2 · wake");
+    // Refused, with the same reset: nothing more is tried before it, and the wake that was
+    // never handed over is not delivered, so that the console sends it again to a runner
+    // started meanwhile, the supervisor's word with it.
+    session.emit({ type: "taken" }, limit);
+    await sleep(80);
+    expect(session.sent).toHaveLength(2);
+    expect(console.says.delivered).toBe(1);
+    expect(saved.at(-1)).toMatchObject({ delivered: 1, limited: { until: resets } });
+    expect(saved.at(-1)?.kept).toBeUndefined();
+    // A supervisor's restart starts it now, whatever the limit said, with what was kept, in order.
+    console.signal({ kind: "restart", text: "" });
+    const second = await sessionOf(product, 2);
+    await until("the message", () => second.sent.length === 1);
+    expect(Date.now()).toBeLessThan(resets);
+    const text = second.sent[0]?.text ?? "";
+    expect(text.indexOf("#2 · wake · board: #7")).toBeGreaterThan(0);
+    expect(text.indexOf("Are you there?")).toBeGreaterThan(text.indexOf("#2 · wake"));
+    expect(text).not.toContain("usage limit");
+    expect(console.beats.at(-1)).toMatchObject({ state: "running" });
+    expect(console.beats.at(-1)).not.toHaveProperty("until");
+  });
+
+  it("writes down what the product took and the agent never read under a usage limit, and takes it from the stream once more", async () => {
+    // A runner that met the limit: the word it was handed was taken, and so delivered, and never read.
+    const first = setup();
+    first.console.signal({ text: "Begin." });
+    const session = await sessionOf(first.product);
+    await until("the message", () => session.sent.length === 1);
+    session.emit(
+      ...STARTED,
+      { type: "taken" },
+      {
+        type: "cannot_go_on",
+        state: "failed",
+        reason: "usage_limit",
+        until: Date.now() + 60_000,
+      },
+    );
+    await until("the state file", () => first.saved.at(-1)?.limited !== undefined);
+    expect(first.saved.at(-1)).toMatchObject({ delivered: 1, kept: [1] });
+
+    // A runner started meanwhile, with that file: it reads the stream from before what was kept.
+    const since = Date.now() - 60_000;
+    const { console, product, saved } = setup({
+      state: {
+        delivered: 3,
+        conversation: "c-9",
+        driver: "claude",
+        limited: { since, until: Date.now() + 150 },
+        kept: [2],
+      },
+      before: (at) => {
+        at.signal({ text: "One." });
+        at.signal({ kind: "wake", by: null, source: "board", key: "#7", text: "Kept unread." });
+        at.signal({ text: "Three." });
+        at.says.delivered = 3;
+      },
+    });
+    const back = await sessionOf(product);
+    await until("the message", () => back.sent.length === 1);
+    expect(console.streams).toEqual([1]);
+    expect(back.sent[0]?.text).toContain("What reached you meanwhile follows");
+    expect(back.sent[0]?.text).toContain("#2 · wake · board: #7 · 14:02]\nKept unread.");
+    expect(back.sent[0]?.text).not.toContain("One.");
+    expect(back.sent[0]?.text).not.toContain("Three.");
+    // Read at last: nothing is kept any more, and nothing is taken twice.
+    back.emit(
+      ...STARTED,
+      { type: "taken" },
+      { type: "event", kind: "assistant", text: "Back." },
+      { type: "turn_completed" },
+    );
+    await until("the state file", () => saved.at(-1)?.limited === undefined);
+    await until("nothing kept", () => saved.at(-1)?.kept === undefined);
+    expect(saved.at(-1)).toMatchObject({ delivered: 3 });
+    expect(back.sent).toHaveLength(1);
+  });
+
+  it("brings the agent back by the clock, where the timer for it rings late over a sleep", async () => {
+    const console = fakeConsole();
+    const product = fakeDriver();
+    // The clock the runner reads is the test's, which leaps as a machine's does over a sleep.
+    let ahead = 0;
+    const runner = createRunner({
+      client: console.client,
+      driver: product.driver,
+      config: DEFAULT_RUNNER_CONFIG,
+      cwd: "/d",
+      machine: { name: "m", os: "o", user: "u" },
+      version: "0.5.0",
+      now: () => Date.now() + ahead,
+      random: () => 0.1,
+      time: () => "14:02",
+      files: { write: async () => undefined, remove: async () => undefined },
+      state: { load: async () => undefined, save: async () => undefined },
+      log: () => undefined,
+      timing: { heartbeatMs: 40, batchMs: 10, groupWindowMs: 10, reconnectMs: 10 },
+    });
+    const done = runner.run();
+    running.push({ stop: () => runner.stop(), done });
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    // The limit resets in an hour: no timer rings for it while the test runs.
+    session.emit(
+      ...STARTED,
+      { type: "taken" },
+      { type: "event", kind: "assistant", text: "On it." },
+      {
+        type: "cannot_go_on",
+        state: "failed",
+        reason: "usage_limit",
+        until: Date.now() + 3_600_000,
+      },
+    );
+    await until("the state", () => console.beats.at(-1)?.reason === "usage_limit");
+    await sleep(100);
+    expect(session.sent).toHaveLength(1);
+    // The machine slept past the reset: the clock says so at the next heartbeat, and the timer does not.
+    ahead = 3_700_000;
+    await until("the agent to be brought back", () => session.sent.length === 2);
+    expect(session.sent[1]?.text).toContain("The limit reset");
+  });
+
+  it("tells the agent of its allowance at a mark, once and at once: in the turn under way, or in a turn of its own", async () => {
+    const { console, product } = setup();
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    const resetsAt = Date.now() + 3_600_000;
+    const usage = (used: number): DriverEvent => ({
+      type: "usage",
+      windows: [
+        { name: "5-hour", used, resetsAt },
+        { name: "weekly", used: 0.2, resetsAt: resetsAt + 86_400_000 },
+      ],
+    });
+    session.emit(...STARTED, { type: "taken" }, usage(0.5), usage(0.79));
+    await sleep(60);
+    expect(session.sent).toHaveLength(1);
+    // In a turn: read after the tool call under way, under the runner's header.
+    session.emit(usage(0.81));
+    await until("the runner's word", () => session.sent.length === 2);
+    expect(session.sent[1]).toMatchObject({ priority: "next", images: [] });
+    expect(session.sent[1]?.text).toMatch(
+      /^\[console \w{6} · runner\]\nYour product's allowance is 81% used in its 5-hour window, which resets /,
+    );
+    expect(session.sent[1]?.text).not.toContain("weekly");
+    // Once for a mark: what the product says of the same window after is not said again.
+    session.emit({ type: "taken" }, usage(0.84), usage(0.89));
+    await sleep(60);
+    expect(session.sent).toHaveLength(2);
+    // Past the next mark with no turn under way, as when sub-agents left at work spend the
+    // allowance: said at once all the same, in a turn of its own, and not kept for a message
+    // that may come after the limit.
+    session.emit({ type: "turn_completed" });
+    await until("the turn's end", () =>
+      console.events().some(([, , text]) => text === "The turn completed."),
+    );
+    session.emit(usage(0.93));
+    await until("the runner's word", () => session.sent.length === 3);
+    expect(session.sent[2]?.text).toMatch(
+      /^\[console \w{6} · runner\]\nYour product's allowance is 93% used in its 5-hour window/,
+    );
+    // The next message the agent is handed says nothing of it again.
+    console.signal({ kind: "wake", by: null, source: "board", key: "#7" });
+    await until("the next message", () => session.sent.length === 4);
+    expect(session.sent[3]?.text).toMatch(/^\[console \w{6} #2 · wake · board: #7/);
+    expect(
+      console
+        .events()
+        .filter(
+          ([, kind, text]) => kind === "status" && String(text).includes("the agent is told"),
+        ),
+    ).toHaveLength(2);
+    // The signals alone are the record's: the runner's own words are no signal.
+    expect(console.says.delivered).toBe(1);
+  });
+
+  it("counts as told only what it could say: a mark met under a usage limit is said when the agent is back", async () => {
+    const { console, product } = setup();
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    const week: DriverEvent = {
+      type: "usage",
+      windows: [{ name: "weekly", used: 0.85, resetsAt: Date.now() + 86_400_000 }],
+    };
+    session.emit(
+      ...STARTED,
+      { type: "taken" },
+      { type: "event", kind: "assistant", text: "On it." },
+      { type: "cannot_go_on", state: "failed", reason: "usage_limit", until: Date.now() + 100 },
+      week,
+    );
+    await until("the agent to be brought back", () => session.sent.length === 2);
+    expect(session.sent[1]?.text).not.toContain("allowance is");
+    session.emit({ type: "taken" }, { type: "event", kind: "assistant", text: "Back." });
+    await until("the state", () => console.beats.at(-1)?.state === "running");
+    // The product says it again with its next answer, and the agent is told then.
+    session.emit(week);
+    await until("the runner's word", () => session.sent.length === 3);
+    expect(session.sent[2]?.text).toContain("85% used in its weekly window");
+  });
+
+  it("brings the agent back from a usage limit a runner before it met, in the conversation it was stopped in", async () => {
+    const since = Date.now() - 60_000;
+    const { console, product } = setup({
+      state: {
+        delivered: 4,
+        conversation: "c-9",
+        driver: "claude",
+        limited: { since, until: Date.now() + 150 },
+      },
+      before: (at) => {
+        at.says.delivered = 4;
+      },
+      config: { conversation: "daily" },
+    });
+    await until("the first heartbeat", () => console.beats.length > 0);
+    expect(console.beats[0]).toMatchObject({ state: "failed", reason: "usage_limit" });
+    expect(product.sessions).toHaveLength(0);
+    const session = await sessionOf(product);
+    expect(session.options.resume).toBe("c-9");
+    await until("the message", () => session.sent.length === 1);
+    expect(session.sent[0]?.text).toContain(`stopped you at ${new Date(since).toISOString()}`);
+    expect(session.sent[0]?.text).toContain("Nothing reached you meanwhile.");
+  });
+
+  it("says a usage limit to a console of before the word in a word it takes, and loses no heartbeat", async () => {
+    const { console, product, log } = setup();
+    const heartbeat = console.client.runnerHeartbeat;
+    const refused: string[] = [];
+    // A console of before: its list of reasons has no such word, and it takes no heartbeat that says it.
+    console.client.runnerHeartbeat = async (input) => {
+      if (input.reason === "usage_limit") {
+        refused.push(input.reason);
+        throw new ApiError(400, "request.invalid", "reason: Invalid option.");
+      }
+      return heartbeat(input);
+    };
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    session.emit(
+      ...STARTED,
+      { type: "taken" },
+      { type: "cannot_go_on", state: "failed", reason: "usage_limit", until: Date.now() + 5000 },
+    );
+    await until("the state", () => console.beats.at(-1)?.state === "failed");
+    expect(console.beats.at(-1)).toMatchObject({ state: "failed", reason: "crashed" });
+    expect(console.beats.at(-1)).not.toHaveProperty("until");
+    await sleep(120);
+    expect(refused).toHaveLength(1);
+    expect(
+      log.filter((line) => line.startsWith("the console does not take the word usage_limit")),
+    ).toHaveLength(1);
+  });
+
+  it("says a usage limit met before it started to a console of before the word, from its first heartbeat on", async () => {
+    const { console, log } = setup({
+      state: {
+        delivered: 0,
+        conversation: undefined,
+        limited: { since: Date.now() - 1000, until: Date.now() + 5000 },
+      },
+      before: (at) => {
+        const heartbeat = at.client.runnerHeartbeat;
+        at.client.runnerHeartbeat = async (input) => {
+          if (input.reason === "usage_limit") {
+            throw new ApiError(400, "request.invalid", "reason: Invalid option.");
+          }
+          return heartbeat(input);
+        };
+      },
+    });
+    await until("the first heartbeat", () => console.beats.length > 0);
+    expect(console.beats[0]).toMatchObject({ state: "failed", reason: "crashed" });
+    expect(console.beats[0]).not.toHaveProperty("until");
+    await sleep(100);
+    expect(console.beats.every((beat) => beat.reason === "crashed")).toBe(true);
+    expect(
+      log.filter((line) => line.startsWith("the console does not take the word usage_limit")),
+    ).toHaveLength(1);
+    expect(
+      log.some((line) => line.startsWith("the console did not take the first heartbeat")),
+    ).toBe(false);
   });
 
   it("hands a session the secrets runner.json names, and takes every value of the store out of what it reports", async () => {
