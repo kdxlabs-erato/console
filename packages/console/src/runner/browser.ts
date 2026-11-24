@@ -11,10 +11,43 @@ export const HEADLESS_TOOL = {
   /** What a product calls the server, and so its tools: `mcp__chrome-devtools__<tool>` in Claude Code. */
   server: "chrome-devtools",
   command: "chrome-devtools-mcp",
-  install: "npm install -g chrome-devtools-mcp",
+  /**
+   * With the tag written out. Asked for by its name alone, npm on a Node.js older than the
+   * program needs installs the last version that named no Node.js at all, 0.2.6, without a
+   * word: one that answers, knows none of the words below and looks for Chrome in one place
+   * (seen on Windows with Node.js 22.11). Asked for by the tag, npm installs the latest, which
+   * says what it needs when it is started.
+   */
+  install: "npm install -g chrome-devtools-mcp@latest",
   /** What the program runs on: under an older Node.js it ends before it reads a word. */
   needs: "Node.js 20.19, 22.12 or later",
+  /** The first version that knows every word it is started with. */
+  least: "0.23.0",
 } as const;
+
+/**
+ * Whether a version the program answered is one that knows the words it is started with. An
+ * answer that names no version says nothing against it: the session says so where the program
+ * does not start.
+ */
+export function headlessToolKnowsWords(answered: string): boolean {
+  const numbers = (version: string): number[] | undefined => {
+    const read = /^v?(\d{1,6})\.(\d{1,6})\.(\d{1,6})/.exec(version.trim());
+    return read === null ? undefined : read.slice(1).map(Number);
+  };
+  const has = numbers(answered);
+  const least = numbers(HEADLESS_TOOL.least) ?? [];
+  if (has === undefined) {
+    return true;
+  }
+  for (const [index, number] of has.entries()) {
+    const floor = least[index] ?? 0;
+    if (number !== floor) {
+      return number > floor;
+    }
+  }
+  return true;
+}
 
 /**
  * The words the program is started with for a session, whatever its browser shows: nothing

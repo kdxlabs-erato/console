@@ -6107,7 +6107,7 @@ describe("setting a machine up for an agent account (ADR-0088)", () => {
     });
     expect(await runCli(LINE, lacking.io)).toBe(EXIT.failed);
     expect(lacking.err()).toContain(
-      "- chrome-devtools-mcp: the program that drives a Chrome with no window for Claude Code does not answer. Install it: npm install -g chrome-devtools-mcp. It runs on Node.js 20.19, 22.12 or later: where it is installed and does not answer, the machine's Node.js is older. For Claude Code's own browser tool instead, in a Chrome with a window and the Claude in Chrome extension, say --browser chrome.",
+      "- chrome-devtools-mcp: the program that drives a Chrome with no window for Claude Code does not answer. Install it: npm install -g chrome-devtools-mcp@latest. It runs on Node.js 20.19, 22.12 or later: where it is installed and does not answer, the machine's Node.js is older. For Claude Code's own browser tool instead, in a Chrome with a window and the Claude in Chrome extension, say --browser chrome.",
     );
     expect(undriven.written).toEqual([]);
 

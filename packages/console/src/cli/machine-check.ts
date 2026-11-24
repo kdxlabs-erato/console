@@ -1,4 +1,4 @@
-import { HEADLESS_TOOL, headlessToolCommand } from "../runner/browser.js";
+import { HEADLESS_TOOL, headlessToolCommand, headlessToolKnowsWords } from "../runner/browser.js";
 import type { RunnerBrowser } from "../runner/config.js";
 import type { SetupMachine } from "./setup-machine.js";
 
@@ -204,7 +204,11 @@ export async function lookAtMachine(
       // it are both seen from here, and there is no extension and no sign-in to say a line of.
       const chrome = await chromeThere(machine, "program");
       const program = headlessToolCommand(machine.platform, ["--version"]);
-      const drives = (await answers(machine, program.command, program.args)) !== undefined;
+      const answered = await answers(machine, program.command, program.args);
+      const drives = answered !== undefined;
+      // One that answers and is older than the words it is started with: what npm installs,
+      // without a word, on a Node.js older than the program needs.
+      const old = answered !== undefined && !headlessToolKnowsWords(answered);
       if (!chrome) {
         missing.push(
           `Google Chrome: the agent's browser is a Chrome with no window, which ${name} is started with, and the agent signs in at its services in it. Install it${chromePlace(machine.platform)}. For an agent that signs in at no page, say --no-browser.`,
@@ -215,7 +219,12 @@ export async function lookAtMachine(
           `${HEADLESS_TOOL.command}: the program that drives a Chrome with no window for ${name} does not answer. Install it: ${HEADLESS_TOOL.install}. It runs on ${HEADLESS_TOOL.needs}: where it is installed and does not answer, the machine's Node.js is older.${tool === undefined ? "" : ` For ${name}'s own browser tool instead, in a Chrome with a window and ${tool.needs}, say --browser chrome.`}`,
         );
       }
-      if (chrome && drives) {
+      if (old) {
+        missing.push(
+          `${HEADLESS_TOOL.command}: the one on this machine is ${/^v?[\d.]{1,20}/.exec(answered ?? "")?.[0] ?? "old"}, older than ${HEADLESS_TOOL.least}, the first that knows the words ${name} starts it with. npm installs one that old where the machine's Node.js is older than the program needs, ${HEADLESS_TOOL.needs}: update Node.js, then ${HEADLESS_TOOL.install}.`,
+        );
+      }
+      if (chrome && drives && !old) {
         browser = "headless";
       }
     } else if (wanted.browser === "chrome" && tool !== undefined) {

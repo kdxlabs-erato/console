@@ -105,8 +105,32 @@ describe("the look at a machine before a setup", () => {
     expect(neither.browser).toBeUndefined();
     expect(neither.missing).toEqual([
       "Google Chrome: the agent's browser is a Chrome with no window, which Claude Code is started with, and the agent signs in at its services in it. Install it from its maker's package (google-chrome-stable), which takes an administrator. For an agent that signs in at no page, say --no-browser.",
-      "chrome-devtools-mcp: the program that drives a Chrome with no window for Claude Code does not answer. Install it: npm install -g chrome-devtools-mcp. It runs on Node.js 20.19, 22.12 or later: where it is installed and does not answer, the machine's Node.js is older. For Claude Code's own browser tool instead, in a Chrome with a window and the Claude in Chrome extension, say --browser chrome.",
+      "chrome-devtools-mcp: the program that drives a Chrome with no window for Claude Code does not answer. Install it: npm install -g chrome-devtools-mcp@latest. It runs on Node.js 20.19, 22.12 or later: where it is installed and does not answer, the machine's Node.js is older. For Claude Code's own browser tool instead, in a Chrome with a window and the Claude in Chrome extension, say --browser chrome.",
     ]);
+    // One that answers and is older than the words it is started with is none to start: npm
+    // installs it without a word where the machine's Node.js is older than the program needs.
+    const dated = machineOf("win32", {
+      there: ["C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"],
+      ran: (command, args) =>
+        command === "cmd" && args.includes("chrome-devtools-mcp")
+          ? { code: 0, out: "0.2.6\r\n", err: "" }
+          : undefined,
+    });
+    const tooOld = await lookAtMachine(dated.machine, { browser: "headless" });
+    expect(tooOld.browser).toBeUndefined();
+    expect(tooOld.missing).toEqual([
+      "chrome-devtools-mcp: the one on this machine is 0.2.6, older than 0.23.0, the first that knows the words Claude Code starts it with. npm installs one that old where the machine's Node.js is older than the program needs, Node.js 20.19, 22.12 or later: update Node.js, then npm install -g chrome-devtools-mcp@latest.",
+    ]);
+    const current = machineOf("win32", {
+      there: ["C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"],
+      ran: (command, args) =>
+        command === "cmd" && args.includes("chrome-devtools-mcp")
+          ? { code: 0, out: "1.14.0\r\n", err: "" }
+          : undefined,
+    });
+    expect((await lookAtMachine(current.machine, { browser: "headless" })).browser).toBe(
+      "headless",
+    );
     // A copy in the OS account's own Applications is none the program that starts it finds.
     const own = machineOf("darwin", { there: ["/home/mira/Applications/Google Chrome.app"] });
     const elsewhere = await lookAtMachine(own.machine, { browser: "headless" });

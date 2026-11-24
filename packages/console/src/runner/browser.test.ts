@@ -4,6 +4,7 @@ import {
   HEADLESS_WORDS,
   headlessServers,
   headlessToolCommand,
+  headlessToolKnowsWords,
   WINDOW_WORDS,
 } from "./browser.js";
 
@@ -60,5 +61,28 @@ describe("the program that drives a headless Chrome", () => {
     // The profile is the program's own, the same one every time: a word that named a new one
     // for a session would have every service take the agent for a stranger.
     expect(HEADLESS_WORDS.join(" ")).not.toMatch(/isolated|user-data-dir/i);
+  });
+
+  it("takes a version for one that knows its words from the first that knows them all", () => {
+    // What npm installs on a Node.js older than the program needs, and the versions around
+    // the first that knows every word: the one before it, itself, and the ones run for real.
+    for (const old of [
+      "0.2.6",
+      "0.22.9",
+      "v0.2.6",
+      " 0.2.6 ",
+      `0.2.6${String.fromCodePoint(13)}`,
+    ]) {
+      expect(headlessToolKnowsWords(old)).toBe(false);
+    }
+    for (const known of [HEADLESS_TOOL.least, "0.23.1", "0.26.0", "1.13.0", "1.14.0", "10.0.0"]) {
+      expect(headlessToolKnowsWords(known)).toBe(true);
+    }
+    // An answer that names no version says nothing against the program.
+    for (const unread of ["", "chrome-devtools-mcp", "1.x", "9".repeat(400)]) {
+      expect(headlessToolKnowsWords(unread)).toBe(true);
+    }
+    // What a machine is told to run names the tag: by the name alone, npm picks that old one.
+    expect(HEADLESS_TOOL.install).toBe("npm install -g chrome-devtools-mcp@latest");
   });
 });

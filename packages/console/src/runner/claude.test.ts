@@ -1136,7 +1136,7 @@ describe("the claude driver", () => {
     expect(said[3]).toEqual({
       type: "event",
       kind: "status",
-      text: 'The agent\'s browser did not start: the product could not start chrome-devtools-mcp, so this session has no browser. On this machine: npm install -g chrome-devtools-mcp, which runs on Node.js 20.19, 22.12 or later; or name "browser": "none" in runner.json.',
+      text: 'The agent\'s browser did not start: the product could not start chrome-devtools-mcp, so this session has no browser. On this machine: npm install -g chrome-devtools-mcp@latest, which runs on Node.js 20.19, 22.12 or later; or name "browser": "none" in runner.json.',
     });
     // Said of the browser the driver asked for alone: a server of the desk's own that failed
     // is the product's to say, and a server that started says nothing.
