@@ -9,7 +9,8 @@ import { BROWSER_OF_AN_AGENT, guideServicesOf } from "./setup-guide.js";
 // the console never ends, and the task is finished when nothing of it waits on anyone: a run
 // finished with decisions waiting could ask no more. The task's words are made here, for one account and the
 // services of its workspace, in the words of their modules: English, as a skill is, for the
-// agent to read as they are.
+// agent to read as they are. Every task says how help is asked, whatever the services are
+// (ADR-0152): the agent does everything it can itself, and what it cannot is its own to judge.
 
 export interface OnboardingInput {
   /** The account's handle: what the task and its commands name it by. */
@@ -40,6 +41,15 @@ export function onboardingOf(input: OnboardingInput): {
   const services = guideServicesOf(input.workspace, handle, input.login);
   const own = [
     ...services.flatMap((one) => one.onboarding.map((step) => item(step.title, step.body))),
+    // Where a service has the agent make a token: how one is kept without being seen.
+    ...(services.some((one) => one.onboarding.length > 0)
+      ? [
+          item(
+            "Move a token into your store unseen",
+            "A token a page makes for you goes from the page into your store without passing through your session: copy it with the keys or the page's own button, pipe the clipboard in (`pbpaste | console secret <name> --set` on a Mac), and empty the clipboard. While a page shows a token, read that page with no tool and take no picture of it: what a tool reads is on your record, and a token that was read is made again.",
+          ),
+        ]
+      : []),
     item(
       "Sign in at a page in the browser you are started with",
       `Use the browser your runner.json names as "browser": it keeps a profile, so a sign-in stays there from one session to the next. ${BROWSER_OF_AN_AGENT} Nothing you sign in with goes into a message, a task or a comment.`,
@@ -64,16 +74,11 @@ export function onboardingOf(input: OnboardingInput): {
     "## What you do yourself",
     "",
     ...own,
-    ...(asked.length === 0
-      ? []
-      : [
-          "",
-          "## What you ask for",
-          "",
-          `What you cannot do yourself. Ask for each as a decision, of whoever can do it, and of your manager where you do not know who. Say the exact values, what to hand back and how, and offer "Done" and "Not now": \`console ask "<question>" --option "Done" --option "Not now"\`. A secret that is handed back is seeded where only you read it, by whoever has it: \`console agent secret ${handle} <name>\`. Go on with the rest meanwhile: the answer wakes you.`,
-          "",
-          ...asked,
-        ]),
+    "",
+    "## What you ask for",
+    "",
+    `Do everything you can yourself, and ask for help only with what you cannot do. Ask for that as a decision, of whoever can do it, and of your manager where you do not know who. Say the exact values, what to hand back and how, and offer "Done" and "Not now": \`console ask "<question>" --option "Done" --option "Not now"\`. A secret that is handed back is seeded where only you read it, by whoever has it: \`console agent secret ${handle} <name>\`. Go on with the rest meanwhile: the answer wakes you.`,
+    ...(asked.length === 0 ? [] : ["", ...asked]),
     "",
     "## When you are done",
     "",

@@ -26,7 +26,7 @@ describe("the onboarding task of an agent account", () => {
       body.indexOf("## What you do yourself"),
       body.indexOf("## What you ask for"),
     );
-    expect(own.split("\n").filter((line) => line.startsWith("- **"))).toHaveLength(9);
+    expect(own.split("\n").filter((line) => line.startsWith("- **"))).toHaveLength(10);
     // Where it signs in at a page, it is told how a sign-in stays, with nothing it signs in with
     // in a message; no sign-in is set aside for a person: it asks for help where it cannot go on.
     expect(own).toContain(
@@ -97,6 +97,54 @@ describe("the onboarding task of an agent account", () => {
     expect(body.endsWith("finish the task.\n")).toBe(true);
   });
 
+  it("has a token moved into the store unseen, where a service has the agent make one", () => {
+    const { body } = onboardingOf({ handle: "mira", workspace: WORKSPACE });
+    // By the clipboard, and with no tool reading a page that shows one: what a tool reads is on
+    // the agent's record.
+    expect(body).toContain(
+      "- **Move a token into your store unseen.** A token a page makes for you goes from the page into your store without passing through your session: copy it with the keys or the page's own button, pipe the clipboard in (`pbpaste | console secret <name> --set` on a Mac), and empty the clipboard. While a page shows a token, read that page with no tool and take no picture of it: what a tool reads is on your record, and a token that was read is made again.",
+    );
+    // Before the item on signing in at a page, after what the services have it do.
+    expect(body.indexOf("- **Move a token into your store unseen.**")).toBeGreaterThan(
+      body.indexOf("- **Connect the messenger to your product, and be woken by it.**"),
+    );
+    expect(body.indexOf("- **Move a token into your store unseen.**")).toBeLessThan(
+      body.indexOf("- **Sign in at a page in"),
+    );
+    // A workspace that names no service has it make none, and its task says the least.
+    expect(
+      onboardingOf({ handle: "mira", workspace: { handle: null, domain: null, services: {} } })
+        .body,
+    ).not.toContain("Move a token into your store unseen");
+  });
+
+  it("says the one rule and how help is asked, whatever the services are (ADR-0152)", () => {
+    const asking = (body: string) =>
+      body.slice(body.indexOf("## What you ask for"), body.indexOf("## When you are done"));
+    const rule =
+      'Do everything you can yourself, and ask for help only with what you cannot do. Ask for that as a decision, of whoever can do it, and of your manager where you do not know who. Say the exact values, what to hand back and how, and offer "Done" and "Not now": `console ask "<question>" --option "Done" --option "Not now"`. A secret that is handed back is seeded where only you read it, by whoever has it: `console agent secret mira <name>`. Go on with the rest meanwhile: the answer wakes you.';
+    // Where the services may leave the account without something, the rule and then the list.
+    const full = asking(onboardingOf({ handle: "mira", workspace: WORKSPACE }).body);
+    expect(full.startsWith(`## What you ask for\n\n${rule}\n\n- **The account`)).toBe(true);
+    // Where they ask for nothing, and where the workspace names none, the rule alone: an
+    // account is never left without the way to ask.
+    for (const workspace of [
+      { handle: null, domain: null, services: {} },
+      {
+        handle: "acme",
+        domain: null,
+        services: { identity: { kind: "github" }, git: { kind: "github", organization: "acme" } },
+      },
+    ]) {
+      expect(asking(onboardingOf({ handle: "mira", workspace }).body)).toBe(
+        `## What you ask for\n\n${rule}\n\n`,
+      );
+    }
+    // The rule names no kind of work as a person's, and lists nothing an agent cannot do: that
+    // is the agent's own to judge.
+    expect(rule).not.toMatch(/sign|password|phone|picture|product/i);
+  });
+
   it("says what it cannot do itself as decisions to ask, with how a secret is handed back", () => {
     const { body } = onboardingOf({ handle: "mira", workspace: WORKSPACE });
     const asked = body.slice(
@@ -128,7 +176,6 @@ describe("the onboarding task of an agent account", () => {
         services: { identity: { kind: "github" }, git: { kind: "github", organization: "acme" } },
       },
     });
-    expect(body).not.toContain("## What you ask for");
     expect(body).not.toContain("The account `acme-mira` at GitHub");
     // What the agent does there itself stays: its token for git, and its desk.
     expect(body).toContain("- **Sign in at the git host and keep what you sign in with.**");
@@ -146,7 +193,6 @@ describe("the onboarding task of an agent account", () => {
       expect.stringContaining("Record the accounts you hold elsewhere"),
       expect.stringContaining("Introduce yourself to your manager"),
     ]);
-    expect(body).not.toContain("## What you ask for");
   });
 
   it("keeps the run open while anything of the task waits on a person, and is done when nothing does", () => {

@@ -188,6 +188,11 @@ describe("the desk's template", () => {
     expect(instructions).toContain(
       "An act that destroys something or cannot be undone waits for a decision.",
     );
+    // One rule (ADR-0152): it does everything it can itself, and what it cannot do it asks for
+    // as it asks for a judgment. What that is, the desk does not say: it is the agent's to judge.
+    expect(instructions).toContain(
+      "Nobody is at this terminal, so I do everything I can myself. What I cannot do, what needs someone's judgment, or what cannot be undone, I ask as a decision on the board (`console ask`), of whoever can do or decide it, and of my manager when I do not know who;",
+    );
     // The skill of the board is for the board's tasks: a job that is none needs none of it.
     // Its place is asked of whoami, two lines, and not of the help read whole.
     expect(instructions).toContain(
