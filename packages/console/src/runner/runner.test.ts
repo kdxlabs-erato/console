@@ -1432,7 +1432,7 @@ describe("the runner", () => {
     };
     const { console, product, done, runner } = setup({
       sources: [source],
-      config: { channels: ["ops"] },
+      config: { channels: ["C0OPS"] },
       before: (made) => made.secrets.set("chat.token", "not-a-real-token-9c1d"),
     });
     const session = await sessionOf(product);
@@ -1446,7 +1446,7 @@ describe("the runner", () => {
       },
     ]);
     expect(seen).toEqual(["not-a-real-token-9c1d", undefined]);
-    expect(listened).toEqual(["ops"]);
+    expect(listened).toEqual(["C0OPS"]);
     const text = session.sent[0]?.text ?? "";
     expect(text).toMatch(
       /\[console [a-z0-9]{6} #1 · wake · messenger: chat:ops:17 · 14:02\]\n````\n/,

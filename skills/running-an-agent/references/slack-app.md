@@ -2,7 +2,7 @@
 
 An agent account is a member of the messenger as a person is, with its own address and its own name. It has an app of its own there, one app for one agent account, installed by the agent as itself, for two things: to be woken by what is said to it, and to send as the member it is. The app receives over Socket Mode the events the agent's own member can see, and the runner's `slack` wake source listens on it ([the runner's specification](/docs/specs/runner.md#wake-sources)); the token it holds for the member is what the agent sends with ([Sending](#sending)).
 
-The app reads nothing for the agent: the agent reads at the messenger with the messenger's own MCP server, added to its product.
+The agent does not read with the app: it reads at the messenger with the messenger's own MCP server, added to its product.
 
 ## The manifest
 
@@ -33,7 +33,7 @@ settings:
   token_rotation_enabled: false
 ```
 
-The scopes are the member's own, not a bot's: the app sees the conversations the agent is in, and no other, and what is sent with its token is the member's own message, under the agent's name and picture, with no app named beside it. They are the least that waking and sending take: the four that end in `history` for the events, `chat:write` for a message and `files:write` for a file or a picture. Add none to read with, for a search, a profile or a list of channels: the MCP server reads, and a token that leaked does no more than its scopes allow. A workspace whose administrators approve apps asks one of them to approve it; that is asked as a decision on the board, of whoever administers the messenger.
+The scopes are the member's own, not a bot's: the app sees the conversations the agent is in, and no other, and what is sent with its token is the member's own message, under the agent's name and picture, with no app named beside it. They are the least that waking and sending take: the four that end in `history` for the events, `chat:write` for a message and `files:write` for a file or a picture. Add no other, for a search, a profile or a list of channels: the MCP server reads those. The member's token reads the conversations the agent is in and writes there as the agent, and with no scope beyond these, one that leaked does no more. A workspace whose administrators approve apps asks one of them to approve it; that is asked as a decision on the board, of whoever administers the messenger.
 
 ## The tokens
 
@@ -54,7 +54,7 @@ The agent sends with the messenger's Web API and the member's token, and never w
 
 ## Working hours
 
-The messenger gives a new member working hours, the weekdays from nine to five. Outside them it pauses the member's notifications and shows it on its profile as paused until the next morning, which reads as a member who is away. An agent account is there at every hour: in the member's preferences, under Availability, set Working hours to every day, from 12:00 AM to midnight. No call of the API sets them: it is done on the messenger's own pages, in the browser, signed in as the agent.
+A workspace gives a new member working hours, the weekdays from nine to five where this was seen. Outside them the messenger pauses the member's notifications and shows it on its profile as paused until the next morning, which reads as a member who is away. An agent account is there at every hour: in the member's preferences, under Availability, set Working hours to every day, from 12:00 AM to midnight. No call of the API sets them: it is done on the messenger's own pages, in the browser, signed in as the agent.
 
 ## The runner
 
@@ -66,7 +66,7 @@ Add the source to `wake` in the desk's `runner.json`, and commit it:
 
 The runner takes the change by itself once the agent's turn is over, with the same conversation ([ADR-0144](/docs/adr/0144-a-runner-takes-its-runner-json-as-it-changes-and-says-how-its-wake-sources-stand.md)): nothing is restarted. `console agent <handle>` then says the source is connected, as the runner's lines do (`the slack wake source is connected`), and a direct message, a mention of the agent or what a person says in a group conversation it is in arrives as a wake from the messenger, with the thread as its key.
 
-A channel the agent is to follow without being named each time, one it works in say, is named in `channels`, by the id the messenger gives it (in the channel's details, or the last part of its link), never by its name:
+A channel the agent is to follow without being named each time, one it works in say, is named in `channels`, by the id the messenger gives it (in the channel's details, or the last part of its link), never by its name, which the runner refuses:
 
 ```json
 { "wake": ["console", "slack"], "channels": ["C0123ABCD"] }
@@ -78,10 +78,10 @@ The agent adds one when it, or whoever manages it, chose the channel, and takes 
 
 - A message in a direct conversation with the agent, and a message anywhere the agent is that mentions it, from anyone but the agent itself.
 - What a person says in a group conversation the agent is in, and in a channel `channels` names, whether it names the agent or not.
-- Not what is said in any other channel without naming it, not what an app posted in a group conversation or a channel without naming it, not an edit, a join, a deletion or a reaction, and nothing the agent said.
+- Not what is said in any other channel without naming it, not what an app posted in a group conversation or a channel without naming it, not an edit, a join, a deletion or a reaction, and nothing the agent said. To be heard by another agent in a group conversation or a channel, name it.
 
-A wake carries where it was said, by which member, and the message's words as someone else's: what the message shows, with a table as rows between bars and a list, code and a quote as the messenger writes them in a message's text. What it does not carry of a message, a picture or a button, stands in the words where it was (`[image, not carried in this wake]`), and words longer than 4,000 characters are cut: the wake's first line then says so, with the moment of the message to read whole. The agent reads the thread with the messenger's own tool before it answers there, and the message itself wherever its wake says that something of it is missing.
+A wake carries where it was said, by which member, and the message's words as someone else's: what the message shows, with a table as rows between bars and a list, code and a quote as the messenger writes them in a message's text. What it does not carry of a message, a picture, a button or a file, stands in the words where it was (`[image, not carried in this wake]`, a file by its name), and words longer than 4,000 characters are cut: the wake's first line then says so, with the moment of the message to read whole. The agent reads the thread with the messenger's own tool before it answers there, and the message itself wherever its wake says that something of it is missing.
 
 ## Not seen run yet
 
-This is written from the messenger's documentation of app manifests, Socket Mode, the Events API, a message's blocks and the Web API's methods for a message and a file. Sending with the member's token was seen in a workspace on 2026-11-23, a message as `markdown_text` and a picture put in a direct conversation by the three steps, with words to go with it: each was the member's own, with no line under it. A member's working hours were seen there too. Where the messenger's pages say otherwise, they are right: say so in a report on the onboarding task, with what the page showed.
+This is written from the messenger's documentation of app manifests, Socket Mode, the Events API, a message's blocks and the Web API's methods for a message and a file. Sending with the member's token was seen in a workspace on 2026-11-23, a message as `markdown_text` and a picture put in a direct conversation by the three steps, with words to go with it: each was the member's own, with no line under it. A member's working hours were seen there too. Not seen: a wake in a group conversation or in a named channel, and whether the messenger marks as an app's what a member's token sends there. If it does not, two agents in one group conversation wake each other at every message: say so on the onboarding task when you see it. Where the messenger's pages say otherwise, they are right: say so in a report on the onboarding task, with what the page showed.

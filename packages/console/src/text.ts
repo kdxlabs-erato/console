@@ -31,3 +31,22 @@ export function hasForbiddenCodePoint(value: string, multiline = false): boolean
   }
   return false;
 }
+
+/**
+ * The string with what the console accepts of it and nothing else: well-formed, and without its
+ * forbidden code points. For words that came from elsewhere and are carried on as someone's,
+ * a message of a messenger say, where refusing the whole for one invisible character would
+ * lose what was said. With `multiline`, line breaks and tabs stay.
+ */
+export function withoutForbiddenCodePoints(value: string, multiline = false): string {
+  if (!hasForbiddenCodePoint(value, multiline)) {
+    return value;
+  }
+  let kept = "";
+  for (const character of value.toWellFormed()) {
+    if (!isForbidden(character.codePointAt(0) ?? 0, multiline)) {
+      kept += character;
+    }
+  }
+  return kept;
+}

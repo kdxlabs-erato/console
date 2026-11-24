@@ -307,6 +307,9 @@ describe("runner.json", () => {
       [JSON.stringify({ permissions: ["auto"] }), "permissions"],
       [JSON.stringify({ channels: "C0OPS" }), "channels"],
       [JSON.stringify({ channels: ["#ops"] }), "channels"],
+      // A channel's name, or an id written small, is listened to by nobody: refused, and said.
+      [JSON.stringify({ channels: ["ops"] }), "never its name"],
+      [JSON.stringify({ channels: ["c0ops"] }), "channels"],
       [JSON.stringify({ channels: ["C0OPS\nC0ELSE"] }), "channels"],
       [JSON.stringify({ channels: Array.from({ length: 51 }, () => "C0OPS") }), "channels"],
       [`{"driver":"claude","pad":"${"x".repeat(70_000)}"}`, "larger"],

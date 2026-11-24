@@ -1,4 +1,5 @@
 import * as z from "zod/mini";
+import { withoutForbiddenCodePoints } from "../text.js";
 import type { WakeHost, WakeSource } from "./types.js";
 
 // The `slack` wake source (ADR-0085): one app for one agent account, which receives over its
@@ -19,6 +20,19 @@ const OPEN_URL = "https://slack.com/api/apps.connections.open";
 const MAX_WAKE_TEXT = 4000;
 /** The deepest a list of a message is indented in a wake. */
 const MAX_LIST_DEPTH = 8;
+/** How many files of a message a wake names, and how much of a name. */
+const MAX_FILES_NAMED = 5;
+const MAX_FILE_NAME = 80;
+/**
+ * The kinds of message that are someone's words: a plain one, one with a file, and a reply in a
+ * thread that was sent to its conversation too. Every other kind is an edit, a join or a
+ * deletion, and wakes nobody.
+ */
+const WORDS_OF_SOMEONE: readonly (string | undefined)[] = [
+  undefined,
+  "file_share",
+  "thread_broadcast",
+];
 /** How long the source waits before it looks again where the account keeps no token for it. */
 const NO_TOKEN_WAIT_MS = 5 * 60_000;
 
@@ -43,6 +57,7 @@ const eventSchema = z.object({
    */
   blocks: z.optional(z.unknown()),
   attachments: z.optional(z.unknown()),
+  files: z.optional(z.unknown()),
   ts: z.optional(stamp),
   thread_ts: z.optional(stamp),
 });
@@ -107,11 +122,17 @@ const MARKS = [
   ["code", "`"],
 ] as const;
 
+/**
+ * What a person typed, with the bracket that would begin a name, a channel or a link in a
+ * message's text escaped as the messenger escapes it there: typed words never read as one.
+ */
+const typed = (text: string): string => text.replaceAll(/<(?=[@#!]|https?:|mailto:)/g, "&lt;");
+
 /** One element of a run of rich text, as the messenger writes it in a message's text: a name by its id. */
 function elementOf(element: Json): string {
   switch (element.type) {
     case "text":
-      return textOf(element.text) ?? "";
+      return typed(textOf(element.text) ?? "");
     case "link": {
       const url = textOf(element.url) ?? "";
       const text = textOf(element.text);
@@ -248,13 +269,16 @@ function blockOf(block: Json): string[] {
  * A message's words as people read them. Where it has blocks they are what the messenger shows,
  * and its `text` is what a notification says in their place, which leaves a table out: the
  * words are read from the blocks, and from the `text` only where no block says anything. A
- * table may hang under the message instead, so the blocks under it are read after its own. Each
- * is walked once and to the depth the messenger gives a block, whatever it is nested with.
+ * table may hang under the message instead, so what hangs under it is read after its own: its
+ * blocks, or the words it has in their place, a message someone passed on say. A file of the
+ * message is named and marked as not carried. Each is walked once and to the depth the
+ * messenger gives a block, whatever it is nested with.
  */
 function wordsOf(event: {
   readonly text?: string | undefined;
   readonly blocks?: unknown;
   readonly attachments?: unknown;
+  readonly files?: unknown;
 }): string {
   const shownBy = (blocks: readonly unknown[]): string =>
     blocks
@@ -262,12 +286,37 @@ function wordsOf(event: {
       .filter((part) => part.trim() !== "")
       .join("\n");
   const shown = shownBy(listOf(event.blocks));
-  const under = shownBy(
-    listOf(event.attachments).flatMap((one) => (isObject(one) ? listOf(one.blocks) : [])),
-  );
-  return [shown === "" ? (event.text ?? "") : shown, under]
+  const under = listOf(event.attachments).map((one) => {
+    if (!isObject(one)) {
+      return "";
+    }
+    const blocks = shownBy(listOf(one.blocks));
+    const words = blocks === "" ? (textOf(one.text) ?? textOf(one.fallback) ?? "") : blocks;
+    return words.trim() === "" ? leftOut("attachment") : words;
+  });
+  return [shown === "" ? (event.text ?? "") : shown, ...under, ...filesOf(event.files)]
     .filter((part) => part !== "")
     .join("\n");
+}
+
+/** A mark for each file of a message, by its name on one line: the first few, and how many more. */
+function filesOf(files: unknown): string[] {
+  const all = listOf(files).filter(isObject);
+  const marks = all.slice(0, MAX_FILES_NAMED).map((file) => {
+    const name = (textOf(file.name) ?? textOf(file.title) ?? "")
+      .replaceAll(/[\r\n\]]+/g, " ")
+      .trim()
+      .slice(0, MAX_FILE_NAME);
+    return `[file${name === "" ? "" : ` ${name}`}, not carried in this wake]`;
+  });
+  const more = all.length - marks.length;
+  return more > 0 ? [...marks, `[${more} more files, not carried in this wake]`] : marks;
+}
+
+/** The first `most` characters of a text, never half of a character that takes two. */
+function firstOf(text: string, most: number): string {
+  const last = text.charCodeAt(most - 1);
+  return text.slice(0, last >= 0xd800 && last <= 0xdbff ? most - 1 : most);
 }
 
 /**
@@ -290,7 +339,7 @@ export function slackWakeOf(
   if (
     event === undefined ||
     (event.type !== "message" && event.type !== "app_mention") ||
-    (event.subtype !== undefined && event.subtype !== "file_share") ||
+    !WORDS_OF_SOMEONE.includes(event.subtype) ||
     event.channel === undefined ||
     event.ts === undefined ||
     event.user === undefined ||
@@ -312,7 +361,9 @@ export function slackWakeOf(
     return undefined;
   }
   const thread = event.thread_ts ?? event.ts;
-  const words = wordsOf(event);
+  // Carried without what the console takes in no text, a character that does not show say: with
+  // one left in, the console would refuse the wake whole, and what was said would be lost.
+  const words = withoutForbiddenCodePoints(wordsOf(event), true);
   // A cut is said in the source's own line, with the message to read whole by its moment: said
   // after the words, it would read as theirs.
   const cut =
@@ -334,7 +385,7 @@ export function slackWakeOf(
         : `${said}, from the member ${event.user}, in the thread ${thread} of the conversation ${event.channel}`;
   return {
     key: `slack:${event.channel}:${thread}`,
-    text: `${where}${cut}:\n${cut === "" ? words : `${words.slice(0, MAX_WAKE_TEXT)}…`}`,
+    text: `${where}${cut}:\n${cut === "" ? words : `${firstOf(words, MAX_WAKE_TEXT)}…`}`,
   };
 }
 

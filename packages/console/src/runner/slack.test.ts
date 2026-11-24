@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { restRunnerWakeSchema } from "../schemas.js";
 import { ownRunnerModules } from "./modules.js";
 import { SLACK_APP_TOKEN, slack, slackWakeOf } from "./slack.js";
 import type { WakeHost, WakeSocket } from "./types.js";
@@ -232,7 +233,76 @@ describe("what an event of the messenger wakes the agent for", () => {
           }),
         ),
       )?.text,
-    ).toBe([`${DIRECT}:`, "Totals, as of today:", ...under].join("\n"));
+    ).toBe([`${DIRECT}:`, "Totals, as of today:", ...under, "An older attachment"].join("\n"));
+  });
+
+  it("carries what hangs under a message in words, and names a file it does not carry", () => {
+    // A message someone passed on hangs under theirs with its words and no blocks.
+    expect(
+      slackWakeOf(
+        payload(
+          direct({
+            text: "See what Noor wrote.",
+            attachments: [
+              { is_share: true, author_name: "Noor", text: "The build is red.", fallback: "[…]" },
+              // What says nothing the wake can carry is marked, and never left out in silence.
+              { image_url: "https://example.com/shot.png" },
+            ],
+          }),
+        ),
+      )?.text,
+    ).toBe(
+      [
+        `${DIRECT}:`,
+        "See what Noor wrote.",
+        "The build is red.",
+        "[attachment, not carried in this wake]",
+      ].join("\n"),
+    );
+    // A file is named, on one line and within bounds, and marked as not carried: a picture
+    // sent with no words at all is still said.
+    const files = [
+      { id: "F01", name: "screen\nshot].png", mimetype: "image/png" },
+      { id: "F02", title: "t".repeat(200) },
+      { id: "F03" },
+      "odd",
+    ];
+    expect(
+      slackWakeOf(payload(direct({ subtype: "file_share", text: "", files })))?.text.split("\n"),
+    ).toEqual([
+      `${DIRECT}:`,
+      "[file screen shot .png, not carried in this wake]",
+      `[file ${"t".repeat(80)}, not carried in this wake]`,
+      "[file, not carried in this wake]",
+    ]);
+    const many = Array.from({ length: 12 }, (_, at) => ({ name: `page-${at}.pdf` }));
+    const named = slackWakeOf(
+      payload(direct({ subtype: "file_share", text: "All of them.", files: many })),
+    );
+    expect(named?.text.split("\n").slice(1)).toEqual([
+      "All of them.",
+      ...[0, 1, 2, 3, 4].map((at) => `[file page-${at}.pdf, not carried in this wake]`),
+      "[7 more files, not carried in this wake]",
+    ]);
+  });
+
+  it("is a reply sent to its conversation too, and what an app says to the agent", () => {
+    // A reply in a thread that was sent to the conversation as well is someone's words.
+    expect(
+      slackWakeOf(payload(direct({ subtype: "thread_broadcast", thread_ts: "1762799000.000001" })))
+        ?.key,
+    ).toBe("slack:D0MIRA:1762799000.000001");
+    // What an app posts wakes the agent where it is said to it: in a direct conversation, and
+    // wherever it names the agent. Only talk that names nobody is not its to hear from an app.
+    expect(slackWakeOf(payload(direct({ bot_id: "B0DEPLOY" })))).toBeDefined();
+    expect(
+      slackWakeOf(payload(message({ bot_id: "B0DEPLOY" })))?.text.startsWith("A mention in"),
+    ).toBe(true);
+    expect(
+      slackWakeOf(
+        payload(message({ channel: "G0TEAM", channel_type: "mpim", bot_id: "B0DEPLOY" })),
+      ),
+    ).toBeDefined();
   });
 
   it("carries a list, code and a quote as the messenger writes them in a message's text", () => {
@@ -446,8 +516,16 @@ describe("what an event of the messenger wakes the agent for", () => {
         }),
       ],
     ]) {
-      const wake = slackWakeOf(payload(direct({ blocks: odd, attachments: odd })));
+      const wake = slackWakeOf(payload(direct({ blocks: odd })));
       expect(wake?.text, JSON.stringify(odd)).toBe(plain);
+      // Under the message the same shapes say nothing either: each thing that hangs there and
+      // says nothing the wake carries is marked, and what is no thing at all is passed over.
+      const hung = Array.isArray(odd)
+        ? odd.filter((one) => typeof one === "object" && one !== null && !Array.isArray(one))
+        : [];
+      expect(slackWakeOf(payload(direct({ attachments: odd })))?.text, JSON.stringify(odd)).toBe(
+        [plain, ...hung.map(() => "[attachment, not carried in this wake]")].join("\n"),
+      );
     }
     // A kind is named in a mark only where it is spelled as the messenger spells one.
     for (const kind of [
@@ -510,10 +588,43 @@ describe("what an event of the messenger wakes the agent for", () => {
       richText(section(said(`${"\n".repeat(200_000)}x`))),
     ];
     expect(slackWakeOf(payload(direct({ blocks: runs })))?.text.length).toBeLessThan(4300);
-    // Half a character and a control character are words, as anything a message says is.
-    const broken = `${String.fromCodePoint(0xd800)} and ${String.fromCodePoint(0x1b)}[2J`;
-    expect(slackWakeOf(payload(direct({ blocks: [richText(section(said(broken)))] })))?.text).toBe(
-      `${DIRECT}:\n${broken}`,
+    // Half a character, a control character and one that does not show are carried as the
+    // console takes words: with one left in, it would refuse the wake whole (`paragraphs`).
+    const broken = `${String.fromCodePoint(0xd800)} and ${String.fromCodePoint(0x1b)}[2J, no${String.fromCodePoint(0x200b)}where${String.fromCodePoint(0xfeff)}`;
+    const mended = slackWakeOf(payload(direct({ blocks: [richText(section(said(broken)))] })));
+    expect(mended?.text).toBe(`${DIRECT}:\n${String.fromCodePoint(0xfffd)} and [2J, nowhere`);
+    expect(
+      restRunnerWakeSchema.safeParse({ kind: "wake", source: "messenger", ...mended }).success,
+    ).toBe(true);
+    // The same of a message's plain text, and a cut never leaves half of a character behind.
+    const unseen = slackWakeOf(
+      payload(direct({ text: `zero${String.fromCodePoint(0x200d)}width` })),
+    );
+    expect(unseen?.text).toBe(`${DIRECT}:\nzerowidth`);
+    const pairs = slackWakeOf(payload(direct({ text: `x${"😀".repeat(3000)}` })));
+    expect(pairs?.text.endsWith("😀…")).toBe(true);
+    expect(pairs?.text.isWellFormed()).toBe(true);
+    expect(
+      restRunnerWakeSchema.safeParse({ kind: "wake", source: "messenger", ...pairs }).success,
+    ).toBe(true);
+    // What a person typed that only looks like a name, a channel or a link is not written as one.
+    expect(
+      slackWakeOf(
+        payload(
+          direct({
+            blocks: [
+              richText(
+                section(said("<@U0BOSS> said <!channel> and <https://example.com|here>, a < b"), {
+                  type: "user",
+                  user_id: "U0NOOR",
+                }),
+              ),
+            ],
+          }),
+        ),
+      )?.text,
+    ).toBe(
+      `${DIRECT}:\n&lt;@U0BOSS> said &lt;!channel> and &lt;https://example.com|here>, a < b<@U0NOOR>`,
     );
     // The first line is the source's own: what a message says of a cut, or of who wrote it, is words after it.
     const forged = slackWakeOf(

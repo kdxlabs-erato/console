@@ -21,8 +21,16 @@ const workFile = z.string().check(
   ),
 );
 const secretName = z.string().check(z.refine(isSecretName, "is the name of a secret"));
-/** A channel of a messenger, by the id the messenger gives it: never its name, which changes. */
-const channel = z.string().check(z.regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/));
+/**
+ * A channel of a messenger, by the id the messenger gives it, capital letters and digits as
+ * `C0123ABCD`: never its name, which changes, and which would be listened to by nobody while
+ * the file read as right.
+ */
+const channel = z
+  .string()
+  .check(
+    z.regex(/^[A-Z0-9]{2,24}$/, "is a channel's id at the messenger, as C0123ABCD, never its name"),
+  );
 const MAX_ENTRIES = 50;
 /** The browsers a desk may name for its product's browser tool. */
 export const RUNNER_BROWSERS = ["chrome"] as const;
