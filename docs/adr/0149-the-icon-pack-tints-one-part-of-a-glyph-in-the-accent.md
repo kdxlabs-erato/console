@@ -19,5 +19,5 @@ The pack was lines alone, 1.5 wide with round ends, in the text's colour. Drawn 
 ## Consequences
 
 - The pack has 86 glyphs, each with at most one tinted part; the editor's four (`list-numbered`, `quote`, `undo`, `redo`) are among them.
-- `GlyphShape` has a third, optional place, `"tint"`; `Icon` and `iconElement` give that shape its class. A reader written for lines alone draws the tint as a filled shape in the text's colour, which is why the package draws it faint without the stylesheet.
+- `GlyphShape` has a third, optional place, `"tint"`; `Icon` and `iconElement` give that shape its class. On a page without the console's stylesheet the package draws the tint itself, filled in the text's colour, faint, and not stroked. A reader of `GLYPHS` written for lines alone strokes it as it strokes every shape, an outline round the part: it reads the third place from now on, which the changeset says as `Breaking:`.
 - A plugin's page asks for nothing new: the part's stylesheet colours the tint, and a glyph in a line of text takes `sc-icon-plain`.
