@@ -64,13 +64,18 @@ const listOf = (value: unknown): readonly unknown[] => (Array.isArray(value) ? v
 const MAX_WINDOWS = 8;
 /** The product's word for a window, as it spells one. */
 const WINDOW = /^[a-z][a-z0-9_]{0,39}$/;
+/** The plan's own windows, by the product's words for them: every other is of a part of the allowance. */
+const PLAN_WINDOWS: readonly string[] = ["five_hour", "seven_day"];
 /**
- * A window the product counts with what it allows beyond the subscription: seen beside the
- * week's own (2.1.322, `seven_day_overage_included`) at twice its share, on an account that
- * has no such allowance. Nothing here knows its limit to be one that ends a turn, so the agent
- * is told nothing by it: a share of it said as "used" would be a warning of a stop that does
- * not come.
+ * The week's window of one model, the bucket the product keeps for a model beside the week of
+ * all of them: `seven_day_overage_included`, which its own description of the line calls the
+ * "overage-included weekly (per-model bucket)" window, and which its usage screen shows as the
+ * week of a model by name, "Current week (Fable)". Seen beside the week's own at twice its
+ * share (2.1.322). The line names no model with it: it is said by the model the session runs,
+ * and not at all before the product has said which that is.
  */
+const MODEL_WEEK = "seven_day_overage_included";
+/** A window of what the product allows beyond the subscription, which is no share of the subscription's. */
 const BEYOND = /overage/;
 
 /** A window's name in plain words: the product's `five_hour` and `seven_day` as a person calls them, the rest as it comes. */
@@ -79,6 +84,13 @@ const windowName = (word: string): string =>
     .replace(/^five_hour/, "5-hour")
     .replace(/^seven_day/, "weekly")
     .replaceAll("_", " ");
+
+/**
+ * The family a model is of, as a person calls it, from what the product calls the model it
+ * runs: `fable` of `claude-fable-5-2`, `opus` of `opus[1m]`. Nothing where it names none.
+ */
+const familyOf = (model: string | undefined): string | undefined =>
+  /^(?:claude[-_ ])?([a-z]{2,20})(?![a-z])/.exec((model ?? "").toLowerCase())?.[1];
 
 /**
  * A moment the product gives in seconds since the epoch, in milliseconds; nothing for anything
@@ -104,22 +116,35 @@ const shareOf = (value: unknown): number | undefined =>
  * line itself is of where it names no others. The product marks these fields as its own and no
  * contract (seen with 2.1.330): read by shape, bounded, and nothing where they are not there.
  */
-function windowsOf(info: Json): UsageWindow[] {
+function windowsOf(info: Json, model: string | undefined): UsageWindow[] {
   const windows: UsageWindow[] = [];
   const add = (word: unknown, one: Json): void => {
-    if (
-      typeof word !== "string" ||
-      !WINDOW.test(word) ||
-      BEYOND.test(word) ||
-      windows.length >= MAX_WINDOWS
-    ) {
+    if (typeof word !== "string" || !WINDOW.test(word) || windows.length >= MAX_WINDOWS) {
+      return;
+    }
+    const family = familyOf(model);
+    const name =
+      word === MODEL_WEEK
+        ? family === undefined
+          ? undefined
+          : `weekly ${family}`
+        : BEYOND.test(word)
+          ? undefined
+          : windowName(word);
+    if (name === undefined) {
       return;
     }
     const used = shareOf(one.utilization);
     const resetsAt = momentOf(one.resetsAt);
     const near = one.status === "allowed_warning";
     if (used !== undefined || near) {
-      windows.push({ name: windowName(word), used, resetsAt, ...(near ? { near } : {}) });
+      windows.push({
+        name,
+        used,
+        resetsAt,
+        ...(near ? { near } : {}),
+        ...(PLAN_WINDOWS.includes(word) ? {} : { apart: true }),
+      });
     }
   };
   if (isObject(info.unifiedWindows)) {
@@ -283,6 +308,8 @@ interface Read {
   results: number;
   /** What it last said it runs with, and the conversation it last named: said on when they change. */
   runs: string | undefined;
+  /** The model it last said it runs, which a window of one model's own is named by. */
+  model: string | undefined;
   conversation: string | undefined;
   /** The permission mode the driver asked for. */
   readonly asked: string;
@@ -377,6 +404,7 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
         const version = textOf(line.claude_code_version) ?? null;
         const mode = textOf(line.permissionMode) ?? null;
         const runs = JSON.stringify([model, effort, version, mode]);
+        state.model = model ?? undefined;
         const conversation = textOf(line.session_id);
         if (runs !== state.runs) {
           events.push({ type: "running", model, effort, version });
@@ -656,7 +684,7 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
       if (info === undefined) {
         return events;
       }
-      const windows = windowsOf(info);
+      const windows = windowsOf(info, state.model);
       if (windows.length > 0) {
         events.push({ type: "usage", windows });
       }
@@ -744,6 +772,7 @@ function sessionOf(
     began: false,
     results: 0,
     runs: undefined,
+    model: undefined,
     conversation: undefined,
     asked,
     drivesBrowser,

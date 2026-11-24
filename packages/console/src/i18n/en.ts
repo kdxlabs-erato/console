@@ -2279,6 +2279,7 @@ export const en = {
       resets: { before: "resets ", after: "" },
       said: { before: "as of ", after: "" },
       windows: { "5-hour": "5 hours", weekly: "Week" },
+      windowOf: (window: string, of: string) => `${window} (${of})`,
     },
     accounts: {
       title: "Agent accounts",

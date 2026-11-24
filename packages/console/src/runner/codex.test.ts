@@ -1510,6 +1510,46 @@ describe("the codex driver", () => {
       },
       { type: "usage", windows: [{ name: "5-hour", used: 1, resetsAt: 1795540000000 }] },
     ]);
+    // A bucket kept apart from the plan's, one model's own: its windows are said with its
+    // name after their own, by its id where it has none, and never as the plan's.
+    const apart = (limitId: string, limitName: string | null, primary: Json): Json => ({
+      method: "account/rateLimits/updated",
+      params: {
+        rateLimits: { limitId, limitName, primary, secondary: null, credits: null },
+      },
+    });
+    product.says(
+      apart("codex_spark", "GPT-5.3-Codex-Spark", {
+        usedPercent: 12,
+        windowDurationMins: 10080,
+        resetsAt: 1795927747,
+      }),
+      apart("codex_other", null, { usedPercent: 3, windowDurationMins: 300, resetsAt: null }),
+      apart("codex_long", `A   name\n${"x".repeat(200)}`, {
+        usedPercent: 1,
+        windowDurationMins: 300,
+        resetsAt: null,
+      }),
+    );
+    await tick();
+    expect((await said(9)).slice(6)).toEqual([
+      {
+        type: "usage",
+        windows: [
+          { name: "weekly GPT-5.3-Codex-Spark", used: 0.12, resetsAt: 1795927747000, apart: true },
+        ],
+      },
+      {
+        type: "usage",
+        windows: [{ name: "5-hour codex_other", used: 0.03, resetsAt: undefined, apart: true }],
+      },
+      {
+        type: "usage",
+        windows: [
+          { name: `5-hour A name ${"x".repeat(17)}`, used: 0.01, resetsAt: undefined, apart: true },
+        ],
+      },
+    ]);
     // A turn that then fails on the limit says until when: the reset of the window used up.
     await session.send(message("Go."));
     await answers("turn/start", { turn: turnOf(TURN) });
@@ -1520,7 +1560,7 @@ describe("the codex driver", () => {
         codexErrorInfo: "usageLimitExceeded",
       }),
     );
-    await said(8);
+    await said(11);
     expect(events.at(-1)).toEqual({
       type: "cannot_go_on",
       state: "failed",

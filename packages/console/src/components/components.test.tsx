@@ -2235,7 +2235,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
       `<svg class="sc-progress-track" aria-hidden="true" focusable="false"><rect class="sc-progress-used" width="${width}" height="100%"></rect></svg>`;
     expect(seen).toContain(label("5 hours"));
     expect(seen).toContain(label("Week"));
-    expect(seen).toContain(label("weekly opus"));
+    expect(seen).toContain(label("Week (Opus)"));
     // A share as a bar and in whole hundredths, never more than was said: plain while there
     // is room, marked near the limit and at it. The bar is a picture of the figure beside it.
     expect(seen).toContain(
@@ -2246,12 +2246,28 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
       /<div class="sc-progress sc-progress-near"><div class="sc-progress-head"><span class="sc-progress-label">Week<\/span>.*?<span class="sc-progress-figure">89%<\/span>/,
     );
     expect(seen).toContain(
-      `<div class="sc-progress sc-progress-full"><div class="sc-progress-head">${label("weekly opus")}${figure("100%")}</div>${bar("100%")}`,
+      `<div class="sc-progress sc-progress-full"><div class="sc-progress-head">${label("Week (Opus)")}${figure("100%")}</div>${bar("100%")}`,
     );
     // One the product calls near its limit without a share: the word, and no bar.
     expect(seen).toContain(
       `<div class="sc-progress sc-progress-near"><div class="sc-progress-head">${label("primary")}${figure("Near its limit")}</div></div>`,
     );
+    // A window of a part of the allowance, one model's own, reads as the plan's window with
+    // what it is of beside it; a name that only looks like one is shown as it came.
+    const parts = card({
+      usage: [
+        { name: "weekly fable", used: 0.26, resetsAt: null, at },
+        { name: "5-hour GPT-5.3-Codex-Spark", used: 0.1, resetsAt: null, at },
+        { name: "weekly ", used: 0.2, resetsAt: null, at },
+        { name: "monthly fable", used: 0.3, resetsAt: null, at },
+        { name: "constructor fable", used: 0.4, resetsAt: null, at },
+      ],
+    });
+    expect(parts).toContain(label("Week (Fable)"));
+    expect(parts).toContain(label("5 hours (GPT-5.3-Codex-Spark)"));
+    expect(parts).toContain(label("weekly "));
+    expect(parts).toContain(label("monthly fable"));
+    expect(parts).toContain(label("constructor fable"));
     // The word "used" is said nowhere: the figure under the fact's name says it.
     expect(seen).not.toContain("% used");
     // What is over is not shown, and a name is text, whatever it holds.
@@ -2315,6 +2331,13 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     );
     expect(korean).toContain(label("5시간"));
     expect(korean).toContain(label("주간"));
+    expect(
+      renderToStaticMarkup(
+        <LanguageContext.Provider value={KOREAN}>
+          <AgentUsage usage={[{ name: "weekly fable", used: 0.26, resetsAt: null, at }]} />
+        </LanguageContext.Provider>,
+      ),
+    ).toContain(label("주간 (Fable)"));
     expect(korean).toContain(figure("42%"));
     expect(korean).not.toContain("사용");
     expect(korean).toContain("</time> 초기화");

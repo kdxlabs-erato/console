@@ -170,11 +170,11 @@ describe("the claude driver and the product's allowance", () => {
     expect(events.at(-2)).toEqual({ type: "turn_completed" });
   });
 
-  it("reads the lines as Claude Code 2.1.322 wrote them, and tells nothing by a window beyond the subscription", async () => {
+  it("reads the lines as Claude Code 2.1.322 wrote them, and says the week of one model by the model the session runs", async () => {
     // Recorded from the product on Windows, a turn of one word: the two lines it wrote of the
     // allowance, with their ids left out. The week's window alone at first, then a second
-    // one beside it, counted with what the product allows beyond the subscription, at twice
-    // the share, on an account that has no such allowance.
+    // one beside it at twice the share: the week of one model, which the product's own
+    // description of the line calls a per-model bucket and names no model with.
     const first = {
       type: "rate_limit_event",
       rate_limit_info: {
@@ -205,19 +205,49 @@ describe("the claude driver and the product's allowance", () => {
     };
     const events = await product([first, INIT, replay("m1"), says("ok"), second, RESULT]).events();
     const week = { name: "weekly", used: 0.13, resetsAt: 1795690800 * 1000 };
+    // Named by the model the session runs, and kept apart: the agent is told nothing by it.
+    const ofModel = {
+      name: "weekly sonnet",
+      used: 0.26,
+      resetsAt: 1795690800 * 1000,
+      apart: true,
+    };
     expect(events.filter((event) => event.type === "usage")).toEqual([
       { type: "usage", windows: [week] },
+      { type: "usage", windows: [week, ofModel] },
+    ]);
+    // By the family of whatever the product says it runs: an alias, or a name with more after it.
+    for (const [model, name] of [
+      ["claude-fable-5-2", "weekly fable"],
+      ["opus[1m]", "weekly opus"],
+      ["Claude-Haiku-5-5-20261101", "weekly haiku"],
+    ] as const) {
+      const said = await product([{ ...INIT, model }, replay("m1"), second, RESULT]).events();
+      expect(said.find((event) => event.type === "usage")).toEqual({
+        type: "usage",
+        windows: [week, { ...ofModel, name }],
+      });
+    }
+    // Before the product said which model it runs, or where that names none, it is of no
+    // model the driver could say: left out until it is said again.
+    const early = await product([second, INIT, replay("m1"), RESULT]).events();
+    expect(early.filter((event) => event.type === "usage")).toEqual([
       { type: "usage", windows: [week] },
     ]);
-    // A window of that kind alone says nothing: its share is no warning of a stop.
+    const unnamed = await product([{ ...INIT, model: "4.5" }, replay("m1"), second]).events();
+    expect(unnamed.find((event) => event.type === "usage")).toEqual({
+      type: "usage",
+      windows: [week],
+    });
+    // A window of what is allowed beyond the subscription is no share of it, and says nothing.
     const alone = {
       ...first,
       rate_limit_info: {
         ...first.rate_limit_info,
-        rateLimitType: "seven_day_overage_included",
+        rateLimitType: "overage",
         utilization: 0.95,
         unifiedWindows: {
-          seven_day_overage_included: { utilization: 0.95, resetsAt: 1795690800 },
+          overage: { utilization: 0.95, resetsAt: 1795690800 },
         },
       },
     };
@@ -240,7 +270,7 @@ describe("the claude driver and the product's allowance", () => {
       type: "usage",
       windows: [
         { name: "5-hour", used: 0.91, resetsAt: RESETS * 1000, near: true },
-        { name: "weekly opus", used: 0.4, resetsAt: WEEK * 1000 },
+        { name: "weekly opus", used: 0.4, resetsAt: WEEK * 1000, apart: true },
       ],
     });
   });
@@ -291,10 +321,12 @@ describe("the claude driver and the product's allowance", () => {
     ]).events();
     const usage = events.find((event) => event.type === "usage");
     expect(usage?.type === "usage" ? usage.windows.length : 0).toBe(8);
+    // A window this driver does not know is no window of the plan's own: said, and kept apart.
     expect(usage?.type === "usage" ? usage.windows[0] : undefined).toEqual({
       name: "window 0",
       used: 1,
       resetsAt: undefined,
+      apart: true,
     });
   });
 

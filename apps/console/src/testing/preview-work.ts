@@ -623,6 +623,7 @@ const USAGE: Partial<
     windows: [
       ["5-hour", 0.42, 130],
       ["weekly", 0.13, 4 * 24 * 60 + 95],
+      ["weekly opus", 0.26, 4 * 24 * 60 + 95],
     ],
   },
   juno: {

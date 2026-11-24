@@ -79,7 +79,7 @@ export function AgentUsage(props: {
       {props.usage.map((window, place) => {
         // A name is what a runner sent: read as a word of the pack only where the pack itself
         // holds it, and no key by itself, since two windows may be named alike.
-        const name = wordOf(words.windows, window.name);
+        const name = usageWindowName(words, window.name);
         const near = usageNear(window);
         const hundredths = window.used === null ? undefined : usedHundredths(window.used);
         const resets = window.resetsAt !== null && (
@@ -816,6 +816,30 @@ export function saidLine(text: string): string {
 /** A fact of an event as a word, or nothing where it is none. */
 const word = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined;
+
+/**
+ * A window of an allowance by the words a person has for it (ADR-0156): the plan's two by the
+ * pack's words, and a window of a part of the allowance, which a driver names by the plan's
+ * window with what it is of after it (`weekly fable`), as that window's word with the rest
+ * beside it, "Week (Fable)". Any other name is what a runner sent, and is shown as it came.
+ */
+export function usageWindowName(
+  words: {
+    readonly windows: Readonly<Record<string, string>>;
+    readonly windowOf: (window: string, of: string) => string;
+  },
+  name: string,
+): string {
+  if (Object.hasOwn(words.windows, name)) {
+    return words.windows[name] ?? name;
+  }
+  const space = name.indexOf(" ");
+  const window = space > 0 ? name.slice(0, space) : "";
+  const of = space > 0 ? name.slice(space + 1).trim() : "";
+  return Object.hasOwn(words.windows, window) && of !== ""
+    ? words.windowOf(words.windows[window] ?? window, `${of.charAt(0).toUpperCase()}${of.slice(1)}`)
+    : name;
+}
 
 /**
  * What the record names in a word of its own, a signal's kind, an answer, a fact's name, in the

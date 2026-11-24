@@ -97,6 +97,10 @@ export function usageToTell(
   const next = new Map(told);
   const tell: UsageTelling[] = [];
   for (const window of windows) {
+    // A window of one model's own is shown and tells nothing: see `UsageWindow.apart`.
+    if (window.apart === true) {
+      continue;
+    }
     const before = next.get(window.name);
     const mark = markOf(window);
     const reset =

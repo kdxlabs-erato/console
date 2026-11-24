@@ -113,15 +113,30 @@ const sandboxOf = (mode: string): string => {
   return typeof asked === "string" ? asked : LEAST_MODE;
 };
 
+/** The bucket of the plan's own allowance, by the product's id for it (seen with 0.171.0). */
+const PLAN_BUCKET = "codex";
+/** How much of a bucket's name is said after a window's own. */
+const MAX_BUCKET_NAME = 24;
+
 /**
  * The windows of the product's allowance, as it says them (`account/rateLimits/updated`): each
  * with the share used and when it resets, named by how long it lasts. Seen with 0.171.0, asked
  * of a signed-in product with no turn: a share in hundredths, a length in minutes and a moment
  * in seconds (`{ usedPercent: 4, windowDurationMins: 10080, resetsAt: 1795927747 }`). An
- * update is sparse: a window it says nothing of is not one that reset.
+ * update is sparse: a window it says nothing of is not one that reset. An update is of one
+ * bucket, which it names (`limitId`): the plan's own is `codex`, and any other is a quota kept
+ * apart, one model's say, whose windows are said with the bucket's name after their own, so
+ * that an update of one is never read as the plan's.
  */
 function allowanceOf(limits: unknown): UsageWindow[] {
   const said = isObject(limits) ? limits : {};
+  const bucket = textOf(said.limitId);
+  const apart = bucket !== undefined && bucket !== PLAN_BUCKET;
+  // By the name the product shows for the bucket, or its id where it gives none: one line,
+  // and short, since the window's own name stands before it.
+  const of = apart
+    ? (textOf(said.limitName) ?? bucket).replaceAll(/\s+/g, " ").trim().slice(0, MAX_BUCKET_NAME)
+    : "";
   const windows: UsageWindow[] = [];
   for (const [place, one] of [
     ["primary", said.primary],
@@ -148,7 +163,12 @@ function allowanceOf(limits: unknown): UsageWindow[] {
       typeof one.resetsAt === "number" && one.resetsAt > 0 && one.resetsAt < 1e11
         ? Math.floor(one.resetsAt * 1000)
         : undefined;
-    windows.push({ name, used: Math.min(1, one.usedPercent / 100), resetsAt: resets });
+    windows.push({
+      name: of === "" ? name : `${name} ${of}`,
+      used: Math.min(1, one.usedPercent / 100),
+      resetsAt: resets,
+      ...(apart ? { apart } : {}),
+    });
   }
   return windows;
 }

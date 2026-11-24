@@ -80,6 +80,17 @@ describe("when the agent is told of its allowance", () => {
     expect(said).toEqual([...USAGE_MARKS]);
   });
 
+  it("tells nothing by a window of one model's own, whatever its share", () => {
+    const ofModel = { ...short(0.95), name: "weekly fable", apart: true };
+    const looked = usageToTell([ofModel, short(0.5)], none, NOW);
+    expect(looked.tell).toEqual([]);
+    expect(looked.told.size).toBe(0);
+    // The plan's own window beside it is told as ever.
+    expect(usageToTell([ofModel, short(0.85)], none, NOW).tell.map((one) => one.mark)).toEqual([
+      0.8,
+    ]);
+  });
+
   it("tells the highest mark alone where a window passed several between two looks", () => {
     const looked = usageToTell([short(0.95)], none, NOW);
     expect(looked.tell.map((one) => one.mark)).toEqual([0.9]);

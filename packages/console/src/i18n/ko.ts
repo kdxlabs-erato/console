@@ -2157,6 +2157,7 @@ export const ko: Messages = {
       resets: { before: "", after: " 초기화" },
       said: { before: "", after: " 기준" },
       windows: { "5-hour": "5시간", weekly: "주간" },
+      windowOf: (window: string, of: string) => `${window} (${of})`,
     },
     accounts: {
       title: "에이전트 계정",
