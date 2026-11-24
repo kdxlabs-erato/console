@@ -1585,7 +1585,7 @@ describe("tokens", () => {
         ]}
       />,
     );
-    expect(phone).toContain('<rect x="5.5" y="2.5" width="9" height="15" rx="2">');
+    expect(phone).toContain('<rect x="5.5" y="3" width="9" height="14" rx="2">');
     expect(phone).toContain("Unknown browser");
     // A command signed in as the account itself (ADR-0084) is one of its sessions, by what it
     // called itself, and ended as any other.
