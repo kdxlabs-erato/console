@@ -26,6 +26,18 @@
   transition: opacity var(--sc-transition);
 }
 
+/* A frame's document is laid out on whole pixels: it takes a box of 598.5 as 599, and half a
+   pixel of its right edge was cut, so that a border drawn there showed half as thick as on the
+   left. A tile's box follows the cells of its grid, which are no whole pixels. So the frame is
+   the next whole pixel down, each way, where the browser rounds a measure; where it does not,
+   the box's own measure stands. */
+@supports (width: round(down, 100%, 1px)) {
+  .sc-plugin-frame {
+    width: round(down, 100%, 1px);
+    height: round(down, 100%, 1px);
+  }
+}
+
 .sc-plugin-frame-loading .sc-plugin-frame {
   opacity: 0;
 }
