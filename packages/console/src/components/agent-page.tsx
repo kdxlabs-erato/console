@@ -32,7 +32,7 @@ import { useWords } from "../i18n/index.js";
 import { isPicture } from "./files.js";
 import { Markdown } from "./markdown.js";
 import { Lightbox, type PictureState, PictureThumb, usePicture } from "./pictures.js";
-import { Avatar, Badge, Button, Callout, cx, formatBytes, personName, Time } from "./ui.js";
+import { Avatar, Badge, Button, Callout, cx, formatBytes, Meter, personName, Time } from "./ui.js";
 
 // The parts of an agent account's page (ADR-0085, ADR-0086): how it stands, what it is doing as
 // it happens, read as a conversation in a pane that follows its end, what a supervisor says to
@@ -68,39 +68,58 @@ export function AgentUsage(props: {
   // where it did not, so that a window kept from days ago does not read as said just now.
   const together = usageSaidTogether(props.usage);
   const said = (iso: string) => (
-    <span className="sc-note">
+    <>
       {words.said.before}
       <Time iso={iso} precision="clock" />
       {words.said.after}
-    </span>
+    </>
   );
   return (
-    <span className="sc-agent-usage">
-      {props.usage.map((window, place) => (
+    <div className="sc-agent-usage">
+      {props.usage.map((window, place) => {
         // A name is what a runner sent: read as a word of the pack only where the pack itself
         // holds it, and no key by itself, since two windows may be named alike.
-        // biome-ignore lint/suspicious/noArrayIndexKey: the windows are told apart by their place
-        <span key={place} className="sc-agent-product">
-          <span>{wordOf(words.windows, window.name)}</span>
-          {window.used !== null ? (
-            <Badge tone={window.used >= 1 ? "danger" : usageNear(window) ? "warning" : "neutral"}>
-              {words.used(usedHundredths(window.used))}
-            </Badge>
-          ) : (
-            usageNear(window) && <Badge tone="warning">{words.near}</Badge>
-          )}
-          {window.resetsAt !== null && (
-            <span className="sc-muted">
-              {words.resets.before}
-              <Time iso={window.resetsAt} precision="clock" />
-              {words.resets.after}
-            </span>
-          )}
-          {props.said === true && together === undefined && said(window.at)}
-        </span>
-      ))}
-      {props.said === true && together !== undefined && said(together)}
-    </span>
+        const name = wordOf(words.windows, window.name);
+        const near = usageNear(window);
+        const hundredths = window.used === null ? undefined : usedHundredths(window.used);
+        const resets = window.resetsAt !== null && (
+          <>
+            {words.resets.before}
+            <Time iso={window.resetsAt} precision="week" />
+            {words.resets.after}
+          </>
+        );
+        const apart = props.said === true && together === undefined && said(window.at);
+        return (
+          <Meter
+            // biome-ignore lint/suspicious/noArrayIndexKey: the windows are told apart by their place
+            key={place}
+            label={name}
+            share={window.used ?? undefined}
+            figure={hundredths === undefined ? (near ? words.near : undefined) : `${hundredths}%`}
+            tone={
+              hundredths !== undefined && hundredths >= 100
+                ? "danger"
+                : near
+                  ? "warning"
+                  : undefined
+            }
+            note={
+              resets === false && apart === false ? undefined : (
+                <>
+                  {resets}
+                  {resets !== false && apart !== false && " · "}
+                  {apart}
+                </>
+              )
+            }
+          />
+        );
+      })}
+      {props.said === true && together !== undefined && (
+        <span className="sc-progress-words">{said(together)}</span>
+      )}
+    </div>
   );
 }
 

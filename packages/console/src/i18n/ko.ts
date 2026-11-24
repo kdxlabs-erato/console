@@ -2153,9 +2153,8 @@ export const ko: Messages = {
       intro: "나에게 보고하는 에이전트 중 실행 중이 아닌 에이전트입니다.",
     },
     usage: {
-      used: (hundredths: number) => `${hundredths}% 사용`,
       near: "한도에 가까움",
-      resets: { before: "", after: "에 초기화" },
+      resets: { before: "", after: " 초기화" },
       said: { before: "", after: " 기준" },
       windows: { "5-hour": "5시간", weekly: "주간" },
     },

@@ -319,6 +319,7 @@ export {
   GoalStateBadge,
   KindMark,
   LinkButton,
+  Meter,
   PersonChip,
   PersonOption,
   PRIORITY_LABELS,

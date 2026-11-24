@@ -2229,22 +2229,38 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     const seen = card({ usage });
     expect(seen).toContain("<dt>Usage</dt>");
     // A window by the words a person has for it, the two every product has; another as it came.
-    expect(seen).toContain("<span>5 hours</span>");
-    expect(seen).toContain("<span>Week</span>");
-    expect(seen).toContain("<span>weekly opus</span>");
-    // A share in whole hundredths, never more than was said, marked near the limit and at it.
-    expect(seen).toMatch(/<span class="sc-badge[^"]*sc-badge-neutral[^"]*">42% used<\/span>/);
-    expect(seen).toMatch(/<span class="sc-badge[^"]*sc-badge-warning[^"]*">89% used<\/span>/);
-    expect(seen).toMatch(/<span class="sc-badge[^"]*sc-badge-danger[^"]*">100% used<\/span>/);
-    expect(seen).toMatch(/<span class="sc-badge[^"]*sc-badge-warning[^"]*">Near its limit<\/span>/);
-    expect(seen).toContain('resets <time class="sc-time" dateTime="2026-11-24T05:00:00.000Z"');
+    const label = (name: string) => `<span class="sc-progress-label">${name}</span>`;
+    const figure = (words: string) => `<span class="sc-progress-figure">${words}</span>`;
+    const bar = (width: string) =>
+      `<svg class="sc-progress-track" aria-hidden="true" focusable="false"><rect class="sc-progress-used" width="${width}" height="100%"></rect></svg>`;
+    expect(seen).toContain(label("5 hours"));
+    expect(seen).toContain(label("Week"));
+    expect(seen).toContain(label("weekly opus"));
+    // A share as a bar and in whole hundredths, never more than was said: plain while there
+    // is room, marked near the limit and at it. The bar is a picture of the figure beside it.
+    expect(seen).toContain(
+      `<div class="sc-progress"><div class="sc-progress-head">${label("5 hours")}<span class="sc-progress-note">resets <time class="sc-time" dateTime="2026-11-24T05:00:00.000Z"`,
+    );
+    expect(seen).toContain(`${figure("42%")}</div>${bar("42%")}`);
+    expect(seen).toMatch(
+      /<div class="sc-progress sc-progress-near"><div class="sc-progress-head"><span class="sc-progress-label">Week<\/span>.*?<span class="sc-progress-figure">89%<\/span>/,
+    );
+    expect(seen).toContain(
+      `<div class="sc-progress sc-progress-full"><div class="sc-progress-head">${label("weekly opus")}${figure("100%")}</div>${bar("100%")}`,
+    );
+    // One the product calls near its limit without a share: the word, and no bar.
+    expect(seen).toContain(
+      `<div class="sc-progress sc-progress-near"><div class="sc-progress-head">${label("primary")}${figure("Near its limit")}</div></div>`,
+    );
+    // The word "used" is said nowhere: the figure under the fact's name says it.
+    expect(seen).not.toContain("% used");
     // What is over is not shown, and a name is text, whatever it holds.
     expect(seen).not.toContain("gone");
-    expect(seen).not.toContain("99% used");
+    expect(seen).not.toContain("99%");
     expect(seen).toContain("&lt;b&gt;bold&lt;/b&gt;");
     expect(seen).not.toContain("<b>bold</b>");
     // The card stays short: when the product said so is on the account's page.
-    expect(seen).not.toContain("as its product said");
+    expect(seen).not.toContain("as of ");
     // A name is what a runner sent: one that every object has is no word of the pack, and
     // draws as the text it is; two windows of one name are two lines.
     const hostile = card({
@@ -2256,22 +2272,24 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
         { name: "weekly", used: 0.5, resetsAt: null, at },
       ],
     });
-    expect(hostile).toContain("<span>__proto__</span>");
-    expect(hostile).toContain("<span>constructor</span>");
-    expect(hostile).toContain("<span>toString</span>");
-    expect(hostile.split("<span>Week</span>")).toHaveLength(3);
-    expect(hostile).toContain("40% used");
-    expect(hostile).toContain("50% used");
+    expect(hostile).toContain(label("__proto__"));
+    expect(hostile).toContain(label("constructor"));
+    expect(hostile).toContain(label("toString"));
+    expect(hostile.split(label("Week"))).toHaveLength(3);
+    expect(hostile).toContain(figure("40%"));
+    expect(hostile).toContain(figure("50%"));
     // Nothing of it where its runner said none, or where every window is over.
     expect(card({})).not.toContain("<dt>Usage</dt>");
     expect(card({ usage: [] })).not.toContain("<dt>Usage</dt>");
     expect(card({ usage: [usage[4] as (typeof usage)[number]] })).not.toContain("<dt>Usage</dt>");
     // Whoever supervises nothing reads it too: it says whom work can be given to now.
-    expect(card({ usage, runner: null })).toContain("42% used");
+    expect(card({ usage, runner: null })).toContain(figure("42%"));
     // On the account's page, with when the product said so; and in Korean.
     const full = renderToStaticMarkup(<AgentUsage usage={usage.slice(0, 2)} said />);
-    expect(full).toContain(`as its product said <time class="sc-time" dateTime="${at}"`);
-    expect(full.split("as its product said")).toHaveLength(2);
+    expect(full).toContain(
+      `<span class="sc-progress-words">as of <time class="sc-time" dateTime="${at}"`,
+    );
+    expect(full.split("as of ")).toHaveLength(2);
     // The console keeps a window until its reset: where one was said days before another,
     // each says its own moment, so that the old one does not read as said just now.
     const old = "2026-11-21T02:58:00.000Z";
@@ -2284,7 +2302,10 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
         said
       />,
     );
-    expect(apart.split("as its product said")).toHaveLength(3);
+    expect(apart.split("as of ")).toHaveLength(3);
+    expect(apart).toMatch(
+      /<\/time> · as of <time class="sc-time" dateTime="2026-11-21T02:58:00.000Z"/,
+    );
     expect(apart).toContain(`dateTime="${old}"`);
     expect(apart).toContain(`dateTime="${at}"`);
     const korean = renderToStaticMarkup(
@@ -2292,10 +2313,11 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
         <AgentUsage usage={usage.slice(0, 2)} said />
       </LanguageContext.Provider>,
     );
-    expect(korean).toContain("<span>5시간</span>");
-    expect(korean).toContain("<span>주간</span>");
-    expect(korean).toContain(">42% 사용<");
-    expect(korean).toContain("</time>에 초기화");
+    expect(korean).toContain(label("5시간"));
+    expect(korean).toContain(label("주간"));
+    expect(korean).toContain(figure("42%"));
+    expect(korean).not.toContain("사용");
+    expect(korean).toContain("</time> 초기화");
     expect(korean).toContain("</time> 기준");
   });
 

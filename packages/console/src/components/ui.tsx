@@ -528,6 +528,62 @@ export function ProgressBar(props: {
   );
 }
 
+/** The least share a meter draws, in hundredths of its track: about the bar's own height in a card. */
+const METER_LEAST = 3;
+
+/**
+ * How much is used of something that runs out: its name, a quiet note after it, the share as a
+ * figure, and a round bar of that share on its track. The tone is what the share means: none
+ * while there is room, `warning` near the end, `danger` at it. A share nobody said is the row
+ * without its bar. The bar is a picture of what the row says in words, the name and the figure,
+ * and is told to nobody a second time.
+ */
+export function Meter(props: {
+  readonly label: ReactNode;
+  /** The share used, from 0 to 1; left out where it is not known. */
+  readonly share?: number | undefined;
+  /** What stands at the row's end: the share as people read it, or a word in its place. */
+  readonly figure?: ReactNode;
+  /** What stands after the name, quiet: when it resets, say. */
+  readonly note?: ReactNode;
+  readonly tone?: "warning" | "danger" | undefined;
+}) {
+  const share =
+    props.share === undefined || Number.isNaN(props.share)
+      ? undefined
+      : Math.min(1, Math.max(0, props.share));
+  return (
+    <div
+      className={cx(
+        "sc-progress",
+        props.tone === "warning" && "sc-progress-near",
+        props.tone === "danger" && "sc-progress-full",
+      )}
+    >
+      <div className="sc-progress-head">
+        <span className="sc-progress-label">{props.label}</span>
+        {props.note !== undefined && <span className="sc-progress-note">{props.note}</span>}
+        {props.figure !== undefined && <span className="sc-progress-figure">{props.figure}</span>}
+      </div>
+      {share !== undefined && (
+        // Drawn as the bars of a chart are: a shape as long as the share, which takes its
+        // length as its own and needs no style set on it.
+        <svg className="sc-progress-track" aria-hidden="true" focusable="false">
+          {/* A share of nothing is not drawn: the track alone says it. A sliver is drawn as
+              long as the bar is high, so that it is round and seen. */}
+          {share > 0 && (
+            <rect
+              className="sc-progress-used"
+              width={`${Math.max(share * 100, METER_LEAST)}%`}
+              height="100%"
+            />
+          )}
+        </svg>
+      )}
+    </div>
+  );
+}
+
 /** A day as people read one, in the language of the page. */
 export function Day(props: { readonly day: string }) {
   const { tag } = useLanguage();
@@ -593,29 +649,38 @@ export function formatBytes(size: number): string {
   return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
 }
 
+/** For how long a day of the week names one day: six days, so that today's is never another week's. */
+const WEEKDAY_READS_FOR_MS = 6 * 24 * 60 * 60 * 1000;
+
 export function Time(props: {
   readonly iso: string;
   /**
    * `day` shows the day alone, with the moment as the title, where a row has no room for the hour;
    * `clock` the hour alone for a moment of today and the day with the hour for another, with the
-   * whole moment as the title, where moments follow one another down a log.
+   * whole moment as the title, where moments follow one another down a log; `week` as `clock`,
+   * but the day of the week with the hour for a moment within six days either way, where what
+   * is read is how soon.
    */
-  readonly precision?: "minute" | "day" | "clock";
+  readonly precision?: "minute" | "day" | "clock" | "week";
   /** For `clock`: the moment whose day the hour alone is read against; now, where none is given. */
   readonly against?: string | undefined;
 }) {
   const { tag } = useLanguage();
   const full = formatInstant(props.iso, tag);
-  if (props.precision === "clock") {
+  if (props.precision === "clock" || props.precision === "week") {
     const date = new Date(props.iso);
     if (Number.isNaN(date.getTime())) {
       return <time className="sc-time">{props.iso}</time>;
     }
+    const against = props.against === undefined ? new Date() : new Date(props.against);
     const shown = date.toLocaleString(
       tag,
-      dayOf(date) === dayOf(props.against === undefined ? new Date() : new Date(props.against))
+      dayOf(date) === dayOf(against)
         ? { hour: "numeric", minute: "2-digit" }
-        : { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" },
+        : props.precision === "week" &&
+            Math.abs(date.getTime() - against.getTime()) < WEEKDAY_READS_FOR_MS
+          ? { weekday: "short", hour: "numeric", minute: "2-digit" }
+          : { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" },
     );
     return (
       <time className="sc-time" dateTime={props.iso} title={full}>

@@ -1047,12 +1047,27 @@
   display: grid;
 }
 
-/* What an account's product last said of its allowance: a window a line, each with its share
-   and when it resets beside its name. */
+/* What an account's product last said of its allowance: a meter a window, one under the other,
+   as wide as their place; in the page's head, where nothing gives them a width, a width of
+   their own. */
 .sc-agent-usage {
   display: grid;
-  gap: var(--sc-space-1);
-  justify-items: start;
+  flex: 1 1 auto;
+  gap: var(--sc-space-2);
+  min-width: 0;
+}
+
+.sc-agent-head-facts .sc-agent-usage {
+  width: 16rem;
+  max-width: 100%;
+}
+
+/* On a card, a value of several lines begins on the line its fact's name stands on: the name
+   is in the middle of a row two units high, and so is a value of one line, while one of
+   several lines begins at the row's top, a little above them. */
+.sc-person-fact .sc-agent-card-now,
+.sc-person-fact .sc-agent-usage {
+  padding-block: calc((2rem - 1lh) / 2);
 }
 
 @media (max-width: 48rem) {

@@ -2275,10 +2275,9 @@ export const en = {
     // What an account's product last said of what its subscription allows (ADR-0156). A window
     // is named as its driver calls it; the two every product has are said in the person's words.
     usage: {
-      used: (hundredths: number) => `${hundredths}% used`,
       near: "Near its limit",
       resets: { before: "resets ", after: "" },
-      said: { before: "as its product said ", after: "" },
+      said: { before: "as of ", after: "" },
       windows: { "5-hour": "5 hours", weekly: "Week" },
     },
     accounts: {

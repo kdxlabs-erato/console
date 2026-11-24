@@ -26,3 +26,66 @@
   color: var(--sc-color-text-muted);
   font-size: var(--sc-text-xs);
 }
+
+/* A share used of something that runs out (a meter): its name with a quiet note after it, the
+   share as a figure at the row's end, and under them the bar, round at both ends. The colour is
+   the meaning: the accent while there is room, the warning near the end, the danger at it. */
+.sc-progress-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sc-space-2);
+  min-width: 0;
+  font-size: var(--sc-text-sm);
+}
+
+.sc-progress-label {
+  flex: none;
+  color: var(--sc-color-text);
+}
+
+.sc-progress-note {
+  min-width: 0;
+  color: var(--sc-color-text-muted);
+  font-size: var(--sc-text-xs);
+}
+
+.sc-progress-figure {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--sc-color-text);
+  font-feature-settings: var(--sc-numeric);
+  font-weight: var(--sc-weight-medium);
+  white-space: nowrap;
+}
+
+/* A meter's track and the share on it, each round at both ends: half the bar's height. */
+.sc-progress-track {
+  display: block;
+  width: 100%;
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: var(--sc-radius-full);
+  background: var(--sc-color-bg-inset);
+}
+
+.sc-progress-used {
+  rx: 0.25rem;
+  ry: 0.25rem;
+  fill: var(--sc-color-accent-solid);
+}
+
+.sc-progress-near .sc-progress-used {
+  fill: var(--sc-color-warning-line);
+}
+
+.sc-progress-near .sc-progress-figure {
+  color: var(--sc-color-warning);
+}
+
+.sc-progress-full .sc-progress-used {
+  fill: var(--sc-color-danger);
+}
+
+.sc-progress-full .sc-progress-figure {
+  color: var(--sc-color-danger);
+}

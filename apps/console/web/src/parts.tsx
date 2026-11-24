@@ -37,6 +37,7 @@ import {
   LinkButton,
   listSearch,
   Markdown,
+  Meter,
   Pager,
   PersonChip,
   PersonOption,
@@ -1663,7 +1664,7 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
     <Part
       name="progress"
       classes="sc-progress*"
-      use="How much of something is done and at work, as a bar with its count."
+      use="How much of something is done and at work, as a bar with its count; and how much is used of something that runs out, a meter."
     >
       <Specimen label="Some done and some at work, all done, none begun, and nothing to do">
         <div className="dev-fields">
@@ -1676,6 +1677,21 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
       <Specimen label="The bar alone, where a row beside it says the figures">
         <div className="dev-narrow">
           <ProgressBar counts={closeGoal.taskCounts} words={false} />
+        </div>
+      </Specimen>
+      <Specimen label="A meter: room left, near the end, at it, a sliver, nothing used, and a share nobody said">
+        <div className="dev-narrow dev-fields">
+          <Meter label="5 hours" note="resets 2:50 PM" share={0.42} figure="42%" />
+          <Meter label="Week" note="resets Fri 9:00 AM" share={0.86} figure="86%" tone="warning" />
+          <Meter label="Week, the large model" share={1} figure="100%" tone="danger" />
+          <Meter label="Storage" share={0.004} figure="0%" />
+          <Meter label="Seats" share={0} figure="0%" />
+          <Meter
+            label="Requests"
+            note="resets Mon 9:00 AM"
+            figure="Near its limit"
+            tone="warning"
+          />
         </div>
       </Specimen>
     </Part>
