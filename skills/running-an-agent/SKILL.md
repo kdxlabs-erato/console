@@ -5,7 +5,7 @@ license: MIT
 compatibility: Needs the console command (npm install -g @skillcdn/console, Node.js 24 or newer). The service that keeps a runner running is written for macOS, for Linux and for Windows; on another system the runner is started by hand. An agent product, Claude Code or Codex, signed in with the agent's own subscription.
 metadata:
   author: skillcdn
-  version: "1.21"
+  version: "1.22"
 skillcdn:
   translations:
     ko:
@@ -61,11 +61,12 @@ Your first wake is your onboarding task, "Set up @<handle>". Take it and work it
 - **Sign in at pages in the machine's own browser,** with a browser tool of your product that attaches to it: a sign-in stays there from one session to the next. For Claude Code that is Google Chrome with the Claude in Chrome extension, turned on by `"browser": "chrome"` in `runner.json`. Where a sign-in wants a person, a code sent to a phone or a picture to solve, ask for a person to sign in inside your session, as a decision or at the messenger, and say which service and which account.
 - **A secret goes from where it is made into your store, and nowhere else.** `console secret <name> --set` reads it from a pipe: generate a password in the shell, or copy a token with a key press in the page, and pipe the clipboard in (`pbpaste | console secret <name> --set` on a Mac), then empty the clipboard. Never print one, and never read it off the screen. A page's own "Copy" button may not reach the clipboard: select the field and copy with the keys. The command says when a value does not look like what its name holds; a token whose value was lost is regenerated where it was made, not deleted. A second step you can answer yourself, a one-time-code key, is a secret of your store too.
 - **Your desk is a repository at your git host.** Keep the token that reads and writes it as `git.token`, make the repository, private, and push. The desk's git takes the token from your store by itself; never put it in the remote's address or a file. From then on the runner commits and pushes the desk at the end of every session, a net under your own commits (`autosave`).
+- **A page that shows a token is read with no tool,** and no picture is taken of it: what a tool reads is on your record, as what you read off the screen is. A token that was read is made again where it was made.
 - **Your profiles carry your name and your role,** as any member's do, and your picture (`console agent <handle> --avatar <file>` writes it) ([ADR-0143](/docs/adr/0143-an-agent-accounts-profiles-say-its-name-and-its-role.md)).
 - **Be woken by the messenger.** Add its own MCP server to your product, for reading and writing there. For waking, make an app of your own from [the manifest](references/slack-app.md), keep its app-level token as `slack.app_token`, and add `"slack"` to `wake` in `runner.json`. The runner takes the change once your turn is over; `console agent <handle>` then says the source is connected. A direct message and a mention of you reach you as wakes; answer a direct message in the conversation, and in its thread only where it was written in one.
 - **Record the accounts you hold elsewhere,** what you are called there and never a secret: `console agent <handle> --account <service>=<name>`.
 
-What you cannot do yourself, you ask as a decision (`console ask`), of whoever can do it and of your manager where you do not know who, with the exact values and what to hand back; then go on with the rest. The answer wakes you, and you go on with the run that asked (`--run <id>`). The task is finished when nothing of it waits on anyone. Your own address is the one you sign in to the console with, where that is an address; where it is a login at a git host, ask which address an invitation is to go to, and make none up.
+Do everything you can yourself, and ask for help only with what you cannot do. That you ask as a decision (`console ask`), of whoever can do it and of your manager where you do not know who, with the exact values and what to hand back; then go on with the rest. The answer wakes you, and you go on with the run that asked (`--run <id>`). The task is finished when nothing of it waits on anyone. Your own address is the one you sign in to the console with, where that is an address; where it is a login at a git host, ask which address an invitation is to go to, and make none up.
 
 ## The agent: working as an account
 
