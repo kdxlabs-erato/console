@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { usageStanding, usedHundredths } from "../agent-usage.js";
 import { argUsage } from "../plugin/args.js";
 import type {
   RestAgent,
@@ -190,11 +191,12 @@ const OWN_CHOICE = "the product's own";
  * One agent account in full: its line, how it stands, what its runner last said of itself and
  * what was chosen for it, where the asker is answered that, and whether they supervise it.
  */
-export function formatAgent(agent: RestAgent): string {
+export function formatAgent(agent: RestAgent, now: number): string {
   const runner = agent.runner ?? null;
   return [
     formatAgentLine(agent),
     `state: ${formatAgentState(agent)}`,
+    ...formatAgentUsage(agent.usage, now),
     ...(runner === null
       ? []
       : [
@@ -237,6 +239,34 @@ export function formatAgent(agent: RestAgent): string {
       ? "You supervise it: an administrator, or above it in the reporting line."
       : "You do not supervise it.",
   ].join("\n");
+}
+
+/**
+ * What an agent account's product last said of what its subscription allows (ADR-0156), a line:
+ * each window that still stands with how much of it is used and when it resets, then when the
+ * product said so. Nothing where it has said none.
+ */
+export function formatAgentUsage(usage: RestAgent["usage"], now: number): string[] {
+  const standing = usageStanding(usage, now);
+  if (standing.length === 0) {
+    return [];
+  }
+  const windows = standing.map((window) => {
+    const share =
+      window.used === null
+        ? window.near === true
+          ? "near its limit"
+          : "of a share its product did not say"
+        : `${usedHundredths(window.used)}% used`;
+    return `${window.name} ${share}${window.resetsAt === null ? "" : `, resets ${moment(window.resetsAt)}`}`;
+  });
+  const said = standing
+    .map((window) => window.at)
+    .sort()
+    .at(-1);
+  return [
+    `usage: ${windows.join("; ")}${said === undefined ? "" : ` (as its product said ${moment(said)})`}`,
+  ];
 }
 
 /** A wake source as its runner last said it stands (ADR-0144): listening and since when, or not, and why. */

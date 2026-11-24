@@ -1,3 +1,4 @@
+import { MAX_RUNNER_USAGE_WINDOWS, MAX_USAGE_WINDOW_NAME_LENGTH } from "../limits.js";
 import type { UsageWindow } from "./types.js";
 
 // What the runner makes of its product's allowance (ADR-0150, docs/specs/runner.md, "A usage
@@ -143,7 +144,8 @@ const plain = (text: string): string =>
   text
     .replaceAll(/[^\p{L}\p{N}._-]+/gu, " ")
     .trim()
-    .slice(0, 40);
+    .slice(0, MAX_USAGE_WINDOW_NAME_LENGTH)
+    .trim();
 
 /** A share as a whole number of hundredths, never more than was said: 0.899 is 89%. */
 const percentOf = (share: number): number => Math.floor(Math.max(0, Math.min(1, share)) * 100);
@@ -205,4 +207,63 @@ export function limitWords(
       ? "Nothing reached you meanwhile."
       : "What reached you meanwhile follows, in the order it came, what you were handed as the limit was reached and had not read among it.";
   return `${stopped} ${now} Go on with what you were doing: look at what each sub-agent left before you start it again. ${meanwhile}`;
+}
+
+/** What the product last said of each window of its allowance, by the window's name, and when (ADR-0156). */
+export type UsageSeen = Map<string, { readonly window: UsageWindow; readonly at: number }>;
+
+/** A window as the console is told of it with the heartbeat. */
+export interface UsageSaid {
+  readonly name: string;
+  readonly used: number | null;
+  readonly resetsAt: string | null;
+  readonly near?: true;
+  readonly at: string;
+}
+
+/** A moment a date can hold, or nothing: what a product says is its own, and one number out of range would cost the heartbeat. */
+const momentOf = (ms: number | undefined): number | undefined =>
+  ms !== undefined && Number.isFinite(ms) && ms > 0 && ms < 8.64e15 ? Math.floor(ms) : undefined;
+
+/**
+ * Notes what the product says of its windows, for the console to be told (ADR-0156). What a
+ * product says is sparse: a window it says nothing of this time stands as it was last said. As
+ * many windows are kept as a heartbeat carries, the first said, and one without a name is none.
+ */
+export function noteUsage(seen: UsageSeen, windows: readonly UsageWindow[], now: number): void {
+  for (const window of windows) {
+    const name = plain(window.name);
+    if (name.length === 0 || (!seen.has(name) && seen.size >= MAX_RUNNER_USAGE_WINDOWS)) {
+      continue;
+    }
+    seen.set(name, { window, at: now });
+  }
+}
+
+/**
+ * The windows as the console is told of them with the heartbeat. One whose reset has passed is
+ * let go: what was said of it is of a window that is over, and the product says the next one
+ * when it is next asked.
+ */
+export function usageSaid(seen: UsageSeen, now: number): UsageSaid[] {
+  const said: UsageSaid[] = [];
+  for (const [name, { window, at }] of [...seen]) {
+    const resetsAt = momentOf(window.resetsAt);
+    if (resetsAt !== undefined && resetsAt <= now) {
+      seen.delete(name);
+      continue;
+    }
+    const used =
+      window.used === undefined || !Number.isFinite(window.used)
+        ? null
+        : Math.max(0, Math.min(1, window.used));
+    said.push({
+      name,
+      used,
+      resetsAt: resetsAt === undefined ? null : new Date(resetsAt).toISOString(),
+      ...(window.near === true ? { near: true as const } : {}),
+      at: new Date(at).toISOString(),
+    });
+  }
+  return said;
 }

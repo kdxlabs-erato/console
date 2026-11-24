@@ -1536,6 +1536,39 @@ describe("the runner", () => {
     expect(console.says.delivered).toBe(1);
   });
 
+  it("tells the console with its heartbeat what the product said of its allowance, whatever the share (ADR-0156)", async () => {
+    const { console, product } = setup();
+    console.signal({ text: "Begin." });
+    const session = await sessionOf(product);
+    await until("the message", () => session.sent.length === 1);
+    // Before the product says anything, the runner says that it knows of no window.
+    await until("a heartbeat", () => console.beats.length >= 2);
+    expect(console.beats.at(-1)?.usage).toEqual([]);
+    const resetsAt = Date.now() + 3_600_000;
+    session.emit(
+      ...STARTED,
+      { type: "taken" },
+      {
+        type: "usage",
+        windows: [
+          { name: "5-hour", used: 0.12, resetsAt },
+          { name: "weekly", used: 0.3, resetsAt: resetsAt + 86_400_000 },
+        ],
+      },
+    );
+    await until("the console to be told", () => console.beats.at(-1)?.usage?.length === 2);
+    expect(console.beats.at(-1)?.usage).toMatchObject([
+      { name: "5-hour", used: 0.12, resetsAt: new Date(resetsAt).toISOString() },
+      { name: "weekly", used: 0.3, resetsAt: new Date(resetsAt + 86_400_000).toISOString() },
+    ]);
+    // Far below a mark: the agent is told nothing, and its turn is not spent on it.
+    expect(session.sent).toHaveLength(1);
+    // The product says one window anew, and the other stands as it was said.
+    session.emit({ type: "usage", windows: [{ name: "5-hour", used: 0.2, resetsAt }] });
+    await until("the share to move", () => console.beats.at(-1)?.usage?.[0]?.used === 0.2);
+    expect(console.beats.at(-1)?.usage?.map((window) => window.name)).toEqual(["5-hour", "weekly"]);
+  });
+
   it("counts as told only what it could say: a mark met under a usage limit is said when the agent is back", async () => {
     const { console, product } = setup();
     console.signal({ text: "Begin." });

@@ -19,9 +19,12 @@ import {
   type RestAgentRunner,
   type RestAgentSecret,
   type RestAgentSession,
+  type RestAgentUsageWindow,
   type RestPerson,
   type RestSignal,
   type RestTranscriptEvent,
+  usageNear,
+  usedHundredths,
 } from "../api.js";
 import { today } from "../dates.js";
 import { useWords } from "../i18n/index.js";
@@ -48,6 +51,54 @@ const STATE_TONES: Readonly<Record<AgentState, "success" | "neutral" | "warning"
   failed: "danger",
   unheard: "warning",
 };
+
+/**
+ * What an agent account's product last said of what its subscription allows (ADR-0156): a
+ * window a line, by the name its driver gives it, with how much of it is used and when it
+ * resets. One near its limit is marked, and one used up. `usage` is the windows that still
+ * stand (`usageStanding`); `said` adds when the product said so, where there is room.
+ */
+export function AgentUsage(props: {
+  readonly usage: readonly RestAgentUsageWindow[];
+  readonly said?: boolean | undefined;
+}) {
+  const words = useWords().agents.usage;
+  const names: Readonly<Record<string, string>> = words.windows;
+  const newest = props.usage
+    .map((window) => window.at)
+    .sort()
+    .at(-1);
+  return (
+    <span className="sc-agent-usage">
+      {props.usage.map((window) => (
+        <span key={window.name} className="sc-agent-product">
+          <span>{names[window.name] ?? window.name}</span>
+          {window.used !== null ? (
+            <Badge tone={window.used >= 1 ? "danger" : usageNear(window) ? "warning" : "neutral"}>
+              {words.used(usedHundredths(window.used))}
+            </Badge>
+          ) : (
+            usageNear(window) && <Badge tone="warning">{words.near}</Badge>
+          )}
+          {window.resetsAt !== null && (
+            <span className="sc-muted">
+              {words.resets.before}
+              <Time iso={window.resetsAt} precision="clock" />
+              {words.resets.after}
+            </span>
+          )}
+        </span>
+      ))}
+      {props.said === true && newest !== undefined && (
+        <span className="sc-note">
+          {words.said.before}
+          <Time iso={newest} precision="clock" />
+          {words.said.after}
+        </span>
+      )}
+    </span>
+  );
+}
 
 /** The state of an agent account as a badge: the word, and why and since when where there is room. */
 export function AgentStateBadge(props: {

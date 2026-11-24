@@ -607,6 +607,48 @@ const REASONS = {
 } as const;
 
 /**
+ * What each account's product last said of its allowance (ADR-0156), in minutes from now: a
+ * share of the short window and of the week with when each resets, and how long ago it was
+ * said. One far from its limit, one near it in the short window, one near it in the week whose
+ * short window has reset since its runner went quiet, and one whose product never said.
+ */
+const USAGE: Partial<
+  Record<
+    Agent,
+    { readonly said: number; readonly windows: readonly (readonly [string, number, number])[] }
+  >
+> = {
+  mira: {
+    said: 0,
+    windows: [
+      ["5-hour", 0.42, 130],
+      ["weekly", 0.13, 4 * 24 * 60 + 95],
+    ],
+  },
+  juno: {
+    said: 1,
+    windows: [
+      ["5-hour", 0.86, 40],
+      ["weekly", 0.61, 2 * 24 * 60 + 20],
+    ],
+  },
+  otis: {
+    said: 1,
+    windows: [
+      ["5-hour", 0.07, 255],
+      ["weekly", 0.31, 5 * 24 * 60],
+    ],
+  },
+  pax: {
+    said: 26 * 60,
+    windows: [
+      ["5-hour", 0.5, -21 * 60],
+      ["weekly", 0.92, 3 * 24 * 60],
+    ],
+  },
+};
+
+/**
  * The agent accounts as their runners left them: each heard from, saying how its agent stands;
  * the one at work with a session that holds a conversation, a session before it, what its
  * supervisor told it, its secrets and the accounts it holds elsewhere.
@@ -626,6 +668,12 @@ async function seedAgents(
     }
     const machine = { name: agent.machine, os: MACHINE_OS, user: agent.handle };
     const product = PRODUCTS[agent.product];
+    const usage = (USAGE[agent.handle]?.windows ?? []).map(([name, used, resets]) => ({
+      name,
+      used,
+      resetsAt: new Date(now.getTime() + resets * 60_000).toISOString(),
+      at: new Date(now.getTime() - (USAGE[agent.handle]?.said ?? 0) * 60_000).toISOString(),
+    }));
     const beat = async (session: string | null, delivered: number): Promise<void> => {
       await runner.runnerHeartbeat({
         state: state === "unheard" ? "running" : state,
@@ -641,6 +689,7 @@ async function seedAgents(
           efforts: [...OFFERS[agent.product].efforts],
         },
         running: { model: null, effort: null },
+        usage,
       });
     };
     if (agent.handle !== "mira") {
@@ -798,6 +847,7 @@ async function seedAgents(
         efforts: [...OFFERS.claude.efforts],
       },
       running: { model: "opus", effort: "high" },
+      usage,
       // A wake source that listens and one that waits, for the page that shows how each stands.
       sources: [
         {

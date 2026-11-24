@@ -121,6 +121,10 @@ export function restAgent(
             heardAt: runner.heardAt?.toISOString() ?? null,
             until: runner.stateUntil?.toISOString() ?? null,
           },
+    // What its product last said of its allowance (ADR-0156), for whoever sees how it stands.
+    ...(runner?.usage === undefined || runner.usage.length === 0
+      ? {}
+      : { usage: runner.usage.map((window) => ({ ...window })) }),
     runner:
       runner === undefined || !detailed
         ? null

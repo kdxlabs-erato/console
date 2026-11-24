@@ -2272,6 +2272,15 @@ export const en = {
       title: "Agents that need you",
       intro: "Agents that report to you and are not running.",
     },
+    // What an account's product last said of what its subscription allows (ADR-0156). A window
+    // is named as its driver calls it; the two every product has are said in the person's words.
+    usage: {
+      used: (hundredths: number) => `${hundredths}% used`,
+      near: "Near its limit",
+      resets: { before: "resets ", after: "" },
+      said: { before: "as its product said ", after: "" },
+      windows: { "5-hour": "5 hours", weekly: "Week" },
+    },
     accounts: {
       title: "Agent accounts",
       intro:
@@ -2293,6 +2302,7 @@ export const en = {
       },
       now: "Now",
       runs: "Runs",
+      usage: "Usage",
       invited: "Invited",
       invitedHint: "Nobody has signed in with it yet. Work can be assigned to it already.",
       login: "Signs in as",

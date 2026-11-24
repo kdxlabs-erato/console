@@ -470,6 +470,13 @@
       "when": 1795479469323,
       "tag": "0066_agent_state_until",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1795533156177,
+      "tag": "0067_agent_usage",
+      "breakpoints": true
     }
   ]
 }

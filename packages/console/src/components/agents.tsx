@@ -12,6 +12,7 @@ import {
   type RestProject,
   type RestProvider,
   type RestWorkspace,
+  usageStanding,
 } from "../api.js";
 import { type AvatarSet, avatarScanlines, MAX_AVATAR_PIXELS, pngFile } from "../avatar.js";
 import { useWords } from "../i18n/index.js";
@@ -22,7 +23,7 @@ import {
   MAX_PERSON_TITLE_LENGTH,
 } from "../limits.js";
 import { agentLoginOf } from "../services.js";
-import { AgentStateBadge } from "./agent-page.js";
+import { AgentStateBadge, AgentUsage } from "./agent-page.js";
 import { supervisedBy } from "./people.js";
 import { Picker } from "./picker.js";
 import { peopleSearch } from "./searches.js";
@@ -115,6 +116,8 @@ export interface AgentAccountListProps {
   readonly empty?: React.ReactNode;
   /** Where an account's own page is; given, the whole card leads there, and left out, nothing does. */
   readonly href?: ((agent: RestAgent) => string) | undefined;
+  /** The moment a window of an account's allowance is read against; now, where none is given. */
+  readonly now?: number | undefined;
 }
 
 /**
@@ -142,6 +145,7 @@ export function AgentAccountList(props: AgentAccountListProps) {
         const title = person.title ?? "";
         const state = agent.state ?? null;
         const product = agent.runner?.product ?? null;
+        const usage = usageStanding(agent.usage, props.now ?? Date.now());
         const model = agent.runner?.running?.model ?? agent.runner?.settings.model ?? null;
         return (
           <li
@@ -215,6 +219,14 @@ export function AgentAccountList(props: AgentAccountListProps) {
                       `${product.name}${product.version === null ? "" : ` ${product.version}`}`,
                       ...(model === null ? [] : [model]),
                     ].join(" · ")}
+                  </dd>
+                </div>
+              )}
+              {usage.length > 0 && (
+                <div className="sc-person-fact">
+                  <dt>{accounts.usage}</dt>
+                  <dd>
+                    <AgentUsage usage={usage} />
                   </dd>
                 </div>
               )}

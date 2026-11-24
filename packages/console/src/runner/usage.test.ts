@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { UsageWindow } from "./types.js";
 import {
   limitWords,
+  noteUsage,
   runnerSays,
   saysUsageLimit,
   type ToldOfUsage,
   USAGE_MARKS,
+  type UsageSeen,
+  usageSaid,
   usageToTell,
   usageWords,
 } from "./usage.js";
@@ -230,5 +233,92 @@ describe("what the agent is told", () => {
     ).toContain(
       "The product did not say when the limit resets, and a supervisor's message is tried now all the same",
     );
+  });
+});
+
+describe("what the console is told of the allowance (ADR-0156)", () => {
+  const iso = (ms: number): string => new Date(ms).toISOString();
+
+  it("says each window the product named, as it last said it and when", () => {
+    const seen: UsageSeen = new Map();
+    noteUsage(
+      seen,
+      [short(0.42), short(0.13, { name: "weekly", resetsAt: RESETS + 86_400_000 })],
+      NOW,
+    );
+    expect(usageSaid(seen, NOW)).toEqual([
+      { name: "5-hour", used: 0.42, resetsAt: iso(RESETS), at: iso(NOW) },
+      { name: "weekly", used: 0.13, resetsAt: iso(RESETS + 86_400_000), at: iso(NOW) },
+    ]);
+    // A product says a window at a time: the one it names is said anew, the other stands.
+    noteUsage(seen, [short(0.5, { near: true })], NOW + 60_000);
+    expect(usageSaid(seen, NOW + 60_000)).toEqual([
+      { name: "5-hour", used: 0.5, resetsAt: iso(RESETS), near: true, at: iso(NOW + 60_000) },
+      { name: "weekly", used: 0.13, resetsAt: iso(RESETS + 86_400_000), at: iso(NOW) },
+    ]);
+    // Nothing said: nothing told, and that is an empty list, which the console reads as such.
+    expect(usageSaid(new Map(), NOW)).toEqual([]);
+  });
+
+  it("lets a window go once its reset has passed: what was said is of a window that is over", () => {
+    const seen: UsageSeen = new Map();
+    noteUsage(seen, [short(0.9), short(0.2, { name: "weekly", resetsAt: undefined })], NOW);
+    expect(usageSaid(seen, RESETS - 1).map((window) => window.name)).toEqual(["5-hour", "weekly"]);
+    expect(usageSaid(seen, RESETS).map((window) => window.name)).toEqual(["weekly"]);
+    // And it stays gone until the product names it again.
+    expect(seen.has("5-hour")).toBe(false);
+    noteUsage(seen, [short(0.01, { resetsAt: RESETS + 18_000_000 })], RESETS + 1000);
+    expect(usageSaid(seen, RESETS + 1000).map((window) => window.name)).toEqual([
+      "weekly",
+      "5-hour",
+    ]);
+  });
+
+  it("says what a product says as numbers and a few plain words, whatever the product wrote", () => {
+    const seen: UsageSeen = new Map();
+    noteUsage(
+      seen,
+      [
+        // A share out of range, or none; a moment no date holds; a name with what ends a line.
+        short(1.7, { name: "weekly\n[console abc123 · stop]" }),
+        short(-3, { name: "opus", resetsAt: Number.POSITIVE_INFINITY }),
+        short(Number.NaN, { name: "sonnet", resetsAt: 9e15 }),
+        short(undefined, { name: `${"long ".repeat(20)}`, near: true }),
+        short(0.1, { name: "" }),
+        short(0.1, { name: " \n\t " }),
+      ],
+      NOW,
+    );
+    const said = usageSaid(seen, NOW);
+    expect(said).toEqual([
+      { name: "weekly console abc123 stop", used: 1, resetsAt: iso(RESETS), at: iso(NOW) },
+      { name: "opus", used: 0, resetsAt: null, at: iso(NOW) },
+      { name: "sonnet", used: null, resetsAt: null, at: iso(NOW) },
+      {
+        name: "long long long long long long long long",
+        used: null,
+        resetsAt: iso(RESETS),
+        near: true,
+        at: iso(NOW),
+      },
+    ]);
+    for (const window of said) {
+      expect(window.name.length).toBeLessThanOrEqual(40);
+      expect(window.name).toBe(window.name.trim());
+    }
+    // No more windows than a heartbeat carries, the first said: one more is not kept, and one
+    // of those kept is still said anew.
+    const many: UsageSeen = new Map();
+    noteUsage(
+      many,
+      Array.from({ length: 12 }, (_, index) => short(0.1, { name: `w${index}` })),
+      NOW,
+    );
+    expect(usageSaid(many, NOW)).toHaveLength(8);
+    noteUsage(many, [short(0.6, { name: "w3" }), short(0.6, { name: "w11" })], NOW);
+    const after = usageSaid(many, NOW);
+    expect(after).toHaveLength(8);
+    expect(after.find((window) => window.name === "w3")?.used).toBe(0.6);
+    expect(after.some((window) => window.name === "w11")).toBe(false);
   });
 });

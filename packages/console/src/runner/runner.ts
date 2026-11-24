@@ -38,9 +38,12 @@ import type {
 import {
   type Limited,
   limitWords,
+  noteUsage,
   RESET_MARGIN_MS,
   runnerSays,
   type ToldOfUsage,
+  type UsageSeen,
+  usageSaid,
   usageToTell,
   usageWords,
 } from "./usage.js";
@@ -551,6 +554,8 @@ export function createRunner(options: RunnerOptions): Runner {
     | undefined;
   /** What the agent was told of each window of its product's allowance: the mark it had reached, and when that window resets. */
   let usageTold = new Map<string, ToldOfUsage>();
+  /** What the product last said of each window of its allowance, which the console is told with the heartbeat (ADR-0156). */
+  const usageSeen: UsageSeen = new Map();
   /**
    * The signals a runner before this one kept unread, by number: taken from the stream once
    * more, and until when the runner waits for them before it brings the agent back. And what
@@ -1963,6 +1968,7 @@ export function createRunner(options: RunnerOptions): Runner {
         return;
       }
       case "usage": {
+        noteUsage(usageSeen, event.windows, options.now());
         await onUsage(target, event.windows);
         return;
       }
@@ -2178,6 +2184,7 @@ export function createRunner(options: RunnerOptions): Runner {
           effort: choiceOf(session?.running.effort),
         },
         sources: sourcesOf(),
+        usage: usageSaid(usageSeen, options.now()),
       });
       settings = answer.settings;
       tooOldSaid = false;

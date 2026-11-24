@@ -423,6 +423,15 @@ export const agentRunners = pgTable(
     running: jsonb().$type<{ model: string | null; effort: string | null }>(),
     /** The wake sources its runner keeps beside the console's own, as it last said (ADR-0144); null where it says none. */
     sources: jsonb().$type<{ name: string; state: string; since: string; why?: string }[]>(),
+    /**
+     * What its product last said of what its subscription allows (ADR-0156), a window each: the
+     * share used and when it resets, null each where the product does not say, and when it said
+     * so; null while no runner has said any.
+     */
+    usage:
+      jsonb().$type<
+        { name: string; used: number | null; resetsAt: string | null; near?: boolean; at: string }[]
+      >(),
     /** What its supervisors or the account chose for it to run with; null each for the product's own. */
     model: text(),
     effort: text(),

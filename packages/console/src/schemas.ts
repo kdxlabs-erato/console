@@ -48,6 +48,7 @@ import {
   MAX_RUNNER_LINE_LENGTH,
   MAX_RUNNER_OFFERS,
   MAX_RUNNER_SOURCES,
+  MAX_RUNNER_USAGE_WINDOWS,
   MAX_SEAL_REASON_LENGTH,
   MAX_SECRET_LENGTH,
   MAX_SERVICE_PARAMETERS,
@@ -68,6 +69,7 @@ import {
   MAX_TRANSCRIPT_FACTS,
   MAX_TRANSCRIPT_TEXT_BYTES,
   MAX_URL_LENGTH,
+  MAX_USAGE_WINDOW_NAME_LENGTH,
   MAX_WORKERS,
   MIN_HANDLE_LENGTH,
   MIN_OPTIONS,
@@ -823,6 +825,18 @@ const runnerSource = z.object({
   since: instant,
   why: z.optional(runnerLine),
 });
+/**
+ * A window of what the product's subscription allows, as its runner last heard of it (ADR-0156):
+ * what the driver calls it, how much of it is used where the product says, when it resets where
+ * it says, whether the product itself calls it near its limit, and when the product said so.
+ */
+const runnerUsageWindow = z.object({
+  name: line(MAX_USAGE_WINDOW_NAME_LENGTH),
+  used: z.nullable(z.number().check(z.gte(0), z.lte(1))),
+  resetsAt: z.nullable(instant),
+  near: z.optional(z.boolean()),
+  at: instant,
+});
 /** What an account's own wake to come is called: a short name of lowercase letters, digits and hyphens. */
 const ownWakeKey = z.string().check(z.regex(/^[a-z0-9][a-z0-9-]{0,39}$/));
 /** A signal by its number alone: what an answer names one by where the record holds the rest. */
@@ -863,6 +877,11 @@ export const restRunnerHeartbeatInputSchema = z.object({
    * or left out where nothing says, and by a runner of before.
    */
   until: z.optional(z.nullable(instant)),
+  /**
+   * What the product last said of what its subscription allows (ADR-0156), a window each; left
+   * out by a runner of before, and empty where the product has said nothing.
+   */
+  usage: z.optional(z.array(runnerUsageWindow).check(z.maxLength(MAX_RUNNER_USAGE_WINDOWS))),
 });
 export type RestRunnerHeartbeatInput = z.infer<typeof restRunnerHeartbeatInputSchema>;
 
@@ -1439,6 +1458,16 @@ export const restAgentPatchSchema = z
   );
 export type RestAgentPatch = z.infer<typeof restAgentPatchSchema>;
 
+/** A window of an agent account's allowance as it is answered (ADR-0156); the name is read as it came. */
+export const restAgentUsageWindowSchema = z.object({
+  name: z.string(),
+  used: z.nullable(z.number()),
+  resetsAt: z.nullable(instant),
+  near: z.optional(z.boolean()),
+  at: instant,
+});
+export type RestAgentUsageWindow = z.infer<typeof restAgentUsageWindowSchema>;
+
 /**
  * An agent account as its own listing answers it (ADR-0084): the member it is, and whom it
  * reports to.
@@ -1457,6 +1486,14 @@ export const restAgentSchema = z.object({
   state: z.optional(z.nullable(restAgentStateSchema)),
   /** What its runner last said of itself and what was chosen for it: answered to its supervisors and to the account, `null` to anyone else and while there is none. */
   runner: z.optional(z.nullable(restAgentRunnerSchema)),
+  /**
+   * What its product last said of what its subscription allows (ADR-0156), a window each: its
+   * name as the driver calls it, the share used from 0 to 1 and when it resets, `null` each
+   * where the product does not say, whether the product calls it near its limit, and when it
+   * said so. Answered to whoever sees how the account stands, from 0.6.1, and left out where
+   * its runner has said none. A window whose reset has passed is of a window that is over.
+   */
+  usage: z.optional(z.array(restAgentUsageWindowSchema)),
   /**
    * The accounts it holds elsewhere (ADR-0089), what it is called at each by the service's short
    * name, and no secret: answered where one account is read, so that taking it out knows what

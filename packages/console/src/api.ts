@@ -5,6 +5,13 @@
 
 export { agentLabel } from "./agent-name.js";
 export {
+  USAGE_NEAR,
+  type UsageReading,
+  usageNear,
+  usageStanding,
+  usedHundredths,
+} from "./agent-usage.js";
+export {
   AVATAR_BOX,
   AVATAR_CLOSE_MOST,
   AVATAR_CLOSE_UNDER,
@@ -164,6 +171,7 @@ export {
   MAX_RUNNER_LINE_LENGTH,
   MAX_RUNNER_OFFERS,
   MAX_RUNNER_SOURCES,
+  MAX_RUNNER_USAGE_WINDOWS,
   MAX_RUNNER_WAKES_PER_HOUR,
   MAX_RUNS_PER_TASK,
   MAX_SEAL_REASON_LENGTH,
@@ -199,6 +207,7 @@ export {
   MAX_TRANSCRIPT_PAGE_LIMIT,
   MAX_TRANSCRIPT_TEXT_BYTES,
   MAX_URL_LENGTH,
+  MAX_USAGE_WINDOW_NAME_LENGTH,
   MAX_VERSIONS_PER_DOCUMENT,
   MAX_WORKERS,
   MIN_HANDLE_LENGTH,
@@ -355,6 +364,7 @@ export {
   type RestAgentSetup,
   type RestAgentState,
   type RestAgents,
+  type RestAgentUsageWindow,
   type RestAnswerInput,
   type RestArchivedTasks,
   type RestArchiveTasksInput,
@@ -525,6 +535,7 @@ export {
   restAgentSetupSchema,
   restAgentStateSchema,
   restAgentsSchema,
+  restAgentUsageWindowSchema,
   restAnswerInputSchema,
   restArchivedTasksSchema,
   restArchiveTasksInputSchema,

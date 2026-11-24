@@ -12,6 +12,7 @@ import {
   type RestSession,
   type RestSignal,
   type RestTranscriptEvent,
+  usageStanding,
 } from "./api.js";
 import {
   AgentChoice,
@@ -21,6 +22,7 @@ import {
   AgentSecretList,
   AgentSessionList,
   AgentStateBadge,
+  AgentUsage,
   atWorkOf,
   ChatPane,
   isOwnReset,
@@ -951,6 +953,8 @@ export function AgentPage(props: AgentPageProps) {
   const labels: Readonly<Record<AgentTab, string>> = words.tabs;
   const provider = providerOf(person.login, props.providers ?? []);
   const view = agentViewOf(tab, agent.supervised);
+  // What its product last said of its allowance (ADR-0156), a window whose reset has passed left out.
+  const usage = usageStanding(agent.usage, Date.now());
   return (
     <>
       <header className="sc-panel sc-agent-header">
@@ -965,6 +969,14 @@ export function AgentPage(props: AgentPageProps) {
             <AgentStateBadge state={agent.state} full />
           </div>
           <dl className="sc-facts-row sc-agent-head-facts">
+            {usage.length > 0 && (
+              <div>
+                <dt>{all.agents.accounts.usage}</dt>
+                <dd>
+                  <AgentUsage usage={usage} said />
+                </dd>
+              </div>
+            )}
             <div>
               <dt>{all.people.manager}</dt>
               <dd>

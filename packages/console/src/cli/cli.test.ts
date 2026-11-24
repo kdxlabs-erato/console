@@ -4649,6 +4649,13 @@ describe("configuring, as the person", () => {
               running: { model: "opus", effort: null },
               settings: { model: "sonnet", effort: "high" },
             },
+            // What its product last said of its allowance (ADR-0156): a share, a window the
+            // product only calls near its limit, and one whose reset has passed.
+            usage: [
+              { name: "5-hour", used: 0.429, resetsAt: "2026-10-09T13:00:00.000Z", at: WHEN },
+              { name: "weekly", used: null, resetsAt: null, near: true, at: WHEN },
+              { name: "gone", used: 0.9, resetsAt: "2026-10-09T09:00:00.000Z", at: WHEN },
+            ],
           },
         },
       ],
@@ -4657,11 +4664,13 @@ describe("configuring, as the person", () => {
     expect(await runCli(["agent", "mira"], unheard.io)).toBe(EXIT.ok);
     expect(unheard.out()).toContain("state: no runner has been heard from yet");
     expect(unheard.out()).not.toContain("runner:");
-    const full = harness({ fetch, env: SIGNED_IN });
+    expect(unheard.out()).not.toContain("usage:");
+    const full = harness({ fetch, env: SIGNED_IN, now: () => Date.parse(WHEN) });
     expect(await runCli(["agent", "mira"], full.io)).toBe(EXIT.ok);
     expect(full.out()).toContain(
       [
         `state: refused (model refused) since ${WHEN}; its runner was last heard from ${WHEN}`,
+        `usage: 5-hour 42% used, resets 2026-10-09T13:00:00.000Z; weekly near its limit (as its product said ${WHEN})`,
         "runner: 0.5.0 on mac-mini (macOS 15.1), as mira",
         "product: Claude Code 2.1.0, a version the driver was not tried with",
         "set to: model sonnet, effort high",

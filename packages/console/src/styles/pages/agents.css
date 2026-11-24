@@ -1047,6 +1047,14 @@
   display: grid;
 }
 
+/* What an account's product last said of its allowance: a window a line, each with its share
+   and when it resets beside its name. */
+.sc-agent-usage {
+  display: grid;
+  gap: var(--sc-space-1);
+  justify-items: start;
+}
+
 @media (max-width: 48rem) {
   .sc-agent-sessions {
     grid-template-columns: minmax(0, 1fr) auto;

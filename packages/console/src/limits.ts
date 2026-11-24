@@ -70,6 +70,9 @@ export const MAX_RUNNER_LINE_LENGTH = 120;
 export const MAX_RUNNER_OFFERS = 50;
 /** How many wake sources a runner says it keeps beside the console's own. */
 export const MAX_RUNNER_SOURCES = 10;
+/** How many windows of its product's allowance a runner says, and how long a window's name is (ADR-0156). */
+export const MAX_RUNNER_USAGE_WINDOWS = 8;
+export const MAX_USAGE_WINDOW_NAME_LENGTH = 40;
 /** How many wakes an agent account keeps for itself for later at a time, and how far ahead one may be (ADR-0145). */
 export const MAX_OWN_WAKES = 20;
 export const MAX_OWN_WAKE_DAYS = 31;

@@ -6642,13 +6642,13 @@ const agent: Command = async (args, io) => {
       ...(dayStart === undefined ? {} : { dayStart }),
       ...(dayEnd === undefined ? {} : { dayEnd }),
     });
-    answer(io, session, kept, () => formatAgent(kept));
+    answer(io, session, kept, () => formatAgent(kept, io.now()));
     return EXIT.ok;
   }
   const found = await session.client.agent(handle);
   const file = text(values, "avatar");
   if (file === undefined) {
-    answer(io, session, found, () => formatAgent(found));
+    answer(io, session, found, () => formatAgent(found, io.now()));
     return EXIT.ok;
   }
   const parts = found.person.avatarParts;

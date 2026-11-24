@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AgentsNeedingYou, agentViewOf } from "../agent-page.js";
 import type {
+  RestAgent,
   RestCategory,
   RestComment,
   RestConnectRequest,
@@ -30,6 +31,7 @@ import {
   AgentSecretList,
   AgentSessionList,
   AgentStateBadge,
+  AgentUsage,
   afterTold,
   atWorkOf,
   ChatPane,
@@ -2194,6 +2196,74 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
       expect(seen).not.toContain("sc-badge-live");
     }
     expect(full).not.toContain("sc-badge-live");
+  });
+
+  it("says on an account's card how much of its product's allowance is used and when each window resets (ADR-0156)", () => {
+    const now = Date.parse("2026-11-24T03:00:00.000Z");
+    const at = "2026-11-24T02:58:00.000Z";
+    const usage = [
+      { name: "5-hour", used: 0.42, resetsAt: "2026-11-24T05:00:00.000Z", at },
+      { name: "weekly", used: 0.899, resetsAt: "2026-11-27T05:00:00.000Z", at },
+      // Used up; one the product calls near its limit with no share; one whose reset has
+      // passed, which says nothing of the window after it; and one of a name of its own.
+      { name: "weekly opus", used: 1, resetsAt: null, at },
+      { name: "primary", used: null, resetsAt: null, near: true, at },
+      { name: "gone", used: 0.99, resetsAt: "2026-11-24T02:00:00.000Z", at },
+      { name: "<b>bold</b>", used: 0.01, resetsAt: null, at },
+    ];
+    const card = (agent: Partial<RestAgent>): string =>
+      renderToStaticMarkup(
+        <AgentAccountList
+          agents={[
+            {
+              person: mira,
+              manager: alice,
+              supervised: false,
+              state: standing("running", "resumed"),
+              ...agent,
+            },
+          ]}
+          now={now}
+        />,
+      );
+    const seen = card({ usage });
+    expect(seen).toContain("<dt>Usage</dt>");
+    // A window by the words a person has for it, the two every product has; another as it came.
+    expect(seen).toContain("<span>5 hours</span>");
+    expect(seen).toContain("<span>Week</span>");
+    expect(seen).toContain("<span>weekly opus</span>");
+    // A share in whole hundredths, never more than was said, marked near the limit and at it.
+    expect(seen).toMatch(/<span class="sc-badge[^"]*sc-badge-neutral[^"]*">42% used<\/span>/);
+    expect(seen).toMatch(/<span class="sc-badge[^"]*sc-badge-warning[^"]*">89% used<\/span>/);
+    expect(seen).toMatch(/<span class="sc-badge[^"]*sc-badge-danger[^"]*">100% used<\/span>/);
+    expect(seen).toMatch(/<span class="sc-badge[^"]*sc-badge-warning[^"]*">Near its limit<\/span>/);
+    expect(seen).toContain('resets <time class="sc-time" dateTime="2026-11-24T05:00:00.000Z"');
+    // What is over is not shown, and a name is text, whatever it holds.
+    expect(seen).not.toContain("gone");
+    expect(seen).not.toContain("99% used");
+    expect(seen).toContain("&lt;b&gt;bold&lt;/b&gt;");
+    expect(seen).not.toContain("<b>bold</b>");
+    // The card stays short: when the product said so is on the account's page.
+    expect(seen).not.toContain("as its product said");
+    // Nothing of it where its runner said none, or where every window is over.
+    expect(card({})).not.toContain("<dt>Usage</dt>");
+    expect(card({ usage: [] })).not.toContain("<dt>Usage</dt>");
+    expect(card({ usage: [usage[4] as (typeof usage)[number]] })).not.toContain("<dt>Usage</dt>");
+    // Whoever supervises nothing reads it too: it says whom work can be given to now.
+    expect(card({ usage, runner: null })).toContain("42% used");
+    // On the account's page, with when the product said so; and in Korean.
+    const full = renderToStaticMarkup(<AgentUsage usage={usage.slice(0, 2)} said />);
+    expect(full).toContain(`as its product said <time class="sc-time" dateTime="${at}"`);
+    const korean = renderToStaticMarkup(
+      <LanguageContext.Provider value={KOREAN}>
+        <AgentUsage usage={usage.slice(0, 2)} said />
+      </LanguageContext.Provider>,
+    );
+    expect(korean).toContain("<span>5시간</span>");
+    expect(korean).toContain("<span>주간</span>");
+    expect(korean).toContain(">42% 사용<");
+    expect(korean).toContain("</time>에 초기화");
+    expect(korean).toContain("</time> 기준");
   });
 
   it("leads from the list of accounts to an account's page, with how it stands beside its name", () => {

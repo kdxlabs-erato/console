@@ -2152,6 +2152,13 @@ export const ko: Messages = {
       title: "확인이 필요한 에이전트",
       intro: "나에게 보고하는 에이전트 중 실행 중이 아닌 에이전트입니다.",
     },
+    usage: {
+      used: (hundredths: number) => `${hundredths}% 사용`,
+      near: "한도에 가까움",
+      resets: { before: "", after: "에 초기화" },
+      said: { before: "", after: " 기준" },
+      windows: { "5-hour": "5시간", weekly: "주간" },
+    },
     accounts: {
       title: "에이전트 계정",
       intro:
@@ -2173,6 +2180,7 @@ export const ko: Messages = {
       },
       now: "지금",
       runs: "실행",
+      usage: "사용량",
       invited: "초대됨",
       invitedHint: "아직 아무도 이 계정으로 로그인하지 않았습니다. 작업은 지금도 맡길 수 있습니다.",
       login: "로그인 계정",

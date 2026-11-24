@@ -1,0 +1,27 @@
+# ADR-0156: An agent account shows what its product's allowance has used, and when it resets
+
+- Status: Accepted
+- Date: 2026-11-25
+- Adds to [ADR-0150](0150-a-runner-waits-out-its-products-usage-limit-and-tells-its-agent-before-it.md), under which a driver says what its product says of each window of its allowance and the runner tells its agent at a share of it, and to [ADR-0085](0085-a-runner-on-the-agents-machine-is-told-by-signals-and-runs-one-session-at-a-time.md), the heartbeat. Nothing of either is taken back.
+
+## Context
+
+Work was given to an agent account without knowing how much of its product's allowance was left. A limit met in the middle of a task stopped it there, and the people who had given the work learned of it afterwards. Since ADR-0150 the agent is told before the limit and brought back after it, and its page says until when a limit stands. Nothing said, before a limit, how much was used and when it resets: whoever chose which agent to give work to, or when to wake one, had to ask the product on the agent's machine.
+
+The runner already hears it. Both products the drivers were tried with say, with their answers, each window of the allowance: the short one and the week, with the share used and the moment it resets.
+
+## Decision
+
+1. **The runner says with its heartbeat what its product last said of its allowance.** `usage`, a window each: the name its driver gives it (`5-hour`, `weekly`), the share used from 0 to 1 and the moment it resets, `null` each where the product does not say, whether the product itself calls the window near its limit, and when the product said so. Numbers and a few plain words, bounded and read by schema: eight windows at most, a name of forty characters on one line.
+2. **The console keeps a window until its reset.** A product says a window at a time, and a runner knows what was said since it started. A window the heartbeat names takes the place of the one kept under its name; one it does not name stands while its reset is still to come, and is let go after. A heartbeat that says nothing of usage, a runner of before or one that just started, changes nothing.
+3. **Whoever sees how the account stands reads it.** `usage` on the agent, in the list and alone, beside `state` and not in `runner`: it says whom work can be given to now, which a member asks who supervises nothing. What the runner says of its machine and its product stays with its supervisors.
+4. **The pages and the command say it as the product does, the share used.** A card of the agents' list and the head of an account's page name each window with its share and when it resets, a window at four fifths or more marked, as the agent is told at that share, and one used up marked as such; `console agent <handle>` says the same in a line. A window whose reset has passed is not shown: what was said of it is of a window that is over.
+5. **Nothing is asked of the product for it.** The runner says what the product said by itself, with an answer. An account that has not worked since says what it said last, and the page says when.
+
+## Consequences
+
+- **A share is as fresh as the product's last answer.** Everything signed in with a subscription draws on it: where several accounts share one, each shows what its own product last heard, and an account that was idle shows less than is used now. The moment it was said stands beside it.
+- **A runner of before says none, and its account shows none.** So does an account whose product has said nothing since its runner started, until it answers once.
+- **A console of before reads past `usage`** in a heartbeat, and answers none.
+- **Rejected:** asking the product on a schedule (a request that spends the allowance it measures, and a second way of reading the product's own screen, which is no contract); the share left in place of the share used (the product's own screens and the words the agent is told say used, and two counts of one thing are read against each other); usage in `runner`, for supervisors alone (the question is asked by whoever gives work); an event of the feed at a mark (the agent is told at it and its record says so; telling people is left until someone asks to be told, and by which way).
+- **Not decided here:** how long a conversation has grown, which says when to begin a new one ([ADR-0154](0154-an-agent-account-begins-a-new-conversation-for-itself-when-its-turn-is-over.md)); and usage where work is assigned, on a task's page.

@@ -1,9 +1,10 @@
-import type {
-  AgentState,
-  AgentStateReason,
-  RestRunnerHeartbeatInput,
-  SignalKind,
-  SignalSource,
+import {
+  type AgentState,
+  type AgentStateReason,
+  MAX_RUNNER_USAGE_WINDOWS,
+  type RestRunnerHeartbeatInput,
+  type SignalKind,
+  type SignalSource,
 } from "@skillcdn/console/api";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { DomainError } from "../../errors.js";
@@ -77,12 +78,50 @@ export interface RunnerRecord {
   readonly sources:
     | readonly { name: string; state: string; since: string; why?: string }[]
     | undefined;
+  /** What its product last said of what its subscription allows, a window each (ADR-0156); none where no runner has said any. */
+  readonly usage: readonly UsageKept[] | undefined;
   /** What was chosen for it to run with; none each for the product's own. */
   readonly model: string | undefined;
   readonly effort: string | undefined;
   /** The hours its day starts and ends at, where the account keeps its own. */
   readonly dayStart: string | undefined;
   readonly dayEnd: string | undefined;
+}
+
+/** A window of an account's allowance as it is kept: as its runner said it. */
+export interface UsageKept {
+  readonly name: string;
+  readonly used: number | null;
+  readonly resetsAt: string | null;
+  readonly near?: boolean | undefined;
+  readonly at: string;
+}
+
+/**
+ * What is kept of an account's allowance after a heartbeat (ADR-0156). A runner says what its
+ * product told it since it started, and a product says a window at a time: so a window the
+ * heartbeat names takes the place of the one kept under that name, and one it does not name
+ * stands while its reset is still to come. One whose reset has passed, or that never named a
+ * reset and is named no more, is let go: nothing says it is still so. A heartbeat that says no
+ * usage at all, a runner of before or one that just started, changes nothing.
+ */
+export function usageAfter(
+  kept: readonly UsageKept[] | null,
+  said: readonly UsageKept[] | undefined,
+  now: Date,
+): UsageKept[] | null {
+  if (said === undefined) {
+    return kept === null ? null : [...kept];
+  }
+  const named = new Set(said.map((window) => window.name));
+  const standing = (kept ?? []).filter(
+    (window) =>
+      !named.has(window.name) &&
+      window.resetsAt !== null &&
+      Date.parse(window.resetsAt) > now.getTime(),
+  );
+  const after = [...said, ...standing].slice(0, MAX_RUNNER_USAGE_WINDOWS);
+  return after.length === 0 ? null : after;
 }
 
 type RunnerRow = typeof agentRunners.$inferSelect;
@@ -104,6 +143,7 @@ const toRunner = (row: RunnerRow): RunnerRecord => ({
   offers: row.offers ?? undefined,
   running: row.running ?? undefined,
   sources: row.sources ?? undefined,
+  usage: row.usage ?? undefined,
   model: row.model ?? undefined,
   effort: row.effort ?? undefined,
   dayStart: row.dayStart ?? undefined,
@@ -344,6 +384,7 @@ export async function recordHeartbeat(
         running: heartbeat.running,
         // A runner of before says none: what stood is not kept for it, since it is no longer known.
         sources: heartbeat.sources ?? null,
+        usage: usageAfter(before.usage, heartbeat.usage, now),
         ...(gone(before.model, heartbeat.offers.models) ? { model: null } : {}),
         ...(gone(before.effort, heartbeat.offers.efforts) ? { effort: null } : {}),
         ...(changed ? { state, reason, stateAt: now } : { reason }),

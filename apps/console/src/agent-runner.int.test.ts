@@ -298,6 +298,98 @@ describe("an agent account's runner (ADR-0085)", () => {
     expect((await agentOf({ cookie: alice })).runner?.sources).toBeUndefined();
   });
 
+  it("keeps what the product said of its allowance, a window at a time, for whoever sees the account (ADR-0156)", async () => {
+    const said = new Date().toISOString();
+    const soon = new Date(Date.now() + 3_600_000).toISOString();
+    const week = new Date(Date.now() + 5 * 86_400_000).toISOString();
+    const past = new Date(Date.now() - 60_000).toISOString();
+    // A runner of before says none, and nothing is answered.
+    expect((await agentOf({ cookie: alice })).usage).toBeUndefined();
+    await heartbeat({
+      reason: "resumed",
+      usage: [
+        { name: "5-hour", used: 0.42, resetsAt: soon, at: said },
+        { name: "weekly", used: 0.13, resetsAt: week, at: said },
+      ],
+    });
+    const windows = [
+      { name: "5-hour", used: 0.42, resetsAt: soon, at: said },
+      { name: "weekly", used: 0.13, resetsAt: week, at: said },
+    ];
+    // Whoever sees the account reads it, a member who supervises nothing among them: it says
+    // whom work can be given to now, as how the account stands does.
+    expect((await agentOf({ cookie: bob })).usage).toEqual(windows);
+    expect((await agentOf({ cookie: bob })).runner).toBeNull();
+    expect((await agentOf(bearer(command))).usage).toEqual(windows);
+    const listed = restAgentsSchema.parse(
+      await (await get({ cookie: bob }, REST_ROUTES.agents)).json(),
+    );
+    expect(listed.items[0]?.usage).toEqual(windows);
+    // A product says a window at a time: the one named takes the place of the one kept under
+    // its name, and the other stands while its reset is still to come.
+    const later = new Date(Date.now() + 1000).toISOString();
+    await heartbeat({
+      reason: "resumed",
+      usage: [{ name: "5-hour", used: 0.9, resetsAt: soon, near: true, at: later }],
+    });
+    expect((await agentOf({ cookie: alice })).usage).toEqual([
+      { name: "5-hour", used: 0.9, resetsAt: soon, near: true, at: later },
+      { name: "weekly", used: 0.13, resetsAt: week, at: said },
+    ]);
+    // A heartbeat that says nothing of it, a runner that just started or one of before, takes
+    // nothing away.
+    await heartbeat({ reason: "resumed" });
+    expect((await agentOf({ cookie: alice })).usage).toHaveLength(2);
+    // One that names no window keeps what is still to reset, and lets go what never said when.
+    await heartbeat({
+      reason: "resumed",
+      usage: [{ name: "primary", used: null, resetsAt: null, near: true, at: later }],
+    });
+    expect((await agentOf({ cookie: alice })).usage?.map((window) => window.name)).toEqual([
+      "primary",
+      "5-hour",
+      "weekly",
+    ]);
+    await heartbeat({ reason: "resumed", usage: [] });
+    expect((await agentOf({ cookie: alice })).usage?.map((window) => window.name)).toEqual([
+      "5-hour",
+      "weekly",
+    ]);
+    // What it says is data: a name on one line, a share from 0 to 1, moments, and no more
+    // windows than a product has.
+    for (const usage of [
+      [{ name: "", used: 0.1, resetsAt: soon, at: said }],
+      [{ name: "x".repeat(41), used: 0.1, resetsAt: soon, at: said }],
+      [{ name: "5-hour\n<script>", used: 0.1, resetsAt: soon, at: said }],
+      [{ name: `5-hour${String.fromCodePoint(0x202e)}`, used: 0.1, resetsAt: soon, at: said }],
+      [{ name: "5-hour", used: 1.5, resetsAt: soon, at: said }],
+      [{ name: "5-hour", used: -0.1, resetsAt: soon, at: said }],
+      [{ name: "5-hour", used: "half", resetsAt: soon, at: said }],
+      [{ name: "5-hour", used: 0.1, resetsAt: "tomorrow", at: said }],
+      [{ name: "5-hour", used: 0.1, resetsAt: soon }],
+      [{ name: "5-hour", used: 0.1, resetsAt: soon, near: "yes", at: said }],
+      Array.from({ length: 9 }, (_, index) => ({
+        name: `w${index}`,
+        used: 0.1,
+        resetsAt: soon,
+        at: said,
+      })),
+      "all of it",
+    ]) {
+      const refused = await send(bearer(command), "PUT", RUNNER, beat({ usage }));
+      expect(refused.status, JSON.stringify(usage).slice(0, 60)).toBe(400);
+    }
+    // A window whose reset has passed is let go when the runner next says its windows.
+    await heartbeat({
+      reason: "resumed",
+      usage: [{ name: "weekly", used: 0.2, resetsAt: past, at: said }],
+    });
+    await heartbeat({ reason: "resumed", usage: [] });
+    expect((await agentOf({ cookie: alice })).usage?.map((window) => window.name)).toEqual([
+      "5-hour",
+    ]);
+  });
+
   it("takes a heartbeat as data: bounded, of the words it knows, and nothing else", async () => {
     const refused = async (body: unknown) => {
       const response = await send(bearer(command), "PUT", RUNNER, body);
