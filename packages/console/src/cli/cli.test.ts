@@ -1649,48 +1649,13 @@ describe("the console command", () => {
     );
   });
 
-  it("reads the listings of a console from before the brief form, which answers them whole (0.5.0)", async () => {
-    // A 0.5.0 console does not know `brief=true`: it ignores the word and answers each task with
-    // its body and each run with its reports. The command reads either, and counts the reports
-    // it was sent where the console counted none.
-    const whole = {
-      ...RUN,
-      reports: [
-        { id: "0199c4d8-0000-7000-8000-0000000000c1", body: "Found it.", createdAt: WHEN },
-        { id: "0199c4d8-0000-7000-8000-0000000000c2", body: "Fixed it.", createdAt: WHEN },
-      ],
-    };
+  it("reads the runs of a listing in the brief form: counted, and without their reports", async () => {
     const { reports: _reports, ...withoutReports } = RUN;
     const brief = { ...withoutReports, reportCount: 5 };
-    const before = fakeConsole({
-      [`GET ${IN}/tasks?limit=50&offset=0&brief=true`]: { body: { more: false, items: [TASK] } },
-      [`GET ${IN}/runs?limit=50&offset=0&brief=true`]: { body: { more: false, items: [whole] } },
-      [`GET ${IN}/tasks/7`]: { body: TASK },
-      [`GET ${IN}/decisions?task=${TASK.id}`]: { body: { more: false, items: [] } },
-      [`GET ${IN}/runs?task=${TASK.id}&brief=true`]: { body: { more: false, items: [whole] } },
-      [`GET ${IN}/tasks/${TASK.id}/comments`]: { body: { items: [] } },
-      [OPEN_RUNS]: { body: { more: false, items: [whole] } },
-      [`POST ${IN}/runs/${RUN.id}/reports`]: { status: 201, body: whole },
-    });
-    const tasks = harness({ fetch: before.fetch, env: SIGNED_IN });
-    expect(await runCli(["tasks"], tasks.io)).toBe(EXIT.ok);
-    expect(tasks.out()).toBe("#7  ready  high  Fix the parser  (owner alice)\n");
-    const runs = harness({ fetch: before.fetch, env: SIGNED_IN });
-    expect(await runCli(["runs"], runs.io)).toBe(EXIT.ok);
-    expect(runs.out()).toContain("(2 reports, 0 artifacts, last heard ");
-    const task = harness({ fetch: before.fetch, env: SIGNED_IN });
-    expect(await runCli(["task", "7"], task.io)).toBe(EXIT.ok);
-    expect(task.out()).toContain("(2 reports, 0 artifacts, last heard ");
-    // A command on a run finds its one open run in what the console sent whole.
-    const report = harness({ fetch: before.fetch, env: SIGNED_IN });
-    expect(await runCli(["report", "Going on."], report.io)).toBe(EXIT.ok);
-    expect(before.calls.at(-1)?.key).toBe(`POST ${IN}/runs/${RUN.id}/reports`);
-
-    // A console that knows the brief form sends no report and says how many there are.
-    const now = fakeConsole({
+    const { fetch } = fakeConsole({
       [`GET ${IN}/runs?limit=50&offset=0&brief=true`]: { body: { more: false, items: [brief] } },
     });
-    const counted = harness({ fetch: now.fetch, env: SIGNED_IN });
+    const counted = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["runs"], counted.io)).toBe(EXIT.ok);
     expect(counted.out()).toContain("(5 reports, 0 artifacts, last heard ");
   });
@@ -2081,91 +2046,6 @@ describe("the console command", () => {
     expect(await runCli(["rules", "write", "--body", "x", "--base", "zero"], odd.io)).toBe(
       EXIT.usage,
     );
-  });
-
-  it("writes nothing for the organization on a console of before 0.5.1, which keeps the organization's rules whole (ADR-0120)", async () => {
-    const REFUSAL =
-      "This console is older than 0.5.1 and keeps the organization's rules whole: what is written here would replace the console's rules, not add to them. Update the console first.\n";
-    // What a console of 0.5.0 answers: the rules that hold at the workspace, whole, and no parts.
-    const whole = {
-      source: "reference",
-      body: "# Rules for agents on this board\n\nThe console's own rules, until an administrator writes this organization's.",
-      page: null,
-      plugins: [],
-    };
-    // What it would answer the write with, had it been sent: the addition as the whole rules.
-    const replaced = { source: "written", body: "# Ours", page: { ...RULES_PAGE, version: 1 } };
-    const table = {
-      "GET /api/v1/rules": { body: whole },
-      "PUT /api/v1/rules": { body: replaced },
-      "POST /api/v1/rules/archive": { body: whole },
-      [`PUT ${IN}/docs/rules`]: { body: { ...RULES_DOC, version: 3 } },
-    };
-    const before = fakeConsole(table, { version: "0.5.0" });
-    const refused = harness({ fetch: before.fetch, env: SIGNED_IN });
-    expect(await runCli(["rules", "write", "--workspace", "--body", "# Ours"], refused.io)).toBe(
-      EXIT.failed,
-    );
-    expect(refused.out()).toBe("");
-    expect(refused.err()).toBe(REFUSAL);
-    // The console was asked what it keeps, and nothing was written.
-    expect(before.calls.map((call) => call.key)).toEqual(["GET /api/v1/rules"]);
-    // The same where its organization wrote the whole already, and for a program.
-    const written = fakeConsole({ ...table, "GET /api/v1/rules": { body: replaced } });
-    const again = harness({ fetch: written.fetch, env: SIGNED_IN });
-    expect(
-      await runCli(
-        ["rules", "write", "--workspace", "--body", "# Ours", "--base", "1", "--json"],
-        again.io,
-      ),
-    ).toBe(EXIT.failed);
-    expect(again.out()).toBe("");
-    expect(again.err()).toBe(REFUSAL);
-    expect(written.calls.map((call) => call.key)).toEqual(["GET /api/v1/rules"]);
-    // Putting the organization's away leaves the console's alone there too: done as asked.
-    const away = harness({ fetch: before.fetch, env: SIGNED_IN });
-    expect(await runCli(["rules", "write", "none", "--workspace"], away.io)).toBe(EXIT.ok);
-    expect(before.calls.at(-1)?.key).toBe("POST /api/v1/rules/archive");
-    // A project's rules added to the workspace's on such a console as they do now: written,
-    // and the workspace's are not asked for.
-    const asked = before.calls.length;
-    const project = harness({ fetch: before.fetch, env: SIGNED_IN });
-    expect(await runCli(["rules", "write", "--body", "# Ours"], project.io)).toBe(EXIT.ok);
-    expect(project.out()).toBe("Wrote what this project adds to the rules, version 3.\n");
-    expect(before.calls.slice(asked).map((call) => call.key)).toEqual([`PUT ${IN}/docs/rules`]);
-    // A console of now says the parts: asked first, then written as what is added.
-    const parts = {
-      source: "written",
-      body: `${RULES.workspace.body}\n\n# What this organization adds\n\n# Ours`,
-      page: { ...RULES_PAGE, version: 1 },
-      own: RULES.workspace.own,
-      added: { body: "# Ours", page: { ...RULES_PAGE, version: 1 } },
-    };
-    const now = fakeConsole(
-      { "GET /api/v1/rules": { body: RULES.workspace }, "PUT /api/v1/rules": { body: parts } },
-      { version: "0.5.1" },
-    );
-    const added = harness({ fetch: now.fetch, env: SIGNED_IN });
-    expect(await runCli(["rules", "write", "--workspace", "--body", "# Ours"], added.io)).toBe(
-      EXIT.ok,
-    );
-    expect(added.out()).toBe("Wrote what this organization adds to the rules, version 1.\n");
-    expect(now.calls.map((call) => call.key)).toEqual(["GET /api/v1/rules", "PUT /api/v1/rules"]);
-    expect(now.calls[1]?.body).toEqual({ body: "# Ours" });
-    // A console that refuses the question is refused as it says, and nothing is written.
-    const closed = fakeConsole({
-      "GET /api/v1/rules": {
-        status: 403,
-        body: { error: { code: "auth.forbidden", message: "Not yours." } },
-      },
-      "PUT /api/v1/rules": { body: parts },
-    });
-    const denied = harness({ fetch: closed.fetch, env: SIGNED_IN });
-    expect(await runCli(["rules", "write", "--workspace", "--body", "# Ours"], denied.io)).toBe(
-      EXIT.failed,
-    );
-    expect(denied.err()).toContain("auth.forbidden");
-    expect(closed.calls.map((call) => call.key)).toEqual(["GET /api/v1/rules"]);
   });
 
   it("reports on the one open run, and asks which when there are several or none", async () => {
@@ -3122,8 +3002,8 @@ describe("the console command", () => {
       expect(await runCli(args, h.io), h.err()).toBe(EXIT.ok);
       return h.out();
     };
-    // A console of 0.5.0 leaves the task at work whatever the run ended as, and one of now does
-    // where a person moved it meanwhile or another run is open on it: said as it is.
+    // A console leaves the task at work where a person moved it meanwhile or another run is
+    // open on it: said as it is.
     expect(await said(["fail", "--summary", "No."], leaving("failed", "in_progress"))).toBe(
       `Run ${RUN.id} failed; task #7 is in_progress now.\n`,
     );
@@ -3960,6 +3840,7 @@ describe("configuring, as the person", () => {
       },
       manager: BOB,
       supervised: true,
+      firstSignIn: "login",
     };
     const { fetch, calls } = fakeConsole({
       "GET /api/v1/people?login=bob": { body: { items: [BOB], listed: [], organization: null } },
@@ -4003,13 +3884,13 @@ describe("configuring, as the person", () => {
       project: "web",
     });
     expect(full.out()).toContain(
-      "@mira  Mira, Release engineer  (signs in as acme-mira, reports to bob, not signed in yet)",
+      "@mira  Mira, Release engineer  (signs in as acme-mira, reports to bob, not signed in yet, its account not confirmed)",
     );
     // The account it signs in with is named, and when it has to be there; who makes it at the
     // provider is the organization's to say, and the command says nothing of it (ADR-0094). A
     // login at a git host goes to whoever registers it: there the account is held already.
     expect(full.out()).toContain(
-      "It signs in as acme-mira: that account has to be the organization's own at the git host already, since until its first sign-in binds it here the console lets in whoever holds that login.",
+      "It signs in as acme-mira: not confirmed, since this console reads no organization at the git host. That account has to be the organization's own at the git host already, since until its first sign-in binds it here the console lets in whoever holds that login.",
     );
     expect(full.out()).not.toContain("is made at the provider before its machine is set up");
     expect(full.out()).not.toMatch(/a person makes|person's to make|terms/i);
@@ -4517,15 +4398,7 @@ describe("configuring, as the person", () => {
     expect(record.out()).toBe(
       "to come  wake  2026-11-20T03:40:20.000Z  Look at the deploy again.\n",
     );
-    // A console of before knows no such route, and is said to be one.
-    const old = harness({
-      fetch: fakeConsole({ "GET /api/v1/me": { body: ME } }).fetch,
-      env: SIGNED_IN,
-    });
-    expect(await runCli(["agent", "wake", "me"], old.io)).toBe(EXIT.failed);
-    expect(old.err()).toContain("This console does not take an account's own wake yet");
-    // A person who asks is told what the console says, that this is an agent account's own, and
-    // not that the console is an old one.
+    // A person who asks is told what the console says, that this is an agent account's own.
     const person = harness({
       fetch: fakeConsole({
         "GET /api/v1/me": { body: ME },
@@ -4538,7 +4411,6 @@ describe("configuring, as the person", () => {
     });
     expect(await runCli(["agent", "wake", "me"], person.io)).toBe(EXIT.failed);
     expect(person.err()).toContain("No such agent account.");
-    expect(person.err()).not.toContain("does not take an account's own wake yet");
   });
 
   it("begins a new conversation for an agent account's own, with why, when its turn is over (ADR-0154)", async () => {
@@ -9117,15 +8989,6 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     expect(none.err()).toContain(
       "No skills address: the console names none for the organization's skills, and no project is named here.",
     );
-    // A console from before has no such routes: the command says so, and what still reads a pack.
-    for (const args of [["skills"], ["skill", "review/SKILL.md"], ["skills", "--rows"]]) {
-      const older = harness({ fetch: fakeConsole({}).fetch, env: pair });
-      expect(await runCli(args, older.io), args.join(" ")).toBe(EXIT.failed);
-      expect(older.out()).toBe("");
-      expect(older.err()).toBe(
-        "This console does not read the organization's pack where no project is named: it is older than the command. Say which project: --project <key>, CONSOLE_PROJECT in the environment, or console use <key> once in this directory. console projects lists the projects you may work in.\n",
-      );
-    }
   });
 
   it("takes the tables and the code blocks of the pack as data: the pages joined, one CSV or the blocks as written, printed or written to a file (ADR-0100)", async () => {
@@ -9615,54 +9478,6 @@ describe("the pack of the project, through the console (ADR-0028)", () => {
     );
   });
 
-  it("reads a pack through a console of 0.5.0, whose routes are the ones before the parts (ADR-0124)", async () => {
-    // What a console of 0.5.0 answers: the listing, a page of a skill by its cursor, a page of
-    // a file, a search with words. It takes no search without words (`request.invalid`), has no
-    // route for the organization's pack, and knows nothing of parts: the command asks it for
-    // nothing it does not have.
-    const page = (letter: string, nextCursor: string | null) =>
-      longPage(letter, 15_000, nextCursor);
-    const { fetch, calls } = fakeConsole(
-      {
-        [`GET ${IN}/skills`]: { body: LISTING },
-        [`GET ${IN}/skills/one?path=review%2FSKILL.md`]: { body: page("a", "two") },
-        [`GET ${IN}/skills/one?path=review%2FSKILL.md&cursor=two`]: { body: page("b", null) },
-        [`GET ${IN}/skills/file?path=review%2Fguide.md&limit=24000`]: {
-          body: file("review/guide.md", "How to review.", 0, null, 14),
-        },
-        [`GET ${IN}/skills/find`]: {
-          status: 400,
-          body: { error: { code: "request.invalid", message: "query: Required" } },
-        },
-        [`GET ${IN}/skills/find?limit=25`]: {
-          status: 400,
-          body: { error: { code: "request.invalid", message: "query: Required" } },
-        },
-      },
-      { version: "0.5.0", clientRange: ">=0.5.0 <0.6.0" },
-    );
-    // The listing is made from the one answer the console gives: no search without words.
-    const listed = harness({ fetch, env: SIGNED_IN });
-    expect(await runCli(["skills"], listed.io)).toBe(EXIT.ok);
-    expect(listed.out()).toContain("review/SKILL.md: Reviews a change.");
-    expect(listed.out()).toContain("docs/guide.md");
-    expect(calls.map((call) => call.key)).toEqual([`GET ${IN}/skills`]);
-    // A long skill comes in two parts, by the cursor that console's route already takes.
-    const first = harness({ fetch, env: SIGNED_IN });
-    expect(await runCli(["skill", "review"], first.io)).toBe(EXIT.ok);
-    expect(first.out()).toContain("a".repeat(15_000));
-    expect(first.out()).not.toContain("bbb");
-    expect(endsWithNext(first.out(), "console skill review --cursor two")).toBe(true);
-    const second = harness({ fetch, env: SIGNED_IN });
-    expect(await runCli(["skill", "review", "--cursor", "two"], second.io)).toBe(EXIT.ok);
-    expect(second.out()).toContain("b".repeat(15_000));
-    expect(second.out()).not.toContain("This part ends before");
-    const read = harness({ fetch, env: SIGNED_IN });
-    expect(await runCli(["skill", "--file", "review/guide.md"], read.io)).toBe(EXIT.ok);
-    expect(read.out()).toContain("--- content ---\nHow to review.");
-    expect(calls.some((call) => call.key.includes("/skills/find"))).toBe(false);
-  });
-
   it("connects the pack with a code a person approves at SkillCDN, printing the page and the code and waiting", async () => {
     const started = {
       code: "ABCD-EFGH",
@@ -10022,7 +9837,7 @@ describe("the plugins on the command line (ADR-0049, ADR-0053)", () => {
     expect(nothing.err()).toContain("Say which plugin: console plugin <key>");
   });
 
-  it("prints a plugin's jobs and the one that keeps failing, and a console of before as it printed it (ADR-0128)", async () => {
+  it("prints a plugin's jobs and the one that keeps failing, and nothing of them for a plugin without (ADR-0128)", async () => {
     const SINCE = "2026-10-08T02:18:00.000Z";
     const PROBLEM =
       "the job match has failed since 2026-10-08T02:18:00Z: plugin.failed among its events says why";
@@ -10078,8 +9893,8 @@ describe("the plugins on the command line (ADR-0049, ADR-0053)", () => {
         "Settings:",
       ].join("\n"),
     );
-    // A console of before 0.5.1 names no jobs, and a plugin that declares none has none to print:
-    // the command prints what it printed, with no empty block.
+    // A plugin that declares none has none to print, whether the console names an empty list
+    // or none: no empty block.
     for (const before of [DETAIL, { ...DETAIL, jobs: [] }]) {
       const old = fakeConsole({ [`GET ${AT}`]: { body: before }, "GET /api/v1/me": { body: ME } });
       const was = harness({ fetch: old.fetch, env: SIGNED_IN });
@@ -10093,7 +9908,7 @@ describe("the plugins on the command line (ADR-0049, ADR-0053)", () => {
     }
   });
 
-  it("reads a plugin's events, the failures alone by kind, and narrows them itself on a console of before (ADR-0128)", async () => {
+  it("reads a plugin's events, and the failures alone by kind (ADR-0128)", async () => {
     const event = (
       id: number,
       kind: string,
@@ -10170,30 +9985,6 @@ describe("the plugins on the command line (ADR-0049, ADR-0053)", () => {
     const far = harness({ fetch: beyond.fetch, env: SIGNED_IN });
     expect(await runCli(["plugin", "hello", "events", "--offset", "50"], far.io)).toBe(EXIT.ok);
     expect(far.out()).toBe("No event of hello that you may read, that far back.\n");
-    // A console of before 0.5.1 has the route and takes no kind: it answers every kind, and the
-    // command keeps the kind asked for of the page it read, and says that it did.
-    const before = fakeConsole({
-      [`GET ${AT}/events?limit=50&offset=0&kind=plugin.failed`]: {
-        body: { items: [FAILED, COMMAND, ENABLED], more: true },
-      },
-    });
-    const old = harness({ fetch: before.fetch, env: SIGNED_IN });
-    expect(await runCli(["plugin", "hello", "events", "--kind", "plugin.failed"], old.io)).toBe(
-      EXIT.ok,
-    );
-    expect(old.out()).toBe(
-      [
-        `#31  ${WHEN}  plugin.failed  the console  the job match failed (plugin.failed)`,
-        "... more: --offset 50",
-        "This console is older than 0.5.1 and does not narrow events by kind: of the 3 newest read, the plugin.failed ones are shown. Read further back with --offset.",
-        "",
-      ].join("\n"),
-    );
-    const asJson = harness({ fetch: before.fetch, env: SIGNED_IN });
-    expect(
-      await runCli(["plugin", "hello", "events", "--kind", "plugin.failed", "--json"], asJson.io),
-    ).toBe(EXIT.ok);
-    expect(JSON.parse(asJson.out())).toEqual({ items: [FAILED], more: true });
     // What is not asked right is said before the console is asked.
     for (const words of [
       ["--kind", "failed"],

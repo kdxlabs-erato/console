@@ -411,8 +411,7 @@ export interface ProjectClient {
   tasks(filter?: TaskFilter, signal?: AbortSignal): Promise<RestTasks>;
   /**
    * The same page of the board without the tasks' bodies (`?brief=true`), for what lists tasks
-   * and shows no body. A console from before the brief form answers the tasks whole, and they
-   * read the same.
+   * and shows no body.
    */
   taskBriefs(filter?: TaskFilter, signal?: AbortSignal): Promise<RestTaskBriefs>;
   /** One task, by its id or by its number. */
@@ -449,8 +448,7 @@ export interface ProjectClient {
   ): Promise<RestRuns>;
   /**
    * The same page of the runs without their reports, counted (`?brief=true`), for what lists
-   * runs and shows no report. A console from before the brief form answers the runs whole,
-   * which reads the same: `reportCountOf` says how many reports a run has either way.
+   * runs and shows no report: `reportCountOf` says how many reports a run has.
    */
   runBriefs(
     filter?: { readonly task?: string; readonly open?: boolean; readonly mine?: boolean } & Page,
@@ -706,8 +704,7 @@ export interface PluginClient {
    * The plugin's events the asker may read, newest first, a page at a time: every one for an
    * administrator; for anyone else those of the projects they may see, their own doing, and the
    * console's word of the plugin, the rest left out with no word that it is there. Of one kind
-   * where one is named (ADR-0128), which a console before 0.5.1 does not narrow by and answers
-   * every kind.
+   * where one is named (ADR-0128).
    */
   events(
     page?: Page & { readonly kind?: string | undefined },

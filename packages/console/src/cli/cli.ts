@@ -2214,24 +2214,6 @@ async function packNamed(
 }
 
 /**
- * A read of the organization's pack at a console from before ADR-0113, which has no such
- * routes and answers that nothing is at the path: said as what it is, with what still reads a
- * pack there, where the console's own words would read as a missing skill.
- */
-async function readingPack(owner: PackOwner, read: () => Promise<number>): Promise<number> {
-  try {
-    return await read();
-  } catch (error) {
-    if (owner === "organization" && error instanceof ApiError && error.code === "not_found") {
-      throw failed(
-        `This console does not read the organization's pack where no project is named: it is older than the command. ${NO_PROJECT}`,
-      );
-    }
-    throw error;
-  }
-}
-
-/**
  * Prints a read of a pack: as `answer` does, and, where the pack is the organization's, under
  * the line that says so. `--json` stays what the console answered.
  */
@@ -2251,15 +2233,13 @@ const skills: Command = async (args, io) => {
   const { values, positionals } = parse(args, SKILLS_OPTIONS);
   const session = await open(io, values);
   const { reader, owner } = await packNamed(session);
-  return readingPack(owner, () =>
-    readSkills(io, session, reader, values, positionals, {
-      command: "console skills",
-      own: io.skillsDir,
-      afterwards: PLUGIN_SKILLS_LINE,
-      owner,
-      again: whereGiven(values),
-    }),
-  );
+  return readSkills(io, session, reader, values, positionals, {
+    command: "console skills",
+    own: io.skillsDir,
+    afterwards: PLUGIN_SKILLS_LINE,
+    owner,
+    again: whereGiven(values),
+  });
 };
 
 /**
@@ -2369,8 +2349,15 @@ const skill: Command = async (args, io) => {
   const { values, positionals } = parse(args, SKILL_OPTIONS);
   const session = await open(io, values);
   const { reader, owner } = await packNamed(session);
-  return readingPack(owner, () =>
-    readSkill(io, session, reader, values, positionals, "console skill", owner, whereGiven(values)),
+  return readSkill(
+    io,
+    session,
+    reader,
+    values,
+    positionals,
+    "console skill",
+    owner,
+    whereGiven(values),
   );
 };
 
@@ -2660,9 +2647,7 @@ function whereValueOf(word: string): unknown {
  * the caller may read it, which the console decides (every event for an administrator; for
  * anyone else those of the projects they may see, their own commands and the console's word of
  * the plugin); the failures alone with `--kind plugin.failed`, whether or not it has a board
- * project. A console before 0.5.1 takes no kind and answers every one: the page is narrowed
- * here, and that is said, since a page narrowed after it was read may hold fewer than were
- * asked for.
+ * project.
  */
 async function pluginEvents(
   io: CliIo,
@@ -2684,21 +2669,8 @@ async function pluginEvents(
   const limit = countOf(text(values, "limit"), "limit", { least: 1, most: EVENTS_PAGE_LIMIT });
   const offset = countOf(text(values, "offset"), "offset", { least: 0, most: 1_000_000 });
   const asked = { kind, limit: limit ?? DEFAULT_PAGE_LIMIT, offset: offset ?? 0 };
-  const read = await client.events(asked);
-  const items = kind === undefined ? read.items : read.items.filter((one) => one.kind === kind);
-  const narrowedHere = items.length !== read.items.length;
-  const page = { items, more: read.more };
-  answer(
-    io,
-    session,
-    page,
-    () =>
-      `${formatPluginEvents(client.key, page, asked)}${
-        narrowedHere
-          ? `\nThis console is older than 0.5.1 and does not narrow events by kind: of the ${read.items.length} newest read, the ${kind} ones are shown. Read further back with --offset.`
-          : ""
-      }`,
-  );
+  const page = await client.events(asked);
+  answer(io, session, page, () => formatPluginEvents(client.key, page, asked));
   return EXIT.ok;
 }
 
@@ -3161,16 +3133,6 @@ const rules: Command = async (args, io) => {
           () => "What this organization adds to the rules is put away: the console's stand alone.",
         );
         return EXIT.ok;
-      }
-      // A console of before 0.5.1 keeps what is written here as the organization's whole rules,
-      // in the place of its own (ADR-0120): what is added would be all that holds there. Its
-      // answer tells, since it says the workspace's rules whole and no parts, and it is asked
-      // before anything is written.
-      const held = await session.client.rules();
-      if (held.own === undefined) {
-        throw failed(
-          "This console is older than 0.5.1 and keeps the organization's rules whole: what is written here would replace the console's rules, not add to them. Update the console first.",
-        );
       }
       const written = await session.client.writeRules({
         body: body ?? "",
@@ -3946,7 +3908,7 @@ const notInProject = (error: unknown): boolean =>
  * before; else wherever it is, addressed to the person, raised by them, or a plugin's addressed
  * to someone they manage, through the console's own route for one decision. A plugin's decision
  * waits in the plugin's board project, which a checkout bound to another project does not name,
- * and which the person may not be in at all. A console from before that route answers as before.
+ * and which the person may not be in at all.
  */
 async function reachDecision(
   session: Session,
@@ -4433,8 +4395,8 @@ const decisions: Command = async (args, io) => {
 /**
  * Says how a run ended, and where that left its task (ADR-0114). The console places the task,
  * and where is not the command's to know: a finished run leaves it at work where another run is
- * open on it, and a run that failed or was given up does that too, and on a console of before
- * 0.5.1 always, or where a person moved it meanwhile. So the task is read once the run is over, and its state said as it stands. On
+ * open on it, and a run that failed or was given up does that too, or where a person moved it
+ * meanwhile. So the task is read once the run is over, and its state said as it stands. On
  * `--json` the answer is the run as the console gave it, and nothing more is asked.
  */
 async function sayEnded(
@@ -5111,12 +5073,12 @@ const agentNew = async (args: readonly string[], io: CliIo): Promise<number> => 
       made.person.invited === true
         ? host === "gh"
           ? // A login at a git host goes to whoever registers it: what the first sign-in is held
-            // to is said (ADR-0126), and by a console older than the answer, the login alone.
+            // to is said (ADR-0126).
             made.firstSignIn === "account"
             ? `It is a member now, and work can be assigned to it. It signs in as ${made.person.login}: confirmed at the git host, so that account alone is let in as it, whatever it is called by then.`
             : made.firstSignIn === "member"
               ? `It is a member now, and work can be assigned to it. It signs in as ${made.person.login}: not confirmed, since the organization at the git host has no member called so, or could not be asked. It is let in once it is a member there, and nobody else is under that login.`
-              : `It is a member now, and work can be assigned to it. It signs in as ${made.person.login}: ${made.firstSignIn === "login" ? "not confirmed, since this console reads no organization at the git host. That" : "that"} account has to be the organization's own at the git host already, since until its first sign-in binds it here the console lets in whoever holds that login.`
+              : `It is a member now, and work can be assigned to it. It signs in as ${made.person.login}: not confirmed, since this console reads no organization at the git host. That account has to be the organization's own at the git host already, since until its first sign-in binds it here the console lets in whoever holds that login.`
           : `It is a member now, and work can be assigned to it. It signs in as ${made.person.login}: that account is made at the provider before its machine is set up, and its first sign-in with it binds it here.`
         : `${made.person.login} is an agent account from now on, with everything it did.`,
       ...(made.onboarding === null || made.onboarding === undefined
@@ -5375,22 +5337,9 @@ const ownWake = async (args: readonly string[], io: CliIo): Promise<number> => {
     );
   }
   const session = await open(io, values);
-  /** A console of before knows no such route: said as what it is. */
-  const asked = async <T>(ask: () => Promise<T>): Promise<T> => {
-    try {
-      return await ask();
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 404 && error.code === "not_found") {
-        throw failed(
-          "This console does not take an account's own wake yet: it does from 0.5.2 on.",
-        );
-      }
-      throw error;
-    }
-  };
   if (on(values, "cancel")) {
     const named = key ?? OWN_WAKE_KEY;
-    await asked(() => session.client.cancelOwnWake(named));
+    await session.client.cancelOwnWake(named);
     answer(io, session, { cancelled: named }, () => `The wake ${named} is taken away.`);
     return EXIT.ok;
   }
@@ -5401,13 +5350,11 @@ const ownWake = async (args: readonly string[], io: CliIo): Promise<number> => {
     me.workspace.timeZone ?? undefined,
     new Date(io.now()),
   );
-  const raised = await asked(() =>
-    session.client.raiseOwnWake({
-      ...(said.length === 0 ? {} : { text: said }),
-      ...(at === undefined ? {} : { at: at.toISOString() }),
-      ...(key === undefined ? {} : { key }),
-    }),
-  );
+  const raised = await session.client.raiseOwnWake({
+    ...(said.length === 0 ? {} : { text: said }),
+    ...(at === undefined ? {} : { at: at.toISOString() }),
+    ...(key === undefined ? {} : { key }),
+  });
   answer(io, session, raised, () =>
     raised.kept === null
       ? `Raised, as signal #${raised.signal?.number ?? "?"} of your record: your runner takes it as it takes any wake.`
@@ -5581,7 +5528,7 @@ const agentSignals = async (args: readonly string[], io: CliIo): Promise<number>
     ...(before === undefined ? {} : { before: Number(before) }),
   });
   // What the account keeps for later (ADR-0145) stands over the record's first page: it is no
-  // signal yet. A console of before keeps none, and says nothing of it.
+  // signal yet. Where it cannot be read, the record is printed without it.
   const kept =
     before === undefined
       ? await session.client

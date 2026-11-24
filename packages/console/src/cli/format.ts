@@ -320,8 +320,8 @@ export function formatSignalLine(signal: RestSignal, delivered?: number): string
   const said =
     words.length === 0 ? "" : `  ${words.length > 120 ? `${words.slice(0, 119)}…` : words}`;
   // Whether it is delivered, where the record says how far it is (ADR-0131): the product took
-  // it or the record says what became of it, or it waits for that. A console that does not
-  // say, one before 0.5.2 and the answer to a signal just sent, has nothing said here.
+  // it or the record says what became of it, or it waits for that. An answer that does not
+  // say, the one to a signal just sent, has nothing said here.
   const state =
     delivered === undefined ? "" : signal.number <= delivered ? "delivered  " : "waiting  ";
   return `#${signal.number}  ${signal.kind}  ${state}${who}  ${moment(signal.at)}${set}${said}`;
@@ -511,7 +511,7 @@ export function formatComment(comment: RestComment): string {
 
 export function formatRunLine(run: RestRunBrief): string {
   // A run of a listing comes without its reports, counted (`?brief=true`); a run read whole,
-  // or from a console from before the brief form, with them.
+  // with them.
   const notes = [plural(reportCountOf(run), "report"), plural(run.artifacts.length, "artifact")];
   if (run.waitingFor !== null) {
     notes.push(`waiting for decision ${run.waitingFor}`);
@@ -570,20 +570,6 @@ const formatRulesPart = (head: string, page: RestRules["page"], body: string): s
   `${head}${rulesFacts(page)}:\n\n${body.trimEnd()}`;
 
 /**
- * The workspace's rules as a console of before the parts answers them (ADR-0120): whole, the
- * console's own until an administrator writes the organization's in their place, which is
- * what holds on such a console. No command is named for writing them: this one writes what an
- * organization adds, and refuses to on a console that would keep it as the whole.
- */
-function formatRulesWhole(rules: RestRules): string {
-  const head =
-    rules.source === "reference"
-      ? "Rules of the workspace: the console's own, until an administrator writes the organization's."
-      : `Rules of the workspace${rulesFacts(rules.page) || " (written)"}:`;
-  return `${head}\n\n${(rules.body ?? "").trimEnd()}`;
-}
-
-/**
  * The parts of the rules as they are printed for whoever reads them (ADR-0120): what the
  * project adds where the command works in one and it adds something, the plugins' lines in the
  * language they are read in, what the organization adds where it adds something, and the
@@ -606,10 +592,10 @@ function rulesParts(rules: RestProjectRules | RestRules, language: string | null
         ? undefined
         : formatRulesPlugins(rules.plugins, language),
     pluginCount: count,
-    /** What the organization adds, where it adds something and the console says the parts. */
-    added: workspace.own === undefined || added === null ? undefined : added,
-    /** The console's rules by themselves; nothing from a console of before, which answers the whole. */
-    console: workspace.own,
+    /** What the organization adds, where it adds something. */
+    added: added === null ? undefined : added,
+    /** The console's rules by themselves. */
+    console: workspace.own ?? "",
   };
 }
 
@@ -657,14 +643,8 @@ export function formatRules(
 ): string {
   const parts = rulesParts(rules, language);
   const mark = rulesMark(rules, language);
-  // A console of before answers the workspace's rules whole: they are the last part then.
-  const whole = parts.console === undefined;
-  const last = whole
-    ? `the workspace's (${charactersOf(parts.workspace.body)})`
-    : `the console's (${charactersOf(parts.console ?? null)})`;
-  const lastFollows = whole
-    ? `the workspace's follow (${charactersOf(parts.workspace.body)})`
-    : `the console's follow (${charactersOf(parts.console ?? null)})`;
+  const last = `the console's (${charactersOf(parts.console)})`;
+  const lastFollows = `the console's follow (${charactersOf(parts.console)})`;
   const plugins = `${parts.pluginCount} plugin${parts.pluginCount === 1 ? "" : "s"}`;
   const HOLDS = "the earlier holding where they differ";
   /** The organization's part and the last, after whatever stood before them. */
@@ -674,9 +654,9 @@ export function formatRules(
       : `the organization's${first ? " additions first" : ""} (${charactersOf(parts.added.body)}), then ${last}`;
   let follows: string;
   if (parts.own !== undefined) {
-    follows = `this project's additions first (${charactersOf(parts.own.body)})${parts.plugins === undefined ? "" : ` with its ${plugins}`}, then ${rest(false)}, ${HOLDS}${whole || parts.added !== undefined ? "" : "; the organization adds nothing"}.`;
+    follows = `this project's additions first (${charactersOf(parts.own.body)})${parts.plugins === undefined ? "" : ` with its ${plugins}`}, then ${rest(false)}, ${HOLDS}${parts.added !== undefined ? "" : "; the organization adds nothing"}.`;
   } else {
-    const nobody = parts.added === undefined && !whole;
+    const nobody = parts.added === undefined;
     const lead = parts.named
       ? nobody
         ? "this project and the organization add nothing; "
@@ -689,9 +669,7 @@ export function formatRules(
       parts.plugins !== undefined
         ? `${theirs} first, then ${parts.added === undefined ? last : `the organization's additions (${charactersOf(parts.added.body)}), then ${last}, ${HOLDS}`}`
         : parts.added === undefined
-          ? parts.named || nobody
-            ? lastFollows
-            : last
+          ? lastFollows
           : `${rest(true)}, ${HOLDS}`;
     follows = `${lead}${body}${parts.named ? "." : "; no project is named here, and a project's additions stand before them where it has some."}`;
   }
@@ -709,9 +687,7 @@ export function formatRules(
       ? []
       : ["", formatRulesPart("What this organization adds", parts.added.page, parts.added.body)]),
     "",
-    parts.console === undefined
-      ? formatRulesWhole(parts.workspace)
-      : formatRulesPart("The console's rules, which always hold", null, parts.console),
+    formatRulesPart("The console's rules, which always hold", null, parts.console),
   ].join("\n");
 }
 
@@ -1325,7 +1301,7 @@ export function formatPlugin(
       `Skills: console plugin ${detail.key} skills lists them; console plugin ${detail.key} skill <path> reads one. Read the one that fits before the first command.`,
     );
   }
-  // A console before 0.5.1 names no jobs: nothing is printed of them then, not an empty block.
+  // A plugin without jobs has nothing printed of them, not an empty block.
   if (detail.jobs !== undefined && detail.jobs.length > 0) {
     lines.push(
       "",

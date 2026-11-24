@@ -520,7 +520,6 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       "What agents are asked on this board (ADR-0023, ADR-0120), under a first line that says what follows (ADR-0119): the mark of the rules, which parts there are and how many characters each is, who adds nothing, and that a later take of the session leaves them out with console take <number> --rules <mark>. Then the parts, what differs first and what always holds last: what this project adds; a section Plugins, which names the plugins bound to the project that you hold a role in, or at the workspace every plugin you may use, a line each with the sentence its manifest gives agents and where to start: console plugin <key>; what the organization adds; and the console's rules, which always hold and which nobody edits. Where they differ the earlier part holds, and none takes back what the console's rules say never happens. The mark is the same for the same rules, and another once a rule changed, for another project's and in another language. rules write writes what this project adds, for an owner, or with --workspace what the organization adds, for an administrator; none puts what was added away. Without a project named, rules shows what the organization adds and the console's rules alone.",
     limits: [
       `body: Markdown, up to ${MAX_RULES_LENGTH} characters: what is added, and nothing of the console's rules`,
-      "--workspace: a console before 0.5.1 keeps what is written as the organization's whole rules, in the place of its own; the command asks the console first, and writes nothing there",
     ],
     refusals: [
       "auth.forbidden: an owner writes what a project adds, an administrator what the organization adds",
@@ -545,7 +544,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     limits: [
       "a command line: up to 200 words of up to 50,000 characters each; one file, up to the file bound (console help hand-in), with the plugin's files capability",
       "records: a page of up to 200; where: a field the collection indexes",
-      "events: a page of up to 100, 50 unless said; a console before 0.5.1 does not narrow by --kind, and the command narrows the page it read",
+      "events: a page of up to 100, 50 unless said",
       "enable: consent names every capability the manifest requires, and the optional ones to turn on; settings and secrets as the manifest bounds them",
       "capabilities: --consent names the optional capabilities the plugin holds from now on, none for none of them; those it requires stay",
     ],
@@ -687,7 +686,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     usage: 'fail [--summary "<markdown>"|--file <path>] [--run <id>]',
     overview: 'fail [--summary "<markdown>"|--file <path>]',
     synopsis: "Ends the run: the work could not be done.",
-    about: `Ends the run: the work could not be done, and the task goes up for review, for a person to look at why (ADR-0114). The summary says why, and what is left. The command then reads the task and says the state it is in: a console before 0.5.1 leaves it in progress, and so does any where a person moved it meanwhile or another run is open on it. ${ON_THE_RUN}`,
+    about: `Ends the run: the work could not be done, and the task goes up for review, for a person to look at why (ADR-0114). The summary says why, and what is left. The command then reads the task and says the state it is in: it is left in progress where a person moved it meanwhile or another run is open on it. ${ON_THE_RUN}`,
     limits: [`summary: Markdown, up to ${MAX_SUMMARY_LENGTH} characters`],
     refusals: RUN_REFUSALS,
   },
@@ -695,7 +694,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     usage: 'abandon [<run id>] [--summary "<markdown>"]',
     synopsis: "Leaves a run and gives its task back.",
     about:
-      "Leaves a run, one taken by mistake or one that will not come back: the task goes back to the state the take found it in (ADR-0114), unless a person moved it meanwhile. The command then reads the task and says the state it is in; a console before 0.5.1 leaves it in progress. A person gives up this way on a run of theirs, and an owner of the project on anyone's.",
+      "Leaves a run, one taken by mistake or one that will not come back: the task goes back to the state the take found it in (ADR-0114), unless a person moved it meanwhile. The command then reads the task and says the state it is in. A person gives up this way on a run of theirs, and an owner of the project on anyone's.",
     limits: [`summary: Markdown, up to ${MAX_SUMMARY_LENGTH} characters`],
     refusals: RUN_REFUSALS,
   },

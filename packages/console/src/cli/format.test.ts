@@ -377,27 +377,6 @@ describe("the rules as they are printed (ADR-0119, ADR-0120)", () => {
     );
   });
 
-  it("reads a console of before, which answers the workspace's rules whole and no parts, as two", () => {
-    const whole = restRulesSchema.parse({ source: "reference", body: CONSOLE, page: null });
-    const rules = { workspace: whole, project: own };
-    const mark = rulesMark(rules, "en");
-    const text = formatRules(rules, "en");
-    expect(text.split("\n")[0]).toBe(
-      `Rules ${mark}: this project's additions first (${OWN.length} characters), then the workspace's (${CONSOLE.length} characters), the earlier holding where they differ.${laterTake(mark)}`,
-    );
-    // On such a console an organization still writes the whole, and the command says so. It
-    // names no command for it: the one it has writes what is added, and refuses there.
-    expect(text).toContain(
-      "Rules of the workspace: the console's own, until an administrator writes the organization's.\n",
-    );
-    expect(text).not.toContain("console rules write");
-    expect(formatRules({ workspace: whole, project: none }, "en").split("\n")[0]).toContain(
-      `: this project adds nothing; the workspace's follow (${CONSOLE.length} characters). A later take`,
-    );
-    // The mark is over the same text either way: a console that says the parts changes none.
-    expect(rulesMark({ workspace: alone, project: own }, "en")).toBe(mark);
-  });
-
   it("marks the rules as they read for whoever reads them: the same for the same, another for another", () => {
     const rules = { workspace: adding(), project: own, plugins: [plugin] };
     const mark = rulesMark(rules, "en");
