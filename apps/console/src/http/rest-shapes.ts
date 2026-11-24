@@ -119,6 +119,7 @@ export function restAgent(
             reason: runner.reason ?? null,
             since: runner.stateAt.toISOString(),
             heardAt: runner.heardAt?.toISOString() ?? null,
+            until: runner.stateUntil?.toISOString() ?? null,
           },
     runner:
       runner === undefined || !detailed

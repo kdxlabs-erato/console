@@ -33,11 +33,22 @@ import type {
   WakeHost,
   WakeSource,
 } from "./types.js";
+import {
+  type Limited,
+  limitWords,
+  RESET_MARGIN_MS,
+  runnerSays,
+  type ToldOfUsage,
+  usageToTell,
+  usageWords,
+} from "./usage.js";
 
 // The runner (ADR-0085, docs/specs/runner.md): one process per agent account on its machine. It
 // keeps one session of the agent's product at a time, feeds it what the console sends, reports
 // what the product does, and says every thirty seconds that it is there. It restarts nothing by
-// itself: an agent that cannot go on waits, and a supervisor's signal is what is tried next.
+// itself: an agent that cannot go on waits, and a supervisor's signal is what is tried next,
+// but for an agent its product's usage limit stopped, which the runner brings back by itself
+// when the limit resets (ADR-0150).
 // The one thing it ends for by itself is an update of the command it runs from (ADR-0101): when
 // no turn is under way, for the service that keeps it to start it again with the new one.
 //
@@ -68,6 +79,12 @@ export const MAX_HOLD_MS = 15 * 60_000;
 export const MAX_SOURCE_PAUSE_MS = 5 * 60_000;
 /** How long a wake source holds before the runner takes it to have worked. */
 const SOURCE_HELD_MS = 60_000;
+/** The kinds of event that are the agent's own answer: what it said, thought or called. */
+const ANSWERS: ReadonlySet<TranscriptKind> = new Set(["assistant", "thinking", "tool_call"]);
+/** How many signals the runner writes down as kept for the agent beside what the record sends again. */
+const MAX_KEPT = 50;
+/** How many messages a turn took are remembered, for a turn that ends on the usage limit: the oldest is let go past it. */
+const MAX_TAKEN = 200;
 /** The kinds of file a console keeps as a picture: what a product is handed as one. */
 const PICTURE_TYPES: ReadonlySet<string> = new Set([
   "image/png",
@@ -125,6 +142,18 @@ export interface RunnerState {
    * say, it is taken as this driver's.
    */
   readonly driver?: string | undefined;
+  /**
+   * The usage limit that stopped the agent and that it is not back from (ADR-0150): since
+   * when, and until when where the product said. Kept, so that a runner started meanwhile
+   * brings the agent back all the same.
+   */
+  readonly limited?: Limited | undefined;
+  /**
+   * The numbers of the signals the record has as delivered and the agent never read, since a
+   * usage limit stopped it (ADR-0150): the console sends none of them again by itself, so a
+   * runner started meanwhile takes them from the stream once more.
+   */
+  readonly kept?: readonly number[] | undefined;
 }
 
 export interface RunnerOptions {
@@ -151,6 +180,12 @@ export interface RunnerOptions {
   readonly random: () => number;
   /** A moment as a header says it: the hour and the minute in the workspace's zone. */
   readonly time: (iso: string) => string;
+  /**
+   * A moment with its day, as the command prints one, for what the runner says of a moment that
+   * may be on another day: when a window of the product's allowance resets, and from when a
+   * usage limit stopped the agent. Left out, as ISO 8601 says it, in UTC.
+   */
+  readonly moment?: ((iso: string) => string) | undefined;
   /**
    * Files under the desk's ignored `work/`, written for their owner alone: what a session is
    * handed of the account's store, removed at its end, and what came with a signal, under
@@ -204,6 +239,7 @@ export interface RunnerOptions {
     reconnectMs: number;
     holdMs: number;
     maxHoldMs: number;
+    resetMarginMs: number;
   }>;
   /** The bounds, for a test to lower. */
   readonly bounds?: Partial<{ outboxBytes: number }>;
@@ -285,6 +321,15 @@ interface OpenSession {
    * has not is still starting, for all the runner knows: it took nothing it was handed.
    */
   took: boolean;
+  /**
+   * The signals of the messages the product took in the turn under way, a message each, the
+   * oldest first, and how many of the last of them the agent has not answered since: none once
+   * it said or did anything. A turn that ends on the usage limit left those unread (ADR-0150).
+   */
+  taken: (readonly RestSignal[])[];
+  unread: number;
+  /** Whether the agent was handed word that it is back from a usage limit, and has not answered since. */
+  returning: boolean;
   /** The number of the last event of it. */
   n: number;
   /** What the product did and the console has not been sent yet, and what that holds of memory. */
@@ -305,7 +350,15 @@ interface OpenSession {
 
 type Message =
   | { readonly t: "signal"; readonly signal: RestSignal }
-  | { readonly t: "driver"; readonly session: OpenSession; readonly event: DriverEvent }
+  | {
+      readonly t: "driver";
+      readonly session: OpenSession;
+      readonly event: DriverEvent;
+      /** For an agent that cannot go on: how many of the last messages the product took the agent had not answered. */
+      readonly unread?: number | undefined;
+    }
+  /** The agent answered again, after it was handed word that it is back from a usage limit. */
+  | { readonly t: "answered"; readonly session: OpenSession }
   | { readonly t: "deliver" }
   | { readonly t: "flush" }
   | { readonly t: "heartbeat" }
@@ -383,12 +436,14 @@ export function createRunner(options: RunnerOptions): Runner {
     reconnectMs: RECONNECT_MS,
     holdMs: HOLD_MS,
     maxHoldMs: MAX_HOLD_MS,
+    resetMarginMs: RESET_MARGIN_MS,
     ...options.timing,
   };
   /** How long what an hour's bound refused is held back: the first time, and twice as long each time after. */
   const heldFor = (before: { readonly pause: number } | undefined): number =>
     before === undefined ? timing.holdMs : Math.min(before.pause * 2, timing.maxHoldMs);
   const bounds = { outboxBytes: MAX_OUTBOX_BYTES, ...options.bounds };
+  const moment = options.moment ?? ((iso: string): string => iso);
 
   // What keeps failing is said once, and again when what is said of it changes, so that an hour
   // without the console is a line and not thousands; that it is over is said once too.
@@ -462,6 +517,24 @@ export function createRunner(options: RunnerOptions): Runner {
   let held = false;
   /** The agent could not go on: how many tries ended so, and when what arrives by itself goes next. */
   let waits: { tries: number; until: number } | undefined;
+  /**
+   * The product's usage limit stopped the agent (ADR-0150): since when, until when where the
+   * product said, and whether the agent was handed word of it since the product last refused.
+   * It stands until the agent answers again.
+   */
+  let limited: { since: number; until: number | undefined; handed: boolean } | undefined;
+  /** What the agent was told of each window of its product's allowance: the mark it had reached, and when that window resets. */
+  let usageTold = new Map<string, ToldOfUsage>();
+  /**
+   * The signals a runner before this one kept unread, by number: taken from the stream once
+   * more, and until when the runner waits for them before it brings the agent back. And what
+   * the state file last said is kept so.
+   */
+  const reread = new Set<number>();
+  let rereadBy = 0;
+  let keptSaved = "";
+  /** The console is one of before the word `usage_limit`: it is said the nearest word it takes. */
+  let plainWords = false;
   /** The next session begins a new conversation, and says who reset it. */
   let resetBy: string | undefined;
   /** The open session is to end as soon as no turn is under way: what was chosen for it is taken when one starts. */
@@ -508,9 +581,29 @@ export function createRunner(options: RunnerOptions): Runner {
   const sentBefore = new Set<number>();
   const lastTry = new Set<number>();
 
+  /**
+   * The signals this runner alone still holds for the agent: delivered by the record, since the
+   * product took them, and to be handed over again, since the agent never read them.
+   */
+  const keptOf = (): number[] =>
+    [...new Set([...reread, ...pending.map((signal) => signal.number), ...owed])]
+      .filter((number) => number <= delivered)
+      .sort((one, other) => one - other)
+      .slice(0, MAX_KEPT);
+
   const persist = async (): Promise<void> => {
+    const kept = keptOf();
+    keptSaved = kept.join(",");
     try {
-      await options.state.save({ delivered, conversation, driver: driver.name });
+      await options.state.save({
+        delivered,
+        conversation,
+        driver: driver.name,
+        ...(limited === undefined
+          ? {}
+          : { limited: { since: limited.since, until: limited.until } }),
+        ...(kept.length === 0 ? {} : { kept }),
+      });
     } catch {
       log("the runner's state could not be written; it goes on from the console's record");
     }
@@ -793,8 +886,25 @@ export function createRunner(options: RunnerOptions): Runner {
     try {
       for await (const event of target.driver.events) {
         if (event.type === "event") {
+          // What the agent itself said or did, and no sub-agent of its: it has read what it
+          // was handed before.
+          if (ANSWERS.has(event.kind) && event.data?.parent === undefined) {
+            target.unread = 0;
+            if (target.returning) {
+              target.returning = false;
+              push({ t: "answered", session: target });
+            }
+          }
           record(target, event.kind, event.text, event.data, event.pictures);
+        } else if (event.type === "cannot_go_on") {
+          // Counted here, in the order the product wrote: the queue is behind what is read.
+          push({ t: "driver", session: target, event, unread: target.unread });
         } else {
+          if (event.type === "taken") {
+            target.unread += 1;
+          } else if (event.type === "turn_completed") {
+            target.unread = 0;
+          }
           push({ t: "driver", session: target, event });
         }
       }
@@ -883,6 +993,9 @@ export function createRunner(options: RunnerOptions): Runner {
       sent: [],
       handed: [],
       took: false,
+      taken: [],
+      unread: 0,
+      returning: false,
       n: 0,
       outbox: [],
       waiting: 0,
@@ -993,10 +1106,23 @@ export function createRunner(options: RunnerOptions): Runner {
     deliverAt = undefined;
     // Nothing more is handed over once the runner is to end for an update: what waits is sent
     // again by the console, in order, to the runner started after.
-    if (held || updatedTo !== undefined || pending.length === 0) {
+    if (held || updatedTo !== undefined) {
       return;
     }
-    // An agent that could not go on is tried at once for a supervisor, and after the cool-down for the rest.
+    // An agent its usage limit stopped is brought back by the runner itself, with nothing to
+    // hand it too: word that it is back is a message of its own.
+    const back = limited !== undefined && !limited.handed;
+    // What a runner before this one kept unread comes from the stream first: the agent is not
+    // brought back without it, for the moment the stream takes.
+    if (reread.size > 0 && options.now() < rereadBy) {
+      scheduleDeliver(rereadBy);
+      return;
+    }
+    if (pending.length === 0 && !back) {
+      return;
+    }
+    // An agent that could not go on is tried at once for a supervisor, and after the cool-down
+    // for the rest: for one a usage limit stopped, when the limit resets.
     if (waits !== undefined && !pending.some((signal) => signal.source === "person")) {
       if (options.now() < waits.until) {
         scheduleDeliver(waits.until);
@@ -1011,7 +1137,9 @@ export function createRunner(options: RunnerOptions): Runner {
         ((config.conversation === "daily" && signal.key === "day") ||
           (config.conversation !== "continuous" && signal.key === "week")),
     );
-    if (anew && session?.turn !== true) {
+    // An agent that is back from a usage limit goes on in the conversation it was stopped in:
+    // what it was doing is there, and the day after begins the next one.
+    if (anew && session?.turn !== true && limited === undefined) {
       await end("restarted");
       conversation = undefined;
     }
@@ -1022,8 +1150,11 @@ export function createRunner(options: RunnerOptions): Runner {
       scheduleDeliver(waits.until);
       return;
     }
-    const batch = pending;
-    pending = [];
+    // Under a usage limit, before the runner's own try, a supervisor's signals alone are tried:
+    // what else is kept stays kept, and undelivered, for a product that most likely refuses.
+    const early = limited !== undefined && waits !== undefined && options.now() < waits.until;
+    const batch = early ? pending.filter((signal) => signal.source === "person") : pending;
+    pending = early ? pending.filter((signal) => signal.source !== "person") : [];
     // The files a supervisor sent, read from the console and written in the desk, under its
     // ignored work/, for the agent to open; a picture is handed to the product as a picture
     // too, where the product takes one. What could not be handed over is said to the agent in
@@ -1089,14 +1220,40 @@ export function createRunner(options: RunnerOptions): Runner {
     const intro = target.first
       ? introOf(target.mark, resetBy === undefined ? undefined : { by: resetBy })
       : undefined;
-    const text = [intro, composed.text].filter((part) => part !== undefined).join("\n\n");
+    // What the runner says of its own goes ahead of the signals, under its own header: that
+    // the agent is back from a usage limit.
+    const returned = back ? limited : undefined;
+    const text = [
+      intro,
+      returned === undefined
+        ? undefined
+        : runnerSays(
+            target.mark,
+            limitWords(returned, { now: options.now(), moment, follow: batch.length, early }),
+          ),
+      composed.text,
+    ]
+      .filter((part) => part !== undefined)
+      .join("\n\n");
     try {
       await target.driver.send({ text, images, priority });
     } catch (error) {
       // Not handed over: kept, and what the product says of itself decides what is next.
       log(`a message could not be handed to the product (${codeOf(error)})`);
-      pending = [...batch, ...pending];
+      pending = [...batch, ...pending].sort((one, other) => one.number - other.number);
       return;
+    }
+    if (returned !== undefined) {
+      // Handed over, and not yet read: the agent stands as stopped until it answers.
+      returned.handed = true;
+      target.returning = true;
+      record(
+        target,
+        "status",
+        `The runner handed the agent word that its usage limit stopped it, since ${moment(new Date(returned.since).toISOString())}, with what reached it meanwhile.`,
+        { limit: "back", kept: batch.length },
+      );
+      log(`the agent is handed word of its usage limit, with ${batch.length} kept for it`);
     }
     if (target.first) {
       target.first = false;
@@ -1166,6 +1323,11 @@ export function createRunner(options: RunnerOptions): Runner {
   const take = async (target: OpenSession): Promise<void> => {
     target.took = true;
     const message = target.handed.shift();
+    // Remembered for the turn: one that ends on the usage limit left the last of them unread.
+    target.taken.push(message?.signals ?? []);
+    if (target.taken.length > MAX_TAKEN) {
+      target.taken.shift();
+    }
     if (message !== undefined) {
       if (!message.written) {
         message.write();
@@ -1180,6 +1342,7 @@ export function createRunner(options: RunnerOptions): Runner {
    */
   const settle = async (target: OpenSession): Promise<void> => {
     target.took = true;
+    target.taken = [];
     const counted: RestSignal[] = [];
     for (const message of target.handed.splice(0)) {
       if (!message.written) {
@@ -1311,6 +1474,9 @@ export function createRunner(options: RunnerOptions): Runner {
     if (next > delivered) {
       delivered = next;
       await persist();
+    } else if (keptOf().join(",") !== keptSaved) {
+      // What is kept for the agent changed, and what is delivered did not: written all the same.
+      await persist();
     }
   };
 
@@ -1323,6 +1489,22 @@ export function createRunner(options: RunnerOptions): Runner {
 
   const onSignal = async (signal: RestSignal): Promise<void> => {
     handled = Math.max(handled, signal.number);
+    // What a runner before this one kept unread is taken from the stream once more: for its
+    // words alone, whatever its kind, since it was acted on when it first came.
+    const again = reread.delete(signal.number) && signal.number <= delivered;
+    for (const number of reread) {
+      // The stream is in order: one it passed is not coming.
+      if (number < signal.number) {
+        reread.delete(number);
+      }
+    }
+    if (again) {
+      if (!pending.some((kept) => kept.number === signal.number)) {
+        pending = [...pending, signal].sort((one, other) => one.number - other.number);
+        scheduleDeliver();
+      }
+      return;
+    }
     if (
       signal.number <= delivered ||
       owed.has(signal.number) ||
@@ -1349,6 +1531,8 @@ export function createRunner(options: RunnerOptions): Runner {
       case "reset": {
         held = false;
         waits = undefined;
+        // A supervisor starts it now, whatever a limit said: the product says so again where it still stands.
+        limited = undefined;
         await end(signal.kind === "reset" ? "reset" : "restarted");
         if (signal.kind === "reset") {
           conversation = undefined;
@@ -1437,7 +1621,128 @@ export function createRunner(options: RunnerOptions): Runner {
     }
   };
 
-  const onDriver = async (target: OpenSession, event: DriverEvent): Promise<void> => {
+  /**
+   * The product's usage limit stopped the agent (ADR-0150): nothing goes better before a window
+   * of its allowance resets. What the agent was handed and never came to is kept to be handed
+   * over again, the state says why and until when, and the runner brings the agent back by
+   * itself: at the moment the product named, a little after, or after the cool-down where it
+   * named none or one that is past, longer each time the product refuses again.
+   */
+  const limitReached = async (
+    target: OpenSession,
+    until: number | undefined,
+    unread: number,
+  ): Promise<void> => {
+    const now = options.now();
+    // Taken by the product and never answered: on the record, and delivered, so kept by this
+    // runner alone. Handed over and never taken: not delivered, and owed no word any more.
+    const unanswered = unread > 0 ? target.taken.slice(-unread).flat() : [];
+    const untaken = target.handed.splice(0).flatMap((message) => message.signals);
+    for (const signal of untaken) {
+      owed.delete(signal.number);
+    }
+    target.taken = [];
+    target.sent = [];
+    target.returning = false;
+    const again = [...unanswered, ...untaken].filter(
+      (signal, index, all) =>
+        all.findIndex((one) => one.number === signal.number) === index &&
+        !pending.some((kept) => kept.number === signal.number),
+    );
+    pending = [...again, ...pending].sort((one, other) => one.number - other.number);
+    const before = limited;
+    // The first refusal, or the refusal of what the runner tried since: one that follows no
+    // try of the runner's, a message the product still had on its input say, is the same
+    // stretch, and waits no longer for it.
+    const tried = before === undefined || before.handed;
+    const named = until !== undefined && until > now ? until : undefined;
+    const known = named ?? (tried ? undefined : before.until);
+    if (before === undefined) {
+      // A limit met anew is said in its own word first, whatever a console of before took last.
+      plainWords = false;
+    }
+    limited = { since: before?.since ?? now, until: known, handed: false };
+    if (tried || waits === undefined || known !== before.until) {
+      waits =
+        known === undefined
+          ? cooled(tried ? waits : undefined)
+          : { tries: (waits?.tries ?? 0) + 1, until: known + timing.resetMarginMs };
+    }
+    const when = known === undefined ? undefined : new Date(known).toISOString();
+    // Said once for a stretch: again only where there is something new to say of it.
+    if (tried || again.length > 0 || known !== before.until) {
+      record(
+        target,
+        "status",
+        when === undefined
+          ? "The product's usage limit stopped the agent, and the product did not say when it resets: what reaches the agent meanwhile is kept, and the runner tries again by itself after a while."
+          : `The product's usage limit stopped the agent until ${moment(when)}: what reaches the agent meanwhile is kept, and the runner brings it back then by itself.`,
+        { limit: "reached", until: when ?? null, kept: again.length },
+      );
+      log(
+        `the product's usage limit stopped the agent ${when === undefined ? "and names no reset" : `until ${when}`}: tried again at ${new Date(waits.until).toISOString()}, ${again.length} kept to hand over again`,
+      );
+    }
+    await persist();
+    setState("failed", "usage_limit");
+    scheduleDeliver(waits.until);
+  };
+
+  /** The agent answered again after a usage limit: it is back, and stands as running. */
+  const onAnswered = async (target: OpenSession): Promise<void> => {
+    if (target !== session || limited === undefined) {
+      return;
+    }
+    limited = undefined;
+    waits = undefined;
+    await persist();
+    log("the agent is back from its usage limit");
+    setState("running", "resumed");
+    // What stayed kept while a supervisor's signal was tried is the agent's now.
+    if (pending.length > 0) {
+      scheduleDeliver();
+    }
+  };
+
+  /**
+   * What the product said of its allowance (ADR-0150): the agent is told once for each mark a
+   * window reaches, at once, in the open session. After the tool call under way where a turn is
+   * under way; in a turn of its own where none is, since sub-agents left at work spend the
+   * allowance after the session's own turn ended, and a word kept for the next message may come
+   * after the limit. What cannot be said now is not counted as told: it is said at what the
+   * product says next.
+   */
+  const onUsage = async (
+    target: OpenSession,
+    windows: Extract<DriverEvent, { type: "usage" }>["windows"],
+  ): Promise<void> => {
+    const looked = usageToTell(windows, usageTold, options.now());
+    if (looked.tell.length > 0) {
+      if (target.first || limited !== undefined) {
+        return;
+      }
+      if (!(await sayToAgent(target, usageWords(looked.tell, moment)))) {
+        return;
+      }
+      for (const one of looked.tell) {
+        const used = one.window.used === undefined ? null : Math.floor(one.window.used * 100);
+        const resets =
+          one.window.resetsAt === undefined ? null : new Date(one.window.resetsAt).toISOString();
+        record(
+          target,
+          "status",
+          `The product's allowance is ${used === null ? "near its limit" : `${used}% used`} in its ${one.window.name} window${resets === null ? "" : `, which resets ${moment(resets)}`}: the agent is told.`,
+          { usage: one.window.name, used, resets },
+        );
+        log(
+          `the product's allowance: ${one.window.name} ${used === null ? "near its limit" : `${used}%`}${resets === null ? "" : `, resets ${resets}`}; the agent is told`,
+        );
+      }
+    }
+    usageTold = looked.told;
+  };
+
+  const onDriver = async (target: OpenSession, event: DriverEvent, unread = 0): Promise<void> => {
     if (target !== session) {
       return;
     }
@@ -1472,6 +1777,12 @@ export function createRunner(options: RunnerOptions): Runner {
           lastTry.delete(signal.number);
         }
         target.sent = [];
+        target.returning = false;
+        if (limited !== undefined) {
+          // A turn completed: whatever stopped the agent is over.
+          limited = undefined;
+          await persist();
+        }
         if (waits !== undefined || stands.state !== "running") {
           waits = undefined;
           setState("running", "completed");
@@ -1484,9 +1795,24 @@ export function createRunner(options: RunnerOptions): Runner {
         }
         return;
       }
+      case "usage": {
+        await onUsage(target, event.windows);
+        return;
+      }
       case "cannot_go_on": {
         // Reported, and nothing restarted: a supervisor's signal is tried at once, the rest after the cool-down.
         target.turn = false;
+        if (event.reason === "usage_limit") {
+          await limitReached(target, event.until, unread);
+          return;
+        }
+        // What the runner tried after a usage limit ended some other way: the limit is not
+        // what stops the agent now.
+        if (limited?.handed === true) {
+          limited = undefined;
+          target.returning = false;
+          await persist();
+        }
         // A product that did not start, or is not signed in, took nothing: what was sent is tried again.
         if (event.reason === "start" || event.reason === "sign_in") {
           // What a reset gave one more try and the product did not start with again is let
@@ -1615,13 +1941,52 @@ export function createRunner(options: RunnerOptions): Runner {
     }
   };
 
+  /**
+   * Why the agent stands as it does, and until when where the runner knows: when its usage
+   * limit resets. A console of before the word `usage_limit` refuses a heartbeat that says it,
+   * and with it everything else the heartbeat carries: such a console is said `crashed`, the
+   * nearest word it takes, and no moment.
+   */
+  const saidOfState = (): { reason: AgentStateReason; until?: string | null } => {
+    if (stands.reason !== "usage_limit") {
+      return { reason: stands.reason };
+    }
+    if (plainWords) {
+      return { reason: "crashed" };
+    }
+    return {
+      reason: stands.reason,
+      until: limited?.until === undefined ? null : new Date(limited.until).toISOString(),
+    };
+  };
+
+  /**
+   * Whether a heartbeat was refused for the word `usage_limit`, by a console of before it: such
+   * a console is said the nearest word it takes from then on, and the runner says so in a line.
+   */
+  const wordRefused = (error: unknown): boolean => {
+    if (
+      !(error instanceof ApiError) ||
+      error.code !== "request.invalid" ||
+      stands.reason !== "usage_limit" ||
+      plainWords
+    ) {
+      return false;
+    }
+    plainWords = true;
+    log(
+      "the console does not take the word usage_limit, being one of before it: the agent is said to it as failed, crashed, until the console is updated",
+    );
+    return true;
+  };
+
   const beat = async (): Promise<void> => {
     const now = `${stands.state} ${stands.reason} ${session?.id ?? ""}`;
     said = now;
     try {
       const answer = await client.runnerHeartbeat({
         state: stands.state,
-        reason: stands.reason,
+        ...saidOfState(),
         delivered,
         session: session?.id ?? null,
         machine: options.machine,
@@ -1649,6 +2014,13 @@ export function createRunner(options: RunnerOptions): Runner {
       }
     } catch (error) {
       if (stopped) {
+        return;
+      }
+      if (wordRefused(error)) {
+        // Said again at once in a word that console takes, so that the account is heard from
+        // and its count of what is delivered goes on.
+        said = "";
+        push({ t: "heartbeat" });
         return;
       }
       if (error instanceof ApiError && error.code === "client.outdated") {
@@ -1912,6 +2284,26 @@ export function createRunner(options: RunnerOptions): Runner {
           `the conversation kept was begun under the driver ${kept.driver}: a new one begins under ${driver.name}`,
         );
       }
+      if (kept?.limited !== undefined) {
+        // A usage limit stopped the agent under a runner before this one: it is brought back
+        // all the same, when the limit resets or after the cool-down where no moment is known.
+        const now = options.now();
+        limited = { ...kept.limited, handed: false };
+        for (const number of kept.kept ?? []) {
+          reread.add(number);
+        }
+        waits = {
+          tries: 1,
+          until:
+            kept.limited.until === undefined
+              ? now + timing.coolDownMs
+              : kept.limited.until + timing.resetMarginMs,
+        };
+        stands = { state: "failed", reason: "usage_limit" };
+        log(
+          `the product's usage limit stopped the agent before this runner started: tried again at ${new Date(waits.until).toISOString()}`,
+        );
+      }
       probe = await driver.probe();
       const left =
         probe.models.length +
@@ -1925,30 +2317,45 @@ export function createRunner(options: RunnerOptions): Runner {
       }
       await readSecrets();
       // The first heartbeat says the runner is there, and learns where the console's record stands.
-      try {
-        const first = await client.runnerHeartbeat({
-          state: "running",
-          reason: "started",
-          delivered,
-          session: null,
-          machine: options.machine,
-          runner: options.version,
-          product: productOf(),
-          offers: offersOf(),
-          running: { model: null, effort: null },
-        });
-        settings = first.settings;
-        delivered = Math.max(delivered, first.delivered);
-        if (first.state === "stopped") {
-          held = true;
-          stands = { state: "stopped", reason: "stop" };
+      for (;;) {
+        try {
+          const first = await client.runnerHeartbeat({
+            state: stands.state,
+            ...saidOfState(),
+            delivered,
+            session: null,
+            machine: options.machine,
+            runner: options.version,
+            product: productOf(),
+            offers: offersOf(),
+            running: { model: null, effort: null },
+          });
+          settings = first.settings;
+          delivered = Math.max(delivered, first.delivered);
+          if (first.state === "stopped") {
+            held = true;
+            stands = { state: "stopped", reason: "stop" };
+          }
+          break;
+        } catch (error) {
+          // A runner started under a usage limit, at a console of before the word: said once more, in a word it takes.
+          if (wordRefused(error)) {
+            continue;
+          }
+          log(
+            `the console did not take the first heartbeat (${codeOf(error)}); the runner goes on`,
+          );
+          break;
         }
-      } catch (error) {
-        log(`the console did not take the first heartbeat (${codeOf(error)}); the runner goes on`);
       }
-      received = delivered;
+      // From before what a runner before this one kept unread, where it kept any.
+      received = reread.size === 0 ? delivered : Math.min(delivered, Math.min(...reread) - 1);
+      rereadBy = options.now() + timing.reconnectMs;
       handled = delivered;
       said = `${stands.state} ${stands.reason} `;
+      if (waits !== undefined) {
+        scheduleDeliver(waits.until);
+      }
       const listening = listen();
       const sourcing = (options.wakes?.sources ?? []).map((source) => keepSource(source));
       const beating = setInterval(() => push({ t: "heartbeat" }), timing.heartbeatMs);
@@ -1988,7 +2395,9 @@ export function createRunner(options: RunnerOptions): Runner {
             if (message.t === "signal") {
               await onSignal(message.signal);
             } else if (message.t === "driver") {
-              await onDriver(message.session, message.event);
+              await onDriver(message.session, message.event, message.unread);
+            } else if (message.t === "answered") {
+              await onAnswered(message.session);
             } else if (message.t === "deliver") {
               // A timer may fire a moment before the clock says it is time.
               if (deliverAt !== undefined && options.now() >= deliverAt - 20) {
@@ -1999,6 +2408,11 @@ export function createRunner(options: RunnerOptions): Runner {
                 await flush(session);
               }
             } else {
+              // A timer counts no time the machine sleeps in, and rings late by as much: what
+              // was to be handed over at a moment is looked for by the clock at every heartbeat.
+              if (deliverAt !== undefined && options.now() >= deliverAt) {
+                await deliver("next");
+              }
               await lookForUpdate();
               await lookForChange();
               // Said every thirty seconds, and at once when how the agent stands changed.

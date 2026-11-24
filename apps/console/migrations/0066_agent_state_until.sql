@@ -1,0 +1,1 @@
+ALTER TABLE "agent_runners" ADD COLUMN "state_until" timestamp with time zone;

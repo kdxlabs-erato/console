@@ -255,16 +255,22 @@ export function formatOwnWakeLine(wake: RestOwnWake): string {
   return `to come  ${wake.key}  ${moment(wake.at)}${said}`;
 }
 
-/** How an agent account stands (ADR-0085), in a few words: the state, why, and when its runner was last heard from. */
+/**
+ * How an agent account stands (ADR-0085), in a few words: the state, why, since when, until when
+ * where its runner said, as when a usage limit resets (ADR-0150), and when its runner was last
+ * heard from.
+ */
 export function formatAgentState(agent: RestAgent): string {
   const state = agent.state ?? null;
   if (state === null) {
     return "no runner has been heard from yet";
   }
   const reason = state.reason === null ? "" : ` (${state.reason.replaceAll("_", " ")})`;
+  const until =
+    state.until === undefined || state.until === null ? "" : `, until ${moment(state.until)}`;
   const heard =
     state.heardAt === null ? "" : `; its runner was last heard from ${moment(state.heardAt)}`;
-  return `${state.state}${reason} since ${moment(state.since)}${heard}`;
+  return `${state.state}${reason} since ${moment(state.since)}${until}${heard}`;
 }
 
 /**

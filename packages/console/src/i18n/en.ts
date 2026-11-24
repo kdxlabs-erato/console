@@ -2006,6 +2006,8 @@ export const en = {
         unheard: "Not heard from",
         /** What stands before and after the moment a state began: "since 14:02". */
         since: { before: "since ", after: "" },
+        /** What stands before and after the moment a state ends by itself, as when a usage limit resets: "until 03:30". */
+        until: { before: "until ", after: "" },
         heard: "runner last heard from",
         reasons: {
           started: "its runner started",
@@ -2017,6 +2019,7 @@ export const en = {
           sign_in: "its product is not signed in",
           start: "its product did not start",
           crashed: "its product crashed",
+          usage_limit: "its product's usage limit is reached",
           no_heartbeat: "its runner is not heard from",
         },
       },

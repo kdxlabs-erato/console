@@ -13,6 +13,7 @@ import {
   plainCutEnd,
   type StartOptions,
 } from "./types.js";
+import { saysUsageLimit } from "./usage.js";
 
 // The `codex` driver (docs/specs/runner.md): the Codex binary, unmodified, run with nobody at
 // its terminal, `codex exec --json`. A process a turn: the message on its standard input, an
@@ -540,6 +541,15 @@ function sessionOf(
         }
         if (SIGN_IN.test(`${read.failed ?? ""}\n${errors}`)) {
           emit({ type: "cannot_go_on", state: "failed", reason: "sign_in" });
+          waiting = [];
+          return;
+        }
+        // A turn the product says failed on its usage limit: nothing goes better before a
+        // window resets, and when that is its words do not say in a shape to rely on. The
+        // runner waits and tries again by itself, and hands over again what was not answered.
+        // Read by pattern: its words for it were not seen, since that takes using an allowance up.
+        if (read.failed !== undefined && saysUsageLimit(read.failed)) {
+          emit({ type: "cannot_go_on", state: "failed", reason: "usage_limit" });
           waiting = [];
           return;
         }

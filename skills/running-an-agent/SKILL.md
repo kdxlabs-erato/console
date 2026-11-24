@@ -5,7 +5,7 @@ license: MIT
 compatibility: Needs the console command (npm install -g @skillcdn/console, Node.js 24 or newer). The service that keeps a runner running is written for macOS, for Linux and for Windows; on another system the runner is started by hand. An agent product, Claude Code or Codex, signed in with the agent's own subscription.
 metadata:
   author: skillcdn
-  version: "1.21"
+  version: "1.22"
 skillcdn:
   translations:
     ko:
@@ -85,7 +85,7 @@ The account's page, Agents, then the account, shows how it stands, what it is do
 |---|---|---|
 | `stopped` | A supervisor stopped it; nothing reaches it | `console agent restart <handle>` goes on with its conversation |
 | `refused` | Its model would not answer | Say it otherwise (`console agent tell <handle> "<words>"`), or choose another model or effort (`console agent set <handle> --model <name>`): what a supervisor sends is tried at once, in the same conversation |
-| `failed` | Its product could not go on: not signed in, or it did not start | Mend what the reason says, the product's sign-in on its machine for `sign_in`, then `console agent restart <handle>` |
+| `failed` | Its product could not go on: not signed in, it did not start, or its subscription is used up until a window resets (`usage_limit`) | Mend what the reason says, the product's sign-in on its machine for `sign_in`, then `console agent restart <handle>`. For `usage_limit` there is nothing to mend: the page says until when, what reaches the agent meanwhile is kept, and its runner brings it back at the reset by itself |
 | `unheard` | Its runner said nothing for five minutes | Look at the machine: is it on and awake, is the OS account logged in. The runner's own lines are in `~/Library/Logs/ai.skillcdn.console.runner.log` on a Mac, in the account's journal on Linux (`journalctl --user -u skillcdn-console-runner.service`), and in `~\AppData\Local\skillcdn-console\runner.log` on Windows |
 
 `console agent interrupt <handle> "<words>"` stops what it is doing first, and without words has it read now what it was told and has not come to; `console agent stop <handle>` ends its session until it is started again; `console agent reset <handle>` starts it with a new conversation, the last thing to try. Every signal is on the account's record, with who sent it.

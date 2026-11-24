@@ -1,0 +1,194 @@
+import type { UsageWindow } from "./types.js";
+
+// What the runner makes of its product's allowance (ADR-0150, docs/specs/runner.md, "A usage
+// limit"): a subscription allows so much within a window that resets, and a product that has
+// used it up answers nobody until then. The runner tells its agent before, at a share of the
+// window it decides, and brings the agent back after, by itself. What a driver says of the
+// allowance is the product's own, read by shape and bounded there; here it is numbers and a
+// few words, and nothing of it is run.
+
+/**
+ * The shares of a window at which the agent is told how much of it is used: with a fifth left,
+ * when there is still room to end what is under way in order, and with a tenth left, when what
+ * is said to people is said now. Each once for a window, until it resets.
+ */
+export const USAGE_MARKS = [0.8, 0.9] as const;
+
+/**
+ * How long after the moment a product says its limit resets the runner brings its agent back:
+ * the machine's clock and the product's differ by less.
+ */
+export const RESET_MARGIN_MS = 60_000;
+
+/** How many windows the runner keeps what it told of: more than any product names. */
+const MAX_WINDOWS = 16;
+
+/**
+ * What a product's own error says when what its subscription allows is used up until a window
+ * resets. Its words are its own and no contract: read by pattern, of an error of the product
+ * alone and never of what a model or a tool wrote, and held by the fixtures of the drivers.
+ * Narrow on purpose: a request the server throttles for a moment and a conversation that
+ * reached its length are limits too, and neither is this one.
+ */
+const USAGE_LIMIT =
+  /\byou['\u2019]?ve (?:hit|reached) your (?:[\w-]+ ){0,3}limit\b|\b(?:hit|reached) your (?:[\w-]+ ){0,2}usage limit\b|\busage limit (?:has been )?(?:reached|exceeded)\b|\busage_limit_reached\b/i;
+
+/** Whether an error of a product's own says its usage limit is reached. */
+export const saysUsageLimit = (text: string): boolean => USAGE_LIMIT.test(text.slice(0, 2000));
+
+/** What the agent was told of a window: the mark it had reached, and when that window resets. */
+export interface ToldOfUsage {
+  readonly mark: number;
+  readonly resetsAt: number | undefined;
+}
+
+/** A window the agent is to be told of, with the mark it reached. */
+export interface UsageTelling {
+  readonly window: UsageWindow;
+  readonly mark: number;
+}
+
+/**
+ * The mark a window has reached: the highest of `USAGE_MARKS` its share used is at or past; the
+ * first where the product says no share and says itself that the window is near its limit;
+ * none below the first, and none for a window used up, which the limit itself says.
+ */
+function markOf(window: UsageWindow): number | undefined {
+  if (window.used === undefined) {
+    return window.near === true ? USAGE_MARKS[0] : undefined;
+  }
+  if (window.used >= 1) {
+    return undefined;
+  }
+  let reached: number | undefined;
+  for (const mark of USAGE_MARKS) {
+    if (window.used >= mark) {
+      reached = mark;
+    }
+  }
+  return reached ?? (window.near === true ? USAGE_MARKS[0] : undefined);
+}
+
+/**
+ * Of what a product says of its windows, what the agent is to be told now, and what it then
+ * was told. A window is told once at each mark it reaches, at the highest alone where it passed
+ * several between two looks. What was told of a window stands until that window resets: until
+ * the moment it named has come, or its share is below the first mark again, so that a product
+ * whose reset moves with every look is told of once all the same.
+ */
+export function usageToTell(
+  windows: readonly UsageWindow[],
+  told: ReadonlyMap<string, ToldOfUsage>,
+  now: number,
+): { readonly tell: readonly UsageTelling[]; readonly told: Map<string, ToldOfUsage> } {
+  const next = new Map(told);
+  const tell: UsageTelling[] = [];
+  for (const window of windows) {
+    const before = next.get(window.name);
+    const mark = markOf(window);
+    const reset =
+      before !== undefined &&
+      ((before.resetsAt !== undefined && now >= before.resetsAt) ||
+        (window.used !== undefined && window.used < USAGE_MARKS[0] && window.near !== true));
+    if (reset) {
+      next.delete(window.name);
+    }
+    if (mark === undefined) {
+      continue;
+    }
+    const stands = reset ? undefined : before;
+    if (stands !== undefined && stands.mark >= mark) {
+      continue;
+    }
+    // The oldest is let go where a driver names more windows than any product has.
+    if (!next.has(window.name) && next.size >= MAX_WINDOWS) {
+      const oldest = next.keys().next().value;
+      if (oldest !== undefined) {
+        next.delete(oldest);
+      }
+    }
+    next.set(window.name, { mark, resetsAt: window.resetsAt });
+    tell.push({ window, mark });
+  }
+  return { tell, told: next };
+}
+
+export interface NoticeOptions {
+  /** The session's mark. */
+  readonly mark: string;
+  /** A moment with its day: a window may reset, and a limit end, on another day. */
+  readonly moment: (iso: string) => string;
+}
+
+/** What the runner says of its own, under a header that carries the session's mark. */
+export const runnerSays = (mark: string, words: string): string =>
+  `[console ${mark} · runner]\n${words}`;
+
+/** A name of a window on one line, with nothing in it that ends a header or a line. */
+const plain = (text: string): string =>
+  text
+    .replaceAll(/[^\p{L}\p{N}._-]+/gu, " ")
+    .trim()
+    .slice(0, 40);
+
+/** A share as a whole number of hundredths, never more than was said: 0.899 is 89%. */
+const percentOf = (share: number): number => Math.floor(Math.max(0, Math.min(1, share)) * 100);
+
+/** One window as a line says it: how much of it is used, and when it resets where that is known. */
+function windowWords(window: UsageWindow, moment: (iso: string) => string): string {
+  const share = window.used === undefined ? "near its limit" : `${percentOf(window.used)}% used`;
+  const resets =
+    window.resetsAt === undefined
+      ? ""
+      : `, which resets ${moment(new Date(window.resetsAt).toISOString())}`;
+  return `${share} in its ${plain(window.name)} window${resets}`;
+}
+
+/**
+ * What the agent is told of its product's allowance before the limit (ADR-0150): how much of
+ * which window is used, when it resets, and what the limit does, which is what there is to
+ * plan by. The words of the line, without its header.
+ */
+export function usageWords(tell: readonly UsageTelling[], moment: (iso: string) => string): string {
+  const windows = tell.map((one) => windowWords(one.window, moment)).join("; and ");
+  return `Your product's allowance is ${windows}. Everything signed in with it draws on it, each sub-agent you start too. At the limit your turn ends where it is and you answer nobody until the reset; the runner brings you back then by itself, with what reached you meanwhile. Nothing is asked of you now. Plan by it: where someone waits on you, or work would be cut in the middle, say so and leave it where you can pick it up, before then.`;
+}
+
+/** A stretch a usage limit stopped the agent for: since when, and until when where the product said. */
+export interface Limited {
+  readonly since: number;
+  readonly until: number | undefined;
+}
+
+/**
+ * What the agent is told when it is handed something again after a usage limit stopped it
+ * (ADR-0150), ahead of what reached it meanwhile: that it was stopped and from when, that its
+ * turn and its sub-agents ended where they were, and whether the limit is over. The words,
+ * without a header.
+ */
+export function limitWords(
+  limited: Limited,
+  options: {
+    readonly now: number;
+    readonly moment: (iso: string) => string;
+    /** How many signals follow in the message. */
+    readonly follow: number;
+    /** Whether this is a supervisor's signal tried before the runner's own try, with what else is kept left for then. */
+    readonly early?: boolean | undefined;
+  },
+): string {
+  const at = (ms: number): string => options.moment(new Date(ms).toISOString());
+  const early = options.early === true;
+  const stopped = `Your product's usage limit stopped you at ${at(limited.since)}: your turn ended where it was, and so did every sub-agent it had started, since they draw on the one allowance.`;
+  const now = early
+    ? `${limited.until === undefined ? "The product did not say when the limit resets" : `The product said the limit resets ${at(limited.until)}`}, and a supervisor's message is tried now all the same: where the limit still stands this is not read, and the runner hands it to you again when it brings you back.`
+    : limited.until === undefined
+      ? `The product did not say when the limit resets, so the runner tries now, ${at(options.now)}, by itself.`
+      : `The limit reset ${at(limited.until)}, and the runner brings you back by itself.`;
+  const meanwhile = early
+    ? "The message follows; what else reached you meanwhile is kept, and handed to you then."
+    : options.follow === 0
+      ? "Nothing reached you meanwhile."
+      : "What reached you meanwhile follows, in the order it came, what you were handed as the limit was reached and had not read among it.";
+  return `${stopped} ${now} Go on with what you were doing: look at what each sub-agent left before you start it again. ${meanwhile}`;
+}

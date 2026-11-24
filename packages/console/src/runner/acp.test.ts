@@ -933,6 +933,34 @@ describe("the acp driver", () => {
     await session.stop();
   });
 
+  it("says a usage limit as that, by the words of the agent's error, and takes the next message all the same", async () => {
+    // No agent was seen at its limit: the words are invented, in the shape of an error on the request.
+    const answers = [
+      { error: { code: -32603, message: "You've hit your usage limit. Try again later." } },
+      { result: { stopReason: "end_turn" } },
+    ];
+    const agent = agentThat({
+      prompt: (asked, one) => one.says({ id: asked.id, ...answers.shift() }),
+    });
+    const session = driverFor(agent).start(OPTIONS);
+    await session.send(message("Go."));
+    const seen = await until(session, [], isType("cannot_go_on"));
+    expect(seen.slice(-2)).toEqual([
+      {
+        type: "event",
+        kind: "error",
+        text: "The agent refused the turn: You've hit your usage limit. Try again later.",
+      },
+      { type: "cannot_go_on", state: "failed", reason: "usage_limit" },
+    ]);
+    // The session stays open: the runner tries again by itself, and the turn then completes.
+    await session.send(message("Again."));
+    expect((await until(session, [], isType("turn_completed"))).at(-1)).toEqual({
+      type: "turn_completed",
+    });
+    await session.stop();
+  });
+
   it("goes on with a conversation where the agent can: resumed, or loaded with what it replays left unread", async () => {
     const resumes = agentThat({
       initialized: {

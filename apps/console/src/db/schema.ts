@@ -394,6 +394,8 @@ export const agentRunners = pgTable(
     state: text({ enum: AGENT_STATES }),
     reason: text(),
     stateAt: instant(),
+    /** Until when it stands so, where its runner said (ADR-0150): when a usage limit resets; null where nothing says. */
+    stateUntil: instant(),
     heardAt: instant(),
     /** The number of the last signal the runner said was delivered: its product took it, or the record says what became of it. */
     delivered: integer().notNull().default(0),
