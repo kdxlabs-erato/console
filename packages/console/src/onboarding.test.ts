@@ -58,9 +58,14 @@ describe("the onboarding task of an agent account", () => {
       '"headless", which is yours where the file names none, is a Google Chrome with no window and a profile of its own, driven with the tools of the server chrome-devtools',
     );
     expect(own).toContain(
-      '"chrome" is, for Claude Code, its own browser tool in the Google Chrome of your OS account, which takes the Claude in Chrome extension there',
+      '"chrome" is Claude Code\'s own browser tool in the Google Chrome of your OS account, which takes the Claude in Chrome extension there',
     );
-    expect(own).toContain("Which of the two you use is yours to choose.");
+    // The same browser with its window is a name the agent writes itself, for when someone is
+    // to see it; and the browsers are one driver's, which a desk on another is told.
+    expect(own).toContain('"window" is the same browser and profile with its window');
+    expect(own).toContain('Under the claude driver, "headless"');
+    expect(own).toContain("Under another driver your product is started with no browser yet.");
+    expect(own).toContain("Which you use is yours to choose.");
     expect(own).not.toMatch(/ask for "chrome"|has none for/);
     // The wake source is taken by the runner by itself, and where to see that it is.
     expect(own).toContain(

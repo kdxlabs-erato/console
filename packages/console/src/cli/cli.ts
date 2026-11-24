@@ -61,12 +61,7 @@ import { checkRecords, RECORDS_DIR, RECORDS_INDEX_FILE, type RecordsFiles } from
 import { agentHref, decisionHref, docHref, myDecisionHref, taskHref } from "../router.js";
 import { fillRules, RULES_PATH, RULES_TITLE } from "../rules.js";
 import { HEADLESS_TOOL } from "../runner/browser.js";
-import {
-  DEFAULT_RUNNER_CONFIG,
-  parseRunnerConfig,
-  RUNNER_BROWSERS,
-  type RunnerBrowser,
-} from "../runner/config.js";
+import { DEFAULT_RUNNER_CONFIG, parseRunnerConfig, type RunnerBrowser } from "../runner/config.js";
 import {
   DESK_FOLDER,
   deskFiles,
@@ -215,6 +210,7 @@ import {
   heldAwake,
   lookAtMachine,
   type MachineLook,
+  type SetupBrowser,
   standsInTheWay,
 } from "./machine-check.js";
 import type { NoticeStore } from "./notices.js";
@@ -5640,15 +5636,25 @@ const SETUP_FLAGS: OptionSpec = {
 
 type Me = Awaited<ReturnType<ConsoleClient["me"]>>;
 
-/** The browsers a setup looks for where it is asked for one: every name of `runner.json` but the one for none. */
-const SETUP_BROWSERS = RUNNER_BROWSERS.filter((one) => one !== "none");
+/**
+ * The browsers a setup looks for where it is asked for one: the one with no window and the
+ * product's own. A window for the first is a name the agent writes itself when someone is to
+ * see its browser, and no setup's.
+ */
+const SETUP_BROWSERS = ["headless", "chrome"] as const satisfies readonly RunnerBrowser[];
 
 /** What a setup says it found of the agent's browser, by the name a new desk gives it; nothing of none. */
-const BROWSER_FOUND: Readonly<Record<RunnerBrowser, string>> = {
+const BROWSER_FOUND: Readonly<Record<SetupBrowser, string>> = {
   headless: `, Google Chrome and ${HEADLESS_TOOL.command}, which drives it with no window`,
   chrome: ", Google Chrome",
   none: "",
 };
+
+/** A runner's config with no browser named, for a desk whose product is started with none. */
+function withoutBrowser<T extends { readonly browser?: unknown }>(config: T): Omit<T, "browser"> {
+  const { browser: _none, ...rest } = config;
+  return rest;
+}
 
 /** The end of what a program said, for a refusal to carry: one line, bounded. */
 function lastWords(ran: Ran): string {
@@ -5791,8 +5797,10 @@ async function settleDesk(
       look === undefined
         ? undefined
         : {
-            ...DEFAULT_RUNNER_CONFIG,
+            ...withoutBrowser(DEFAULT_RUNNER_CONFIG),
             ...(look.driver === undefined ? {} : { driver: look.driver }),
+            // A browser is named where the product is started with one: under a driver that
+            // takes nothing of the name, a desk that named one would read as having it.
             ...(look.browser === undefined ? {} : { browser: look.browser }),
           },
   })) {

@@ -280,10 +280,28 @@ describe("the claude driver", () => {
       mcpServers: {
         "chrome-devtools": {
           command: "chrome-devtools-mcp",
-          args: ["--headless", "--no-usage-statistics", "--no-performance-crux"],
+          args: [
+            "--headless",
+            "--no-usage-statistics",
+            "--no-performance-crux",
+            "--redact-network-headers",
+          ],
+          env: { CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1" },
         },
       },
     });
+    // The same browser with its window, where the desk asks for one: the word that takes the
+    // window away is left out, and nothing else is another.
+    const windowed = claudeArguments({ ...bare, browser: "window" }, "darwin");
+    expect(serversOf(windowed)).toMatchObject({
+      mcpServers: {
+        "chrome-devtools": {
+          command: "chrome-devtools-mcp",
+          args: ["--no-usage-statistics", "--no-performance-crux", "--redact-network-headers"],
+        },
+      },
+    });
+    expect(windowed).not.toContain("--chrome");
     // The product's own browser tool is not asked for beside it, and the option that takes
     // the server is followed by an option: it takes whatever stands after it up to the next.
     expect(headless).not.toContain("--chrome");
@@ -302,7 +320,9 @@ describe("the claude driver", () => {
             "--headless",
             "--no-usage-statistics",
             "--no-performance-crux",
+            "--redact-network-headers",
           ],
+          env: { NoDefaultCurrentDirectoryInExePath: "1" },
         },
       },
     });
@@ -1102,6 +1122,42 @@ describe("the claude driver", () => {
     expect((await collect(asked.session.events))[2]).toMatchObject({
       text: "The product started.",
     });
+    // A browser's server that did not start is said, with what mends it: the product goes on
+    // without it and says so nowhere else, as Claude Code 2.1.322 did on Windows with the
+    // program missing.
+    const servers = [
+      { name: "chrome-devtools", status: "failed", source: "dynamic" },
+      { name: "another", status: "failed" },
+    ];
+    const blind = started({ browser: "headless" });
+    blind.says({ ...INIT, mcp_servers: servers });
+    blind.exits(0);
+    const said = await collect(blind.session.events);
+    expect(said[3]).toEqual({
+      type: "event",
+      kind: "status",
+      text: 'The agent\'s browser did not start: the product could not start chrome-devtools-mcp, so this session has no browser. On this machine: npm install -g chrome-devtools-mcp, which runs on Node.js 20.19, 22.12 or later; or name "browser": "none" in runner.json.',
+    });
+    // Said of the browser the driver asked for alone: a server of the desk's own that failed
+    // is the product's to say, and a server that started says nothing.
+    for (const quiet of [
+      { options: { browser: "chrome" }, servers },
+      { options: {}, servers },
+      {
+        options: { browser: "headless" },
+        servers: [{ name: "chrome-devtools", status: "connected" }],
+      },
+      { options: { browser: "window" }, servers: "none" },
+    ]) {
+      const one = started(quiet.options);
+      one.says({ ...INIT, mcp_servers: quiet.servers });
+      one.exits(0);
+      const events = await collect(one.session.events);
+      expect(
+        events.some((event) => "text" in event && /browser did not start/.test(String(event.text))),
+        JSON.stringify(quiet),
+      ).toBe(false);
+    }
     // A build that says an effort is read for it.
     const older = started();
     older.says({ ...INIT, effort: "high", permissionMode: undefined });

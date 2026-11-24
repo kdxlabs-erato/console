@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { MAX_FILE_BYTES } from "../limits.js";
 import { TRANSCRIPT_PICTURE_TYPES } from "../vocabulary.js";
-import { headlessServers } from "./browser.js";
+import { HEADLESS_TOOL, headlessServers } from "./browser.js";
 import type { DriverHost } from "./registry.js";
 import {
   type Child,
@@ -56,6 +56,7 @@ const isObject = (value: unknown): value is Json =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const textOf = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined;
+const listOf = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
 
 /** One line of the product's output as an object with a type, or nothing for anything else. */
 function lineOf(line: string): Json | undefined {
@@ -190,6 +191,8 @@ interface Read {
   conversation: string | undefined;
   /** The permission mode the driver asked for. */
   readonly asked: string;
+  /** Whether the product was started with the server that drives the agent's browser. */
+  readonly drivesBrowser: boolean;
   /** The messages written to it that it has not said it took, by the id each was written under. */
   readonly waiting: Set<string>;
   /** Whether it said of any message that it took it: a build that says none back is read without. */
@@ -291,6 +294,24 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
               : "The product started.",
             data: { model, effort, version, mode },
           });
+          // The product goes on where a server it was started with did not start, and says so
+          // only here: without this line an agent that was told it has a browser has none,
+          // and nobody reads why.
+          const failed =
+            state.drivesBrowser &&
+            listOf(line.mcp_servers).some(
+              (server) =>
+                isObject(server) &&
+                server.name === HEADLESS_TOOL.server &&
+                server.status === "failed",
+            );
+          if (failed) {
+            events.push({
+              type: "event",
+              kind: "status",
+              text: `The agent's browser did not start: the product could not start ${HEADLESS_TOOL.command}, so this session has no browser. On this machine: ${HEADLESS_TOOL.install}, which runs on ${HEADLESS_TOOL.needs}; or name "browser": "none" in runner.json.`,
+            });
+          }
         } else if (runs !== state.runs) {
           events.push({
             type: "event",
@@ -539,6 +560,7 @@ function sessionOf(
   child: Child,
   command: string,
   asked: string,
+  drivesBrowser: boolean,
   uuid: () => string,
   cut: Cut,
   cutEnd: Cut,
@@ -550,6 +572,7 @@ function sessionOf(
     runs: undefined,
     conversation: undefined,
     asked,
+    drivesBrowser,
     waiting: new Set(),
     denied: new Set(),
     acknowledges: false,
@@ -637,6 +660,10 @@ const word = (value: string | null | undefined): string | undefined =>
  * The arguments the product is started with. `platform` is the system the runner is on, as the
  * runtime names it: what a program named beside the product's own is started as.
  */
+/** Whether a browser a desk names is the one the driver has the product start a server for. */
+const drivesBrowser = (browser: string | undefined): boolean =>
+  browser === "headless" || browser === "window";
+
 export function claudeArguments(options: StartOptions, platform?: string): readonly string[] {
   const model = word(options.model);
   const effort = word(options.effort);
@@ -663,9 +690,10 @@ export function claudeArguments(options: StartOptions, platform?: string): reado
     // A headless browser is no tool of the product's own (ADR-0151): the product starts the
     // program that drives one as a server of its own, named here for this run alone, and its
     // settings are left as they are. The server's tools are leave for nothing by themselves:
-    // the mode decides of them as of every tool.
-    ...(options.browser === "headless"
-      ? ["--mcp-config", JSON.stringify(headlessServers(platform))]
+    // the mode decides of them as of every tool. The option takes every word after it up to
+    // the next option, so an option follows it, and never a word of its own.
+    ...(drivesBrowser(options.browser)
+      ? ["--mcp-config", JSON.stringify(headlessServers(platform, options.browser === "window"))]
       : []),
     ...(model === undefined ? [] : ["--model", model]),
     ...(effort === undefined ? [] : ["--effort", effort]),
@@ -715,6 +743,7 @@ export function createClaudeDriver(host: DriverHost): Driver {
         }),
         command,
         claudeMode(options.permissions),
+        drivesBrowser(options.browser),
         uuid,
         options.cut ?? plainCut,
         options.cutEnd ?? plainCutEnd,

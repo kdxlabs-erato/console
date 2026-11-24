@@ -280,6 +280,11 @@ describe("runner.json", () => {
     }
     expect(parseRunnerConfig(JSON.stringify({ browser: "--chrome" })).ok).toBe(false);
     expect(parseRunnerConfig(JSON.stringify({ browser: "firefox" })).ok).toBe(false);
+    // The same browser with its window is a name of the list, which an agent writes itself.
+    expect(parseRunnerConfig(JSON.stringify({ browser: "window" }))).toMatchObject({
+      ok: true,
+      config: { browser: "window" },
+    });
     expect(read).toMatchObject({
       ok: true,
       config: {

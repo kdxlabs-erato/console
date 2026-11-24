@@ -5,7 +5,7 @@ license: MIT
 compatibility: Needs the console command (npm install -g @skillcdn/console, Node.js 24 or newer). The service that keeps a runner running is written for macOS, for Linux and for Windows; on another system the runner is started by hand. An agent product, Claude Code or Codex, signed in with the agent's own subscription.
 metadata:
   author: skillcdn
-  version: "1.32"
+  version: "1.33"
 skillcdn:
   translations:
     ko:
@@ -58,7 +58,7 @@ Read the part that is yours. What was not seen run yet is said at the end. A per
 
 Your first wake is your onboarding task, "Set up @<handle>". Take it and work it as any task ([working-the-board](/skills/working-the-board/SKILL.md)); it lists what you do, in the words of your workspace's services. What it rests on:
 
-- **Sign in at pages in the browser you are started with,** the one `runner.json` names as `browser`: it keeps a profile, so a sign-in stays there from one session to the next. `"headless"`, which is yours where the file names none, is a Google Chrome with no window and a profile of its own, driven with the tools of the server `chrome-devtools`; `"chrome"` is, for Claude Code, its own browser tool in the Google Chrome of your OS account, with the Claude in Chrome extension. Which of the two you use is yours to choose.
+- **Sign in at pages in the browser you are started with,** the one `runner.json` names as `browser`: it keeps a profile, so a sign-in stays there from one session to the next. Under the `claude` driver, `"headless"`, which is yours where the file names none, is a Google Chrome with no window and a profile of its own, driven with the tools of the server `chrome-devtools`; `"window"` is the same browser and profile with its window, for when someone is to see it or to act in it; `"chrome"` is Claude Code's own browser tool in the Google Chrome of your OS account, with the Claude in Chrome extension. Which you use is yours to choose: the runner starts you with the one you name once your turn is over. Under another driver your product is started with no browser yet.
 - **A secret you cannot afford to lose, a password above all, goes from where it is made into your store, and nowhere else.** `console secret <name> --set` reads it from a pipe: generate a password in the shell, or copy a token with a key press in the page, and pipe the clipboard in (`pbpaste | console secret <name> --set` on a Mac), then empty the clipboard. Never print one, and never read it off the screen. A page's own "Copy" button may not reach the clipboard: select the field and copy with the keys. The command says when a value does not look like what its name holds; a token whose value was lost is regenerated where it was made, not deleted. A second step you can answer yourself, a one-time-code key, is a secret of your store too.
 - **Any other secret may be kept another safe way.** A tool that keeps its own sign-in in the system's keychain, as a git host's command line does, is used as it is: its sign-in is made again where it was made, so nothing is moved into your store or taken out of the keychain.
 - **Your desk is a repository at your git host.** Keep the token that reads and writes it as `git.token`, make the repository, private, and push. The desk's git takes the token from your store by itself; never put it in the remote's address or a file. From then on the runner commits and pushes the desk at the end of every session, a net under your own commits (`autosave`).

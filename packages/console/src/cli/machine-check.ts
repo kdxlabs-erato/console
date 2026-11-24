@@ -51,6 +51,9 @@ const PRODUCTS: readonly Product[] = [
   },
 ];
 
+/** The browsers a setup looks for, and the one for none: what a new desk may name from a setup. */
+export type SetupBrowser = Exclude<RunnerBrowser, "window">;
+
 /** What a look at a machine found. */
 export interface MachineLook {
   /** The driver of the product found, or the one asked for; nothing where none was found. */
@@ -63,7 +66,7 @@ export interface MachineLook {
    * product is started with none, or none was found: the desk then names what a `runner.json`
    * that says nothing means.
    */
-  readonly browser: RunnerBrowser | undefined;
+  readonly browser: SetupBrowser | undefined;
   /** What is missing, a line each, with what installs it: the setup stops for any of these. */
   readonly missing: readonly string[];
   /** What the setup could not see and says once: it goes on. */
@@ -157,7 +160,7 @@ function chromePlace(platform: string): string {
  */
 export async function lookAtMachine(
   machine: SetupMachine,
-  wanted: { readonly driver?: string | undefined; readonly browser: RunnerBrowser },
+  wanted: { readonly driver?: string | undefined; readonly browser: SetupBrowser },
 ): Promise<MachineLook> {
   const missing: string[] = [];
   const notes: string[] = [];
@@ -192,7 +195,7 @@ export async function lookAtMachine(
     );
   }
 
-  let browser: RunnerBrowser | undefined = wanted.browser === "none" ? "none" : undefined;
+  let browser: SetupBrowser | undefined = wanted.browser === "none" ? "none" : undefined;
   if (found !== undefined && wanted.browser !== "none") {
     const { name, browsers } = found.product;
     const tool = browsers?.chrome;
@@ -209,7 +212,7 @@ export async function lookAtMachine(
       }
       if (!drives) {
         missing.push(
-          `${HEADLESS_TOOL.command}: the program that drives a Chrome with no window for ${name}. Install it: ${HEADLESS_TOOL.install}.${tool === undefined ? "" : ` For ${name}'s own browser tool instead, in a Chrome with a window and ${tool.needs}, say --browser chrome.`}`,
+          `${HEADLESS_TOOL.command}: the program that drives a Chrome with no window for ${name} does not answer. Install it: ${HEADLESS_TOOL.install}. It runs on ${HEADLESS_TOOL.needs}: where it is installed and does not answer, the machine's Node.js is older.${tool === undefined ? "" : ` For ${name}'s own browser tool instead, in a Chrome with a window and ${tool.needs}, say --browser chrome.`}`,
         );
       }
       if (chrome && drives) {

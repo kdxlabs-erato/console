@@ -34,11 +34,12 @@ const channel = z
 const MAX_ENTRIES = 50;
 /**
  * The browsers a desk may name (ADR-0151): `headless`, a Google Chrome with no window and a
- * profile of its own, driven by a program the product is started with; `chrome`, the
- * product's own browser tool, in the Chrome of the OS account with its window; and `none`, for
- * an agent that is to have no browser.
+ * profile of its own, driven by a program the product is started with; `window`, the same
+ * browser and profile with its window, for when someone is to see it; `chrome`, the product's
+ * own browser tool, in the Chrome of the OS account with its window; and `none`, for an agent
+ * that is to have no browser.
  */
-export const RUNNER_BROWSERS = ["headless", "chrome", "none"] as const;
+export const RUNNER_BROWSERS = ["headless", "window", "chrome", "none"] as const;
 export type RunnerBrowser = (typeof RUNNER_BROWSERS)[number];
 const bounded = <T extends Record<string, string>>(entries: T): boolean =>
   Object.keys(entries).length <= MAX_ENTRIES;

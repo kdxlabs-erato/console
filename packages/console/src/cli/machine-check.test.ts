@@ -105,7 +105,7 @@ describe("the look at a machine before a setup", () => {
     expect(neither.browser).toBeUndefined();
     expect(neither.missing).toEqual([
       "Google Chrome: the agent's browser is a Chrome with no window, which Claude Code is started with, and the agent signs in at its services in it. Install it from its maker's package (google-chrome-stable), which takes an administrator. For an agent that signs in at no page, say --no-browser.",
-      "chrome-devtools-mcp: the program that drives a Chrome with no window for Claude Code. Install it: npm install -g chrome-devtools-mcp. For Claude Code's own browser tool instead, in a Chrome with a window and the Claude in Chrome extension, say --browser chrome.",
+      "chrome-devtools-mcp: the program that drives a Chrome with no window for Claude Code does not answer. Install it: npm install -g chrome-devtools-mcp. It runs on Node.js 20.19, 22.12 or later: where it is installed and does not answer, the machine's Node.js is older. For Claude Code's own browser tool instead, in a Chrome with a window and the Claude in Chrome extension, say --browser chrome.",
     ]);
     // A copy in the OS account's own Applications is none the program that starts it finds.
     const own = machineOf("darwin", { there: ["/home/mira/Applications/Google Chrome.app"] });

@@ -22,7 +22,9 @@ export interface DeskInput {
   /** The console it is an account of: its address, and what the workspace is called. */
   readonly console: { readonly url: string; readonly workspace: string };
   /** What the runner runs with; the defaults where setup says nothing else. */
-  readonly runner?: RunnerConfig | undefined;
+  readonly runner?:
+    | (Omit<RunnerConfig, "browser"> & { readonly browser?: RunnerConfig["browser"] | undefined })
+    | undefined;
   /**
    * The services the workspace names (ADR-0089), each with what people call it and what the
    * agent's account is called there, where a name is put together for it.

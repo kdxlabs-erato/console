@@ -41,7 +41,7 @@ export function setupSentenceOf(command: string): string {
  * choose. The setup looks for the one asked for on the machine.
  */
 export const BROWSER_OF_AN_AGENT =
-  '"headless", which is yours where the file names none, is a Google Chrome with no window and a profile of its own, driven with the tools of the server chrome-devtools: nothing is installed in it and nothing signed in for it. "chrome" is, for Claude Code, its own browser tool in the Google Chrome of your OS account, which takes the Claude in Chrome extension there, signed in with your subscription. Which of the two you use is yours to choose.';
+  'Under the claude driver, "headless", which is yours where the file names none, is a Google Chrome with no window and a profile of its own, driven with the tools of the server chrome-devtools: nothing is installed in it and nothing signed in for it. "window" is the same browser and profile with its window, for when someone is to see it or to act in it: name it, and the runner starts you with it once your turn is over. "chrome" is Claude Code\'s own browser tool in the Google Chrome of your OS account, which takes the Claude in Chrome extension there, signed in with your subscription. Which you use is yours to choose. Under another driver your product is started with no browser yet.';
 
 /** Whose part of a setup something is (ADR-0088): whoever prepares the machine, the agent, its manager. */
 export type SetupRole = "operator" | "agent" | "manager";

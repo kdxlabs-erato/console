@@ -136,7 +136,12 @@ describe("the guide of an agent account's setup (ADR-0088)", () => {
     expect(browser?.steps[0]?.body).toContain(BROWSER_OF_AN_AGENT);
     expect(BROWSER_OF_AN_AGENT).toContain('"headless", which is yours where the file names none');
     expect(BROWSER_OF_AN_AGENT).toContain("the Claude in Chrome extension");
-    expect(BROWSER_OF_AN_AGENT).toContain("Which of the two you use is yours to choose.");
+    expect(BROWSER_OF_AN_AGENT).toContain("Which you use is yours to choose.");
+    // The browsers are the claude driver's: a desk on another driver is not told it has one.
+    expect(BROWSER_OF_AN_AGENT.startsWith("Under the claude driver, ")).toBe(true);
+    expect(BROWSER_OF_AN_AGENT).toContain(
+      "Under another driver your product is started with no browser yet.",
+    );
     expect(browser?.steps.map((step) => step.body).join(" ")).not.toContain(
       "over a remote desktop",
     );
