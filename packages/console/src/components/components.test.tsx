@@ -3190,6 +3190,21 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     expect(waitingOf(record, 7)).toEqual([]);
     // Files alone wait too, as what was sent.
     expect(waitingOf([signal(8, { text: "", attachments: [SHEET] })], 0)).toHaveLength(1);
+    // So do the words of a reset, a supervisor's or the account's own (ADR-0154), which a new
+    // conversation begins with; a reset with none, and a restart, are no message that waits.
+    const own = { ...alice, id: "0199c4d8-0000-7000-8000-0000000000a9", name: "Mira" };
+    const anew = signal(11, { kind: "reset", by: own, text: "The release is out." });
+    expect(
+      waitingOf(
+        [
+          anew,
+          signal(10, { kind: "reset", text: "Start over." }),
+          signal(9, { kind: "reset", text: "" }),
+          signal(8, { kind: "restart", text: "Go on." }),
+        ],
+        7,
+      ).map((one) => one.number),
+    ).toEqual([10, 11]);
     // A pane is followed while whoever reads is at its end, give or take a line.
     expect(followsEnd({ scrollHeight: 2000, scrollTop: 1400, clientHeight: 600 })).toBe(true);
     expect(
@@ -3227,14 +3242,14 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     expect(waiting.match(/<li class="sc-talk-item sc-talk-told sc-talk-waiting"/g)).toHaveLength(2);
     expect(waiting).toContain('<pre class="sc-talk-text">Word 3.</pre>');
     expect(waiting).toContain("a.csv");
-    expect(waiting.match(/Read when the turn under way ends\./g)).toHaveLength(1);
+    expect(waiting.match(/Delivered when the turn under way ends\./g)).toHaveLength(1);
     expect(waiting).toMatch(
       /<button[^>]*title="Stops the turn under way so that this is read now\."[^>]*>Interrupt<\/button>/,
     );
     // With no turn to stop there is no such way: it says when the words are read, and that is all.
     for (const [why, says] of [
-      ["stopped", "Read once it is started again."],
-      ["unheard", "Read once its runner is heard from."],
+      ["stopped", "Delivered once it is started again."],
+      ["unheard", "Delivered once its runner is heard from."],
       ["soon", "On its way to the agent."],
     ] as const) {
       const still = renderToStaticMarkup(
@@ -3253,6 +3268,23 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
       ),
     ).not.toContain(">Interrupt<");
     expect(renderToStaticMarkup(<TalkWaiting signals={[]} why="call" />)).toBe("");
+    // The account's own reset waits for the turn under way to end: it stands as what a
+    // supervisor said does, named as a reset beside who sent it, with when the new
+    // conversation begins and the way to have it begin now.
+    const begins = renderToStaticMarkup(
+      <ol>
+        <TalkWaiting signals={[signal(3), anew]} why="anew" onInterrupt={() => undefined} />
+      </ol>,
+    );
+    expect(begins).toContain('<pre class="sc-talk-text">The release is out.</pre>');
+    expect(begins).toMatch(
+      /<span class="sc-name">Mira<\/span><span class="sc-badge sc-badge-neutral">New conversation<\/span>/,
+    );
+    // A tell is named as nothing more than who said it.
+    expect(begins.match(/class="sc-badge/g)).toHaveLength(1);
+    expect(begins.match(/Delivered when the turn under way ends\./g)).toHaveLength(1);
+    expect(begins).not.toContain("Delivered after the tool call under way.");
+    expect(begins).toContain(">Interrupt<");
     const korean = renderToStaticMarkup(
       <LanguageContext.Provider value={KOREAN}>
         <ol>
@@ -3262,6 +3294,15 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     );
     expect(korean).toContain(KOREAN.messages.agents.page.live.waiting.call);
     expect(korean).toContain(">끼어들기<");
+    const koreanAnew = renderToStaticMarkup(
+      <LanguageContext.Provider value={KOREAN}>
+        <ol>
+          <TalkWaiting signals={[anew]} why="anew" />
+        </ol>
+      </LanguageContext.Provider>,
+    );
+    expect(koreanAnew).toContain("지금 턴이 끝나면 전달됩니다.");
+    expect(koreanAnew).toContain(">새 대화<");
   });
 
   it("shows that the agent is at work, and the conversation in a pane with the box at its foot", () => {
@@ -3466,7 +3507,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     expect(running).toContain('<div class="sc-signal-box">');
     // What changes how the agent stands is said apart from what is said to it.
     expect(running).not.toContain(">Stop<");
-    expect(running).not.toContain(">Reset<");
+    expect(running).not.toContain(">New conversation<");
     // Nothing is said yet: there is nothing to tell.
     expect(/<button[^>]*type="submit"[^>]*>/.exec(running)?.[0]).toContain('disabled=""');
     // Files of any kind, chosen with the console's file picker, as a decision's files are.
@@ -3492,9 +3533,11 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     const running = of("running");
     expect(running).toContain(">Stop</button>");
     expect(running).not.toContain(">Restart</button>");
-    expect(running).toContain(">Reset</button>");
+    expect(running).toContain(">New conversation</button>");
     expect(running).toContain("<b>Stop</b> Ends its session.");
-    expect(running).toContain("<b>Reset</b> Begins a new conversation.");
+    expect(running).toContain(
+      "<b>New conversation</b> Ends this conversation and begins a new one.",
+    );
     expect(running).toContain(">Words for the agent<");
     // A stopped agent is started again; one that could not go on is either.
     const stopped = of("stopped");
