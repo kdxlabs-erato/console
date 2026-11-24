@@ -320,11 +320,19 @@ function firstOf(text: string, most: number): string {
 }
 
 /**
+ * How the messenger writes a call of everyone in a message's `text`: `<!here>`, `<!channel>`
+ * and `<!everyone>`, with what it shows for it after a bar where it says so. What a person
+ * typed that only looks like one arrives escaped, and is none.
+ */
+const EVERYONE_CALLED = /<!(here|channel|everyone)(?:\|[^<>]{0,40})?>/;
+
+/**
  * The wake an event of the messenger means, or nothing: a message in a direct conversation, or
  * one that mentions the member the app acts for, from anyone but that member; and, mentioned or
  * not, a person's message in a group conversation the member is in or in one of the channels
- * `runner.json` names. A message that is an edit, a join or anything else than someone's words
- * wakes nobody.
+ * `runner.json` names, and a person's call of everyone (`@here`, `@channel`, `@everyone`) in
+ * any channel the member is in. A message that is an edit, a join or anything else than
+ * someone's words wakes nobody.
  */
 export function slackWakeOf(
   payload: unknown,
@@ -357,7 +365,13 @@ export function slackWakeOf(
   // Where nobody named the agent, only a person's own words wake it: what an app posts in a
   // conversation the agent listens to is not said to it, and would wake it at every post.
   const listened = event.bot_id === undefined && (group || channels.includes(event.channel));
-  if (!direct && !mentioned && !listened) {
+  // Whoever calls everyone in a channel calls the agent that is in it, whether the channel is
+  // one it listens to or not: an event arrives only of a conversation its member is in. A
+  // person's call alone, as with what it listens to: an app that calls a channel at every
+  // report would wake it at every one, and two agents would call each other without an end.
+  const called =
+    event.bot_id === undefined ? EVERYONE_CALLED.exec(event.text ?? "")?.[1] : undefined;
+  if (!direct && !mentioned && !listened && called === undefined) {
     return undefined;
   }
   const thread = event.thread_ts ?? event.ts;
@@ -379,7 +393,7 @@ export function slackWakeOf(
       : undefined;
   const where =
     said === undefined
-      ? `${mentioned ? "A mention" : "A message"} in the channel ${event.channel} at Slack, from the member ${event.user}, in the thread ${thread}`
+      ? `${mentioned ? "A mention" : called !== undefined ? `A call of everyone (@${called})` : "A message"} in the channel ${event.channel} at Slack, from the member ${event.user}, in the thread ${thread}`
       : event.thread_ts === undefined
         ? `${said}, from the member ${event.user}, in the conversation ${event.channel}`
         : `${said}, from the member ${event.user}, in the thread ${thread} of the conversation ${event.channel}`;

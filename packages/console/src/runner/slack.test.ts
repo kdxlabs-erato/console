@@ -41,6 +41,54 @@ const direct = (over: Record<string, unknown> = {}) =>
 const DIRECT = "A direct message at Slack, from the member U0TOM, in the conversation D0MIRA";
 
 describe("what an event of the messenger wakes the agent for", () => {
+  it("is a person's call of everyone in a channel its member is in, named in runner.json or not", () => {
+    for (const word of ["here", "channel", "everyone"]) {
+      // As the messenger writes one, and with what it shows for it after a bar.
+      for (const written of [`<!${word}>`, `<!${word}|@${word}>`, `<!${word}|${word}>`]) {
+        expect(
+          slackWakeOf(payload(message({ text: `${written} the release is out, please check` }))),
+        ).toEqual({
+          key: "slack:C0OPS:1762800000.000100",
+          text: `A call of everyone (@${word}) in the channel C0OPS at Slack, from the member U0TOM, in the thread 1762800000.000100:\n${written} the release is out, please check`,
+        });
+      }
+    }
+    // In a thread, the thread is the wake's key, as a mention's is.
+    expect(
+      slackWakeOf(payload(message({ text: "<!here> lunch?", thread_ts: "1762799000.000900" })))
+        ?.key,
+    ).toBe("slack:C0OPS:1762799000.000900");
+    // Named beside the call, it is a mention; in a channel it listens to, the call is said too.
+    expect(
+      slackWakeOf(payload(message({ text: `<!channel> and <@${MEMBER}> above all` })))?.text,
+    ).toMatch(/^A mention in the channel C0OPS /);
+    expect(slackWakeOf(payload(message({ text: "<!channel> stand-up" })), ["C0OPS"])?.text).toMatch(
+      /^A call of everyone \(@channel\) in the channel C0OPS /,
+    );
+    // An app's call wakes nobody, and neither does the agent's own, nor an edit of one.
+    expect(
+      slackWakeOf(payload(message({ text: "<!channel> build 412 failed", bot_id: "B0DEPLOY" }))),
+    ).toBeUndefined();
+    expect(
+      slackWakeOf(payload(message({ text: "<!here> back in five", user: MEMBER }))),
+    ).toBeUndefined();
+    expect(
+      slackWakeOf(payload(message({ text: "<!here> typo", subtype: "message_changed" }))),
+    ).toBeUndefined();
+    // What only looks like one is none: a group of members, a word a person typed, which the
+    // messenger escapes, and a call with no end.
+    for (const text of [
+      "<!subteam^S0DEV|@dev> please look",
+      "&lt;!here&gt; is how you write it",
+      "!here and @here and <here>",
+      "<!here",
+      "<!hereafter>",
+      "<!date^1762800000^{date}|today>",
+    ]) {
+      expect(slackWakeOf(payload(message({ text })))).toBeUndefined();
+    }
+  });
+
   it("is a mention of its member, by the thread it is in", () => {
     expect(slackWakeOf(payload(message()))).toEqual({
       key: "slack:C0OPS:1762800000.000100",
