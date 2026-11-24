@@ -42,6 +42,15 @@
   max-width: 32rem;
 }
 
+/* The mark of the project to make, under them: the icon and the colour share what the mark
+   leaves of the row, to the fields' edge. The part keeps a column for a symbol, which this form
+   has none of. */
+@media (min-width: 52rem) {
+  .sc-plugin-fields > .sc-mark-row {
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
 /* A list to tick: each row a sheet with its box, a name and a word under the name. */
 .sc-plugin-ticks {
   display: grid;

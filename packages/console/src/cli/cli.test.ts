@@ -10595,6 +10595,39 @@ describe("the plugins on the command line (ADR-0049, ADR-0053)", () => {
     expect(told.out()).toContain(
       "The workspace has no time zone: the plugin's times of day run on UTC until an administrator sets one, with console workspace edit --time-zone <zone>.",
     );
+    // A plugin that names the mark of its project (ADR-0155): the project is made with it. One
+    // that names none, or a console of before, which answers no mark, sends none, as above.
+    const marked = fakeConsole({
+      [`GET ${AT}`]: {
+        body: {
+          ...DETAIL,
+          state: "installed",
+          capabilities: ["files"],
+          boardDefaults: { ...DETAIL.boardDefaults, glyph: "calendar", color: "teal" },
+        },
+      },
+      "GET /api/v1/me": { body: ME },
+      [`POST ${AT}/enable`]: {
+        body: { ...DETAIL, board: { key: "hello-board", name: "Hello board" }, projects: "all" },
+      },
+    });
+    const made = harness({ fetch: marked.fetch, env: SIGNED_IN });
+    expect(
+      await runCli(["plugin", "hello", "enable", "--consent", "files", "--board", "new"], made.io),
+    ).toBe(EXIT.ok);
+    expect(marked.calls.find((call) => call.key === `POST ${AT}/enable`)?.body).toEqual({
+      consent: ["files"],
+      board: {
+        create: {
+          key: "hello-board",
+          name: "Hello board",
+          description: "",
+          color: "teal",
+          glyph: "calendar",
+        },
+      },
+      projects: "all",
+    });
     const chosen = harness({ fetch, env: SIGNED_IN });
     expect(
       await runCli(

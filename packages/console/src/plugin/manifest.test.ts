@@ -231,6 +231,47 @@ describe("parsePluginManifest", () => {
     );
   });
 
+  it("takes the mark of the project a plugin asks for: an icon by how a name is spelled, a colour of the vocabulary (ADR-0155)", () => {
+    const marked = (mark: Record<string, unknown>): readonly string[] =>
+      problemsOf({ board: { needs: "required", defaults: { ...LEAVE.board.defaults, ...mark } } });
+    expect(marked({ glyph: "leave", color: "green" })).toEqual([]);
+    expect(marked({ glyph: "arrow-right" })).toEqual([]);
+    expect(marked({ color: "teal" })).toEqual([]);
+    // The pack is the console's and grows: a name it may not have yet is a name all the same,
+    // read as none by the console that lacks it.
+    expect(marked({ glyph: "turnstile-2" })).toEqual([]);
+    const parsed = parsePluginManifest({
+      ...LEAVE,
+      board: {
+        needs: "required",
+        defaults: { ...LEAVE.board.defaults, glyph: "leave", color: "green" },
+      },
+    });
+    expect(parsed.ok && parsed.manifest.board.defaults).toMatchObject({
+      glyph: "leave",
+      color: "green",
+    });
+    // What is no name, what an agent could write on purpose, and a colour of its own.
+    for (const glyph of [
+      "",
+      "Leave",
+      "9lives",
+      "a b",
+      "../leave",
+      "<svg>",
+      "a".repeat(41),
+      7,
+      null,
+    ]) {
+      expect(marked({ glyph })[0], String(glyph)).toMatch(/^board\.defaults\.glyph: /);
+    }
+    for (const color of ["", "red", "#00ff00", "var(--sc-color-accent)", 3, null]) {
+      expect(marked({ color })[0], String(color)).toMatch(/^board\.defaults\.color: /);
+    }
+    // Nothing else of a mark: a symbol or an image is the administrator's to give the project.
+    expect(marked({ symbol: "L" })[0]).toMatch(/^board\.defaults: /);
+  });
+
   it("takes what a plugin can go without beside what it requires, each once, and never its schema", () => {
     const of = (capabilities: readonly string[], optionalCapabilities: readonly string[]) =>
       parsePluginManifest({

@@ -21,7 +21,9 @@
     "defaults": {
       "key": "gate-board",
       "name": { "en": "Gate board" },
-      "description": { "en": "Where the gate's decisions go." }
+      "description": { "en": "Where the gate's decisions go." },
+      "glyph": "turnstile",
+      "color": "orange"
     }
   },
   "settings": [

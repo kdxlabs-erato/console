@@ -3,13 +3,14 @@
 // the mini build of zod, as every REST schema is, and part of the snapshot the contract is held
 // to (ADR-0043). What a plugin's own command or query carries is the plugin's, and not here.
 import * as z from "zod/mini";
+import { isIconName } from "../icons/index.js";
 import {
   MAX_PROJECT_DESCRIPTION_LENGTH,
   MAX_PROJECT_KEY_LENGTH,
   MAX_PROJECT_NAME_LENGTH,
   MAX_TEAM_KEY_LENGTH,
 } from "../limits.js";
-import { PLUGIN_STATES } from "../vocabulary.js";
+import { COLOR_NAMES, PLUGIN_STATES } from "../vocabulary.js";
 import { ARG_TYPES } from "./args.js";
 import {
   MAX_PLUGIN_ARGV_WORD_LENGTH,
@@ -252,8 +253,20 @@ export const restPluginDetailSchema = z.extend(restPluginSchema, {
   operations: z.array(restPluginOperationSchema),
   /** Where the plugin's skills are read, or `null` for none. */
   skills: z.nullable(z.string()),
-  /** The board project the manifest proposes, for an administrator who makes it; `null` where it proposes none. */
-  boardDefaults: z.nullable(z.object({ key: z.string(), name: localized, description: localized })),
+  /**
+   * The board project the manifest proposes, for an administrator who makes it; `null` where it
+   * proposes none. `color` and `glyph` are its mark (ADR-0155), each `null` for none, the icon
+   * one of this console's pack; answered from 0.6.1 and read as optional.
+   */
+  boardDefaults: z.nullable(
+    z.object({
+      key: z.string(),
+      name: localized,
+      description: localized,
+      color: z.optional(z.nullable(z.enum(COLOR_NAMES))),
+      glyph: z.optional(z.nullable(z.string())),
+    }),
+  ),
   settings: z.array(restPluginSettingSchema),
   /** The groups the settings form is divided into, in the manifest's order; answered from 0.4.4 and read as optional. */
   settingGroups: z.optional(
@@ -302,6 +315,17 @@ export const restPluginEnableInputSchema = z.object({
           key: z.string().check(z.minLength(1), z.maxLength(MAX_PROJECT_KEY_LENGTH)),
           name: z.string().check(z.minLength(1), z.maxLength(MAX_PROJECT_NAME_LENGTH)),
           description: z.string().check(z.maxLength(MAX_PROJECT_DESCRIPTION_LENGTH)),
+          /** The project's mark (ADR-0155): left out or `null`, a colour from its key and its symbol. */
+          color: z.optional(z.nullable(z.enum(COLOR_NAMES))),
+          glyph: z.optional(
+            z.nullable(
+              z
+                .string()
+                .check(
+                  z.refine((value) => isIconName(value), "must be the name of an icon of the pack"),
+                ),
+            ),
+          ),
         }),
       }),
       z.object({ project: projectKey }),

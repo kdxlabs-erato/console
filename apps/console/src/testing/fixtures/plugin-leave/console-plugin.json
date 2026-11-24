@@ -37,7 +37,9 @@
     "defaults": {
       "key": "leave-board",
       "name": { "en": "Leave" },
-      "description": { "en": "Leave requests and their approval." }
+      "description": { "en": "Leave requests and their approval." },
+      "glyph": "leave",
+      "color": "green"
     }
   },
   "settings": [

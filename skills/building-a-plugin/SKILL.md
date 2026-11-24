@@ -5,7 +5,7 @@ license: MIT
 compatibility: A shell with Node.js 24 or newer, npm and git, and an agent that reads and writes files. For running the plugin on a local console, Docker for the database and a checkout of the console's repository, where signing in needs a GitHub OAuth app of the person's own, as the console's README says. The console command is optional, for running the plugin's commands as an agent would. No key of the agent's own is needed, and it never sees a token.
 metadata:
   author: skillcdn
-  version: "1.12"
+  version: "1.13"
 skillcdn:
   translations:
     ko:
@@ -57,7 +57,7 @@ The contract is the [specification of plugins](/docs/specs/plugins.md): every fi
 | The key and the name | The key from the feature's one word, lowercase, as the specification's rule and reserved words allow (`leave`, `crm`, `finance`); the name and the description per language; the agent note, one sentence an agent reads with the rules: what the plugin is for and when to use it. Shown at the design checkpoint and changed on request. |
 | Where the code lives, and how it ships | Asked: "A repository of its own on GitHub, under which account? Published to npm, or installed from the repository's tag?" Default: a repository `console-plugin-<key>`, and publishing when the person has an npm account, a tag otherwise. The other shape: a repository of several plugins, one workspace each, published to the registry as `@<scope>/console-plugin-<key>`, since a tag installs a repository whole and carries no build; [`skillcdn/console-plugins`](https://github.com/skillcdn/console-plugins), the reference plugin repository, is of that shape. |
 | The deployment | Asked: "Which console is this for, and who runs its deployment?" The install is a task for them (phase 5). |
-| Everything else | Derived and shown in the design: the capabilities from the split, the settings (a number the organization chooses, a person who approves, a secret for an outside service), the board project's defaults (its key, name and description), the menu group, the pages and the widgets with their roles, `dataVersion: 1`. |
+| Everything else | Derived and shown in the design: the capabilities from the split, the settings (a number the organization chooses, a person who approves, a secret for an outside service), the board project's defaults (its key, name and description, and its mark where the console's icon pack has an icon for the feature: `glyph`, one of the pack's names, and `color`, which need a console from 0.6.1 in `console`), the menu group, the pages and the widgets with their roles, `dataVersion: 1`. |
 
 ## Workflow
 

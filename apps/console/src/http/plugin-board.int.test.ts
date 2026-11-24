@@ -19,6 +19,7 @@ import {
   restPluginInvocationSchema,
   restPluginRecordSchema,
   restPluginsSchema,
+  restProjectSchema,
   restReachedDecisionSchema,
   restTasksSchema,
   restWorkSchema,
@@ -252,7 +253,15 @@ beforeAll(async () => {
           "people:read:all",
           "outbound:api.example.test",
         ],
-        board: { create: { key: BOARD, name: "Leave", description: "Leave and its approval." } },
+        board: {
+          create: {
+            key: BOARD,
+            name: "Leave",
+            description: "Leave and its approval.",
+            glyph: "leave",
+            color: "green",
+          },
+        },
         projects: [BOARD, "leave-elsewhere"],
       },
       admin,
@@ -306,6 +315,21 @@ afterAll(async () => {
   if (root !== undefined) {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+describe("the mark of a plugin's board project (ADR-0155)", () => {
+  it("answers the mark the manifest names, and makes the project with the one it was sent", async () => {
+    const detail = restPluginDetailSchema.parse(
+      await (await h.request(pluginPath("leave"), { headers: { cookie: admin } })).json(),
+    );
+    expect(detail.boardDefaults).toMatchObject({ key: BOARD, glyph: "leave", color: "green" });
+    // The project the enabling made carries it, an icon of the pack on its colour, and no
+    // symbol or image, which are the administrator's to give it.
+    const project = restProjectSchema.parse(
+      await (await h.request(projectPath(BOARD), { headers: { cookie: admin } })).json(),
+    );
+    expect(project).toMatchObject({ glyph: "leave", color: "green", symbol: null, icon: null });
+  });
 });
 
 describe("what a plugin reads of the people (ADR-0063)", () => {

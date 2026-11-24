@@ -2,6 +2,7 @@ import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useState } f
 import type { ConsoleClient } from "../client.js";
 import type { Messages } from "../i18n/en.js";
 import { useWords } from "../i18n/index.js";
+import { type IconName, isIconName } from "../icons/index.js";
 import { PLUGIN_CAPABILITIES, type PluginCapability } from "../plugin/capabilities.js";
 import { settingsHref } from "../router.js";
 import type {
@@ -18,8 +19,11 @@ import type {
   RestTeam,
 } from "../schemas.js";
 import { useAction } from "../use-action.js";
+import { COLOR_NAMES, type ColorName } from "../vocabulary.js";
 import { EventFeed } from "./event-feed.js";
+import { IconPicker } from "./icon.js";
 import { Picker } from "./picker.js";
+import { ProjectMark } from "./projects.js";
 import { listSearch, peopleSearch, projectsSearch } from "./searches.js";
 import {
   Badge,
@@ -64,6 +68,36 @@ export interface CapabilityText {
   readonly name: string;
   /** The sentence of what it opens, as the administrator reads it before consenting. */
   readonly opens: string;
+}
+
+/**
+ * The mark a plugin names for the project made for it (ADR-0155), as the form begins with it: an
+ * icon this console's pack has, none where it has no such icon, and the colour, `""` for the
+ * one chosen from the key.
+ */
+export function boardMarkOf(defaults: RestPluginDetail["boardDefaults"]): {
+  readonly glyph: IconName | null;
+  readonly color: ColorName | "";
+} {
+  const glyph = defaults?.glyph;
+  return { glyph: isIconName(glyph) ? glyph : null, color: defaults?.color ?? "" };
+}
+
+/** The project to make for a plugin, as it is sent: its mark named only where one was chosen. */
+export function boardToMake(fields: {
+  readonly key: string;
+  readonly name: string;
+  readonly description: string;
+  readonly glyph: IconName | null;
+  readonly color: ColorName | "";
+}): Extract<NonNullable<RestPluginEnableInput["board"]>, { create: unknown }>["create"] {
+  return {
+    key: fields.key,
+    name: fields.name,
+    description: fields.description,
+    ...(fields.glyph === null ? {} : { glyph: fields.glyph }),
+    ...(fields.color === "" ? {} : { color: fields.color }),
+  };
 }
 
 /**
@@ -1071,13 +1105,24 @@ function EnableForm(props: {
   const [boardDescription, setBoardDescription] = useState(
     pluginWord(detail.boardDefaults?.description, language),
   );
+  // The mark the plugin names for its project (ADR-0155), to keep or to change before it is made.
+  const named = boardMarkOf(detail.boardDefaults);
+  const [boardGlyph, setBoardGlyph] = useState<IconName | null>(named.glyph);
+  const [boardColor, setBoardColor] = useState<ColorName | "">(named.color);
   const [chosen, setChosen] = useState(detail.board?.key ?? props.projects[0]?.key ?? "");
   const before = detail.projects;
   const [allProjects, setAllProjects] = useState(!Array.isArray(before) || before.length === 0);
   const [onProjects, setOnProjects] = useState<ReadonlySet<string>>(
     () => new Set(Array.isArray(before) ? before : []),
   );
-  const ids = { key: useId(), name: useId(), description: useId(), choose: useId() };
+  const ids = {
+    key: useId(),
+    name: useId(),
+    description: useId(),
+    icon: useId(),
+    color: useId(),
+    choose: useId(),
+  };
   const boardReady =
     boardMode === "none"
       ? detail.boardNeeds !== "required"
@@ -1093,7 +1138,15 @@ function EnableForm(props: {
           boardMode === "none"
             ? null
             : boardMode === "create"
-              ? { create: { key: boardKey, name: boardName, description: boardDescription } }
+              ? {
+                  create: boardToMake({
+                    key: boardKey,
+                    name: boardName,
+                    description: boardDescription,
+                    glyph: boardGlyph,
+                    color: boardColor,
+                  }),
+                }
               : { project: chosen },
         projects: allProjects ? "all" : [...onProjects],
       },
@@ -1223,6 +1276,47 @@ function EnableForm(props: {
                   value={boardDescription}
                   onChange={(event) => setBoardDescription(event.target.value)}
                 />
+              </div>
+              <div className="sc-field-row sc-mark-row">
+                <ProjectMark
+                  project={{
+                    key: boardKey,
+                    name: boardName,
+                    color: boardColor === "" ? null : boardColor,
+                    symbol: null,
+                    glyph: boardGlyph,
+                  }}
+                  size="lg"
+                />
+                <div className="sc-field">
+                  <label className="sc-field-label" htmlFor={ids.icon}>
+                    {words.projects.form.icon}
+                  </label>
+                  <IconPicker
+                    id={ids.icon}
+                    value={boardGlyph}
+                    label={words.projects.form.icon}
+                    onChange={setBoardGlyph}
+                  />
+                </div>
+                <div className="sc-field">
+                  <label className="sc-field-label" htmlFor={ids.color}>
+                    {words.projects.form.color}
+                  </label>
+                  <select
+                    id={ids.color}
+                    className="sc-input"
+                    value={boardColor}
+                    onChange={(event) => setBoardColor(event.target.value as ColorName | "")}
+                  >
+                    <option value="">{words.projects.form.colorAuto}</option>
+                    {COLOR_NAMES.map((candidate) => (
+                      <option key={candidate} value={candidate}>
+                        {words.vocabulary.categoryColor[candidate]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
           )}

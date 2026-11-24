@@ -4,7 +4,13 @@ import type { ConsoleClient } from "../client.js";
 import { en } from "../i18n/en.js";
 import { KOREAN, LanguageContext } from "../i18n/index.js";
 import type { RestPerson, RestPlugin, RestPluginDetail, RestProject } from "../schemas.js";
-import { capabilityText, PluginSettingsList, PluginSettingsView } from "./plugin-settings.js";
+import {
+  boardMarkOf,
+  boardToMake,
+  capabilityText,
+  PluginSettingsList,
+  PluginSettingsView,
+} from "./plugin-settings.js";
 
 // The plugins' settings page (docs/specs/plugins.md, "The settings pages") as an administrator
 // reads it, rendered in Korean: the capabilities by name with what each opens, the roles with
@@ -375,6 +381,51 @@ describe("a plugin's settings page", () => {
     // The purge, once the key is typed.
     expect(html).toContain('placeholder="leave 입력"');
     expect(html).not.toContain("삭제하려면 먼저 비활성화하세요.");
+  });
+
+  it("begins the project to make with the mark the plugin names, to keep or to change (ADR-0155)", () => {
+    const disabled = { ...DETAIL, state: "disabled" as const, board: null };
+    const defaults = { key: "leave-board", name: { en: "Leave" }, description: { en: "" } };
+    // A plugin that names none: the mark is what a project's is without one, the first letter
+    // of its name on a colour from its key, and nothing of a mark is sent.
+    const plain = render(disabled);
+    expect(plain).toContain('<span class="sc-mark sc-mark-lg sc-category-');
+    expect(plain).toContain(">아이콘</label>");
+    expect(plain).toContain('<option value="" selected="">키에서 정해진 색</option>');
+    expect(boardMarkOf(defaults)).toEqual({ glyph: null, color: "" });
+    expect(
+      boardToMake({ key: "leave-board", name: "Leave", description: "", glyph: null, color: "" }),
+    ).toEqual({ key: "leave-board", name: "Leave", description: "" });
+    // One that names its mark: the icon of the pack on the colour, both chosen in the fields.
+    const named = { ...defaults, glyph: "leave", color: "green" as const };
+    const marked = render({ ...disabled, boardDefaults: named });
+    expect(marked).toContain('<span class="sc-mark sc-mark-lg sc-category-green"');
+    expect(marked).toContain('<option value="green" selected="">');
+    expect(marked).not.toContain('<option value="" selected="">키에서 정해진 색</option>');
+    expect(boardMarkOf(named)).toEqual({ glyph: "leave", color: "green" });
+    expect(
+      boardToMake({ key: "leave-board", name: "Leave", description: "", ...boardMarkOf(named) }),
+    ).toEqual({
+      key: "leave-board",
+      name: "Leave",
+      description: "",
+      glyph: "leave",
+      color: "green",
+    });
+    // An icon this console's pack does not have, a plugin written for a later one say, or an
+    // answer of a console of before, which names no mark: none, and the colour stands.
+    expect(boardMarkOf({ ...defaults, glyph: "turnstile", color: "orange" })).toEqual({
+      glyph: null,
+      color: "orange",
+    });
+    expect(boardMarkOf({ ...defaults, glyph: null, color: null })).toEqual({
+      glyph: null,
+      color: "",
+    });
+    expect(boardMarkOf(null)).toEqual({ glyph: null, color: "" });
+    // Nothing of it where the project is chosen and not made: a plugin with a project already.
+    const chosen = render({ ...disabled, board: DETAIL.board, boardDefaults: named });
+    expect(chosen).not.toContain(">아이콘</label>");
   });
 
   it("shows a secret kept per key as its keys, each with how its value stands, and a key and a value to set one (ADR-0111)", () => {

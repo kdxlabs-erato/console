@@ -7,6 +7,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { join } from "node:path";
 import {
   CONSOLE_LANGUAGES,
+  isIconName,
   type PluginState,
   pluginPath,
   type RestPlugin,
@@ -1062,6 +1063,12 @@ export class Plugins {
               key: entry.manifest.board.defaults.key,
               name: entry.manifest.board.defaults.name,
               description: entry.manifest.board.defaults.description,
+              // The mark the manifest names for it (ADR-0155): an icon this console's pack does
+              // not have is none here, a plugin written for a later pack say.
+              color: entry.manifest.board.defaults.color ?? null,
+              glyph: isIconName(entry.manifest.board.defaults.glyph)
+                ? entry.manifest.board.defaults.glyph
+                : null,
             },
       settings: await this.settingsOf(entry, install, admin),
       settingGroups: (entry.manifest?.settingGroups ?? []).map((group) => ({

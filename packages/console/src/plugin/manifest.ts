@@ -8,6 +8,7 @@ import {
   MAX_PROJECT_NAME_LENGTH,
 } from "../limits.js";
 import { hasForbiddenCodePoint } from "../text.js";
+import { COLOR_NAMES } from "../vocabulary.js";
 import { PLUGIN_WIDGET_SIZE_NAMES, type PluginWidgetSizeName } from "./bridge.js";
 import { isPluginCapability } from "./capabilities.js";
 import {
@@ -24,6 +25,9 @@ import {
   MAX_PLUGIN_SETTINGS,
   MAX_PLUGIN_WIDGETS,
 } from "./limits.js";
+
+/** How an icon of the console's pack is named: lowercase letters, digits and hyphens (`calendar`, `arrow-right`). */
+export const PLUGIN_GLYPH_PATTERN = /^[a-z][a-z0-9-]{0,39}$/;
 
 /** A plugin's key, and every key within a plugin: a role's, a page's, a widget's, a setting's, a collection's, a command's. */
 export const PLUGIN_KEY_PATTERN = /^[a-z][a-z0-9-]{1,31}$/;
@@ -564,6 +568,14 @@ const pluginBoardSchema = z
           ),
         name: localized(MAX_PROJECT_NAME_LENGTH),
         description: localized(MAX_PROJECT_DESCRIPTION_LENGTH),
+        /**
+         * The project's mark (ADR-0155): an icon of the console's pack by its name, and a colour
+         * by its name, each left out for none. An icon is held to how a name is spelled and no
+         * further: the pack is the console's, which grows, so a name the console a plugin is
+         * installed in does not have is read as none there, and never refuses the plugin.
+         */
+        glyph: z.optional(z.string().check(z.regex(PLUGIN_GLYPH_PATTERN, "is an icon's name"))),
+        color: z.optional(z.enum(COLOR_NAMES)),
       }),
     ),
   })

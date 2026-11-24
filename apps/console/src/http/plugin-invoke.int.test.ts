@@ -17,6 +17,7 @@ import {
   restPluginFileHandleSchema,
   restPluginInvocationSchema,
   restProjectRulesSchema,
+  restProjectSchema,
   restRulesSchema,
   restSkillCodeSchema,
   restSkillFindSchema,
@@ -160,6 +161,45 @@ afterAll(async () => {
   if (root !== undefined) {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+describe("the mark of a plugin's board project (ADR-0155)", () => {
+  it("reads an icon the pack does not have as none, makes a project without a mark where none was sent, and refuses one sent that the pack lacks", async () => {
+    // The fixture names `turnstile`, which is no icon of this console's pack: none, and the
+    // colour stands.
+    const detail = restPluginDetailSchema.parse(
+      await (await h.request(AT, { headers: { cookie: admin } })).json(),
+    );
+    expect(detail.boardDefaults).toMatchObject({
+      key: "gate-board",
+      glyph: null,
+      color: "orange",
+    });
+    // The enabling above sent no mark: the project has what any has without one.
+    const project = restProjectSchema.parse(
+      await (await h.request(projectPath("gate-board"), { headers: { cookie: admin } })).json(),
+    );
+    expect(project).toMatchObject({ glyph: null, color: null });
+    // What is sent is held to the pack and the vocabulary, as a project's own form is.
+    const consent = ["endpoints", "files"];
+    for (const mark of [{ glyph: "turnstile" }, { color: "crimson" }, { glyph: "<svg>" }]) {
+      const refused = await h.request(
+        pluginPath("gate", "enable"),
+        json(
+          {
+            consent,
+            board: { create: { key: "gate-two", name: "Gate two", description: "", ...mark } },
+            projects: "all",
+          },
+          admin,
+        ),
+      );
+      expect(refused.status, JSON.stringify(mark)).toBe(400);
+    }
+    expect((await h.request(projectPath("gate-two"), { headers: { cookie: admin } })).status).toBe(
+      404,
+    );
+  });
 });
 
 describe("a command by the words as typed", () => {

@@ -2933,6 +2933,10 @@ async function pluginEnable(
         key: detail.boardDefaults.key,
         name: localized(detail.boardDefaults.name, readingLanguage(me)),
         description: localized(detail.boardDefaults.description, readingLanguage(me)),
+        // The mark the plugin names for its project (ADR-0155); an icon of a pack this command
+        // does not have is left to the console, which is whose pack it is.
+        ...(detail.boardDefaults.color == null ? {} : { color: detail.boardDefaults.color }),
+        ...(detail.boardDefaults.glyph == null ? {} : { glyph: detail.boardDefaults.glyph }),
       },
     };
   } else if (boardFlag !== undefined) {
