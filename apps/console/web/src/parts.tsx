@@ -1821,6 +1821,18 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
           <p>Everyone at Acme sees this project and may work in it.</p>
         </section>
       </Specimen>
+      <Specimen label="Small panes, one of many in a list: a run, a comment">
+        <div className="dev-narrow">
+          <article className="sc-panel sc-panel-small" aria-label="A run">
+            <p className="sc-name">Ledger agent</p>
+            <p className="sc-note">Reconciled the February statements; two differences left.</p>
+          </article>
+          <article className="sc-panel sc-panel-small" aria-label="A comment">
+            <p className="sc-name">Maria Silva</p>
+            <p className="sc-note">The second difference is the bank's fee, booked in March.</p>
+          </article>
+        </div>
+      </Specimen>
       <Specimen label="A pane that holds a form: as wide as a form is comfortable to fill in">
         <section className="sc-panel sc-panel-form" aria-label="A new goal">
           <form className="sc-form" aria-label="A new goal" onSubmit={stay}>

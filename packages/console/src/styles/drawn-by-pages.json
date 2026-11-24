@@ -76,7 +76,6 @@
   "decisions": [
     "sc-answer",
     "sc-answer-option",
-    "sc-decision",
     "sc-decision-arrow",
     "sc-decision-files",
     "sc-decision-meta",
@@ -115,7 +114,6 @@
     "sc-glance-row",
     "sc-glance-section",
     "sc-home-add",
-    "sc-home-bar",
     "sc-home-grid",
     "sc-tile",
     "sc-tile-glance",
@@ -133,7 +131,7 @@
     "sc-tile-slot",
     "sc-tile-title"
   ],
-  "people": ["sc-member-role", "sc-team-card", "sc-team-key", "sc-team-members", "sc-team-name"],
+  "people": ["sc-member-role", "sc-team-key", "sc-team-members", "sc-team-name"],
   "plugins": [
     "sc-plugin-capabilities-name",
     "sc-plugin-group",
@@ -183,7 +181,6 @@
     "sc-skip"
   ],
   "sign-in": [
-    "sc-sign-in",
     "sc-sign-in-badge",
     "sc-sign-in-button",
     "sc-sign-in-mark-tile",
@@ -193,7 +190,6 @@
   ],
   "task": ["sc-subtasks"],
   "thread": [
-    "sc-comment",
     "sc-comment sc-prose",
     "sc-comment-chosen",
     "sc-comment-chosen-file",
@@ -206,7 +202,6 @@
     "sc-picture-thumb",
     "sc-report",
     "sc-report sc-time",
-    "sc-run",
     "sc-run-agent",
     "sc-run-header",
     "sc-run-summary",

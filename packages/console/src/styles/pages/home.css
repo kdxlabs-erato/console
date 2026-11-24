@@ -1,7 +1,6 @@
 /* Sources: components/home.tsx */
 
-.sc-tile-pane,
-.sc-home-bar {
+.sc-tile-pane {
   position: relative;
   isolation: isolate;
   border: 1px solid var(--sc-color-glass-edge);
@@ -468,8 +467,9 @@ a.sc-tile-glance:focus-visible {
 }
 
 /* While the page is arranged: the cells show as dots, every tile is a thing to take hold of, and
-   what is in a frame stays out of the pointer's way. The bar stays in reach, just under the header
-   and above the tiles that pass beneath it. */
+   what is in a frame stays out of the pointer's way. The bar, a small pane (sc-panel
+   sc-panel-small) held close round its ways, stays in reach, just under the header and above the
+   tiles that pass beneath it. */
 .sc-home-bar {
   position: sticky;
   top: calc(var(--sc-header-height) + 2.75rem + var(--sc-space-3));
@@ -481,7 +481,6 @@ a.sc-tile-glance:focus-visible {
   justify-content: space-between;
   margin-bottom: var(--sc-space-4);
   padding: var(--sc-space-2) var(--sc-space-2) var(--sc-space-2) var(--sc-space-4);
-  border-radius: var(--sc-radius-lg);
 }
 
 .sc-home-hint {

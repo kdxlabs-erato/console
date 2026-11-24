@@ -583,7 +583,7 @@ export function TeamList(props: TeamListProps) {
         });
         const candidates = active.filter((person) => !team.memberIds.includes(person.id));
         return (
-          <li key={team.id} className="sc-team-card">
+          <li key={team.id} className="sc-panel sc-team-card">
             <div className="sc-team-head">
               <div className="sc-team-title">
                 {props.onRename === undefined ? (

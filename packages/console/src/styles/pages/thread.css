@@ -14,16 +14,6 @@
   text-transform: var(--sc-label-case);
 }
 
-.sc-run,
-.sc-comment {
-  position: relative;
-  isolation: isolate;
-  border: 1px solid var(--sc-color-glass-edge);
-  background: var(--sc-glass-surface);
-  backdrop-filter: var(--sc-glass-backdrop);
-  box-shadow: var(--sc-glass-sheen), var(--sc-glass-lift);
-}
-
 /* Runs: an agent at work on a task, what it reported and handed in. */
 
 .sc-runs {
@@ -31,11 +21,11 @@
   gap: var(--sc-space-3);
 }
 
+/* A run is a small pane (sc-panel sc-panel-small), one of a list. */
 .sc-run {
   display: grid;
   gap: var(--sc-space-3);
-  padding: var(--sc-space-4) var(--sc-space-5);
-  border-radius: var(--sc-radius-lg);
+  margin-bottom: 0;
 }
 
 .sc-run-header {
@@ -101,11 +91,11 @@
   gap: var(--sc-space-3);
 }
 
+/* A comment is a small pane (sc-panel sc-panel-small), one of a list. */
 .sc-comment {
   display: grid;
   gap: var(--sc-space-3);
-  padding: var(--sc-space-4) var(--sc-space-5);
-  border-radius: var(--sc-radius-lg);
+  margin-bottom: 0;
 }
 
 .sc-comment-header {
@@ -305,14 +295,6 @@
 
 .sc-comment-form .sc-field-hint {
   margin-top: 0;
-}
-
-@media (max-width: 40rem) {
-  .sc-run,
-  .sc-comment {
-    padding: var(--sc-space-4);
-    border-radius: var(--sc-radius-lg);
-  }
 }
 
 /* The ways under a comment's field stand on one row at one height, the small file button

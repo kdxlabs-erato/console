@@ -70,7 +70,10 @@ export function RunCard(props: RunCardProps) {
     return artifact === undefined ? undefined : hrefOf(artifact);
   };
   return (
-    <article className="sc-run" aria-label={words.label(run.agent, personName(run.person))}>
+    <article
+      className="sc-panel sc-panel-small sc-run"
+      aria-label={words.label(run.agent, personName(run.person))}
+    >
       <header className="sc-run-header">
         <span className="sc-run-agent" title={run.agent}>
           {agentLabel(run.agent)}

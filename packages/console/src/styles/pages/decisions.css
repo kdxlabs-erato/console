@@ -9,15 +9,6 @@
   min-width: 0;
 }
 
-.sc-decision {
-  position: relative;
-  isolation: isolate;
-  border: 1px solid var(--sc-color-glass-edge);
-  background: var(--sc-glass-surface);
-  backdrop-filter: var(--sc-glass-backdrop);
-  box-shadow: var(--sc-glass-sheen), var(--sc-glass-lift);
-}
-
 .sc-option,
 .sc-answer {
   border: var(--sc-border);
@@ -54,11 +45,11 @@
   align-content: start;
 }
 
+/* A decision is a pane (sc-panel), and the panes of a list stand closer than a page's sections. */
 .sc-decision {
   display: grid;
   gap: var(--sc-space-3);
-  padding: var(--sc-space-5);
-  border-radius: var(--sc-radius-xl);
+  margin-bottom: 0;
 }
 
 .sc-decision + .sc-decision {
@@ -342,18 +333,4 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sc-space-1) var(--sc-space-2);
-}
-
-@media (max-width: 40rem) {
-  .sc-decision {
-    padding: var(--sc-space-4);
-    border-radius: var(--sc-radius-lg);
-  }
-}
-
-@media (max-width: 40rem) {
-  .sc-decision {
-    padding: var(--sc-space-4);
-    border-radius: var(--sc-radius-lg);
-  }
 }

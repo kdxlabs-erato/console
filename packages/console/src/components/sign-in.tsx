@@ -50,7 +50,7 @@ export function SignIn(props: SignInProps) {
     return words.admits.listed;
   };
   return (
-    <div className="sc-sign-in">
+    <div className="sc-panel sc-sign-in">
       {props.brand?.symbol !== undefined && (
         <div className="sc-sign-in-stage" aria-hidden="true">
           <span className="sc-sign-in-badge">

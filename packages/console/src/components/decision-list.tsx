@@ -430,7 +430,10 @@ export function DecisionCard(props: DecisionCardProps) {
   const following = files.filter((file) => !placed(decision.body, file.file.name));
 
   return (
-    <article id={decision.id} className={cx("sc-decision", answered && "sc-decision-answered")}>
+    <article
+      id={decision.id}
+      className={cx("sc-panel", "sc-decision", answered && "sc-decision-answered")}
+    >
       <header>
         <h3 className="sc-decision-question">
           {props.href === undefined ? (

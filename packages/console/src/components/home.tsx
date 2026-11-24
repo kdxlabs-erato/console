@@ -876,7 +876,7 @@ export function HomeGrid(props: HomeGridProps) {
       className={cx("sc-home", editing && "sc-home-editing", dragging !== null && "sc-home-held")}
     >
       {editing && (
-        <div className="sc-home-bar">
+        <div className="sc-panel sc-panel-small sc-home-bar">
           <p className="sc-home-hint sc-note">{words.hint}</p>
           <div className="sc-home-bar-actions">
             <Button

@@ -47,7 +47,7 @@ export function CommentCard(props: CommentCardProps) {
   const following = comment.files.filter((file) => !placed(comment.body, file.file.name));
   return (
     <article
-      className="sc-comment"
+      className="sc-panel sc-panel-small sc-comment"
       aria-label={words.comments.label(personName(comment.author))}
       id={comment.id}
     >

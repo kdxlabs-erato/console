@@ -1,15 +1,7 @@
 /* Sources: components/sign-in.tsx */
 
-.sc-sign-in {
-  position: relative;
-  isolation: isolate;
-  border: 1px solid var(--sc-color-glass-edge);
-  background: var(--sc-glass-surface);
-  backdrop-filter: var(--sc-glass-backdrop);
-  box-shadow: var(--sc-glass-sheen), var(--sc-glass-lift);
-}
-
-/* Signing in: one pane in the light, with the mark on a small stage of its own. */
+/* Signing in: one pane (sc-panel) in the light, roomier than most, with the mark on a small stage
+   of its own. */
 
 .sc-sign-in {
   display: grid;
@@ -17,7 +9,6 @@
   max-width: 26rem;
   margin: 10dvh auto 0;
   padding: var(--sc-space-7) var(--sc-space-6) var(--sc-space-6);
-  border-radius: var(--sc-radius-xl);
   text-align: center;
 }
 

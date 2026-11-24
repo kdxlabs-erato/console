@@ -20,6 +20,13 @@
   border-radius: var(--sc-radius-xl);
 }
 
+/* A small pane: one of many in a list, a run, a comment, a bar of ways; a step closer in and a
+   step less round. On a phone it is any pane. */
+.sc-panel-small {
+  padding: var(--sc-space-4) var(--sc-space-5);
+  border-radius: var(--sc-radius-lg);
+}
+
 /* A panel that holds a form: as wide as a form is comfortable to fill in, and no wider. */
 .sc-panel-form {
   max-width: 56rem;
