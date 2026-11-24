@@ -178,7 +178,13 @@ function TickRow(props: {
 }) {
   return (
     <li>
-      <label className={cx("sc-plugin-tick", props.locked === true && "sc-plugin-tick-locked")}>
+      <label
+        className={cx(
+          "sc-sheet",
+          "sc-plugin-tick",
+          props.locked === true && "sc-plugin-tick-locked",
+        )}
+      >
         <input
           type="checkbox"
           checked={props.checked}
@@ -816,7 +822,9 @@ function SettingsForm(props: {
             className="sc-settings-group"
             aria-label={pluginWord(group.name, props.language)}
           >
-            <h3 className="sc-settings-group-title">{pluginWord(group.name, props.language)}</h3>
+            <h3 className="sc-settings-group-title sc-subtitle">
+              {pluginWord(group.name, props.language)}
+            </h3>
             {description !== "" && <p className="sc-settings-hint">{description}</p>}
             {rows(grouped)}
           </section>

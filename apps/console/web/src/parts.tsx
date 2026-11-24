@@ -1707,8 +1707,8 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
 
     <Part
       name="text"
-      classes="sc-muted, sc-lead, sc-note, sc-fine, sc-name, sc-subtitle, sc-time, sc-loading, sc-project-key, sc-card-number, sc-feed-agent, sc-visually-hidden"
-      use="The tones of a line of text: quiet, the sentence under a title, a line that says more about what it stands by and the same a size down, the name of the thing a row is about, the title of a group inside a pane, a moment, a key or a number in the mono face, the agent a person acted through, and what only a screen reader is told."
+      classes="sc-muted, sc-lead, sc-note, sc-small, sc-fine, sc-fine-faint, sc-name, sc-subtitle, sc-time, sc-loading, sc-project-key, sc-card-number, sc-feed-agent, sc-visually-hidden"
+      use="The tones of a line of text: quiet, the sentence under a title, a line that says more about what it stands by and the same a size down, a smaller line in the text's own colour, the fine print and fainter still, the name of the thing a row is about, the title of a group inside a pane, a moment, a key or a number in the mono face, the agent a person acted through, and what only a screen reader is told."
     >
       <Specimen label="Quiet">
         <p className="sc-muted">Nothing more was written about this task.</p>
@@ -1723,6 +1723,11 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
         <p className="sc-name">Deploy key for the staging site</p>
         <p className="sc-note">Reads the repository and nothing else. Made for the release job.</p>
         <p className="sc-fine">Made by Alice Lindqvist, last used three days ago</p>
+      </Specimen>
+      <Specimen label="Smaller, in the text's own colour; and fine print fainter still" row>
+        <span className="sc-small">Owner of the project</span>
+        <span className="sc-fine-faint">platform</span>
+        <span className="sc-fine-faint">4 more</span>
       </Specimen>
       <Specimen label="The title of a group inside a pane">
         <h3 className="sc-subtitle">What this plugin may do</h3>
@@ -1847,6 +1852,46 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
             </div>
           </form>
         </section>
+      </Specimen>
+    </Part>
+
+    <Part
+      name="sheet"
+      classes="sc-sheet*"
+      use="A white card laid on a pane: a row of a list, a thing to choose, a note."
+    >
+      <Specimen label="Sheets as rows: small, large, raised, and one that leads somewhere">
+        <div className="dev-narrow">
+          <div className="sc-sheet dev-padded">
+            <span className="sc-name">Finance</span>
+            <span className="sc-fine">Used by 4 projects</span>
+          </div>
+          <div className="sc-sheet sc-sheet-large dev-padded">
+            <span className="sc-name">Connect with a token</span>
+            <span className="sc-note">Paste it where your agent asks for the pack.</span>
+          </div>
+          <div className="sc-sheet sc-sheet-large sc-sheet-raised sc-sheet-hover dev-padded">
+            <span className="sc-name">Month-end close checklist</span>
+            <span className="sc-fine">Edited yesterday</span>
+          </div>
+        </div>
+      </Specimen>
+    </Part>
+
+    <Part
+      name="divider"
+      classes="sc-divider*, sc-divided"
+      use="The hairline between things: over an element, under it, or between the things of a list."
+    >
+      <Specimen label="A divided list, and a line over a part of a card">
+        <div className="dev-narrow">
+          <ul className="sc-divided sc-small dev-list">
+            <li className="dev-padded">Version 3, today</li>
+            <li className="dev-padded">Version 2, yesterday</li>
+            <li className="dev-padded">Version 1, last week</li>
+          </ul>
+          <p className="sc-divider sc-fine-faint dev-padded">/gh/acme/skills/ledger</p>
+        </div>
       </Specimen>
     </Part>
 
@@ -2168,7 +2213,7 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
             </div>
           </div>
           <section className="sc-settings-group" aria-label="Reminders">
-            <h3 className="sc-settings-group-title">Reminders</h3>
+            <h3 className="sc-settings-group-title sc-subtitle">Reminders</h3>
             <p className="sc-settings-hint">What Acme is told, and on which days.</p>
             <div className="sc-settings-row">
               <div>

@@ -103,7 +103,7 @@ export function WorkList(props: WorkListProps) {
             ) : (
               <ol className="sc-decision-log">
                 {decisions.map(({ project, decision }) => (
-                  <li key={decision.id} className="sc-decision-row">
+                  <li key={decision.id} className="sc-sheet sc-small sc-decision-row">
                     <a
                       className="sc-decision-row-question"
                       href={props.decisionHref(project.key, decision.id)}

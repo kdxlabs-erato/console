@@ -476,7 +476,7 @@ export function DecisionCard(props: DecisionCardProps) {
       {following.length > 0 && (
         <section className="sc-decision-section" aria-label={words.decisions.files}>
           <h4 className="sc-decision-label sc-eyebrow">{words.decisions.files}</h4>
-          <ul className="sc-decision-files">
+          <ul className="sc-small sc-decision-files">
             {following.map((attached) => {
               const href = hrefOf(attached);
               const { file } = attached;
@@ -615,7 +615,7 @@ function RecordRow(props: {
   const { decision, task } = props;
   const { answer } = decision;
   return (
-    <li className="sc-decision-record-row">
+    <li className="sc-sheet sc-small sc-decision-record-row">
       <div className="sc-decision-record-asked">
         <p className="sc-decision-record-question">
           {props.href === undefined ? (

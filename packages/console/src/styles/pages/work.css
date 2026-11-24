@@ -14,10 +14,6 @@
   grid-template-columns: minmax(0, 1fr);
   gap: var(--sc-space-1) var(--sc-space-3);
   padding: var(--sc-space-2) var(--sc-space-3);
-  border: var(--sc-border);
-  border-radius: var(--sc-radius-md);
-  background: var(--sc-color-sheet);
-  font-size: var(--sc-text-sm);
 }
 
 @media (min-width: 40rem) {

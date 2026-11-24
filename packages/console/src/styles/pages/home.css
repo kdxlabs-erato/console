@@ -340,11 +340,6 @@ a.sc-tile-glance:focus-visible {
   gap: var(--sc-space-2);
   height: var(--sc-glance-task);
   min-width: 0;
-  font-size: var(--sc-text-sm);
-}
-
-.sc-glance-row + .sc-glance-row {
-  border-top: var(--sc-hairline);
 }
 
 .sc-glance-row-main {
@@ -393,8 +388,6 @@ a.sc-tile-glance:focus-visible {
   align-items: center;
   height: var(--sc-glance-more);
   margin: 0;
-  color: var(--sc-color-text-faint);
-  font-size: var(--sc-text-xs);
 }
 
 /* Wide: the head a column of its own, the name at the top and the figures at the foot, and each

@@ -322,8 +322,8 @@ describe("a plugin's settings page", () => {
     } as unknown as RestPluginDetail);
     // The groups, in order, after the ungrouped setting; each with its name in the person's language.
     const notice = html.indexOf("Notice");
-    const policy = html.indexOf('<h3 class="sc-settings-group-title">규정</h3>');
-    const calendar = html.indexOf('<h3 class="sc-settings-group-title">달력</h3>');
+    const policy = html.indexOf('<h3 class="sc-settings-group-title sc-subtitle">규정</h3>');
+    const calendar = html.indexOf('<h3 class="sc-settings-group-title sc-subtitle">달력</h3>');
     expect(notice).toBeGreaterThan(-1);
     expect(policy).toBeGreaterThan(notice);
     expect(calendar).toBeGreaterThan(policy);

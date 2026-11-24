@@ -31,9 +31,20 @@
   font-size: var(--sc-text-sm);
 }
 
-/* The same a size down: the fine print of a row, a word under a turn of a conversation. */
+/* Smaller than the page's text, in its colour: a list of files, a role, a line under a figure. */
+.sc-small {
+  font-size: var(--sc-text-sm);
+}
+
+/* The same as a note a size down: the fine print of a row, a word under a turn of a conversation. */
 .sc-fine {
   color: var(--sc-color-text-muted);
+  font-size: var(--sc-text-xs);
+}
+
+/* Fine print fainter still: a key beside a name, how many more a list holds. */
+.sc-fine-faint {
+  color: var(--sc-color-text-faint);
   font-size: var(--sc-text-xs);
 }
 

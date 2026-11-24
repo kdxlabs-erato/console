@@ -100,7 +100,10 @@ export function DocumentList(props: DocumentListProps) {
   return (
     <ul className="sc-docs" aria-label={words.pages}>
       {props.items.map((document) => (
-        <li key={document.id} className="sc-doc-row">
+        <li
+          key={document.id}
+          className="sc-sheet sc-sheet-large sc-sheet-raised sc-sheet-hover sc-doc-row"
+        >
           <a className="sc-doc-title" href={props.docHref(document.path)}>
             {document.title}
           </a>
@@ -451,7 +454,9 @@ export function DocumentFiles(props: DocumentFilesProps) {
                 onChange={(event) => setChosen(event.target.files?.[0] ?? undefined)}
               />
             </label>
-            <span className={cx("sc-doc-attach-chosen", chosen === undefined && "sc-muted")}>
+            <span
+              className={cx("sc-small", "sc-doc-attach-chosen", chosen === undefined && "sc-muted")}
+            >
               {chosen === undefined ? words.noFileChosen : chosen.name}
             </span>
           </div>
@@ -535,7 +540,7 @@ export function DocumentView(props: DocumentViewProps) {
       </header>
       <div className="sc-task-body">
         <div className="sc-task-main">
-          {archived && <p className="sc-doc-notice">{docs.archivedNotice}</p>}
+          {archived && <p className="sc-sheet sc-muted sc-doc-notice">{docs.archivedNotice}</p>}
           {props.error !== undefined && (
             <p className="sc-form-error" role="alert">
               {props.error}
@@ -640,9 +645,9 @@ export function DocumentView(props: DocumentViewProps) {
           {props.versions !== undefined && props.versions.length > 0 && (
             <section className="sc-task-section" aria-label={docs.versions}>
               <h2 className="sc-section-title">{docs.versions}</h2>
-              <ol className="sc-versions">
+              <ol className="sc-divided sc-versions">
                 {props.versions.map((entry) => (
-                  <li key={entry.number} className="sc-version">
+                  <li key={entry.number} className="sc-small sc-version">
                     {props.versionHref === undefined || entry.number === shown.number ? (
                       <span className="sc-version-number">{docs.version(entry.number)}</span>
                     ) : (

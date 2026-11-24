@@ -74,7 +74,7 @@ export function RunCard(props: RunCardProps) {
       className="sc-panel sc-panel-small sc-run"
       aria-label={words.label(run.agent, personName(run.person))}
     >
-      <header className="sc-run-header">
+      <header className="sc-divider-below sc-run-header">
         <span className="sc-run-agent" title={run.agent}>
           {agentLabel(run.agent)}
         </span>

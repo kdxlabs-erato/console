@@ -95,6 +95,8 @@
   padding-top: var(--sc-space-5);
 }
 
+/* A group's title is the text part's sc-subtitle, which the console's pages give it beside. A
+   plugin's page written before that may name this class alone, so it keeps the same look. */
 .sc-settings-group-title {
   margin: 0;
   font-size: var(--sc-text-md);

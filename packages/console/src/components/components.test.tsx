@@ -1564,7 +1564,7 @@ describe("tokens", () => {
     );
     expect(html).toContain("Chrome on Windows");
     expect(html).toContain("Current session");
-    expect(html.match(/class="sc-session sc-session-current"/g)).toHaveLength(1);
+    expect(html.match(/class="sc-divider sc-session sc-session-current"/g)).toHaveLength(1);
     expect(html).toContain("IP 203.0.113.5");
     expect(html).toContain("Safari");
     expect(html).toContain("30 days");
@@ -4046,7 +4046,7 @@ describe("people", () => {
     );
     expect(read).toContain('<h2 class="sc-team-name">Design</h2>');
     // Each team says its key (ADR-0074), what a grant, a plugin and the command call it by.
-    expect(read).toMatch(/<span class="sc-team-key"[^>]*>platform<\/span>/);
+    expect(read).toMatch(/<span class="sc-fine-faint"[^>]*>platform<\/span>/);
     expect(read).toContain("1 member");
     expect(read).toContain("0 members");
     expect(read).toContain("Nobody in it yet.");

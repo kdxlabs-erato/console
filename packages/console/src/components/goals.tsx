@@ -325,7 +325,7 @@ export function GoalView(props: GoalViewProps) {
             </div>
           )}
         </div>
-        <div className="sc-goal-progress">
+        <div className="sc-small sc-goal-progress">
           <ProgressBar counts={goal.taskCounts} />
           <span className="sc-muted">{roadmap.progress(done, total)}</span>
         </div>

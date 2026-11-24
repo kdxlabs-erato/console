@@ -456,7 +456,7 @@ export function MemberList(props: MemberListProps) {
               </span>
               {props.onChangeRole === undefined || member.person.role === "admin" ? (
                 // An administrator owns every project by office: nothing here changes that.
-                <span className="sc-member-role">
+                <span className="sc-small sc-member-role">
                   <ProjectRoleBadge role={member.role} />
                   {member.person.role === "admin" && (
                     <span className="sc-muted"> {words.vocabulary.role.admin}</span>

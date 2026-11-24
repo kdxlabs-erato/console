@@ -43,7 +43,7 @@ export function PackTokenWays(props: PackTokenWaysProps) {
       <h2 className="sc-section-title">{props.title}</h2>
       <p className="sc-pack-intro sc-note">{props.intro}</p>
       <div className="sc-pack-ways">
-        <section className="sc-pack-way" aria-label={pack.connectTitle}>
+        <section className="sc-sheet sc-sheet-large sc-pack-way" aria-label={pack.connectTitle}>
           <h3 className="sc-subtitle">{pack.connectTitle}</h3>
           <PackConnect
             onStart={props.onStart}
@@ -54,7 +54,7 @@ export function PackTokenWays(props: PackTokenWaysProps) {
             busy={props.busy}
           />
         </section>
-        <section className="sc-pack-way" aria-label={pack.pasteTitle}>
+        <section className="sc-sheet sc-sheet-large sc-pack-way" aria-label={pack.pasteTitle}>
           <h3 className="sc-subtitle">{pack.pasteTitle}</h3>
           <PackTokenForm
             set={props.set}

@@ -604,13 +604,13 @@ export function TeamList(props: TeamListProps) {
                     }}
                   />
                 )}
-                <span className="sc-team-key" title={teams.keyTitle}>
+                <span className="sc-fine-faint" title={teams.keyTitle}>
                   {team.key}
                 </span>
               </div>
               <Badge kind="count">{teams.members(team.memberIds.length)}</Badge>
             </div>
-            <div className="sc-chips sc-team-members">
+            <div className="sc-chips sc-divider sc-team-members">
               {members.map((member) => (
                 <Chip
                   key={member.id}

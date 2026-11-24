@@ -1,0 +1,28 @@
+/*
+ * Sheets: the white cards the pages lay on a pane, a row of a list or a thing to choose; paper,
+ * where a pane is glass. A sheet has a fine edge and a small corner; a large one, a card that
+ * stands by itself, a larger corner; a raised one a shadow under it; one that leads somewhere
+ * firms its edge under the pointer.
+ */
+
+.sc-sheet {
+  border: var(--sc-border);
+  border-radius: var(--sc-radius-md);
+  background: var(--sc-color-sheet);
+}
+
+.sc-sheet-large {
+  border-radius: var(--sc-radius-lg);
+}
+
+.sc-sheet-raised {
+  box-shadow: var(--sc-shadow-sheet);
+}
+
+.sc-sheet-hover {
+  transition: border-color var(--sc-transition);
+}
+
+.sc-sheet-hover:hover {
+  border-color: var(--sc-color-border-strong);
+}

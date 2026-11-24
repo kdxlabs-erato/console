@@ -65,7 +65,7 @@ export function TokenList(props: TokenListProps) {
   return (
     <ul className="sc-token-list" aria-label={words.list}>
       {props.tokens.map((token) => (
-        <li key={token.id} className="sc-token">
+        <li key={token.id} className="sc-sheet sc-sheet-large sc-sheet-raised sc-token">
           <div>
             <p className="sc-name">{token.name}</p>
             <p className="sc-token-meta">

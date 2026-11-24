@@ -203,7 +203,6 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: var(--sc-text-sm);
 }
 
 .sc-decision-picture {
@@ -256,10 +255,6 @@
   grid-template-columns: minmax(0, 1fr);
   gap: var(--sc-space-3) var(--sc-space-6);
   padding: var(--sc-space-3) var(--sc-space-4);
-  border: var(--sc-border);
-  border-radius: var(--sc-radius-md);
-  background: var(--sc-color-sheet);
-  font-size: var(--sc-text-sm);
 }
 
 @media (min-width: 40rem) {

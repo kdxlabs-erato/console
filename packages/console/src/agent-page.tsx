@@ -795,9 +795,9 @@ function AgentSettings(props: {
           ) : where.length === 0 ? (
             <p className="sc-field-hint">{page.settings.signIns.empty}</p>
           ) : (
-            <ul className="sc-agent-secret-list">
+            <ul className="sc-divided sc-agent-secret-list">
               {where.map((one) => (
-                <li key={one.id} className="sc-agent-secret">
+                <li key={one.id} className="sc-small sc-agent-secret">
                   <span>
                     {one.kind === "command"
                       ? words.sessions.command(one.name ?? "")
@@ -1035,9 +1035,9 @@ export function AgentsNeedingYou(props: {
     <section className="sc-panel sc-agents-need-you" aria-label={words.title}>
       <h2 className="sc-section-title">{words.title}</h2>
       <p className="sc-field-hint">{words.intro}</p>
-      <ul className="sc-agent-secret-list">
+      <ul className="sc-divided sc-agent-secret-list">
         {waiting.map((agent) => (
-          <li key={agent.person.id} className="sc-agent-secret">
+          <li key={agent.person.id} className="sc-small sc-agent-secret">
             <a className="sc-agent-need-link" href={agentHref(agent.person.handle ?? "")}>
               <Avatar person={agent.person} size="sm" />
               {personName(agent.person)}

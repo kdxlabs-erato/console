@@ -81,7 +81,7 @@ export function SkillList(props: SkillListProps) {
       {where}
       <ul className="sc-skills" aria-label={words.list}>
         {skills.items.map((skill) => (
-          <li key={skill.path} className="sc-skill">
+          <li key={skill.path} className="sc-sheet sc-sheet-large sc-sheet-raised sc-skill">
             <p className="sc-skill-head">
               {skill.page === null ? (
                 <span className="sc-skill-name">{skill.name}</span>
@@ -98,7 +98,9 @@ export function SkillList(props: SkillListProps) {
               <span className="sc-muted">{skill.directory === "" ? "/" : skill.directory}</span>
             </p>
             <p className="sc-skill-description sc-note">{skill.description}</p>
-            {skill.uri !== null && <code className="sc-skill-uri">{skill.uri}</code>}
+            {skill.uri !== null && (
+              <code className="sc-divider sc-fine-faint sc-skill-uri">{skill.uri}</code>
+            )}
           </li>
         ))}
       </ul>

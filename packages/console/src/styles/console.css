@@ -38,6 +38,8 @@
 @import "./parts/facts.css";
 @import "./parts/calendar.css";
 @import "./parts/panel.css";
+@import "./parts/sheet.css";
+@import "./parts/divider.css";
 @import "./parts/person.css";
 @import "./parts/button.css";
 @import "./parts/badge.css";

@@ -2420,9 +2420,9 @@ export function AgentSecretList(props: AgentSecretListProps) {
       {props.secrets.length === 0 ? (
         <p className="sc-field-hint">{words.empty}</p>
       ) : (
-        <ul className="sc-agent-secret-list" aria-label={words.title}>
+        <ul className="sc-divided sc-agent-secret-list" aria-label={words.title}>
           {props.secrets.map((secret) => (
-            <li key={secret.name} className="sc-agent-secret">
+            <li key={secret.name} className="sc-small sc-agent-secret">
               <code>{secret.name}</code>
               <span className="sc-muted">
                 <Time iso={secret.setAt} precision="day" />

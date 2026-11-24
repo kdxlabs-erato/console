@@ -40,14 +40,14 @@ function CategoryRow(props: {
   const changed = name.trim() !== category.name || color !== category.color;
   if (props.onChange === undefined) {
     return (
-      <li className="sc-category-row">
+      <li className="sc-sheet sc-category-row">
         <CategoryBadge category={category} />
         <code className="sc-project-key">{category.key}</code>
       </li>
     );
   }
   return (
-    <li className="sc-category-row">
+    <li className="sc-sheet sc-category-row">
       <form
         className="sc-category-form"
         onSubmit={(event) => {

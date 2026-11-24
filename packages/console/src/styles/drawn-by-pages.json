@@ -65,39 +65,26 @@
     "sc-workload-late",
     "sc-workload-soon"
   ],
-  "connect": [
-    "sc-secret-value",
-    "sc-session",
-    "sc-session-icon",
-    "sc-session-meta",
-    "sc-token",
-    "sc-token-meta"
-  ],
+  "connect": ["sc-secret-value", "sc-session-icon", "sc-session-meta", "sc-token-meta"],
   "decisions": [
     "sc-answer",
     "sc-answer-option",
     "sc-decision-arrow",
-    "sc-decision-files",
     "sc-decision-meta",
     "sc-decision-question",
     "sc-decision-record-chosen",
     "sc-decision-record-question",
-    "sc-decision-record-row",
     "sc-decision-waiting",
     "sc-option",
     "sc-option-chosen"
   ],
   "documents": [
     "sc-doc-archived sc-prose",
-    "sc-doc-attach-chosen",
     "sc-doc-meta sc-person-login",
-    "sc-doc-notice",
     "sc-doc-path",
-    "sc-doc-row",
     "sc-doc-title",
     "sc-folder-link",
     "sc-rules-fold",
-    "sc-version",
     "sc-version-meta sc-person-login",
     "sc-version-number"
   ],
@@ -109,9 +96,7 @@
     "sc-glance-fact",
     "sc-glance-fact-waiting",
     "sc-glance-figure",
-    "sc-glance-more",
     "sc-glance-none",
-    "sc-glance-row",
     "sc-glance-section",
     "sc-home-add",
     "sc-home-grid",
@@ -131,20 +116,18 @@
     "sc-tile-slot",
     "sc-tile-title"
   ],
-  "people": ["sc-member-role", "sc-team-key", "sc-team-members", "sc-team-name"],
+  "people": ["sc-team-name"],
   "plugins": [
     "sc-plugin-capabilities-name",
     "sc-plugin-group",
     "sc-plugin-role",
     "sc-plugin-role-key",
-    "sc-plugin-tick",
     "sc-plugin-tick-locked"
   ],
   "roadmap": [
     "sc-goal",
     "sc-goal-done",
     "sc-goal-dropped",
-    "sc-goal-progress",
     "sc-goal-title",
     "sc-timeline-bar",
     "sc-timeline-bar-begins",
@@ -155,19 +138,10 @@
     "sc-timeline-month",
     "sc-timeline-point",
     "sc-timeline-today",
-    "sc-timeline-undated",
     "sc-view",
     "sc-view-current"
   ],
-  "settings": [
-    "sc-category-row",
-    "sc-pack-code",
-    "sc-pack-way",
-    "sc-skill",
-    "sc-skill-head sc-muted",
-    "sc-skill-name",
-    "sc-skill-uri"
-  ],
+  "settings": ["sc-pack-code", "sc-skill-head sc-muted", "sc-skill-name"],
   "shell": [
     "sc-brand",
     "sc-brand-name",
@@ -191,10 +165,7 @@
   "task": ["sc-subtasks"],
   "thread": [
     "sc-comment sc-prose",
-    "sc-comment-chosen",
-    "sc-comment-chosen-file",
     "sc-comment-file-input",
-    "sc-comment-files",
     "sc-comment-form-actions",
     "sc-comment-form-actions sc-button",
     "sc-overlay",
@@ -203,9 +174,8 @@
     "sc-report",
     "sc-report sc-time",
     "sc-run-agent",
-    "sc-run-header",
     "sc-run-summary",
     "sc-run-waiting"
   ],
-  "work": ["sc-decision-row", "sc-decision-row-question", "sc-work-lists"]
+  "work": ["sc-decision-row-question", "sc-work-lists"]
 }

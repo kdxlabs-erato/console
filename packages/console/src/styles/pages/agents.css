@@ -1086,11 +1086,6 @@
   gap: var(--sc-space-1) var(--sc-space-3);
   min-width: 0;
   padding-block: var(--sc-space-2);
-  font-size: var(--sc-text-sm);
-}
-
-.sc-agent-secret + .sc-agent-secret {
-  border-top: var(--sc-hairline);
 }
 
 .sc-agent-secret > code {

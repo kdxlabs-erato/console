@@ -225,7 +225,7 @@ export function GoalTimeline(props: GoalTimelineProps) {
         </dl>
       )}
       {undated.length > 0 && (
-        <p className="sc-timeline-undated">
+        <p className="sc-small sc-timeline-undated">
           <span className="sc-muted">{words.timeline.noDays}: </span>
           {undated.map((goal, index) => (
             <span key={goal.id}>

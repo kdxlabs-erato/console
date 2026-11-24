@@ -204,12 +204,12 @@ function ProjectGlanceTile(props: {
   );
   const more = (shown: number, total: number) =>
     shown > 0 && shown < total ? (
-      <p className="sc-glance-more">{glanceWords.more(total - shown)}</p>
+      <p className="sc-fine-faint sc-glance-more">{glanceWords.more(total - shown)}</p>
     ) : null;
   const taskRow = (task: RestGlanceTask) => {
     const soon = task.dueOn !== null && daysBetween(now, task.dueOn) <= GLANCE_DUE_DAYS;
     return (
-      <li key={task.id} className="sc-glance-row">
+      <li key={task.id} className="sc-small sc-glance-row">
         <span className="sc-glance-row-main">{task.title}</span>
         {soon && task.dueOn !== null && (
           <DueBadge dueOn={task.dueOn} state={task.state} today={now} />
@@ -222,9 +222,9 @@ function ProjectGlanceTile(props: {
     glance === undefined || taskRows === 0 ? null : (
       <section className="sc-glance-section">
         <p className="sc-eyebrow sc-glance-heading">{glanceWords.tasks}</p>
-        <ul className="sc-glance-rows">
+        <ul className="sc-divided sc-glance-rows">
           {tasks.length === 0 ? (
-            <li className="sc-glance-row sc-glance-none">{glanceWords.noTasks}</li>
+            <li className="sc-small sc-glance-row sc-glance-none">{glanceWords.noTasks}</li>
           ) : (
             tasks.slice(0, taskRows).map(taskRow)
           )}
@@ -236,7 +236,7 @@ function ProjectGlanceTile(props: {
     glance === undefined || reviewRows === 0 ? null : (
       <section className="sc-glance-section">
         <p className="sc-eyebrow sc-glance-heading">{glanceWords.reviewTasks}</p>
-        <ul className="sc-glance-rows">{review.slice(0, reviewRows).map(taskRow)}</ul>
+        <ul className="sc-divided sc-glance-rows">{review.slice(0, reviewRows).map(taskRow)}</ul>
         {more(reviewRows, reviewList.total)}
       </section>
     );
@@ -244,15 +244,15 @@ function ProjectGlanceTile(props: {
     glance === undefined || goalRows === 0 ? null : (
       <section className="sc-glance-section">
         <p className="sc-eyebrow sc-glance-heading">{glanceWords.roadmap}</p>
-        <ul className="sc-glance-rows">
+        <ul className="sc-divided sc-glance-rows">
           {goals.length === 0 ? (
-            <li className="sc-glance-row sc-glance-none">{glanceWords.noGoals}</li>
+            <li className="sc-small sc-glance-row sc-glance-none">{glanceWords.noGoals}</li>
           ) : (
             goals.slice(0, goalRows).map((goal) => {
               const { taskCounts: of } = goal;
               const total = of.idea + of.ready + of.in_progress + of.in_review + of.done;
               return (
-                <li key={goal.id} className="sc-glance-row sc-glance-goal">
+                <li key={goal.id} className="sc-small sc-glance-row sc-glance-goal">
                   <span className="sc-glance-goal-line">
                     <span className="sc-glance-row-main">{goal.title}</span>
                     {goal.dueOn !== null && (

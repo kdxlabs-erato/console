@@ -57,9 +57,6 @@
   gap: var(--sc-space-3);
   align-items: start;
   padding: var(--sc-space-3) var(--sc-space-4);
-  border: var(--sc-border);
-  border-radius: var(--sc-radius-md);
-  background: var(--sc-color-sheet);
   cursor: pointer;
 }
 

@@ -1,11 +1,5 @@
 /* Sources: components/workspace.tsx, components/categories.tsx, components/skills.tsx, components/pack-connect.tsx, components/pack-token.tsx */
 
-.sc-skill {
-  border: var(--sc-border);
-  background: var(--sc-color-sheet);
-  box-shadow: var(--sc-shadow-sheet);
-}
-
 /* Skills: the project's, or the organization's, as SkillCDN serves them at the address. */
 
 .sc-skills {
@@ -18,7 +12,6 @@
   display: grid;
   align-content: start;
   padding: var(--sc-space-4) var(--sc-space-5);
-  border-radius: var(--sc-radius-lg);
 }
 
 .sc-skill-head {
@@ -49,9 +42,6 @@
   display: block;
   margin-top: var(--sc-space-3);
   padding-top: var(--sc-space-2);
-  border-top: var(--sc-hairline);
-  color: var(--sc-color-text-faint);
-  font-size: var(--sc-text-xs);
   word-break: break-all;
 }
 
@@ -76,9 +66,6 @@
   align-items: center;
   gap: var(--sc-space-2) var(--sc-space-3);
   padding: var(--sc-space-2) var(--sc-space-3);
-  border: var(--sc-border);
-  border-radius: var(--sc-radius-md);
-  background: var(--sc-color-sheet);
 }
 
 .sc-category-row > .sc-project-key {
@@ -127,9 +114,6 @@
   align-content: start;
   gap: var(--sc-space-3);
   padding: var(--sc-space-4);
-  border: var(--sc-border);
-  border-radius: var(--sc-radius-lg);
-  background: var(--sc-color-sheet);
 }
 
 .sc-pack-way .sc-field-hint {
@@ -166,6 +150,5 @@
 @media (max-width: 40rem) {
   .sc-skill {
     padding: var(--sc-space-4);
-    border-radius: var(--sc-radius-lg);
   }
 }

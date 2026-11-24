@@ -111,6 +111,21 @@
   max-width: 22rem;
 }
 
+/* A list laid out by the parts in it, with none of its own marks. */
+.dev-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A sheet's padding is the page's: here, what a row of a list gives it. */
+.dev-padded {
+  display: grid;
+  gap: var(--sc-space-1);
+  margin-bottom: var(--sc-space-3);
+  padding: var(--sc-space-3) var(--sc-space-4);
+}
+
 /* What opens over the page, a menu's panel or a picker's list, shown in the page's own flow:
    open over a specimen it would hide the next one. A header's bar is held still the same way. */
 .dev-static.dev-static {

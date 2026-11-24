@@ -62,7 +62,7 @@ export function SessionList(props: SessionListProps) {
           {props.sessions.map((session) => (
             <li
               key={session.id}
-              className={cx("sc-session", session.current && "sc-session-current")}
+              className={cx("sc-divider", "sc-session", session.current && "sc-session-current")}
             >
               <DeviceIcon handheld={session.platform !== null && HANDHELD.has(session.platform)} />
               <div className="sc-session-body">

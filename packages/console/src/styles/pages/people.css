@@ -53,7 +53,6 @@
 
 .sc-team-members {
   padding-top: var(--sc-space-3);
-  border-top: var(--sc-hairline);
 }
 
 .sc-team-ways {
@@ -61,11 +60,6 @@
   justify-content: flex-end;
   margin-top: auto;
   margin-inline: calc(var(--sc-space-2) * -1);
-}
-
-.sc-team-key {
-  color: var(--sc-color-text-faint);
-  font-size: var(--sc-text-xs);
 }
 
 .sc-members {
@@ -78,5 +72,4 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sc-space-2);
-  font-size: var(--sc-text-sm);
 }

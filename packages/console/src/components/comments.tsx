@@ -71,7 +71,7 @@ export function CommentCard(props: CommentCardProps) {
         />
       )}
       {following.length > 0 && (
-        <ul className="sc-comment-files" aria-label={words.comments.files}>
+        <ul className="sc-small sc-comment-files" aria-label={words.comments.files}>
           {following.map((attached) => {
             const href = hrefOf(attached);
             const { file } = attached;
@@ -191,9 +191,9 @@ export function CommentForm(props: CommentFormProps) {
         onPaste={paste}
       />
       {files.length > 0 && (
-        <ul className="sc-comment-chosen" aria-label={words.files}>
+        <ul className="sc-chosen-files" aria-label={words.files}>
           {files.map((file) => (
-            <li key={file.name} className="sc-comment-chosen-file">
+            <li key={file.name} className="sc-chosen-file">
               <span>{file.name}</span> <span className="sc-muted">{formatBytes(file.size)}</span>{" "}
               <Button
                 variant="ghost"

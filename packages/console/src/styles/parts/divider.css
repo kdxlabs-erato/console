@@ -1,0 +1,17 @@
+/*
+ * Dividers: the hairline between the things of a list or above a part of a card. A divider draws
+ * the line over its element; a divided list draws it between each of its children and the one
+ * before; a divider below draws it under its element.
+ */
+
+.sc-divider {
+  border-top: var(--sc-hairline);
+}
+
+.sc-divided > * + * {
+  border-top: var(--sc-hairline);
+}
+
+.sc-divider-below {
+  border-bottom: var(--sc-hairline);
+}
