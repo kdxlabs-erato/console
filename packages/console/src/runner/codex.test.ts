@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCodexDriver } from "./codex.js";
+import { codexBuild, createCodexDriver } from "./codex.js";
 import { ownRunnerModules } from "./modules.js";
 import type { Child, DriverEvent, DriverMessage, StartOptions } from "./types.js";
 
@@ -295,8 +295,8 @@ describe("the codex driver", () => {
     expect(modules.drivers.names()).toEqual(["acp", "claude", "codex"]);
     const { driver } = started();
     expect(driver.name).toBe("codex");
-    // No build ran a turn through the driver yet: none is listed as tried.
-    expect(driver.product).toEqual({ name: "Codex", tried: [] });
+    // The build a turn of a signed-in product ran through the driver with is listed as tried.
+    expect(driver.product).toEqual({ name: "Codex", tried: ["0.171.0-alpha.13.2"] });
     // A message is put into the turn under way; a picture is taken as a file, by its path in
     // the desk; the model is said with a turn.
     expect(driver.can).toEqual({
@@ -365,13 +365,14 @@ describe("the codex driver", () => {
   });
 
   it("says the mode the desk names in the product's own words, whole, and never reads another word as leave to do more", async () => {
-    const settingsOf = async (permissions: string | undefined, over: Partial<StartOptions> = {}) =>
-      started({ permissions, ...over }).opens();
+    // The product answers the sandbox it was asked for, in its own word for it in an answer.
+    const settingsOf = async (permissions: string | undefined, sandbox = "workspaceWrite") =>
+      started({ permissions }).opens(opened({ sandbox: { type: sandbox } }));
     const unattended = { approvalPolicy: "never", approvalsReviewer: "user" };
     expect(await settingsOf(undefined)).toEqual({ cwd: DESK, ...REVIEWED });
     expect(await settingsOf("approve-for-me")).toEqual({ cwd: DESK, ...REVIEWED });
     // Whatever a sandbox does not allow is asked of nobody.
-    expect(await settingsOf("read-only")).toEqual({
+    expect(await settingsOf("read-only", "readOnly")).toEqual({
       cwd: DESK,
       sandbox: "read-only",
       ...unattended,
@@ -381,14 +382,15 @@ describe("the codex driver", () => {
       sandbox: "workspace-write",
       ...unattended,
     });
-    expect(await settingsOf("danger-full-access")).toEqual({
+    expect(await settingsOf("danger-full-access", "dangerFullAccess")).toEqual({
       cwd: DESK,
       sandbox: "danger-full-access",
       ...unattended,
     });
     // A mode that is none of the product's is the one that allows the least.
-    expect(await settingsOf("everything")).toEqual(await settingsOf("read-only"));
-    expect(await settingsOf("Danger-Full-Access")).toEqual(await settingsOf("read-only"));
+    const least = await settingsOf("read-only", "readOnly");
+    expect(await settingsOf("everything", "readOnly")).toEqual(least);
+    expect(await settingsOf("Danger-Full-Access", "readOnly")).toEqual(least);
     // What is no word for a model is left out, and so is one for an effort, said with a turn.
     const odd = started({ model: "gpt 6\n--dangerous", effort: 'high", "sandbox": "x' });
     expect(await odd.opens()).toEqual({ cwd: DESK, ...REVIEWED });
@@ -1413,5 +1415,248 @@ describe("the codex driver", () => {
       cwd: "/d",
     });
     expect(await odd.probe()).toEqual({ version: "1.2.3", models: [], efforts: [] });
+  });
+
+  it("says a usage limit as that, by the product's word for it or by its words, with the reset the product last said", async () => {
+    // The product's own word for it, as its protocol has it; its words are invented, in the
+    // shape of an error it writes. Neither was seen said: that takes using an allowance up.
+    for (const error of [
+      {
+        message: "Usage limit reached.",
+        codexErrorInfo: "usageLimitExceeded",
+        additionalDetails: null,
+      },
+      { message: "You've hit your usage limit. Try again at 3:15 PM.", codexErrorInfo: "other" },
+    ]) {
+      const limited = started();
+      await limited.opens();
+      await limited.session.send(message("Go."));
+      await limited.session.send(message("And this."));
+      await limited.answers("turn/start", { turn: turnOf(TURN) });
+      limited.product.says(turnStarted(TURN), turnCompleted(TURN, "failed", error));
+      expect((await limited.said(5)).slice(3)).toEqual([
+        { type: "event", kind: "error", text: error.message },
+        // No moment: the product said nothing of a window that is used up.
+        { type: "cannot_go_on", state: "failed", reason: "usage_limit" },
+      ]);
+      await tick();
+      // What waited is the runner's to hand over again, and no second turn is started with it.
+      expect(limited.count("turn/start")).toBe(1);
+      expect(limited.events.some((event) => event.type === "turn_completed")).toBe(false);
+    }
+    // A throttle and a conversation's length are turns that failed, and the next message is taken.
+    for (const info of ["rateLimitExceeded", "contextWindowExceeded", "serverOverloaded"]) {
+      const other = started();
+      await other.opens();
+      await other.session.send(message("Go."));
+      await other.answers("turn/start", { turn: turnOf(TURN) });
+      other.product.says(
+        turnStarted(TURN),
+        turnCompleted(TURN, "failed", { message: "Try again later.", codexErrorInfo: info }),
+      );
+      expect((await other.said(5)).at(4), info).toEqual({ type: "turn_completed" });
+    }
+  });
+
+  it("says the allowance as the product says it, and until when a limit stands by the window that is used up", async () => {
+    const { session, product, opens, answers, said, events } = started();
+    await opens();
+    // As a signed-in product answered when it was asked (0.171.0, on Windows, no turn): a share
+    // in hundredths, a length in minutes, a moment in seconds, and no second window.
+    const limits = (primary: Json | null, secondary: Json | null = null): Json => ({
+      method: "account/rateLimits/updated",
+      params: {
+        rateLimits: {
+          limitId: "codex",
+          limitName: null,
+          normalModelSlug: null,
+          primary,
+          secondary,
+          credits: { hasCredits: false, unlimited: false, balance: "0" },
+          individualLimit: null,
+          spendControlReached: false,
+          planType: "prolite",
+          rateLimitReachedType: null,
+        },
+      },
+    });
+    product.says(limits({ usedPercent: 4, windowDurationMins: 10080, resetsAt: 1795927747 }));
+    expect((await said(4)).at(3)).toEqual({
+      type: "usage",
+      windows: [{ name: "weekly", used: 0.04, resetsAt: 1795927747000 }],
+    });
+    // Two windows, named by how long each lasts; an update that says nothing of one says
+    // nothing of it, and what is no window says nothing at all.
+    product.says(
+      limits(
+        { usedPercent: 81.5, windowDurationMins: 300, resetsAt: 1795540000 },
+        { usedPercent: 250, windowDurationMins: 43200, resetsAt: null },
+      ),
+      limits(null),
+      { method: "account/rateLimits/updated", params: { rateLimits: "none" } },
+      limits({ usedPercent: "many", windowDurationMins: -5, resetsAt: 12 }),
+      limits({ usedPercent: 100, windowDurationMins: 300, resetsAt: 1795540000 }),
+      // The same said again is said on once: the product writes it several times a turn.
+      limits({ usedPercent: 100, windowDurationMins: 300, resetsAt: 1795540000 }),
+    );
+    await tick();
+    expect((await said(6)).slice(4)).toEqual([
+      {
+        type: "usage",
+        windows: [
+          { name: "5-hour", used: 0.815, resetsAt: 1795540000000 },
+          { name: "30-day", used: 1, resetsAt: undefined },
+        ],
+      },
+      { type: "usage", windows: [{ name: "5-hour", used: 1, resetsAt: 1795540000000 }] },
+    ]);
+    // A turn that then fails on the limit says until when: the reset of the window used up.
+    await session.send(message("Go."));
+    await answers("turn/start", { turn: turnOf(TURN) });
+    product.says(
+      turnStarted(TURN),
+      turnCompleted(TURN, "failed", {
+        message: "Usage limit reached.",
+        codexErrorInfo: "usageLimitExceeded",
+      }),
+    );
+    await said(8);
+    expect(events.at(-1)).toEqual({
+      type: "cannot_go_on",
+      state: "failed",
+      reason: "usage_limit",
+      until: 1795540000000,
+    });
+  });
+
+  it("starts with no build older than the one that says a message back, and says which build runs", async () => {
+    // A build with the app server and no id on a message said back (0.130.0, by its protocol):
+    // a message put into a turn there is read and never said back.
+    const old = started();
+    await old.answers("initialize", {
+      ...INITIALIZED,
+      userAgent: "skillcdn-console-runner/0.138.2 (Mac OS 26.1.0; arm64) unknown",
+    });
+    expect(await old.said(2)).toEqual([
+      {
+        type: "event",
+        kind: "error",
+        text: "This Codex is 0.138.2, and the driver speaks to 0.139.0 or later, whose app server says a message back when it reads it. Update it, as it was installed.",
+      },
+      { type: "cannot_go_on", state: "failed", reason: "start" },
+    ]);
+    expect(old.count("thread/start")).toBe(0);
+    // The oldest build itself is spoken to, and a build before its release too.
+    for (const userAgent of [
+      "skillcdn-console-runner/0.139.0 (Linux 6.8; x86_64) unknown",
+      "skillcdn-console-runner/0.171.0-alpha.13.2 (Windows 10.0.26300; x86_64) xterm-256color (skillcdn-console-runner; 0.0.0)",
+    ]) {
+      const fine = started();
+      await fine.answers("initialize", { ...INITIALIZED, userAgent });
+      // The build that runs is the one that answered: the conversation says the one that began it.
+      await fine.answers("thread/start", opened({ thread: { id: THREAD, cliVersion: "0.164.0" } }));
+      expect((await fine.said(3))[1]).toMatchObject({
+        type: "running",
+        version: userAgent.includes("0.139.0") ? "0.139.0" : "0.171.0-alpha.13.2",
+      });
+    }
+    expect(codexBuild("skillcdn-console-runner/0.171.0-alpha.13.2 (Windows 10.0.26300)")).toEqual({
+      text: "0.171.0-alpha.13.2",
+      numbers: [0, 171, 0],
+    });
+    for (const none of [
+      undefined,
+      42,
+      "",
+      "codex",
+      "x/y",
+      `a/${"9".repeat(40)}.1.1`,
+      "a b/1.2.3",
+    ]) {
+      expect(codexBuild(none), String(none)).toBeUndefined();
+    }
+  });
+
+  it("puts no message into a turn of a build that says nothing of itself until it said one back", async () => {
+    const { session, product, answers, said, taken, count } = started();
+    await answers("initialize", { codexHome: "/home/mira/.codex" });
+    await answers("thread/start", opened());
+    expect((await said(3))[1]).toMatchObject({ type: "running", version: null });
+    await session.send(message("Run the tests."));
+    await answers("turn/start", { turn: turnOf(TURN) });
+    product.says(turnStarted(TURN));
+    // Not known to say a message back: one that arrives now waits, where put into the turn
+    // it could be read, never said back, and handed over once more.
+    await session.send(message("Also the linter."));
+    await tick();
+    await tick();
+    expect(count("turn/steer")).toBe(0);
+    // It said the first one back: what waited is put into the turn now.
+    product.says(...saidBack("m-1", "Run the tests."));
+    expect((await answers("turn/steer", { turnId: TURN })).clientUserMessageId).toBe("m-2");
+    product.says(...saidBack("m-2", "Also the linter."), turnCompleted(TURN));
+    expect((await said(4)).at(3)).toEqual({ type: "turn_completed" });
+    expect(taken.count).toBe(2);
+  });
+
+  it("goes on with no sandbox that allows more than was asked, and says one that allows less", async () => {
+    // More than the desk's mode: never gone on with.
+    const wider = started({ permissions: "read-only" });
+    await wider.answers("initialize", INITIALIZED);
+    await wider.answers("thread/start", opened({ sandbox: { type: "dangerFullAccess" } }));
+    expect(await wider.said(2)).toEqual([
+      {
+        type: "event",
+        kind: "error",
+        text: "The product opened the conversation in its sandbox danger-full-access, which allows more than read-only, the one it was asked for.",
+      },
+      { type: "cannot_go_on", state: "failed", reason: "start" },
+    ]);
+    // Less: said, since it is what the agent does without asking. A product whose own sandbox
+    // is not set up on the machine answers so (seen on Windows with 0.171.0).
+    const narrower = started();
+    await narrower.answers("initialize", INITIALIZED);
+    await narrower.answers("thread/start", opened({ sandbox: { type: "readOnly" } }));
+    expect((await narrower.said(3))[2]).toEqual({
+      type: "event",
+      kind: "status",
+      text: "The product started, in its sandbox read-only and not in workspace-write, which it was asked for.",
+      data: {
+        model: "gpt-6-sol",
+        effort: null,
+        version: "0.172.0",
+        mode: "approve-for-me",
+        sandbox: "read-only",
+      },
+    });
+    // A sandbox it names in no word of the protocol's is not read as one.
+    const unnamed = started();
+    await unnamed.answers("initialize", INITIALIZED);
+    await unnamed.answers("thread/start", opened({ sandbox: { type: "everything" } }));
+    expect((await unnamed.said(3))[2]).toMatchObject({ text: "The product started." });
+  });
+
+  it("says nothing of a turn once it is being stopped: what it was handed is the runner's to settle", async () => {
+    const { session, product, opens, answers, events, taken } = started();
+    await opens();
+    await session.send(message("Run the tests."));
+    await answers("turn/start", { turn: turnOf(TURN) });
+    product.says(turnStarted(TURN), ...saidBack("m-1", "Run the tests."));
+    await until("the first message to be taken", () => taken.count === 1);
+    // Put into the turn and not read; then the session is stopped, and the product says the
+    // turn ended as it shuts down.
+    await session.send(message("Skip the slow ones."));
+    await answers("turn/steer", { turnId: TURN });
+    const stopped = session.stop();
+    product.says(turnCompleted(TURN, "interrupted"));
+    await tick();
+    await tick();
+    product.exits(0);
+    await stopped;
+    await tick();
+    // Neither taken nor a turn completed: the runner would count as read what was never got.
+    expect(taken.count).toBe(1);
+    expect(events.some((event) => event.type === "turn_completed")).toBe(false);
+    expect(events.at(-1)).toEqual({ type: "ended", how: "exited" });
   });
 });

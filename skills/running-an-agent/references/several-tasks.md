@@ -15,7 +15,7 @@ Handing a task over frees your session only where a message reaches you while th
 | Driver | A message that arrives in a turn | Subagents | So |
 |---|---|---|---|
 | `claude` | Is read when the tool calls under way finish | Claude Code's own. One you wait for is a tool call under way; one started in the background is not | Start them in the background and end your turn: a message is then read at once, and a subagent that ends says so. Seen run |
-| `codex` | Is read when the tool calls under way finish, as the product's app server puts it into the turn | Codex's own, as its documentation has them: the turn waits for all it started | A message reaches you between two steps of a turn that waits on its subagents, so you answer while they work. Not seen run with a signed-in product |
+| `codex` | Is read when the tool calls under way finish, as the product's app server puts it into the turn | Codex's own, as its documentation has them: the turn waits for all it started | A message reaches you between two steps of a turn that waits on its subagents, so you answer while they work. A message in a turn was seen run; its subagents were not |
 | `acp` | Waits for the turn to end | The product's own, where it has them; the protocol names none | Subagents may shorten the turn and keep its work out of your conversation; nobody is answered before it ends all the same, unless the product's subagents work on after the turn that started them. Short turns, below. Not seen run |
 
 **Short turns** are what keeps you answering where handing over does not: under a driver that hands you nothing in a turn, `acp`, and in a product with no subagents. Work one task, a piece a turn, and report the piece on the board, which then says where the task stands. As the last thing of the turn, raise a wake for yourself that says what to go on with: `console agent wake me "<what to go on with>"`. It reaches you after the turn with whatever people sent meanwhile, as one message: answer them first, then go on. An hour takes thirty such wakes, so a piece is minutes of work and not a step. The other tasks wait on the board, where their people see it.
@@ -29,7 +29,7 @@ Your product runs on a subscription, and what it allows is counted in windows th
   | Product | How |
   |---|---|
   | Claude Code | `claude -p "/usage"` in a shell: the share used of the current window and of the week, and when each resets. Seen with 2.1.330 |
-  | Codex | `/usage` and its status line, for a person at its terminal, as its documentation has them. No way was found for a run nobody attends |
+  | Codex | Nothing to run: the runner reads the allowance from the product and tells you at 80% and at 90% of a window. `/usage` and its status line are for a person at its terminal |
   | Behind `acp` | The way of the product behind it |
 
 - **Count what already runs, and your own share.** A look says what is used so far, not what the work already running will use. Several subagents at once spend a window many times faster than one session, and once it is spent your main session answers nobody either. So start fewer at once, and stop handing out, or stop a subagent, while enough is left for the main session to talk until the reset.

@@ -14,7 +14,9 @@ import {
   plainCut,
   plainCutEnd,
   type StartOptions,
+  type UsageWindow,
 } from "./types.js";
+import { saysUsageLimit } from "./usage.js";
 
 // The `codex` driver (docs/specs/runner.md, ADR-0153): the Codex binary, unmodified, run as its
 // app server, `codex app-server`: one process a session, spoken to over its standard input and
@@ -33,6 +35,13 @@ import {
 
 /** The words the product is started with: its app server, on its standard input and output. */
 const ARGUMENTS = ["app-server"] as const;
+/**
+ * The oldest build the driver speaks to: the first whose app server says a message back under
+ * the id it was handed over with, which is how the driver knows a message put into a turn was
+ * read. An older one has the app server and no such id: a message put into a turn there would
+ * be read and, never said back, handed over once more with the next turn.
+ */
+const OLDEST = [0, 139, 0] as const;
 /** How long a session that is stopped is given to end by itself, then after it was asked to. */
 const STOP_GRACE_MS = 5000;
 const KILL_GRACE_MS = 2000;
@@ -60,6 +69,98 @@ const word = (value: string | null | undefined): string | undefined =>
  */
 const SIGN_IN =
   /not (?:logged|signed) in|codex login|log ?in again|sign in again|\b401\b|unauthorized|token (?:has )?(?:expired|been revoked)|invalid (?:api )?key/i;
+
+/**
+ * The build that answered, from what it calls itself when it is greeted: the client's name, a
+ * stroke, and its own version (`skillcdn-console-runner/0.171.0-alpha.13.2 (Windows ...)`, seen
+ * with that build). Nothing where it says none that reads as one.
+ */
+export function codexBuild(
+  userAgent: unknown,
+): { readonly text: string; readonly numbers: readonly [number, number, number] } | undefined {
+  const found =
+    typeof userAgent === "string"
+      ? /^[^/\s]{1,80}\/((\d{1,4})\.(\d{1,5})\.(\d{1,6})[0-9A-Za-z.+-]{0,40})(?:\s|$)/.exec(
+          userAgent,
+        )
+      : null;
+  return found === null
+    ? undefined
+    : { text: found[1] ?? "", numbers: [Number(found[2]), Number(found[3]), Number(found[4])] };
+}
+
+/** Whether a build is older than the oldest the driver speaks to. */
+const tooOld = (numbers: readonly [number, number, number]): boolean => {
+  for (const [at, least] of OLDEST.entries()) {
+    const has = numbers[at] ?? 0;
+    if (has !== least) {
+      return has < least;
+    }
+  }
+  return false;
+};
+
+/** The product's sandboxes, from the one that allows the least to the one that allows the most, by its word for each in an answer. */
+const SANDBOXES = [
+  ["readOnly", "read-only"],
+  ["workspaceWrite", "workspace-write"],
+  ["dangerFullAccess", "danger-full-access"],
+] as const;
+
+/** The sandbox a mode asks for, in the product's word for it. */
+const sandboxOf = (mode: string): string => {
+  const asked = modeSettings(mode).sandbox;
+  return typeof asked === "string" ? asked : LEAST_MODE;
+};
+
+/**
+ * The windows of the product's allowance, as it says them (`account/rateLimits/updated`): each
+ * with the share used and when it resets, named by how long it lasts. Seen with 0.171.0, asked
+ * of a signed-in product with no turn: a share in hundredths, a length in minutes and a moment
+ * in seconds (`{ usedPercent: 4, windowDurationMins: 10080, resetsAt: 1795927747 }`). An
+ * update is sparse: a window it says nothing of is not one that reset.
+ */
+function allowanceOf(limits: unknown): UsageWindow[] {
+  const said = isObject(limits) ? limits : {};
+  const windows: UsageWindow[] = [];
+  for (const [place, one] of [
+    ["primary", said.primary],
+    ["secondary", said.secondary],
+  ] as const) {
+    if (!isObject(one) || typeof one.usedPercent !== "number" || !(one.usedPercent >= 0)) {
+      continue;
+    }
+    const minutes =
+      typeof one.windowDurationMins === "number" && one.windowDurationMins > 0
+        ? Math.round(one.windowDurationMins)
+        : undefined;
+    const name =
+      minutes === undefined
+        ? place
+        : minutes === 10_080
+          ? "weekly"
+          : minutes % 1440 === 0
+            ? `${minutes / 1440}-day`
+            : minutes % 60 === 0
+              ? `${minutes / 60}-hour`
+              : `${minutes}-minute`;
+    const resets =
+      typeof one.resetsAt === "number" && one.resetsAt > 0 && one.resetsAt < 1e11
+        ? Math.floor(one.resetsAt * 1000)
+        : undefined;
+    windows.push({ name, used: Math.min(1, one.usedPercent / 100), resetsAt: resets });
+  }
+  return windows;
+}
+
+/**
+ * Whether a turn's error says that what the subscription allows is used up: the product's own
+ * word for it (`usageLimitExceeded`, as its protocol has it, not seen said), or its words.
+ */
+function usageLimited(error: unknown): boolean {
+  const info = isObject(error) ? error.codexErrorInfo : undefined;
+  return info === "usageLimitExceeded" || saysUsageLimit(errorOf(error));
+}
 
 /** The product's words for what runs without asking: its three sandboxes, and the flag by which its own reviewer answers what a sandbox would ask. */
 const MODES = ["read-only", "workspace-write", "approve-for-me", "danger-full-access"] as const;
@@ -127,7 +228,6 @@ const UNREAD = [
   "item/fileChange/outputDelta",
   "item/plan/delta",
   "thread/tokenUsage/updated",
-  "account/rateLimits/updated",
 ] as const;
 
 /** What the runner says of itself when it begins: nothing of the product's that is still an experiment is asked for. */
@@ -358,6 +458,14 @@ function sessionOf(
   const called = new Set<string>();
   /** The last error said, which the product writes twice where a turn fails of it. */
   let lastError: string | undefined;
+  /**
+   * Whether the product says a message back under the id it was handed over with: a build
+   * known to, or one that did. Until then none is put into a turn, since one that is read and
+   * never said back would be handed over again with the next turn.
+   */
+  let saysBack = false;
+  /** The windows of the allowance as the product last said them, by name: an update says some of them. */
+  const allowance = new Map<string, UsageWindow>();
 
   const taken = (count: number): DriverEvent[] =>
     Array.from({ length: count }, (): DriverEvent => ({ type: "taken" }));
@@ -496,7 +604,8 @@ function sessionOf(
       return;
     }
     // A turn that is being stopped, or takes no message, is waited for: its end hands over.
-    if (turn.cut !== undefined || !turn.steers || turn.id === undefined) {
+    // So is a turn of a product that has not yet said a message back.
+    if (turn.cut !== undefined || !turn.steers || turn.id === undefined || !saysBack) {
       return;
     }
     busy = true;
@@ -506,6 +615,12 @@ function sessionOf(
 
   /** A turn ended: the agent is done when nothing it was sent still waits. */
   const done = (): void => {
+    // A session that is being stopped says nothing more of a turn: what it was handed and
+    // did not take is the runner's to settle, and a turn said completed here would have the
+    // runner count as read what the product never got.
+    if (stopping) {
+      return;
+    }
     if (waiting.length > 0) {
       pump();
     } else {
@@ -517,9 +632,13 @@ function sessionOf(
   const took = (id: string | undefined): void => {
     const entry = handed.find((one) => one.id === id);
     if (entry !== undefined) {
+      saysBack = true;
       handed = handed.filter((one) => one !== entry);
       emit(...taken(entry.messages.length));
     }
+    // The message a turn began with, said back: the turn is under way, and what waited for
+    // the product to say one back is put into it now.
+    pump();
   };
 
   const onItem = (params: Json, completed: boolean): void => {
@@ -600,6 +719,9 @@ function sessionOf(
     const mine = turn;
     turn = undefined;
     called.clear();
+    if (stopping) {
+      return;
+    }
     // What the product did not say it took. A turn began with its first message, which is the
     // product's from then on. One put into the turn and never said back was not read: the
     // product lets go of it where the turn is stopped first (seen with 0.139.0), so it is the
@@ -622,6 +744,22 @@ function sessionOf(
         emit({ type: "cannot_go_on", state: "failed", reason: "sign_in" });
         return;
       }
+      if (usageLimited(ended.error)) {
+        // Nothing goes better before a window resets: the runner waits, brings the agent back
+        // by itself, and hands over again what was not answered. Until when is the reset of
+        // the window the product last said is used up, where it said one.
+        const resets = [...allowance.values()]
+          .filter((window) => window.used !== undefined && window.used >= 1)
+          .flatMap((window) => (window.resetsAt === undefined ? [] : [window.resetsAt]));
+        waiting = [];
+        emit({
+          type: "cannot_go_on",
+          state: "failed",
+          reason: "usage_limit",
+          ...(resets.length === 0 ? {} : { until: Math.max(...resets) }),
+        });
+        return;
+      }
       // A turn the product itself said failed is a turn that ended: the agent takes the next message.
     } else if (ended.status === "interrupted") {
       emit({
@@ -635,6 +773,23 @@ function sessionOf(
   };
 
   const onNotification = (method: string, params: Json): void => {
+    // The allowance is the account's, and of no thread: said on as the product says it, for
+    // the runner to tell its agent by.
+    if (method === "account/rateLimits/updated") {
+      // Said on where it says something new: the product writes it several times a turn
+      // (seen with 0.171.0, six times in a turn of one command, the same each time).
+      const windows = allowanceOf(params.rateLimits).filter((window) => {
+        const before = allowance.get(window.name);
+        return before?.used !== window.used || before?.resetsAt !== window.resetsAt;
+      });
+      for (const window of windows) {
+        allowance.set(window.name, window);
+      }
+      if (windows.length > 0 && !stopping) {
+        emit({ type: "usage", windows });
+      }
+      return;
+    }
     // A thread of the product's other than the conversation's is none of the session's: what
     // an agent it started does there is that agent's, and its turns are not this one's.
     if (thread === undefined || params.threadId !== thread) {
@@ -734,8 +889,22 @@ function sessionOf(
   };
 
   const open = async (): Promise<void> => {
-    await connection.request("initialize", hello(host.version));
+    const greeted = await connection.request("initialize", hello(host.version));
     began = true;
+    // The build that runs, from what it calls itself: a conversation says the build that began
+    // it, which is another once the product was updated.
+    const build = codexBuild(isObject(greeted) ? greeted.userAgent : undefined);
+    version = build?.text ?? null;
+    if (build !== undefined && tooOld(build.numbers)) {
+      cannotStart(
+        `This Codex is ${build.text}, and the driver speaks to ${OLDEST.join(".")} or later, whose app server says a message back when it reads it. Update it, as it was installed.`,
+        "start",
+      );
+      return;
+    }
+    // A build that says which it is, and is none of the old ones, says a message back; one
+    // that says nothing of itself is believed once it did.
+    saysBack = build !== undefined;
     await connection.notify("initialized");
     const model = word(choice.model);
     const settings: Json = {
@@ -779,7 +948,22 @@ function sessionOf(
       cannotStart("The product opened a conversation and did not say which.", "start");
       return;
     }
-    version = textOf(named.cliVersion)?.slice(0, 80) ?? null;
+    // The sandbox the product says the conversation runs in. More than was asked is never
+    // gone on with; less is said, since it is what the agent does without asking: a product
+    // whose own sandbox is not set up on the machine answers its read-only one (seen on
+    // Windows with 0.171.0, with a home it had set nothing up in).
+    const asked = sandboxOf(mode);
+    const answered = isObject(said.sandbox) ? textOf(said.sandbox.type) : undefined;
+    const width = (name: string | undefined, at: 0 | 1): number =>
+      SANDBOXES.findIndex((one) => one[at] === name);
+    const sandbox = SANDBOXES[width(answered, 0)]?.[1];
+    if (sandbox !== undefined && width(sandbox, 1) > width(asked, 1)) {
+      cannotStart(
+        `The product opened the conversation in its sandbox ${sandbox}, which allows more than ${asked}, the one it was asked for.`,
+        "start",
+      );
+      return;
+    }
     runs = {
       model: word(textOf(said.model)) ?? model ?? null,
       effort: word(textOf(said.reasoningEffort)) ?? null,
@@ -790,8 +974,17 @@ function sessionOf(
       {
         type: "event",
         kind: "status",
-        text: "The product started.",
-        data: { model: runs.model, effort: runs.effort, version, mode },
+        text:
+          sandbox === undefined || sandbox === asked
+            ? "The product started."
+            : `The product started, in its sandbox ${sandbox} and not in ${asked}, which it was asked for.`,
+        data: {
+          model: runs.model,
+          effort: runs.effort,
+          version,
+          mode,
+          ...(sandbox === undefined || sandbox === asked ? {} : { sandbox }),
+        },
       },
     );
     ready = true;
@@ -844,7 +1037,9 @@ function sessionOf(
           state: "failed",
           // Before the conversation was open nothing was taken, and the runner sends again
           // what it sent; after, what a turn was at is not known.
-          reason: SIGN_IN.test(errors) ? "sign_in" : ready ? "crashed" : "start",
+          // What it wrote of a sign-in counts before the conversation opened alone: after, a
+          // turn says so itself, and a line written long before is no reason for this end.
+          reason: ready ? "crashed" : SIGN_IN.test(errors) ? "sign_in" : "start",
         },
       );
     }
@@ -920,11 +1115,13 @@ function offeredOf(text: string): { models: string[]; efforts: string[] } {
 }
 
 /**
- * The builds of the binary the driver ran a turn against. None yet: the app server was spoken to
- * signed out, which is where the shapes of the tests that say so were written down from, and a
- * build is listed once a turn of a signed-in product ran through the driver.
+ * The builds of the binary the driver ran a turn of a signed-in product against, on Windows
+ * (2026-11-24): a turn with a command and a file written in the desk, a message put into a turn
+ * while a command ran, a turn stopped for a message, and the allowance as the product says it.
+ * The app server was spoken to signed out with 0.139.0, 0.167.0 and 0.172.0, which is where the
+ * shapes of the tests that say so were written down from.
  */
-const TRIED: readonly string[] = [];
+const TRIED: readonly string[] = ["0.171.0-alpha.13.2"];
 
 export function createCodexDriver(host: DriverHost): Driver {
   const command = host.command ?? "codex";
