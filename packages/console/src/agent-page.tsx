@@ -970,7 +970,7 @@ export function AgentPage(props: AgentPageProps) {
           </div>
           <dl className="sc-facts-row sc-agent-head-facts">
             {usage.length > 0 && (
-              <div>
+              <div className="sc-agent-head-usage">
                 <dt>{all.agents.accounts.usage}</dt>
                 <dd>
                   <AgentUsage usage={usage} said />

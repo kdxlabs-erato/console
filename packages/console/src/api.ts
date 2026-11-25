@@ -5,6 +5,7 @@
 
 export { agentLabel } from "./agent-name.js";
 export {
+  USAGE_KEPT_MS,
   USAGE_NEAR,
   USAGE_SAID_TOGETHER_MS,
   type UsageReading,

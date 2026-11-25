@@ -1070,6 +1070,29 @@
   padding-block: calc((2rem - 1lh) / 2);
 }
 
+/* On a phone a bar is as wide as the words over and under it: in the page's head the meters
+   take the line whole, and on a card the fact's name stands over them and not beside, so that
+   as much is left of a bar as right of it. */
+@media (max-width: 48rem) {
+  .sc-agent-head-facts,
+  .sc-agent-head-usage {
+    flex: 1 1 100%;
+  }
+
+  .sc-agent-head-facts .sc-agent-usage {
+    width: auto;
+  }
+
+  .sc-agent-card-usage > dt,
+  .sc-agent-card-usage > dd {
+    grid-column: 1 / -1;
+  }
+
+  .sc-agent-card-usage .sc-agent-usage {
+    padding-block-start: 0;
+  }
+}
+
 @media (max-width: 48rem) {
   .sc-agent-sessions {
     grid-template-columns: minmax(0, 1fr) auto;

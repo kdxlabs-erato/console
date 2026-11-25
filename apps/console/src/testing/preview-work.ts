@@ -622,8 +622,10 @@ const REASONS = {
 /**
  * What each account's product last said of its allowance (ADR-0156), in minutes from now: a
  * share of the short window and of the week with when each resets, and how long ago it was
- * said. One far from its limit, one near it in the short window, one near it in the week whose
- * short window has reset since its runner went quiet, and one whose product never said.
+ * said. One far from its limit, with the week of a model beside the plan's; one near it in the
+ * short window; one whose plan keeps no short window, the week and the model's alone; one near
+ * it in the week whose short window has reset since its runner went quiet; and one whose
+ * product never said.
  */
 const USAGE: Partial<
   Record<
@@ -636,7 +638,7 @@ const USAGE: Partial<
     windows: [
       ["5-hour", 0.42, 130],
       ["weekly", 0.13, 4 * 24 * 60 + 95],
-      ["weekly opus", 0.26, 4 * 24 * 60 + 95],
+      ["weekly fable", 0.26, 4 * 24 * 60 + 95],
     ],
   },
   juno: {
@@ -649,8 +651,8 @@ const USAGE: Partial<
   otis: {
     said: 1,
     windows: [
-      ["5-hour", 0.07, 255],
       ["weekly", 0.31, 5 * 24 * 60],
+      ["weekly fable", 0.84, 5 * 24 * 60],
     ],
   },
   pax: {

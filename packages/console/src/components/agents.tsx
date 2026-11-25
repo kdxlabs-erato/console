@@ -223,7 +223,7 @@ export function AgentAccountList(props: AgentAccountListProps) {
                 </div>
               )}
               {usage.length > 0 && (
-                <div className="sc-person-fact">
+                <div className="sc-person-fact sc-agent-card-usage">
                   <dt>{accounts.usage}</dt>
                   <dd>
                     <AgentUsage usage={usage} />

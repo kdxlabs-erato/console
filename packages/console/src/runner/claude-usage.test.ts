@@ -205,36 +205,38 @@ describe("the claude driver and the product's allowance", () => {
     };
     const events = await product([first, INIT, replay("m1"), says("ok"), second, RESULT]).events();
     const week = { name: "weekly", used: 0.13, resetsAt: 1795690800 * 1000 };
-    // Named by the model the session runs, whose requests it is counted on.
-    const ofModel = { name: "weekly sonnet", used: 0.26, resetsAt: 1795690800 * 1000 };
+    // The line names no model with the bucket: it is the week of the one model the product
+    // keeps it for, written in the driver by hand, and a window of a part of the allowance.
+    const ofModel = {
+      name: "weekly fable",
+      used: 0.26,
+      resetsAt: 1795690800 * 1000,
+      part: true,
+    };
     expect(events.filter((event) => event.type === "usage")).toEqual([
       { type: "usage", windows: [week] },
       { type: "usage", windows: [week, ofModel] },
     ]);
-    // By the family of whatever the product says it runs: an alias, or a name with more after it.
-    for (const [model, name] of [
-      ["claude-fable-5-2", "weekly fable"],
-      ["opus[1m]", "weekly opus"],
-      ["Claude-Haiku-5-5-20261101", "weekly haiku"],
-      // A family wherever the name holds it, and the name's own first word where it is none
-      // the driver knows; where it tells none, the model's week all the same.
-      ["claude-3-7-sonnet-20250219", "weekly sonnet"],
-      ["claude-mythos-5-2", "weekly mythos"],
-      ["4.5", "weekly model"],
-      ["claude-", "weekly model"],
-    ] as const) {
+    // Whatever model the session runs, and before the product said which: the bucket is that
+    // model's, not the session's.
+    for (const model of ["claude-fable-5-2", "opus[1m]", "claude-3-7-sonnet-20250219", "4.5"]) {
       const said = await product([{ ...INIT, model }, replay("m1"), second, RESULT]).events();
       expect(said.find((event) => event.type === "usage")).toEqual({
         type: "usage",
-        windows: [week, { ...ofModel, name }],
+        windows: [week, ofModel],
       });
     }
-    // Before the product said which model it runs, it is of no model the driver could say:
-    // left out until it is said again.
     const early = await product([second, INIT, replay("m1"), RESULT]).events();
     expect(early.filter((event) => event.type === "usage")).toEqual([
-      { type: "usage", windows: [week] },
+      { type: "usage", windows: [week, ofModel] },
     ]);
+    // A plan that keeps no short window says none, and none is made up: the week and the
+    // model's week are all there is.
+    expect(
+      (await product([INIT, replay("m1"), second, RESULT]).events())
+        .filter((event) => event.type === "usage")
+        .flatMap((event) => (event.type === "usage" ? event.windows.map((one) => one.name) : [])),
+    ).toEqual(["weekly", "weekly fable"]);
     // A window of what is allowed beyond the subscription is no share of it, and says nothing.
     const alone = {
       ...first,

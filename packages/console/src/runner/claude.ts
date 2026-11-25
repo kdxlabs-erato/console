@@ -69,12 +69,22 @@ const WINDOW = /^[a-z][a-z0-9_]{0,39}$/;
  * all of them: `seven_day_overage_included`, which its own description of the line calls the
  * "overage-included weekly (per-model bucket)" window, and which its usage screen shows as the
  * week of a model by name, "Current week (Fable)". Seen beside the week's own at twice its
- * share (2.1.322). The line names no model with it: it is said by the model the session runs,
- * whose requests it is counted on, and not at all before the product has said which that is.
- * It is a window as the others are: a session that runs the model is refused at its limit, so
- * the agent is told of it at the shares it is told of any window at.
+ * share (2.1.322). It is a window of a part of the allowance (`UsageWindow.part`): the agent
+ * is told of it at the shares it is told of any window at, in words of its own.
  */
 const MODEL_WEEK = "seven_day_overage_included";
+/**
+ * The model `MODEL_WEEK` is the week of. WRITTEN BY HAND: the line names no model with the
+ * bucket (2.1.322, 2.1.330), neither beside the window nor anywhere else in it, and the product
+ * keeps the one bucket for the one model its usage screen names, Fable as of 2026-11, whatever
+ * model the session runs. To change when the product does:
+ * - where a line comes to name the model of the bucket, read it there in place of this word;
+ * - where the usage screen names another model for it, write that one here;
+ * - where the product keeps such a bucket for a second model, under a word of its own
+ *   (`seven_day_opus`, as it once spelled one), nothing is to do: `windowName` says it by
+ *   that word already, "weekly opus".
+ */
+const MODEL_WEEK_OF = "fable";
 /** A window of what the product allows beyond the subscription, which is no share of the subscription's. */
 const BEYOND = /overage/;
 
@@ -84,22 +94,6 @@ const windowName = (word: string): string =>
     .replace(/^five_hour/, "5-hour")
     .replace(/^seven_day/, "weekly")
     .replaceAll("_", " ");
-
-/**
- * The family a model is of, as a person calls it, from what the product calls the model it
- * runs: `fable` of `claude-fable-5-2`, `opus` of `opus[1m]`, `sonnet` of
- * `claude-3-7-sonnet`: one of the families the driver knows, wherever the name holds it as a
- * word, else the word a name begins with after the maker's own. `model` where it tells none.
- */
-function familyOf(model: string): string {
-  const name = model.toLowerCase();
-  const known = MODELS.find((family) => new RegExp(`(?:^|[^a-z])${family}(?:[^a-z]|$)`).test(name));
-  if (known !== undefined) {
-    return known;
-  }
-  const first = /^(?:claude[-_ ])?([a-z]{2,20})(?![a-z])/.exec(name)?.[1];
-  return first === undefined || first === "claude" ? "model" : first;
-}
 
 /**
  * A moment the product gives in seconds since the epoch, in milliseconds; nothing for anything
@@ -125,20 +119,18 @@ const shareOf = (value: unknown): number | undefined =>
  * line itself is of where it names no others. The product marks these fields as its own and no
  * contract (seen with 2.1.330): read by shape, bounded, and nothing where they are not there.
  */
-function windowsOf(info: Json, model: string | undefined): UsageWindow[] {
+function windowsOf(info: Json): UsageWindow[] {
   const windows: UsageWindow[] = [];
   const add = (word: unknown, one: Json): void => {
     if (typeof word !== "string" || !WINDOW.test(word) || windows.length >= MAX_WINDOWS) {
       return;
     }
-    const name =
-      word === MODEL_WEEK
-        ? model === undefined
-          ? undefined
-          : `weekly ${familyOf(model)}`
-        : BEYOND.test(word)
-          ? undefined
-          : windowName(word);
+    const part = word === MODEL_WEEK;
+    const name = part
+      ? `weekly ${MODEL_WEEK_OF}`
+      : BEYOND.test(word)
+        ? undefined
+        : windowName(word);
     if (name === undefined) {
       return;
     }
@@ -146,7 +138,7 @@ function windowsOf(info: Json, model: string | undefined): UsageWindow[] {
     const resetsAt = momentOf(one.resetsAt);
     const near = one.status === "allowed_warning";
     if (used !== undefined || near) {
-      windows.push({ name, used, resetsAt, ...(near ? { near } : {}) });
+      windows.push({ name, used, resetsAt, ...(near ? { near } : {}), ...(part ? { part } : {}) });
     }
   };
   if (isObject(info.unifiedWindows)) {
@@ -686,7 +678,7 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
       if (info === undefined) {
         return events;
       }
-      const windows = windowsOf(info, state.model);
+      const windows = windowsOf(info);
       if (windows.length > 0) {
         events.push({ type: "usage", windows });
       }

@@ -14,16 +14,28 @@ export interface UsageReading {
 }
 
 /**
+ * How long a window that names no reset stands after the product last said it: a day more
+ * than the longest window a product is known to keep, a week. A window that resets is let go
+ * at its reset; one that names none would stand for good once its product says it no more, as
+ * when a plan comes to count something else.
+ */
+export const USAGE_KEPT_MS = 8 * 24 * 60 * 60 * 1000;
+
+/**
  * The windows that still stand at a moment. One whose reset has passed says nothing of the
  * window after it, and an account whose runner is away keeps what it last said: such a window
- * is left out, so that no page shows a share of a window that is over.
+ * is left out, so that no page shows a share of a window that is over. One that names no
+ * reset is left out once it was said longer ago than any window lasts (`USAGE_KEPT_MS`).
+ * Which windows there are is the product's to say, and nothing here expects one: a plan with
+ * no short window shows the week alone.
  */
-export function usageStanding<T extends { readonly resetsAt: string | null }>(
-  usage: readonly T[] | null | undefined,
-  now: number,
-): readonly T[] {
-  return (usage ?? []).filter(
-    (window) => window.resetsAt === null || !(Date.parse(window.resetsAt) <= now),
+export function usageStanding<
+  T extends { readonly resetsAt: string | null; readonly at?: string | undefined },
+>(usage: readonly T[] | null | undefined, now: number): readonly T[] {
+  return (usage ?? []).filter((window) =>
+    window.resetsAt === null
+      ? !(window.at !== undefined && now - Date.parse(window.at) > USAGE_KEPT_MS)
+      : !(Date.parse(window.resetsAt) <= now),
   );
 }
 

@@ -28,6 +28,31 @@ describe("the windows of an allowance that still stand", () => {
 
   it("keeps a window whose moment does not read: what a console answers is shown as it came", () => {
     expect(usageStanding([{ name: "weekly", resetsAt: "later" }], NOW)).toHaveLength(1);
+    expect(usageStanding([{ name: "primary", resetsAt: null, at: "once" }], NOW)).toHaveLength(1);
+  });
+
+  it("leaves out a window that names no reset once it was said longer ago than any window lasts", () => {
+    const said = (at: string) => ({ name: "primary", resetsAt: null, at });
+    expect(usageStanding([said("2026-11-16T03:00:00.000Z")], NOW)).toHaveLength(1);
+    expect(usageStanding([said("2026-11-16T02:59:59.999Z")], NOW)).toEqual([]);
+    // One that resets stands until its reset, however long ago it was said.
+    expect(
+      usageStanding(
+        [{ name: "weekly", resetsAt: "2026-11-27T05:00:00.000Z", at: "2026-10-01T00:00:00.000Z" }],
+        NOW,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("expects no window: a plan with no short window shows the week and its model's alone", () => {
+    const usage = [
+      { name: "weekly", resetsAt: "2026-11-27T05:00:00.000Z" },
+      { name: "weekly fable", resetsAt: "2026-11-27T05:00:00.000Z" },
+    ];
+    expect(usageStanding(usage, NOW).map((window) => window.name)).toEqual([
+      "weekly",
+      "weekly fable",
+    ]);
   });
 });
 

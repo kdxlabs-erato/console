@@ -1,3 +1,4 @@
+import { USAGE_KEPT_MS } from "../agent-usage.js";
 import { MAX_RUNNER_USAGE_WINDOWS, MAX_USAGE_WINDOW_NAME_LENGTH } from "../limits.js";
 import type { UsageWindow } from "./types.js";
 
@@ -169,11 +170,27 @@ function windowWords(window: UsageWindow, moment: (iso: string) => string): stri
 /**
  * What the agent is told of its product's allowance before the limit (ADR-0150): how much of
  * which window is used, when it resets, and what the limit does, which is what there is to
- * plan by. The words of the line, without its header.
+ * plan by. A window of a part of the allowance, one model's week, is said in a sentence of its
+ * own: what it counts is said, and nothing of what to do, since that limit is the model's and
+ * what the agent makes of it is its own to decide. The words of the line, without its header.
  */
 export function usageWords(tell: readonly UsageTelling[], moment: (iso: string) => string): string {
-  const windows = tell.map((one) => windowWords(one.window, moment)).join("; and ");
-  return `Your product's allowance is ${windows}. Everything signed in with it draws on it, each sub-agent you start too. At the limit your turn ends where it is and you answer nobody until the reset; the runner brings you back then by itself, with what reached you meanwhile. Nothing is asked of you now. Plan by it: where someone waits on you, or work would be cut in the middle, say so and leave it where you can pick it up, before then.`;
+  const said = (which: readonly UsageTelling[]): string =>
+    which.map((one) => windowWords(one.window, moment)).join("; and ");
+  const whole = tell.filter((one) => one.window.part !== true);
+  const parts = tell.filter((one) => one.window.part === true);
+  const words: string[] = [];
+  if (whole.length > 0) {
+    words.push(
+      `Your product's allowance is ${said(whole)}. Everything signed in with it draws on it, each sub-agent you start too. At the limit your turn ends where it is and you answer nobody until the reset; the runner brings you back then by itself, with what reached you meanwhile. Nothing is asked of you now. Plan by it: where someone waits on you, or work would be cut in the middle, say so and leave it where you can pick it up, before then.`,
+    );
+  }
+  if (parts.length > 0) {
+    words.push(
+      `Your product's allowance for one model is ${said(parts)}. Requests to that model alone are counted on it, beside the plan's own windows. What you do about it is yours to decide.`,
+    );
+  }
+  return words.join(" ");
 }
 
 /** A stretch a usage limit stopped the agent for: since when, and until when where the product said. */
@@ -254,13 +271,15 @@ export function noteUsage(seen: UsageSeen, windows: readonly UsageWindow[], now:
 /**
  * The windows as the console is told of them with the heartbeat. One whose reset has passed is
  * let go: what was said of it is of a window that is over, and the product says the next one
- * when it is next asked.
+ * when it is next asked. And so is one that names no reset and was last said longer ago than
+ * any window lasts: a product that changed what it counts, a plan without the short window
+ * say, says the old window no more, and what it once said of it would stand for good.
  */
 export function usageSaid(seen: UsageSeen, now: number): UsageSaid[] {
   const said: UsageSaid[] = [];
   for (const [name, { window, at }] of [...seen]) {
     const resetsAt = momentOf(window.resetsAt);
-    if (resetsAt !== undefined && resetsAt <= now) {
+    if (resetsAt === undefined ? now - at > USAGE_KEPT_MS : resetsAt <= now) {
       seen.delete(name);
       continue;
     }

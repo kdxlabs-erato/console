@@ -90,7 +90,7 @@ describe("when the agent is told of its allowance", () => {
     expect(usageToTell([ofModel, short(0.85)], none, NOW).tell.map((one) => one.mark)).toEqual([
       0.8,
     ]);
-    const week = usageToTell([{ ...short(0.91), name: "weekly fable" }], none, NOW);
+    const week = usageToTell([{ ...short(0.91), name: "weekly fable", part: true }], none, NOW);
     expect(week.tell.map((one) => [one.window.name, one.mark])).toEqual([["weekly fable", 0.9]]);
   });
 
@@ -190,6 +190,29 @@ describe("what the agent is told", () => {
     expect(words).toContain("Nothing is asked of you now.");
   });
 
+  it("says one model's week in a sentence of its own, with what it counts and nothing to do", () => {
+    const ofModel = {
+      window: short(0.8, { name: "weekly fable", resetsAt: RESETS, part: true }),
+      mark: 0.8,
+    };
+    const alone = usageWords([ofModel], moment);
+    expect(alone).toBe(
+      "Your product's allowance for one model is 80% used in its weekly fable window, which resets 2026-11-10 06:30. Requests to that model alone are counted on it, beside the plan's own windows. What you do about it is yours to decide.",
+    );
+    // Nothing of the plan's limit is said of it: its limit ends no turn that is known, and
+    // what the agent makes of it is its own.
+    expect(alone).not.toContain("your turn ends");
+    expect(alone).not.toContain("Plan by it");
+    // Beside a window of the plan's own, each in its sentence, the plan's first.
+    const both = usageWords([ofModel, { window: short(0.9), mark: 0.9 }], moment);
+    expect(both).toMatch(
+      /^Your product's allowance is 90% used in its 5-hour window, which resets 2026-11-10 06:30\. Everything signed in/,
+    );
+    expect(both).toContain(
+      "before then. Your product's allowance for one model is 80% used in its weekly fable window",
+    );
+  });
+
   it("says a window the product calls near its limit, with no share, as that", () => {
     expect(usageWords([{ window: short(undefined, { near: true }), mark: 0.8 }], moment)).toContain(
       "is near its limit in its 5-hour window, which resets 2026-11-10 06:30.",
@@ -287,6 +310,19 @@ describe("what the console is told of the allowance (ADR-0156)", () => {
       "weekly",
       "5-hour",
     ]);
+  });
+
+  it("lets a window that names no reset go once the product has not said it for longer than any window lasts", () => {
+    const seen: UsageSeen = new Map();
+    const day = 24 * 60 * 60 * 1000;
+    noteUsage(seen, [short(0.2, { name: "weekly", resetsAt: undefined })], NOW);
+    expect(usageSaid(seen, NOW + 8 * day)).toHaveLength(1);
+    // Said again meanwhile, it stands from then.
+    noteUsage(seen, [short(0.3, { name: "weekly", resetsAt: undefined })], NOW + 8 * day);
+    expect(usageSaid(seen, NOW + 16 * day)).toHaveLength(1);
+    // A plan that came to count something else says it no more: gone a day after a week.
+    expect(usageSaid(seen, NOW + 16 * day + 1)).toEqual([]);
+    expect(seen.size).toBe(0);
   });
 
   it("says what a product says as numbers and a few plain words, whatever the product wrote", () => {
