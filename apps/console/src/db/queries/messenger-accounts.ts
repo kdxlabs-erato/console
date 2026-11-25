@@ -1,8 +1,8 @@
 import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
-import { administers } from "../../auth/policy.js";
-import { type Database, drizzleOf } from "../client.js";
+import { type AccessSettings, administers, personVisibleTo } from "../../auth/policy.js";
+import { type Database, drizzleOf, type Transaction } from "../client.js";
 import { messengerAccounts, people, pluginInstalls } from "../schema.js";
-import { recordEvent } from "./events.js";
+import { type Actor, recordEvent } from "./events.js";
 import { type PersonRecord, personColumns, toPerson } from "./people.js";
 
 // Which account at a messenger is a member's (ADR-0164). The console knows no member's account
@@ -23,6 +23,12 @@ const gone = { fields: ["account"], set: false };
 
 /** The capability a plugin says an account under. */
 export const ACCOUNTS_CAPABILITY = "people:accounts";
+
+/**
+ * On a `messenger_accounts` row: whether what it says counts now, which is while the plugin that
+ * said it is enabled and holds the capability.
+ */
+const counts = sql<boolean>`exists (select 1 from ${pluginInstalls} where ${pluginInstalls.workspaceId} = ${messengerAccounts.workspaceId} and ${pluginInstalls.key} = ${messengerAccounts.plugin} and ${pluginInstalls.state} = 'enabled' and ${pluginInstalls.consent} @> ${JSON.stringify([ACCOUNTS_CAPABILITY])}::jsonb)`;
 
 export interface MessengerAccountRecord {
   readonly id: string;
@@ -53,8 +59,9 @@ export type MessengerAccountRefusal = "not_a_person" | "another_plugins" | "too_
  * Says that an account at a messenger is a member's, for the plugin `plugin`. One member for an
  * account and one account of a member in a workspace there: what the plugin said before of the
  * account or of the member in that workspace gives way, each as an event. What another plugin
- * said of either stands, and this is refused. Said again as it stands, nothing changes and
- * nothing is recorded.
+ * said of either stands while it counts, and this is refused; what counts no more, of a plugin
+ * that was disabled or lost the capability, gives way too, so that the one in its place is not
+ * kept out by it. Said again as it stands, nothing changes and nothing is recorded.
  */
 export async function putMessengerAccount(
   database: Database,
@@ -65,12 +72,14 @@ export async function putMessengerAccount(
     readonly team: string;
     readonly account: string;
     readonly personId: string;
+    /** Whoever made the plugin say it, where a person's call did; nobody for the plugin itself. */
+    readonly actor: Actor | undefined;
     /** How many accounts a workspace keeps, of every messenger together. */
     readonly most: number;
     readonly now: Date;
   },
 ): Promise<MessengerAccountRecord | MessengerAccountRefusal> {
-  const { workspaceId, plugin, messenger, team, account, personId, now } = input;
+  const { workspaceId, plugin, messenger, team, account, personId, actor, now } = input;
   return drizzleOf(database).transaction(async (tx) => {
     // One workspace's accounts are said one at a time, so that two said at once neither pass
     // the bound nor meet at the indexes.
@@ -97,7 +106,7 @@ export async function putMessengerAccount(
       eq(messengerAccounts.team, team),
     );
     const standing = await tx
-      .select({ ...columns, login: people.login })
+      .select({ ...columns, login: people.login, counts })
       .from(messengerAccounts)
       .innerJoin(people, eq(people.id, messengerAccounts.personId))
       .where(
@@ -114,9 +123,10 @@ export async function putMessengerAccount(
       same.account === account &&
       same.personId === personId
     ) {
-      return same;
+      const { login: _login, counts: _counts, ...kept } = same;
+      return kept;
     }
-    if (standing.some((row) => row.plugin !== plugin)) {
+    if (standing.some((row) => row.plugin !== plugin && row.counts)) {
       return "another_plugins";
     }
     for (const row of standing) {
@@ -124,7 +134,7 @@ export async function putMessengerAccount(
       await recordEvent(tx, {
         workspaceId,
         kind: "person.updated",
-        actor: undefined,
+        actor,
         plugin,
         data: { ...gone, login: row.login, messenger, workspace: team, account: row.account },
         now,
@@ -147,7 +157,7 @@ export async function putMessengerAccount(
     await recordEvent(tx, {
       workspaceId,
       kind: "person.updated",
-      actor: undefined,
+      actor,
       plugin,
       data: { ...said, login: person.login, messenger, workspace: team, account },
       now,
@@ -165,10 +175,11 @@ export async function removeMessengerAccount(
     readonly messenger: string;
     readonly team: string;
     readonly personId: string;
+    readonly actor: Actor | undefined;
     readonly now: Date;
   },
 ): Promise<boolean> {
-  const { workspaceId, plugin, messenger, team, personId, now } = input;
+  const { workspaceId, plugin, messenger, team, personId, actor, now } = input;
   return drizzleOf(database).transaction(async (tx) => {
     const [row] = await tx
       .delete(messengerAccounts)
@@ -193,13 +204,56 @@ export async function removeMessengerAccount(
     await recordEvent(tx, {
       workspaceId,
       kind: "person.updated",
-      actor: undefined,
+      actor,
       plugin,
       data: { ...gone, login: person?.login, messenger, workspace: team, account: row.account },
       now,
     });
     return true;
   });
+}
+
+/**
+ * Forgets everything a plugin said, as it is purged, each as an event: a package installed later
+ * under the same key has said nothing until it says it.
+ */
+export async function forgetMessengerAccounts(
+  tx: Transaction,
+  input: {
+    readonly workspaceId: string;
+    readonly plugin: string;
+    readonly actor: Actor;
+    readonly now: Date;
+  },
+): Promise<void> {
+  const { workspaceId, plugin, actor, now } = input;
+  const mine = and(
+    eq(messengerAccounts.workspaceId, workspaceId),
+    eq(messengerAccounts.plugin, plugin),
+  );
+  const rows = await tx
+    .select({ ...columns, login: people.login })
+    .from(messengerAccounts)
+    .innerJoin(people, eq(people.id, messengerAccounts.personId))
+    .where(mine)
+    .orderBy(asc(messengerAccounts.id));
+  await tx.delete(messengerAccounts).where(mine);
+  for (const row of rows) {
+    await recordEvent(tx, {
+      workspaceId,
+      kind: "person.updated",
+      actor,
+      plugin,
+      data: {
+        ...gone,
+        login: row.login,
+        messenger: row.messenger,
+        workspace: row.team,
+        account: row.account,
+      },
+      now,
+    });
+  }
 }
 
 /** What the plugin said of a workspace of a messenger, in the order it was said, a page at a time. */
@@ -245,6 +299,8 @@ export interface AccountWriter {
   readonly member:
     | {
         readonly person: PersonRecord;
+        /** Whether the account that asks may see the member, and so read their login (ADR-0035). */
+        readonly seen: boolean;
         /** Whether they supervise the agent account (ADR-0084): an administrator, or above it in the reporting line. */
         readonly supervisor: boolean;
         /** Whether they administer the workspace: a supervisor of every agent account, in its line or not. */
@@ -268,10 +324,14 @@ export interface AccountWriter {
  * level of the line, and administrators. Above the account its manager and everyone above
  * them; below it whoever reports to it and everyone below them; and an administrator, who
  * supervises from outside the line and may stand anywhere in it as well.
+ *
+ * A member the account may not see, as the workspace has it, is said to be a member and nothing
+ * more: whoever is in its line it is told of, its supervisors among them.
  */
 export async function writersFor(
   database: Database,
   agent: PersonRecord,
+  settings: AccessSettings,
   messenger: string,
   accounts: readonly { readonly workspace: string; readonly account: string }[],
 ): Promise<AccountWriter[]> {
@@ -282,7 +342,7 @@ export async function writersFor(
   const trusted = and(
     eq(messengerAccounts.workspaceId, agent.workspaceId),
     eq(messengerAccounts.messenger, messenger),
-    sql`exists (select 1 from ${pluginInstalls} where ${pluginInstalls.workspaceId} = ${messengerAccounts.workspaceId} and ${pluginInstalls.key} = ${messengerAccounts.plugin} and ${pluginInstalls.state} = 'enabled' and ${pluginInstalls.consent} @> ${JSON.stringify([ACCOUNTS_CAPABILITY])}::jsonb)`,
+    counts,
   );
   const teams = [...new Set(accounts.map((one) => one.workspace))];
   const told = new Set(
@@ -298,6 +358,7 @@ export async function writersFor(
       team: messengerAccounts.team,
       account: messengerAccounts.account,
       person: personColumns(people),
+      visible: sql<boolean>`${personVisibleTo(agent, settings)}`,
     })
     .from(messengerAccounts)
     .innerJoin(people, eq(people.id, messengerAccounts.personId))
@@ -318,7 +379,12 @@ export async function writersFor(
       )
     ).rows.map((row) => row.id),
   );
-  const found = new Map(rows.map((row) => [`${row.team} ${row.account}`, toPerson(row.person)]));
+  const found = new Map(
+    rows.map((row) => [
+      `${row.team} ${row.account}`,
+      { person: toPerson(row.person), visible: row.visible },
+    ]),
+  );
   // Whoever is below the account, at any depth: climbed from each member found, since they are
   // few and what is below an account may be many. Pairs, so that the climb ends as the one
   // above does.
@@ -346,20 +412,23 @@ export async function writersFor(
             ? "below"
             : undefined;
   return accounts.map(({ workspace, account }) => {
-    const person = found.get(`${workspace} ${account}`);
+    const one = found.get(`${workspace} ${account}`);
+    if (one === undefined) {
+      return { workspace, account, told: told.has(workspace), member: undefined };
+    }
+    const { person } = one;
+    const line = lineOf(person);
     return {
       workspace,
       account,
       told: told.has(workspace),
-      member:
-        person === undefined
-          ? undefined
-          : {
-              person,
-              supervisor: agent.kind === "agent" && (administers(person) || above.has(person.id)),
-              administrator: administers(person),
-              line: lineOf(person),
-            },
+      member: {
+        person,
+        seen: one.visible || line !== undefined,
+        supervisor: agent.kind === "agent" && (administers(person) || above.has(person.id)),
+        administrator: administers(person),
+        line,
+      },
     };
   });
 }

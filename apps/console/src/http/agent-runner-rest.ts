@@ -51,6 +51,7 @@ import {
 } from "../db/queries/agent-wakes.js";
 import type { Actor } from "../db/queries/events.js";
 import { writersFor } from "../db/queries/messenger-accounts.js";
+import { readWorkspaceSettings } from "../db/queries/workspaces.js";
 import type { Logger } from "../logger.js";
 import type { BlobStore } from "../ports/blob-store.js";
 import type { Clock } from "../ports/clock.js";
@@ -356,8 +357,7 @@ export function registerAgentRunnerRest(
   // Who wrote at a messenger, for the account that asks (ADR-0164): of each account there, the
   // member it is, as a plugin that holds `people:accounts` said it, and whether that member
   // supervises the account. Asked by the account itself, of nobody's supervisors but its own;
-  // it reads a login and a kind, which the directory shows the account anyway, and changes
-  // nothing.
+  // it reads the login of whoever the account may see or has in its line, and changes nothing.
   app.post(`${OWN}/writers`, tooLarge, async (c) => {
     const caller = await own(c);
     if (caller instanceof Response) {
@@ -376,6 +376,7 @@ export function registerAgentRunnerRest(
     const found = await writersFor(
       database,
       caller.person,
+      await readWorkspaceSettings(database, caller.person.workspaceId),
       parsed.data.messenger,
       parsed.data.accounts,
     );
@@ -388,7 +389,7 @@ export function registerAgentRunnerRest(
           one.member === undefined
             ? null
             : {
-                login: one.member.person.login,
+                login: one.member.seen ? one.member.person.login : null,
                 kind: one.member.person.kind,
                 supervisor: one.member.supervisor,
                 administrator: one.member.administrator,

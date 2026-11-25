@@ -942,9 +942,10 @@ export type RestWritersInput = z.infer<typeof restWritersInputSchema>;
  * Who an account at a messenger is to the agent account that asks (ADR-0164). `told` is whether
  * the console is told the accounts of that workspace at all, by a plugin that is enabled and
  * holds `people:accounts`: where it is not, nothing is known there, and `member` is `null` for
- * every account. `member` is the active member whose account it is, by their login, with what
- * kind of member they are and whether they supervise the account that asks; `null` for an
- * account that is no member's as far as the console is told, which is then no supervisor's.
+ * every account. `member` is the active member whose account it is, by their login, `null` for
+ * one the account that asks may not see (ADR-0035), with what kind of member they are and
+ * whether they supervise the account; `null` itself for an account that is no member's as far as
+ * the console is told.
  *
  * `supervisor` is the whole of ADR-0084, point 5: an administrator, or anyone above the asker
  * in the reporting line, its manager and every level above. `administrator` and `line` say
@@ -959,7 +960,7 @@ export const restWriterSchema = z.object({
   told: z.boolean(),
   member: z.nullable(
     z.object({
-      login: z.string(),
+      login: z.nullable(z.string()),
       kind: z.enum(PERSON_KINDS),
       supervisor: z.boolean(),
       administrator: z.boolean(),

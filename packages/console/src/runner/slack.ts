@@ -625,8 +625,9 @@ function standsOf(member: NonNullable<WakeWriter["member"]>): string {
  *   they supervise the agent: `(@kim in the console, a supervisor of yours: your manager)`,
  *   with how, its manager, anyone above its manager or an administrator, and of anyone below
  *   the agent in its line that they report to it, themselves or through others (`standsOf`);
- * - that it is no member the console knows, and so no supervisor, where the console is told the
- *   accounts of that workspace and not this one;
+ * - that it is no member the console knows, where the console is told the accounts of that
+ *   workspace and not this one: what it is told may be short of one, so a supervisor's tell that
+ *   names the account still tells whose it is;
  * - nothing, where the console is told no account of that workspace, where it does not answer
  *   within the wait, or where it is older than the question: the line is then as the messenger
  *   alone has it.
@@ -680,7 +681,7 @@ async function whoOf(
       known.set(
         keyOf(one),
         member === null
-          ? " (no member the console knows, so no supervisor of yours)"
+          ? " (no member the console knows)"
           : ` (${named}${member.kind === "agent" ? ", an agent account" : ""}, ${standsOf(member)})`,
       );
     }

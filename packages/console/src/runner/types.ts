@@ -319,7 +319,7 @@ export interface WakeAccount {
 export interface WakeWriter extends WakeAccount {
   readonly told: boolean;
   readonly member: {
-    readonly login: string;
+    readonly login: string | null;
     readonly kind: "person" | "agent";
     readonly supervisor: boolean;
     readonly administrator?: boolean | undefined;

@@ -25,6 +25,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { drizzleOf } from "./db/client.js";
 import { noteUnheardRunners } from "./db/queries/agent-runners.js";
 import { putMessengerAccount, removeMessengerAccount } from "./db/queries/messenger-accounts.js";
+import { purgeInstall } from "./db/queries/plugins.js";
 import { people, pluginInstalls } from "./db/schema.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "./db/testing.js";
 import { RUNNER_UNHEARD_MS, RunnerWatch } from "./jobs/runner-watch.js";
@@ -1178,6 +1179,7 @@ describe("who wrote at a messenger, as the console answers an agent account (ADR
       team,
       account,
       personId: ids.get(login) ?? "",
+      actor: undefined,
       most: 100,
       now,
     });
@@ -1373,6 +1375,7 @@ describe("who wrote at a messenger, as the console answers an agent account (ADR
         messenger: "slack",
         team: "T0ACME",
         personId: ids.get(login) ?? "",
+        actor: undefined,
         now,
       });
     }
@@ -1403,6 +1406,7 @@ describe("who wrote at a messenger, as the console answers an agent account (ADR
         team: "T0ACME",
         account: "U0GHOST",
         personId: "00000000-0000-7000-8000-000000000000",
+        actor: undefined,
         most: 100,
         now,
       }),
@@ -1416,6 +1420,7 @@ describe("who wrote at a messenger, as the console answers an agent account (ADR
         team: "T0FULL",
         account: "U0BOB",
         personId: ids.get("bob") ?? "",
+        actor: undefined,
         most: 3,
         now,
       }),
@@ -1427,6 +1432,92 @@ describe("who wrote at a messenger, as the console answers an agent account (ADR
     expect(await one("U0BOB")).toMatchObject({ told: true, member: null });
     expect((await active("active")).status).toBe(200);
     expect((await one("U0BOB"))?.member?.login).toBe("bob");
+  });
+
+  it("lets what counts no more give way to the plugin in its place, and is forgotten with the plugin purged", async () => {
+    // The plugin that said it is disabled: the one in its place says it now, and it counts.
+    await install("messenger", "disabled", ["people:read", "people:accounts"]);
+    expect(await put("other", "Alice", "U0ALICE")).toMatchObject({ plugin: "other" });
+    expect((await one("U0ALICE"))?.member?.login).toBe("Alice");
+    await install("messenger", "enabled", ["people:read", "people:accounts"]);
+    expect(await put("messenger", "Alice", "U0ALICE")).toBe("another_plugins");
+    // Purged, what it said is gone with it, each as an event of whoever purged it: a package
+    // installed later under its key has said nothing, and the plugin before it may say it again.
+    const events = async () =>
+      (
+        restEventsSchema.parse(
+          await (
+            await h.request(`${REST_ROUTES.events}?latest=true&limit=100`, {
+              headers: fromPages(alice),
+            })
+          ).json(),
+        ).items as readonly {
+          kind: string;
+          plugin?: string | null;
+          data: Record<string, unknown>;
+        }[]
+      )
+        .filter((event) => event.kind === "person.updated" && event.plugin === "other")
+        .map((event) => [event.data.set, event.data.account]);
+    await purgeInstall(testDatabase.database, {
+      workspaceId,
+      key: "other",
+      boardProjectId: undefined,
+      actor: { id: ids.get("Alice") ?? "" },
+      now,
+    });
+    expect((await events()).at(-1)).toEqual([false, "U0ALICE"]);
+    await install("other", "enabled", ["people:accounts"]);
+    expect((await one("U0ALICE"))?.member).toBeNull();
+    expect(await put("messenger", "Alice", "U0ALICE")).toMatchObject({ plugin: "messenger" });
+    expect((await one("U0ALICE"))?.member?.supervisor).toBe(true);
+  });
+
+  it("names no member the account may not see, but for its own line", async () => {
+    const visibility = (peopleVisibility: string) =>
+      send(fromPages(alice), "PATCH", REST_ROUTES.workspace, { peopleVisibility });
+    const db = drizzleOf(testDatabase.database);
+    // A stranger in no project of the account's, and one two levels above it in the line.
+    for (const login of ["stranger", "chief"]) {
+      const [row] = await db
+        .insert(people)
+        .values({
+          workspaceId,
+          host: "gh",
+          hostAccountId: `invented-${login}`,
+          login,
+          role: "member",
+          lastLoginAt: now,
+        })
+        .returning({ id: people.id });
+      ids.set(login, row?.id ?? "");
+      expect(await put("messenger", login, `U0${login.toUpperCase()}`)).toMatchObject({
+        plugin: "messenger",
+      });
+    }
+    const reportsTo = (login: string, manager: string | null) =>
+      db
+        .update(people)
+        .set({ managerId: manager === null ? null : (ids.get(manager) ?? null) })
+        .where(eq(people.id, ids.get(login) ?? ""));
+    await reportsTo("Alice", "chief");
+    expect((await one("U0STRANGER"))?.member).toMatchObject({ login: "stranger" });
+    expect((await visibility("shared_projects")).status).toBe(200);
+    expect((await one("U0STRANGER"))?.member).toEqual({
+      login: null,
+      kind: "person",
+      supervisor: false,
+      administrator: false,
+      line: null,
+    });
+    expect((await one("U0CHIEF"))?.member).toMatchObject({
+      login: "chief",
+      supervisor: true,
+      line: "above",
+    });
+    expect((await one("U0ALICE"))?.member).toMatchObject({ login: "Alice", line: "manager" });
+    expect((await visibility("everyone")).status).toBe(200);
+    await reportsTo("Alice", null);
   });
 
   it("is the account's own to ask, as data, and nobody else's", async () => {

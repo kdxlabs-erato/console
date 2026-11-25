@@ -1013,6 +1013,8 @@ describe("a plugin on the board", () => {
       .map((event) => [
         event.data.set,
         event.plugin,
+        // A person's own call made the plugin say it, and the record names them (ADR-0056).
+        event.actor?.login,
         event.data.fields,
         event.data.login,
         event.data.messenger,
@@ -1023,6 +1025,7 @@ describe("a plugin on the board", () => {
     const change = (set: boolean, login: string, workspace: string, account: string) => [
       set,
       "leave",
+      "bob",
       ["account"],
       login,
       "slack",

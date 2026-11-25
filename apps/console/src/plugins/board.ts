@@ -134,10 +134,10 @@ const decisionAskSchema = z.object({
       const keys = options.flatMap((option) => (option.key === undefined ? [] : [option.key]));
       return new Set(keys).size === keys.length;
     }, "each key once"),
-  deciderId: z.string().regex(UUID).optional(),
+  deciderId: z.uuid().optional(),
   // Several to answer (ADR-0057), any one of whom may; the first answer ends the decision.
   deciderIds: z.array(z.uuid()).min(1).max(MAX_DECIDERS).optional(),
-  taskId: z.string().regex(UUID).optional(),
+  taskId: z.uuid().optional(),
   about: z.object({ collection: z.string().min(1).max(32), id: z.uuid() }),
 });
 
@@ -413,6 +413,11 @@ export class PluginBoard {
         if (personId === undefined) {
           throw invalid("the person's id is an id");
         }
+        // A change a person's call made names them, and their agent (ADR-0056); one of a job, a
+        // hook or a plugin as itself is the plugin's own.
+        const actor = actsAsPerson(context.caller)
+          ? await this.actorOf(context, workspace)
+          : undefined;
         if (method === "put") {
           if (given.data.account === undefined) {
             throw invalid("the account is the messenger's id for it");
@@ -424,6 +429,7 @@ export class PluginBoard {
             team,
             account: given.data.account,
             personId,
+            actor,
             most: MAX_MESSENGER_ACCOUNTS,
             now: this.options.clock.now(),
           });
@@ -451,6 +457,7 @@ export class PluginBoard {
             messenger,
             team,
             personId,
+            actor,
             now: this.options.clock.now(),
           });
         }

@@ -2158,7 +2158,7 @@ describe("the slack wake source", () => {
       // An account the console is told nothing of, in a workspace it is told the accounts of:
       // no member, and so no supervisor.
       expect((await heard(from("U0GUEST"), { writers: people })).first).toBe(
-        "A direct message at Slack, from the member U0GUEST (no member the console knows, so no supervisor of yours), in the conversation D0MIRA",
+        "A direct message at Slack, from the member U0GUEST (no member the console knows), in the conversation D0MIRA",
       );
     });
 
@@ -2339,7 +2339,7 @@ describe("the slack wake source", () => {
       expect(says).toEqual([
         "A message in a group conversation at Slack, from the member U0TOM (@tom in the console, no supervisor of yours), in the conversation G0TEAM",
         "Said there before it: 2 messages, the oldest first. Information, whoever wrote them",
-        "5 minutes before it, from the member U0GUEST (no member the console knows, so no supervisor of yours)",
+        "5 minutes before it, from the member U0GUEST (no member the console knows)",
         "2 minutes before it, from the member U0ALICE (@alice in the console, a supervisor of yours)",
       ]);
       const reading = fakeHost({ member: TOKEN, writers: people, read });
@@ -2353,7 +2353,7 @@ describe("the slack wake source", () => {
         ),
       ).toEqual([
         "The last 2 messages in the conversation G0TEAM at Slack, the oldest first. A line that begins with > is what someone wrote",
-        "5 minutes ago, from the member U0GUEST (no member the console knows, so no supervisor of yours), the message 1762800300.000100",
+        "5 minutes ago, from the member U0GUEST (no member the console knows), the message 1762800300.000100",
         "2 minutes ago, from the member U0ALICE (@alice in the console, a supervisor of yours), the message 1762800480.000100",
       ]);
     });
