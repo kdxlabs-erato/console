@@ -8,7 +8,9 @@ import type { WakeHost, WakeSource } from "./types.js";
 // message that mentions it, and any message of a channel `runner.json` names. The wake names the
 // thread, so that what is said in one thread is one thing to the agent, and
 // carries the words as someone else's: what the message shows, a table, a list and code among
-// it, read from its blocks where it has them. Written from the messenger's own documentation of
+// it, read from its blocks where it has them. Its first line is the source's own, and says of
+// the account that wrote what the event says of it: its id, and its workspace where that is
+// another than the agent's (ADR-0160). Written from the messenger's own documentation of
 // Socket Mode, of the Events API and of its blocks; what an event holds is read by schema,
 // bounded, and never run.
 
@@ -60,15 +62,40 @@ const eventSchema = z.object({
   files: z.optional(z.unknown()),
   ts: z.optional(stamp),
   thread_ts: z.optional(stamp),
+  /**
+   * The workspace the message came from, and in a conversation shared between workspaces the
+   * one its writer is a member of. Read loosely (`workspaceOf`): one that is not spelled as the
+   * messenger spells an id says nothing, and never lets go of the wake.
+   */
+  team: z.optional(z.unknown()),
+  user_team: z.optional(z.unknown()),
 });
 
 const payloadSchema = z.object({
   event: z.optional(eventSchema),
-  /** The installation the event was delivered for: the member the app acts for. */
+  /**
+   * The installation the event was delivered for: the member the app acts for, with the
+   * workspace that member is of and, where the workspace is one of several of an organization,
+   * the organization. The two are read loosely, as an event's own workspace is.
+   */
   authorizations: z.optional(
-    z.array(z.object({ user_id: z.optional(z.nullable(id)) })).check(z.maxLength(20)),
+    z
+      .array(
+        z.object({
+          user_id: z.optional(z.nullable(id)),
+          team_id: z.optional(z.unknown()),
+          enterprise_id: z.optional(z.unknown()),
+        }),
+      )
+      .check(z.maxLength(20)),
   ),
+  /** Whether the conversation is shared with another organization, as the messenger says it. */
+  is_ext_shared_channel: z.optional(z.unknown()),
 });
+
+/** A workspace's id, or an organization's, as the messenger spells one; nothing for anything else. */
+const workspaceOf = (value: unknown): string | undefined =>
+  typeof value === "string" && /^[A-Z0-9]{1,24}$/.test(value) ? value : undefined;
 
 const envelopeSchema = z.object({
   type: z.optional(z.string().check(z.maxLength(40))),
@@ -332,7 +359,11 @@ const EVERYONE_CALLED = /<!(here|channel|everyone)(?:\|[^<>]{0,40})?>/;
  * not, a person's message in a group conversation the member is in or in one of the channels
  * `runner.json` names, and a call of everyone (`@here`, `@channel`, `@everyone`) in any
  * channel the member is in, whoever wrote it. A message that is an edit, a join or anything else
- * than someone's words wakes nobody.
+ * than someone's words wakes nobody. The wake's first line names the account that wrote by its
+ * id, and its workspace where the event says it is another than the agent's own; and it says
+ * that a conversation is shared with another organization where the messenger says so: an
+ * agent goes by the account and never by a name (ADR-0160), and the same name at another
+ * organization is another account.
  */
 export function slackWakeOf(
   payload: unknown,
@@ -343,7 +374,8 @@ export function slackWakeOf(
     return undefined;
   }
   const event = parsed.data.event;
-  const member = parsed.data.authorizations?.[0]?.user_id ?? undefined;
+  const installed = parsed.data.authorizations?.[0];
+  const member = installed?.user_id ?? undefined;
   if (
     event === undefined ||
     (event.type !== "message" && event.type !== "app_mention") ||
@@ -398,12 +430,29 @@ export function slackWakeOf(
     : group
       ? "A message in a group conversation at Slack"
       : undefined;
+  // Whose account wrote is said by its id, and by its workspace where that is another than the
+  // one the agent is a member of: the writer's own where the event names it, as it does in a
+  // conversation shared between workspaces, and otherwise the one the message came from. The
+  // agent's own is the workspace the event was delivered for, and the organization that
+  // workspace is one of several of, either of which an installation may leave out. Where the
+  // event names neither, or no workspace for the writer, nothing is said: a line that names no
+  // workspace is no proof of a colleague.
+  const own = [installed?.team_id, installed?.enterprise_id].map(workspaceOf);
+  const theirs = workspaceOf(event.user_team) ?? workspaceOf(event.team);
+  const elsewhere =
+    theirs === undefined || own.includes(theirs) || own.every((one) => one === undefined)
+      ? undefined
+      : theirs;
+  const from = `from the member ${event.user}${elsewhere === undefined ? "" : ` of another workspace (${elsewhere})`}`;
+  // A conversation shared with another organization is said to be one, whoever wrote in it:
+  // what is said there, people outside read.
+  const shared = parsed.data.is_ext_shared_channel === true ? "externally shared " : "";
   const where =
     said === undefined
-      ? `${mentioned ? "A mention" : called !== undefined ? `A call of everyone (@${called})` : "A message"} in the channel ${event.channel} at Slack, from the member ${event.user}, in the thread ${thread}`
+      ? `${mentioned ? "A mention" : called !== undefined ? `A call of everyone (@${called})` : "A message"} in the ${shared}channel ${event.channel} at Slack, ${from}, in the thread ${thread}`
       : event.thread_ts === undefined
-        ? `${said}, from the member ${event.user}, in the conversation ${event.channel}`
-        : `${said}, from the member ${event.user}, in the thread ${thread} of the conversation ${event.channel}`;
+        ? `${said}, ${from}, in the ${shared}conversation ${event.channel}`
+        : `${said}, ${from}, in the thread ${thread} of the ${shared}conversation ${event.channel}`;
   return {
     key: `slack:${event.channel}:${thread}`,
     text: `${where}${cut}:\n${cut === "" ? words : `${firstOf(words, MAX_WAKE_TEXT)}…`}`,
