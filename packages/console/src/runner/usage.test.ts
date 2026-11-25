@@ -80,15 +80,18 @@ describe("when the agent is told of its allowance", () => {
     expect(said).toEqual([...USAGE_MARKS]);
   });
 
-  it("tells nothing by a window of one model's own, whatever its share", () => {
-    const ofModel = { ...short(0.95), name: "weekly fable", apart: true };
+  it("tells nothing by a quota kept apart from the session's own, whatever its share", () => {
+    const ofModel = { ...short(0.95), name: "weekly GPT-5.3-Codex-Spark", apart: true };
     const looked = usageToTell([ofModel, short(0.5)], none, NOW);
     expect(looked.tell).toEqual([]);
     expect(looked.told.size).toBe(0);
-    // The plan's own window beside it is told as ever.
+    // The plan's own window beside it is told as ever, and so is the week of the model the
+    // session runs, which is a window as any other.
     expect(usageToTell([ofModel, short(0.85)], none, NOW).tell.map((one) => one.mark)).toEqual([
       0.8,
     ]);
+    const week = usageToTell([{ ...short(0.91), name: "weekly fable" }], none, NOW);
+    expect(week.tell.map((one) => [one.window.name, one.mark])).toEqual([["weekly fable", 0.9]]);
   });
 
   it("tells the highest mark alone where a window passed several between two looks", () => {

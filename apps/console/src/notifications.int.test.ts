@@ -270,13 +270,16 @@ describe("what a member is told of (ADR-0157)", () => {
       state: "ready",
     });
     const page = await told(mira);
+    // What the console told the account itself, by the wake, is read as it is made.
     expect(page.said[0]).toEqual({
       kind: "ready",
       event: "task.created",
       number: work.number,
       followed: false,
-      read: false,
+      read: true,
     });
+    expect(page.unread).toBe(0);
+    expect(await unreadOf(mira)).toBe(0);
     const woken = await signals("mira");
     expect(woken.at(-1)).toBe(
       `#${work.number} "Rotate the keys" in ops is ready, and you are at work on it. Read it: console task ${work.number} --project ops`,
@@ -365,6 +368,16 @@ describe("what a member is told of (ADR-0157)", () => {
     expect(off.ownAgents).toBe(true);
     // What was chosen before stands: the kinds are changed by name, the rest left as it was.
     expect(off.kinds).toMatchObject({ commented: true, moved: true, agent: true, ready: false });
+    // Two changes made at once, on a page and through an agent say, are both kept.
+    await Promise.all([
+      choose(bob, { kinds: { archived: true } }),
+      choose(bob, { kinds: { changed: true } }),
+      choose(bob, { ownAgents: false }),
+    ]);
+    const both = restNotificationSettingsSchema.parse(await (await get(bob, SETTINGS)).json());
+    expect(both.kinds).toMatchObject({ archived: true, changed: true, commented: true });
+    expect(both.ownAgents).toBe(false);
+    expect(both.projectsOff).toEqual([{ key: "ops", name: "Operations" }]);
     // A project turned off tells nothing of its tasks.
     const quiet = await task(bob, { title: "Tidy the runbooks" });
     const before = (await told(bob)).said.length;

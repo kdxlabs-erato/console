@@ -1,5 +1,5 @@
 {
-  "id": "dfb92fa6-6497-4312-a561-bff2d3bfb2d5",
+  "id": "56314f6d-115f-4f81-ad9c-afbd027c2969",
   "prevId": "1db6f84d-8434-46f0-a422-ea6c77324cf1",
   "version": "7",
   "dialect": "postgresql",
@@ -3231,6 +3231,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notifications_unread_idx": {
+          "name": "notifications_unread_idx",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"notifications\".\"read_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}

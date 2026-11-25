@@ -83,8 +83,11 @@ class AlreadyTold extends Error {}
  * agent account is a wake too, a signal on the account's record made with its notification or
  * not at all. One pass at a time, in whatever process: the place in the feed is the pass's
  * lock. An event is told before the place moves past it, and the place is kept a batch at a
- * time: a pass that ends halfway reads again the batch it was in and tells nobody twice, since
- * a member is told of an event once, and never loses one. A pass reads no
+ * time: a pass that ends halfway reads again the batch it was in and tells nobody of the board
+ * twice, since a member is told of an event once, and never loses one. What the console wakes
+ * every account for of its own accord, a change of the workspace's services, has no
+ * notification to be told once by: a pass that failed in the middle of it sends it again to
+ * those it had reached, which an agent reads as one. A pass reads no
  * further than the feed's settled end (ADR-0125): an event numbered before another and
  * committed after it is read when it is there, never passed over. An event whose wakes fail
  * pass after pass is passed over after `WAKE_TRIES` of them, with an error in the log that

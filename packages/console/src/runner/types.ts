@@ -84,9 +84,10 @@ export interface UsageWindow {
   /** Whether the product itself says the window is near its limit, whatever the share used. */
   readonly near?: boolean | undefined;
   /**
-   * Whether the window is of a part of the allowance, one model's own, beside the plan's: said
-   * on to the console as every window is, and told to the agent at no share of it, since
-   * nothing here knows that its limit ends the agent's turn and not the model's alone.
+   * Whether the window is of a quota kept apart from the one the session draws on, another
+   * model's say, as the Codex driver reads a bucket other than the plan's: said on to the
+   * console as every window is, and told to the agent at no share of it, since nothing here
+   * knows that the session's requests are counted on it.
    */
   readonly apart?: boolean | undefined;
 }

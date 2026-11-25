@@ -64,15 +64,15 @@ const listOf = (value: unknown): readonly unknown[] => (Array.isArray(value) ? v
 const MAX_WINDOWS = 8;
 /** The product's word for a window, as it spells one. */
 const WINDOW = /^[a-z][a-z0-9_]{0,39}$/;
-/** The plan's own windows, by the product's words for them: every other is of a part of the allowance. */
-const PLAN_WINDOWS: readonly string[] = ["five_hour", "seven_day"];
 /**
  * The week's window of one model, the bucket the product keeps for a model beside the week of
  * all of them: `seven_day_overage_included`, which its own description of the line calls the
  * "overage-included weekly (per-model bucket)" window, and which its usage screen shows as the
  * week of a model by name, "Current week (Fable)". Seen beside the week's own at twice its
  * share (2.1.322). The line names no model with it: it is said by the model the session runs,
- * and not at all before the product has said which that is.
+ * whose requests it is counted on, and not at all before the product has said which that is.
+ * It is a window as the others are: a session that runs the model is refused at its limit, so
+ * the agent is told of it at the shares it is told of any window at.
  */
 const MODEL_WEEK = "seven_day_overage_included";
 /** A window of what the product allows beyond the subscription, which is no share of the subscription's. */
@@ -87,10 +87,19 @@ const windowName = (word: string): string =>
 
 /**
  * The family a model is of, as a person calls it, from what the product calls the model it
- * runs: `fable` of `claude-fable-5-2`, `opus` of `opus[1m]`. Nothing where it names none.
+ * runs: `fable` of `claude-fable-5-2`, `opus` of `opus[1m]`, `sonnet` of
+ * `claude-3-7-sonnet`: one of the families the driver knows, wherever the name holds it as a
+ * word, else the word a name begins with after the maker's own. `model` where it tells none.
  */
-const familyOf = (model: string | undefined): string | undefined =>
-  /^(?:claude[-_ ])?([a-z]{2,20})(?![a-z])/.exec((model ?? "").toLowerCase())?.[1];
+function familyOf(model: string): string {
+  const name = model.toLowerCase();
+  const known = MODELS.find((family) => new RegExp(`(?:^|[^a-z])${family}(?:[^a-z]|$)`).test(name));
+  if (known !== undefined) {
+    return known;
+  }
+  const first = /^(?:claude[-_ ])?([a-z]{2,20})(?![a-z])/.exec(name)?.[1];
+  return first === undefined || first === "claude" ? "model" : first;
+}
 
 /**
  * A moment the product gives in seconds since the epoch, in milliseconds; nothing for anything
@@ -122,12 +131,11 @@ function windowsOf(info: Json, model: string | undefined): UsageWindow[] {
     if (typeof word !== "string" || !WINDOW.test(word) || windows.length >= MAX_WINDOWS) {
       return;
     }
-    const family = familyOf(model);
     const name =
       word === MODEL_WEEK
-        ? family === undefined
+        ? model === undefined
           ? undefined
-          : `weekly ${family}`
+          : `weekly ${familyOf(model)}`
         : BEYOND.test(word)
           ? undefined
           : windowName(word);
@@ -138,13 +146,7 @@ function windowsOf(info: Json, model: string | undefined): UsageWindow[] {
     const resetsAt = momentOf(one.resetsAt);
     const near = one.status === "allowed_warning";
     if (used !== undefined || near) {
-      windows.push({
-        name,
-        used,
-        resetsAt,
-        ...(near ? { near } : {}),
-        ...(PLAN_WINDOWS.includes(word) ? {} : { apart: true }),
-      });
+      windows.push({ name, used, resetsAt, ...(near ? { near } : {}) });
     }
   };
   if (isObject(info.unifiedWindows)) {

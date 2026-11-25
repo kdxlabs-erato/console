@@ -1054,7 +1054,8 @@ export const taskFollows = pgTable(
  * What happened is the event's own; the row names the thing it is of, so that it is read only
  * while the member may still see that thing, and says whether they read it. `woken` is the
  * console having told the member itself, by a wake of its agent account: a plugin that carries
- * notifications elsewhere carries that one to nobody. Kept for a time and then let go: the
+ * notifications elsewhere carries that one to nobody, and it is read as it is made, since the
+ * wake said it. Kept for a time and then let go: the
  * record is the feed.
  */
 export const notifications = pgTable(
@@ -1085,6 +1086,8 @@ export const notifications = pgTable(
   (table) => [
     uniqueIndex("notifications_person_event_key").on(table.personId, table.eventId),
     index("notifications_person_idx").on(table.personId, table.createdAt),
+    // Those a member has not read are counted with every answer of who is signed in.
+    index("notifications_unread_idx").on(table.personId).where(sql`${table.readAt} is null`),
     index("notifications_event_idx").on(table.eventId),
     index("notifications_created_idx").on(table.createdAt),
   ],

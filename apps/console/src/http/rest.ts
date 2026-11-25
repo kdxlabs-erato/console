@@ -208,12 +208,12 @@ import {
   updateGoal,
 } from "../db/queries/goals.js";
 import {
+  changeChosenNotifications,
   chosenNotificationsOf,
   countUnreadNotifications,
   followOf,
   listNotificationsFor,
   markNotificationsRead,
-  setChosenNotifications,
   setFollow,
 } from "../db/queries/notifications.js";
 import {
@@ -1968,7 +1968,7 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
     }
     const { person } = caller;
     if (input.reset === true) {
-      await setChosenNotifications(database, person.id, undefined, clock.now());
+      await changeChosenNotifications(database, person.id, () => undefined, clock.now());
       return c.json(await notificationSettingsOfPerson(person));
     }
     const unknown = Object.keys(input.kinds ?? {}).find(
@@ -1977,8 +1977,9 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
     if (unknown !== undefined) {
       return invalid(c, `There is no kind of notification called ${unknown}.`);
     }
-    const before = (await chosenNotificationsOf(database, person.id)) ?? {};
-    let projectsOff = before.projectsOff;
+    // The projects named are looked up before anything is kept: one that is not there, or not
+    // theirs to see, changes nothing.
+    let off: { readonly ids: readonly string[]; readonly visible: ReadonlySet<string> } | undefined;
     if (input.projectsOff !== undefined) {
       const seen = await listProjectsFor(database, person.workspaceId, person);
       const ids: string[] = [];
@@ -1989,21 +1990,31 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
         }
         ids.push(project.id);
       }
-      // What was turned off in a project they no longer see stays as it is: it is not theirs to name.
-      const visible = new Set(seen.map((project) => project.id));
-      projectsOff = [...(before.projectsOff ?? []).filter((id) => !visible.has(id)), ...ids];
+      off = { ids, visible: new Set(seen.map((project) => project.id)) };
     }
-    await setChosenNotifications(
+    const turned = off;
+    await changeChosenNotifications(
       database,
       person.id,
-      {
-        kinds: { ...before.kinds, ...(input.kinds as ChosenNotifications["kinds"]) },
-        ...(projectsOff === undefined ? {} : { projectsOff }),
-        ...(input.ownAgents === undefined
-          ? before.ownAgents === undefined
-            ? {}
-            : { ownAgents: before.ownAgents }
-          : { ownAgents: input.ownAgents }),
+      (chosen) => {
+        const before = chosen ?? {};
+        // What was turned off in a project they no longer see stays as it is: it is not theirs to name.
+        const projectsOff =
+          turned === undefined
+            ? before.projectsOff
+            : [
+                ...(before.projectsOff ?? []).filter((id) => !turned.visible.has(id)),
+                ...turned.ids,
+              ];
+        return {
+          kinds: { ...before.kinds, ...(input.kinds as ChosenNotifications["kinds"]) },
+          ...(projectsOff === undefined ? {} : { projectsOff }),
+          ...(input.ownAgents === undefined
+            ? before.ownAgents === undefined
+              ? {}
+              : { ownAgents: before.ownAgents }
+            : { ownAgents: input.ownAgents }),
+        };
       },
       clock.now(),
     );

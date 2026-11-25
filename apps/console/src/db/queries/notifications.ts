@@ -169,6 +169,8 @@ export async function makeNotification(
       decisionId: input.decisionId ?? null,
       aboutId: input.aboutId ?? null,
       createdAt: input.createdAt,
+      // What the console told the member itself, by a wake, is read as it is made.
+      readAt: input.woken ? input.createdAt : null,
     })
     .onConflictDoNothing()
     .returning({ id: notifications.id });
@@ -185,7 +187,7 @@ function stillSeenBy(person: PersonRecord) {
     when ${notifications.decisionId} is not null then exists (select 1 from ${decisions} where ${decisions.id} = ${notifications.decisionId} and ${decisionReachableBy(person)})
     when ${notifications.projectId} is not null then exists (select 1 from ${projects} where ${projects.id} = ${notifications.projectId} and ${projectVisibleTo(person)})
     when ${notifications.aboutId} is not null then exists (select 1 from ${people} where ${people.id} = ${notifications.aboutId} and ${supervises(person)})
-    else true end)`;
+    else false end)`;
 }
 
 /** The notifications of one member that they may still read. */
@@ -229,7 +231,8 @@ export async function countUnreadNotifications(
 
 /**
  * Marks a member's notifications as read, those named or every one: how many were marked.
- * One that is another member's, or read already, is none of them.
+ * One that is another member's, read already, or of a thing they may no longer see is none of
+ * them, so that what is counted as marked is what their list shows.
  */
 export async function markNotificationsRead(
   database: Database,
@@ -242,7 +245,7 @@ export async function markNotificationsRead(
     .set({ readAt: now })
     .where(
       and(
-        eq(notifications.personId, person.id),
+        of(person),
         isNull(notifications.readAt),
         which === "all" ? undefined : inArray(notifications.id, [...which.ids]),
       ),
@@ -273,17 +276,29 @@ export async function chosenNotificationsOf(
   return row?.chosen ?? undefined;
 }
 
-/** Keeps what a member chose to be told of, or nothing for the defaults of what they are. */
-export async function setChosenNotifications(
+/**
+ * Changes what a member chose to be told of: `change` is handed what they chose before and
+ * answers what they choose now, or nothing for the defaults of what they are. The member's row
+ * is held while it is read and written, so that two changes made at once, on a page and through
+ * an agent say, are made one after the other and neither is lost.
+ */
+export async function changeChosenNotifications(
   database: Database,
   personId: string,
-  chosen: ChosenNotifications | undefined,
+  change: (before: ChosenNotifications | undefined) => ChosenNotifications | undefined,
   now: Date,
 ): Promise<void> {
-  await drizzleOf(database)
-    .update(people)
-    .set({ notifications: chosen ?? null, updatedAt: now })
-    .where(eq(people.id, personId));
+  await drizzleOf(database).transaction(async (tx) => {
+    const [row] = await tx
+      .select({ chosen: people.notifications })
+      .from(people)
+      .where(eq(people.id, personId))
+      .for("update");
+    await tx
+      .update(people)
+      .set({ notifications: change(row?.chosen ?? undefined) ?? null, updatedAt: now })
+      .where(eq(people.id, personId));
+  });
 }
 
 /**

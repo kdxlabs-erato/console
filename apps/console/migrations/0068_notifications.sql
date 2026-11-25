@@ -34,6 +34,7 @@ ALTER TABLE "task_follows" ADD CONSTRAINT "task_follows_task_id_tasks_id_fk" FOR
 ALTER TABLE "task_follows" ADD CONSTRAINT "task_follows_person_id_people_id_fk" FOREIGN KEY ("person_id") REFERENCES "public"."people"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "notifications_person_event_key" ON "notifications" USING btree ("person_id","event_id");--> statement-breakpoint
 CREATE INDEX "notifications_person_idx" ON "notifications" USING btree ("person_id","created_at");--> statement-breakpoint
+CREATE INDEX "notifications_unread_idx" ON "notifications" USING btree ("person_id") WHERE "notifications"."read_at" is null;--> statement-breakpoint
 CREATE INDEX "notifications_event_idx" ON "notifications" USING btree ("event_id");--> statement-breakpoint
 CREATE INDEX "notifications_created_idx" ON "notifications" USING btree ("created_at");--> statement-breakpoint
 CREATE INDEX "task_follows_person_idx" ON "task_follows" USING btree ("person_id");

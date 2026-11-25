@@ -1525,6 +1525,8 @@ describe("the codex driver", () => {
         resetsAt: 1795927747,
       }),
       apart("codex_other", null, { usedPercent: 3, windowDurationMins: 300, resetsAt: null }),
+      // A name that is only space is none: the bucket is said by its id, never as the plan's.
+      apart("codex_blank", " \t ", { usedPercent: 2, windowDurationMins: 10080, resetsAt: null }),
       apart("codex_long", `A   name\n${"x".repeat(200)}`, {
         usedPercent: 1,
         windowDurationMins: 300,
@@ -1532,7 +1534,7 @@ describe("the codex driver", () => {
       }),
     );
     await tick();
-    expect((await said(9)).slice(6)).toEqual([
+    expect((await said(10)).slice(6)).toEqual([
       {
         type: "usage",
         windows: [
@@ -1542,6 +1544,10 @@ describe("the codex driver", () => {
       {
         type: "usage",
         windows: [{ name: "5-hour codex_other", used: 0.03, resetsAt: undefined, apart: true }],
+      },
+      {
+        type: "usage",
+        windows: [{ name: "weekly codex_blank", used: 0.02, resetsAt: undefined, apart: true }],
       },
       {
         type: "usage",
@@ -1560,7 +1566,7 @@ describe("the codex driver", () => {
         codexErrorInfo: "usageLimitExceeded",
       }),
     );
-    await said(11);
+    await said(12);
     expect(events.at(-1)).toEqual({
       type: "cannot_go_on",
       state: "failed",

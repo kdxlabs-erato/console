@@ -134,9 +134,8 @@ function allowanceOf(limits: unknown): UsageWindow[] {
   const apart = bucket !== undefined && bucket !== PLAN_BUCKET;
   // By the name the product shows for the bucket, or its id where it gives none: one line,
   // and short, since the window's own name stands before it.
-  const of = apart
-    ? (textOf(said.limitName) ?? bucket).replaceAll(/\s+/g, " ").trim().slice(0, MAX_BUCKET_NAME)
-    : "";
+  const called = (textOf(said.limitName) ?? "").replaceAll(/\s+/g, " ").trim();
+  const of = apart ? (called === "" ? bucket : called).slice(0, MAX_BUCKET_NAME) : "";
   const windows: UsageWindow[] = [];
   for (const [place, one] of [
     ["primary", said.primary],

@@ -205,13 +205,8 @@ describe("the claude driver and the product's allowance", () => {
     };
     const events = await product([first, INIT, replay("m1"), says("ok"), second, RESULT]).events();
     const week = { name: "weekly", used: 0.13, resetsAt: 1795690800 * 1000 };
-    // Named by the model the session runs, and kept apart: the agent is told nothing by it.
-    const ofModel = {
-      name: "weekly sonnet",
-      used: 0.26,
-      resetsAt: 1795690800 * 1000,
-      apart: true,
-    };
+    // Named by the model the session runs, whose requests it is counted on.
+    const ofModel = { name: "weekly sonnet", used: 0.26, resetsAt: 1795690800 * 1000 };
     expect(events.filter((event) => event.type === "usage")).toEqual([
       { type: "usage", windows: [week] },
       { type: "usage", windows: [week, ofModel] },
@@ -221,6 +216,12 @@ describe("the claude driver and the product's allowance", () => {
       ["claude-fable-5-2", "weekly fable"],
       ["opus[1m]", "weekly opus"],
       ["Claude-Haiku-5-5-20261101", "weekly haiku"],
+      // A family wherever the name holds it, and the name's own first word where it is none
+      // the driver knows; where it tells none, the model's week all the same.
+      ["claude-3-7-sonnet-20250219", "weekly sonnet"],
+      ["claude-mythos-5-2", "weekly mythos"],
+      ["4.5", "weekly model"],
+      ["claude-", "weekly model"],
     ] as const) {
       const said = await product([{ ...INIT, model }, replay("m1"), second, RESULT]).events();
       expect(said.find((event) => event.type === "usage")).toEqual({
@@ -228,17 +229,12 @@ describe("the claude driver and the product's allowance", () => {
         windows: [week, { ...ofModel, name }],
       });
     }
-    // Before the product said which model it runs, or where that names none, it is of no
-    // model the driver could say: left out until it is said again.
+    // Before the product said which model it runs, it is of no model the driver could say:
+    // left out until it is said again.
     const early = await product([second, INIT, replay("m1"), RESULT]).events();
     expect(early.filter((event) => event.type === "usage")).toEqual([
       { type: "usage", windows: [week] },
     ]);
-    const unnamed = await product([{ ...INIT, model: "4.5" }, replay("m1"), second]).events();
-    expect(unnamed.find((event) => event.type === "usage")).toEqual({
-      type: "usage",
-      windows: [week],
-    });
     // A window of what is allowed beyond the subscription is no share of it, and says nothing.
     const alone = {
       ...first,
@@ -270,7 +266,7 @@ describe("the claude driver and the product's allowance", () => {
       type: "usage",
       windows: [
         { name: "5-hour", used: 0.91, resetsAt: RESETS * 1000, near: true },
-        { name: "weekly opus", used: 0.4, resetsAt: WEEK * 1000, apart: true },
+        { name: "weekly opus", used: 0.4, resetsAt: WEEK * 1000 },
       ],
     });
   });
@@ -321,12 +317,10 @@ describe("the claude driver and the product's allowance", () => {
     ]).events();
     const usage = events.find((event) => event.type === "usage");
     expect(usage?.type === "usage" ? usage.windows.length : 0).toBe(8);
-    // A window this driver does not know is no window of the plan's own: said, and kept apart.
     expect(usage?.type === "usage" ? usage.windows[0] : undefined).toEqual({
       name: "window 0",
       used: 1,
       resetsAt: undefined,
-      apart: true,
     });
   });
 

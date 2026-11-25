@@ -2841,7 +2841,15 @@ function NotificationsPage(props: {
         if (signal?.aborted === true) {
           return;
         }
-        setItems((before) => (offset === 0 ? page.items : [...(before ?? []), ...page.items]));
+        // A list that moved between two reads, by what arrived or what was read meanwhile,
+        // answers a row a second time: each is shown once.
+        setItems((before) => {
+          if (offset === 0 || before === undefined) {
+            return page.items;
+          }
+          const shownAlready = new Set(before.map((one) => one.id));
+          return [...before, ...page.items.filter((one) => !shownAlready.has(one.id))];
+        });
         setMore(page.more);
         setUnread(page.unread);
       } catch (failure: unknown) {
@@ -2980,8 +2988,21 @@ function NotificationsPage(props: {
           notifications={items}
           href={hrefOf}
           onOpen={(notification) => {
-            // Read as it is opened: the page that follows needs no answer of this.
-            void readNotifications({ ids: [notification.id] }).catch(() => undefined);
+            // Read as it is opened: the page that follows needs no answer of this, and one
+            // opened beside this page finds it shown as read here.
+            const at = new Date().toISOString();
+            void readNotifications({ ids: [notification.id] })
+              .then((answer) => {
+                setUnread(answer.unread);
+                setItems((before) =>
+                  before?.map((one) =>
+                    one.id === notification.id && one.readAt === null
+                      ? { ...one, readAt: at }
+                      : one,
+                  ),
+                );
+              })
+              .catch(() => undefined);
           }}
           more={more}
           onMore={() => void read(items.length)}
