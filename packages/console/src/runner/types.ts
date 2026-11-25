@@ -50,6 +50,17 @@ export type DriverEvent =
   /** A turn completed: the agent is done with what it was sent, and waits for more. */
   | { readonly type: "turn_completed" }
   /**
+   * How many sub-agents are at work in the background of the session, as the product lists
+   * them (ADR-0162): said as that changes, from the first that is. A driver whose product lists
+   * none says it never, and its sessions are waited for by their turns alone.
+   */
+  | { readonly type: "background"; readonly agents: number }
+  /**
+   * The product began a turn, one it starts by itself to hand the agent what a sub-agent in
+   * the background did among them. Said once a sub-agent was said to be at work there.
+   */
+  | { readonly type: "turn_started" }
+  /**
    * The agent cannot go on: the model refused, or the product failed; with why, in the
    * heartbeat's words. For a usage limit (`usage_limit`), `until` is when the product says the
    * limit resets, where it says: the runner brings the agent back then by itself.

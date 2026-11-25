@@ -76,12 +76,11 @@ export const MAX_COOL_DOWN_MS = 4 * 60 * 60_000;
  */
 export const SUBAGENTS_MS = 60 * 60_000;
 /**
- * How long after a sub-agent in the background ended its session is not taken for idle: the
- * product hands the agent the sub-agent's report in a turn it starts itself, a moment after.
+ * How long a session that had sub-agents in the background is not taken for idle after one
+ * ended or a turn did: the product hands the agent a sub-agent's report in a turn it starts
+ * itself, a moment after.
  */
-export const REPORT_MS = 60_000;
-/** How many calls that started a sub-agent in the background a session remembers: the oldest is let go past it. */
-const MAX_BACKGROUND = 500;
+export const REPORT_MS = 10_000;
 /** How long the runner waits before it asks for its stream of signals again. */
 export const RECONNECT_MS = 5000;
 /** What an autosave's commit says: the runner's, and never the agent's own words. */
@@ -376,20 +375,15 @@ interface OpenSession {
   unread: number;
   /** Whether the agent was handed word that it is back from a usage limit, and has not answered since. */
   returning: boolean;
+  /** How many sub-agents are at work in its background, as the driver said last (ADR-0162). */
+  background: number;
   /**
-   * The sub-agents at work in the background (ADR-0161), by the calls that started them: from
-   * the call's answer that says so until the sub-agent's own line says it ended. And every
-   * call answered so, for a sub-agent that does something after that line, being started again.
-   */
-  readonly background: Set<string>;
-  readonly launched: Set<string>;
-  /**
-   * Whether the agent itself said or did something since a turn last ended. With no turn of
-   * the runner's under way, it is a turn the product started itself, as it does to hand the
-   * agent the report of a sub-agent that ended.
+   * Whether the product said it began a turn that did not end since. With no turn of the
+   * runner's under way, it is one the product started itself, as it does to hand the agent the
+   * report of a sub-agent that ended.
    */
   own: boolean;
-  /** Until when the product is left to start that turn, after a sub-agent in the background ended. */
+  /** Until when the product is left to start such a turn: 0 in a session that had no sub-agent in the background. */
   reportBy: number;
   /**
    * Since when the runner holds an ending for what goes on with no turn of its own under way
@@ -972,50 +966,9 @@ export function createRunner(options: RunnerOptions): Runner {
     }
   };
 
-  /**
-   * Notes, of what the product did, what goes on in a session beside the turns the runner
-   * starts (ADR-0162), in the order the product wrote it: a sub-agent that goes on in the
-   * background, from the answer of its call that says so (`background`) to its own line that
-   * says it ended (`over`, ADR-0161), and at work again where it does something after; and
-   * what the agent itself says or does, which with no turn of the runner's under way is a
-   * turn the product started.
-   */
-  const noteWork = (target: OpenSession, event: Extract<DriverEvent, { type: "event" }>): void => {
-    const parent = event.data?.parent;
-    if (ANSWERS.has(event.kind) && parent === undefined) {
-      target.own = true;
-    }
-    const call = event.data?.id;
-    if (event.kind === "tool_result" && event.data?.background === true) {
-      if (typeof call === "string" && call.length > 0) {
-        if (!target.launched.has(call) && target.launched.size >= MAX_BACKGROUND) {
-          const oldest = target.launched.values().next().value;
-          if (oldest !== undefined) {
-            target.launched.delete(oldest);
-            target.background.delete(oldest);
-          }
-        }
-        target.launched.add(call);
-        target.background.add(call);
-      }
-      return;
-    }
-    if (typeof parent !== "string" || !target.launched.has(parent)) {
-      return;
-    }
-    if (event.kind === "status" && typeof event.data?.over === "string") {
-      // Its report is the agent's to read, in a turn the product starts for it in a moment.
-      if (target.background.delete(parent)) {
-        target.reportBy = options.now() + timing.reportMs;
-      }
-    } else {
-      target.background.add(parent);
-    }
-  };
-
-  /** Whether something goes on in a session with no turn of the runner's under way: sub-agents in the background, or a turn the product started. */
+  /** Whether something goes on in a session with no turn of the runner's under way: sub-agents in the background, or a turn the product started or is about to. */
   const goesOn = (target: OpenSession): boolean =>
-    target.background.size > 0 || (!target.turn && target.own) || options.now() < target.reportBy;
+    target.background > 0 || target.own || options.now() < target.reportBy;
 
   /**
    * Whether an ending is held still for what goes on in the session (ADR-0162): for as long as
@@ -1025,37 +978,24 @@ export function createRunner(options: RunnerOptions): Runner {
   const within = (target: OpenSession, why: string): boolean => {
     const now = options.now();
     target.heldSince ??= now;
-    const many = target.background.size;
-    const counted = `${many} ${many === 1 ? "sub-agent" : "sub-agents"}`;
-    const minutes = Math.max(1, Math.round(timing.subagentsMs / 60_000));
-    if (now - target.heldSince >= timing.subagentsMs) {
-      if (many > 0 && target.heldSaid !== "over") {
-        target.heldSaid = "over";
-        record(
-          target,
-          "status",
-          `The runner waited ${minutes} ${minutes === 1 ? "minute" : "minutes"} for the sub-agents at work in the background, and waits no longer: ${counted} still at work ${many === 1 ? "ends" : "end"} with the session.`,
-          { subagents: many, waited: "over" },
-        );
-        log(
-          `${counted} still at work in the background of session ${target.id}: waited for long enough, ${why}`,
-        );
-      }
-      return false;
-    }
-    if (many > 0 && target.heldSaid === undefined) {
-      target.heldSaid = "waits";
+    const waits = now - target.heldSince < timing.subagentsMs;
+    const word = waits ? "waits" : "over";
+    if (target.background > 0 && target.heldSaid !== word) {
+      target.heldSaid = word;
+      const many = `${target.background} ${target.background === 1 ? "sub-agent" : "sub-agents"} at work in the background`;
+      const most = `${Math.round(timing.subagentsMs / 60_000)} minutes`;
       record(
         target,
         "status",
-        `The session is to end ${why}, and ${counted} at work in the background would end with it: the runner waits until none is at work, ${minutes} ${minutes === 1 ? "minute" : "minutes"} at most.`,
-        { subagents: many, waited: "waits" },
+        waits
+          ? `The session is to end ${why}, with ${many}: the runner waits until none is at work, ${most} at most.`
+          : `The runner waited ${most} for the sub-agents in the background, and waits no longer: the session ends ${why}, with ${many}.`,
       );
       log(
-        `${counted} at work in the background of session ${target.id}: the runner waits for them before the session ends ${why}`,
+        `session ${target.id} is to end ${why}, with ${many}: the runner ${waits ? "waits for them" : "waited for long enough"}`,
       );
     }
-    return true;
+    return waits;
   };
 
   /**
@@ -1074,7 +1014,7 @@ export function createRunner(options: RunnerOptions): Runner {
    */
   const closing = (): boolean =>
     updatedTo !== undefined &&
-    !(session !== undefined && session.background.size > 0 && within(session, FOR_UPDATE));
+    !(session !== undefined && session.background > 0 && within(session, FOR_UPDATE));
 
   /** Reads what the product does: the blocks are numbered and kept as they arrive, its own words go to the queue. */
   const pump = async (target: OpenSession): Promise<void> => {
@@ -1090,8 +1030,12 @@ export function createRunner(options: RunnerOptions): Runner {
               push({ t: "answered", session: target });
             }
           }
-          noteWork(target, event);
           record(target, event.kind, event.text, event.data, event.pictures);
+        } else if (event.type === "background") {
+          target.background = event.agents;
+          target.reportBy = options.now() + timing.reportMs;
+        } else if (event.type === "turn_started") {
+          target.own = true;
         } else if (event.type === "cannot_go_on") {
           target.own = false;
           // Counted here, in the order the product wrote: the queue is behind what is read.
@@ -1102,6 +1046,10 @@ export function createRunner(options: RunnerOptions): Runner {
           } else if (event.type === "turn_completed") {
             target.unread = 0;
             target.own = false;
+            // A report that came while the turn was under way is read in the next.
+            if (target.reportBy > 0) {
+              target.reportBy = options.now() + timing.reportMs;
+            }
           }
           push({ t: "driver", session: target, event });
         }
@@ -1194,8 +1142,7 @@ export function createRunner(options: RunnerOptions): Runner {
       taken: [],
       unread: 0,
       returning: false,
-      background: new Set(),
-      launched: new Set(),
+      background: 0,
       own: false,
       reportBy: 0,
       n: 0,
@@ -1873,9 +1820,11 @@ export function createRunner(options: RunnerOptions): Runner {
         }
         await account(signal);
         if (session !== undefined && !(await session.driver.set(settings))) {
-          // Taken when the product starts: the session ends when it is not at work, which the
-          // loop looks for, and the next has it.
+          // Taken when the product starts: the session ends when it is not at work, and the next has it.
           renew = true;
+          if (!busy(session, FOR_CHOICE)) {
+            await end("restarted");
+          }
         }
         push({ t: "heartbeat" });
         return;
@@ -2824,9 +2773,15 @@ export function createRunner(options: RunnerOptions): Runner {
             ) {
               await beginAnew(ownReset);
             }
-            // A model or an effort the product takes only when it starts: the session ends
-            // for it once it is not at work, at once where it is not now.
-            if (renew && session !== undefined && !busy(session, FOR_CHOICE)) {
+            // A model or an effort the product takes only when it starts, held for what went
+            // on in the session: it ends once nothing does. Not where the agent could not go
+            // on, which keeps its session as it does under a turn.
+            if (
+              renew &&
+              session !== undefined &&
+              stands.state === "running" &&
+              !busy(session, FOR_CHOICE)
+            ) {
               await end("restarted");
               if (pending.length > 0) {
                 scheduleDeliver();
