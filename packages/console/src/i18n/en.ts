@@ -883,13 +883,6 @@ export const en = {
         agents:
           "An agent account that reports to you stopped, failed or is not heard from, or runs again; or it raised a decision for you.",
       },
-      /** A plugin that carries notifications elsewhere, by its name: which of the kinds that are on it sends too. */
-      carrier: {
-        label: (plugin: string) => `Also sent by ${plugin}`,
-        hint: (plugin: string) =>
-          `Of what you have on, what ${plugin} sends you too. A kind that is off above is told to you only of a task whose bell you turned on, and is sent with the rest.`,
-        none: "Turn something on above to choose here.",
-      },
       projects: "Projects",
       projectsHint:
         "A project that is off tells you nothing of its tasks, but for a task whose bell you turned on.",

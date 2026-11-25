@@ -1,9 +1,5 @@
-import {
-  type ChosenNotifications,
-  carriedBy,
-  type NotificationKind,
-  type TaskFollowState,
-} from "@skillcdn/console/api";
+import type { ChosenNotifications, NotificationKind, TaskFollowState } from "@skillcdn/console/api";
+import type { PluginHookTold } from "@skillcdn/console/plugin";
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { decisionReachableBy, mayWorkIn, projectVisibleTo, supervises } from "../../auth/policy.js";
@@ -307,19 +303,18 @@ export async function changeChosenNotifications(
 }
 
 /**
- * Whom the console told of each of some events, and under which kind, as one plugin that
- * carries notifications elsewhere is handed them with an event (ADR-0157): every member a
- * notification was made for, but those who turned that kind off for this plugin. A member who
- * turned the kind off altogether has no notification, and so is none of them.
+ * Whom the console told of each of some events, and under which kind: what a plugin that
+ * carries notifications elsewhere is handed with an event (ADR-0157), every member a
+ * notification was made for, with whether the console woke them itself and whether they are
+ * told because they turned the task on themselves. A member who turned the kind off has no
+ * notification, but of such a task, and so is none of them; what a plugin sends of the rest is
+ * the plugin's own setting to read.
  */
 export async function notificationsOfEvents(
   database: Database,
   eventIds: readonly number[],
-  plugin: string,
-): Promise<
-  Map<number, { readonly personId: string; readonly kind: string; readonly woken: boolean }[]>
-> {
-  const found = new Map<number, { personId: string; kind: string; woken: boolean }[]>();
+): Promise<Map<number, PluginHookTold[]>> {
+  const found = new Map<number, PluginHookTold[]>();
   if (eventIds.length === 0) {
     return found;
   }
@@ -329,18 +324,19 @@ export async function notificationsOfEvents(
       personId: notifications.personId,
       kind: notifications.kind,
       woken: notifications.woken,
-      chosen: people.notifications,
+      followed: notifications.followed,
     })
     .from(notifications)
-    .innerJoin(people, eq(people.id, notifications.personId))
     .where(inArray(notifications.eventId, [...eventIds]))
     .orderBy(notifications.eventId, notifications.personId);
   for (const row of rows) {
-    if (!carriedBy(row.chosen, plugin, row.kind)) {
-      continue;
-    }
     const list = found.get(row.eventId) ?? [];
-    list.push({ personId: row.personId, kind: row.kind, woken: row.woken });
+    list.push({
+      personId: row.personId,
+      kind: row.kind,
+      woken: row.woken,
+      followed: row.followed,
+    });
     found.set(row.eventId, list);
   }
   return found;

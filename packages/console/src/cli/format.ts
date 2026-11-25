@@ -1316,10 +1316,8 @@ const onOrOff = (value: boolean): string => (value ? "on" : "off");
 /**
  * What a member is told of (ADR-0157): a line per kind, on or off, with what it is of and, where
  * they chose otherwise, what it is for a member who chose nothing; then the projects they are
- * told nothing of, whether what an agent of their own did as them counts, and a line for each
- * plugin that carries notifications elsewhere, with the kinds it is not to carry. The kinds
- * stand in the vocabulary's order, and one a newer console answers after them, by its name
- * alone.
+ * told nothing of, and whether what an agent of their own did as them counts. The kinds stand
+ * in the vocabulary's order, and one a newer console answers after them, by its name alone.
  */
 export function formatNotificationSettings(settings: RestNotificationSettings): string {
   const known: readonly string[] = NOTIFICATION_KINDS;
@@ -1337,12 +1335,6 @@ export function formatNotificationSettings(settings: RestNotificationSettings): 
     }),
     `projects off: ${settings.projectsOff.length === 0 ? "none" : settings.projectsOff.map((project) => `${project.key} (${project.name})`).join(", ")}`,
     `own agents: ${onOrOff(settings.ownAgents)}  (${settings.ownAgents ? "what an agent of your own did as you is told to you too" : "what an agent of your own did as you is not told to you"})`,
-    // A plugin that carries notifications elsewhere sends what is on, every kind but those
-    // turned off for it: console notify --via <key> --off <kind>.
-    ...settings.carriers.map(
-      (carrier) =>
-        `also sent by ${carrier.key} (${carrier.name}): every kind that is on${carrier.off.length === 0 ? "" : ` but ${carrier.off.join(", ")}`}`,
-    ),
   ].join("\n");
 }
 

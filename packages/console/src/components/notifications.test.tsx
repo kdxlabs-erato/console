@@ -217,7 +217,6 @@ describe("what a member chose to be told of", () => {
       defaults,
       projectsOff: [],
       ownAgents: false,
-      carriers: [],
       ...over,
     };
   };
@@ -246,35 +245,11 @@ describe("what a member chose to be told of", () => {
     expect(seen.indexOf("Decisions")).toBeLessThan(seen.indexOf("Agent accounts"));
   });
 
-  it("offers, for a plugin that carries notifications elsewhere, the kinds that are on and no other", () => {
-    const messenger = { key: "messenger", name: "Messenger", off: ["commented"] };
-    const seen = drawn(
-      settings({
-        kinds: { ...settings().kinds, commented: true, decision: true },
-        carriers: [messenger],
-      }),
-    );
-    const row = seen.slice(seen.indexOf("Also sent by Messenger"), seen.indexOf("Projects"));
-    // What is on is carried unless it was turned off for this plugin; what is off is not
-    // offered, since nobody carries what the console does not tell.
-    expect(row).toContain(chip("Comment", false));
-    expect(row).toContain(chip("Waits for your answer", true));
-    expect(row).toContain(chip("Your agent account", true));
-    expect(row).not.toContain("Given to you");
-    // A kind that is off is told only of a task whose bell was turned on, and is sent with the rest.
-    expect(row).toContain("is told to you only of a task whose bell you turned on");
-    // A choice made of a plugin is something to put back.
-    expect(seen).not.toMatch(/<button[^>]*disabled=""[^>]*>Back to the defaults<\/button>/);
-    // With nothing on, there is nothing for it to carry.
-    const none = drawn(
-      settings({
-        kinds: { ...settings().kinds, agent: false },
-        carriers: [{ ...messenger, off: [] }],
-      }),
-    );
-    expect(none).toContain("Turn something on above to choose here.");
-    // No plugin carries notifications: nothing is said of one.
-    expect(drawn(settings())).not.toContain("Also sent by");
+  it("has a row for each group of kinds, the projects and one's own agents, and none for a plugin", () => {
+    const seen = drawn(settings({ kinds: { ...settings().kinds, commented: true } }));
+    expect(seen.match(/class="sc-settings-row"/g)).toHaveLength(5);
+    // What a plugin sends on of this is the plugin's own setting: nothing here names one.
+    expect(seen).not.toMatch(/plugin|messenger/i);
   });
 
   it("offers each project on unless it was turned off, and nothing to reset where nothing was chosen", () => {
@@ -293,20 +268,6 @@ describe("what a member chose to be told of", () => {
     const account = drawn(settings(), true);
     expect(account).not.toContain("Tell me of what my agents do as me");
     expect(account).toContain("wakes the account");
-  });
-
-  it("names a plugin in Korean with the particle its name takes", () => {
-    const seen = renderToStaticMarkup(
-      <LanguageContext.Provider value={KOREAN}>
-        <NotificationSettings
-          settings={settings({ carriers: [{ key: "messenger", name: "Messenger", off: [] }] })}
-          projects={projects}
-          onChange={() => undefined}
-        />
-      </LanguageContext.Provider>,
-    );
-    expect(seen).toContain("Messenger로도 받기");
-    expect(seen).toContain("Messenger가 함께 보내는 것입니다");
   });
 });
 

@@ -137,7 +137,7 @@ function BellSpecimen() {
   return <TaskBell on={on} onChange={setOn} />;
 }
 
-/** What a member is told of, with a plugin that carries it elsewhere: each choice kept as it is made. */
+/** What a member is told of: each choice kept as it is made. */
 function NotificationSettingsSpecimen() {
   const defaults = {
     assigned: false,
@@ -155,16 +155,9 @@ function NotificationSettingsSpecimen() {
     commented: true,
     decision: true,
   });
-  const [off, setOff] = useState<readonly string[]>(["commented"]);
   return (
     <NotificationSettings
-      settings={{
-        kinds,
-        defaults,
-        projectsOff: [],
-        ownAgents: false,
-        carriers: [{ key: "messenger", name: "Messenger", off: [...off] }],
-      }}
+      settings={{ kinds, defaults, projectsOff: [], ownAgents: false }}
       projects={[
         { key: "ledger", name: "Ledger" },
         { key: "ops", name: "Operations" },
@@ -172,19 +165,9 @@ function NotificationSettingsSpecimen() {
       onChange={(input) => {
         if (input.reset === true) {
           setKinds(defaults);
-          setOff([]);
           return;
         }
         setKinds((before) => ({ ...before, ...input.kinds }));
-        const carried = input.carriers?.messenger;
-        if (carried !== undefined) {
-          setOff((before) => [
-            ...before.filter((kind) => carried[kind] !== true),
-            ...Object.keys(carried).filter(
-              (kind) => carried[kind] === false && !before.includes(kind),
-            ),
-          ]);
-        }
       }}
     />
   );
@@ -2366,7 +2349,7 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
       classes="sc-settings*"
       use="Settings as rows: a label, its control, a hint."
     >
-      <Specimen label="What a member is told of: each kind a choice, and of what is on, what a plugin sends too">
+      <Specimen label="What a member is told of: each kind a choice, each project, and their own agents">
         <NotificationSettingsSpecimen />
       </Specimen>
       <Specimen label="Read: a row per setting, its name beside its value">

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  carriedBy,
   NOTIFICATION_KINDS,
   type NotificationKind,
   notificationSettingsOf,
@@ -12,8 +11,8 @@ import {
 } from "./notifications.js";
 
 // What a member is told of (ADR-0157), where it needs no database: whether a task tells them
-// anything where they chose nothing of it, what is kept when they turn it, what a plugin
-// carries, and from when a list that opens shows what is new. Whom an event concerns is the
+// anything where they chose nothing of it, what is kept when they turn it, and from when a
+// list that opens shows what is new. Whom an event concerns is the
 // worker's, and is tested where the board is (`apps/console`, `notifications.int.test.ts`).
 
 const PROJECT = "0195c0de-0000-7000-8000-00000000000a";
@@ -84,30 +83,6 @@ describe("what is kept when a member turns a task's notifications", () => {
     // What was kept before the settings changed still holds.
     expect(taskTold("following", true)).toBe(true);
     expect(taskTold("muted", false)).toBe(false);
-  });
-});
-
-describe("what a plugin carries for a member", () => {
-  it("is every kind but those they turned off for it, and nothing of another plugin's", () => {
-    const chosen = { carriersOff: { messenger: ["commented", "moved"] as NotificationKind[] } };
-    expect(carriedBy(chosen, "messenger", "commented")).toBe(false);
-    expect(carriedBy(chosen, "messenger", "agent")).toBe(true);
-    expect(carriedBy(chosen, "pager", "commented")).toBe(true);
-    expect(carriedBy(undefined, "messenger", "commented")).toBe(true);
-    expect(carriedBy(null, "messenger", "commented")).toBe(true);
-    expect(carriedBy({}, "messenger", "commented")).toBe(true);
-  });
-
-  it("reads a plugin's key and a kind as words, never as what every object has", () => {
-    for (const key of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
-      expect(carriedBy({ carriersOff: {} }, key, "commented"), key).toBe(true);
-      expect(carriedBy({ carriersOff: { messenger: [] } }, "messenger", key), key).toBe(true);
-    }
-    // A plugin may be keyed so, and is then a key as any other.
-    const odd = { carriersOff: { constructor: ["agent"] as NotificationKind[] } };
-    expect(carriedBy(odd, "constructor", "agent")).toBe(false);
-    expect(carriedBy(odd, "constructor", "commented")).toBe(true);
-    expect(notificationSettingsOf("person", odd).carriersOff).toEqual({ constructor: ["agent"] });
   });
 });
 

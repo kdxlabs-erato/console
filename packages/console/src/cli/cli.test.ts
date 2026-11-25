@@ -9713,7 +9713,6 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
     },
     projectsOff: [{ key: "ops", name: "Operations" }],
     ownAgents: false,
-    carriers: [],
   };
   const ALL = "GET /api/v1/notifications?limit=50&offset=0";
   const READ = "POST /api/v1/notifications/read";
@@ -9847,7 +9846,7 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("says what one is told of: each kind, the projects turned off, one's own agents, and what a plugin sends on", async () => {
+  it("says what one is told of: each kind, the projects turned off and one's own agents, and names no plugin", async () => {
     const { fetch, calls } = fakeConsole({
       [`GET ${SETTINGS_AT}`]: {
         // A kind a newer console has is read, and said by its name alone.
@@ -9855,10 +9854,6 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
           ...SETTINGS,
           kinds: { ...SETTINGS.kinds, mentioned: true },
           defaults: { ...SETTINGS.defaults, mentioned: true },
-          carriers: [
-            { key: "messenger", name: "Messenger", off: ["ready"] },
-            { key: "pager", name: "Pager", off: [] },
-          ],
         },
       },
     });
@@ -9879,35 +9874,18 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
         "mentioned  on",
         "projects off: ops (Operations)",
         "own agents: off  (what an agent of your own did as you is not told to you)",
-        "also sent by messenger (Messenger): every kind that is on but ready",
-        "also sent by pager (Pager): every kind that is on",
         "",
       ].join("\n"),
     );
     expect(calls.map((call) => call.key)).toEqual([`GET ${SETTINGS_AT}`]);
   });
 
-  it("says what a plugin sends on with --via, and leaves the kinds as they are", async () => {
-    const now = {
-      ...SETTINGS,
-      carriers: [{ key: "messenger", name: "Messenger", off: ["ready"] }],
-    };
-    const { fetch, calls } = fakeConsole({ [`PUT ${SETTINGS_AT}`]: { body: now } });
+  it("takes no plugin's setting: what a plugin sends on is the plugin's own", async () => {
+    const { fetch, calls } = fakeConsole({});
     const h = harness({ fetch, env: SIGNED_IN });
-    expect(
-      await runCli(["notify", "--via", "messenger", "--off", "ready", "--on", "agent"], h.io),
-    ).toBe(EXIT.ok);
-    // What the plugin carries, by its key: no kind is turned on or off by it.
-    expect(calls.map((call) => call.key)).toEqual([`PUT ${SETTINGS_AT}`]);
-    expect(calls[0]?.body).toEqual({ carriers: { messenger: { agent: true, ready: false } } });
-    expect(h.out()).toContain(
-      "also sent by messenger (Messenger): every kind that is on but ready\n",
-    );
-    // The plugin is named with a kind, or nothing is understood.
-    const alone = harness({ fetch, env: SIGNED_IN });
-    expect(await runCli(["notify", "--via", "messenger"], alone.io)).toBe(EXIT.usage);
-    expect(alone.err()).toContain("--via names the plugin --on and --off are said of");
-    expect(calls).toHaveLength(1);
+    // A flag that named a plugin is none of the command's, and nothing is asked of the console.
+    expect(await runCli(["notify", "--via", "messenger", "--off", "ready"], h.io)).toBe(EXIT.usage);
+    expect(calls).toHaveLength(0);
   });
 
   it("turns kinds on and off, and one's own agents, in one change, and prints the settings as they are now", async () => {
@@ -10191,7 +10169,9 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
       "kind: one of assigned, ready, moved, changed, commented, archived, decision, answered, agent",
     );
     expect(notify.out()).toContain("--own-agents on|off");
-    expect(notify.out()).toContain("[--via <plugin>]");
+    // What a plugin sends on is set at the plugin: the command has no flag for it.
+    expect(notify.out()).not.toContain("--via");
+    expect(notify.out()).toContain("is chosen at that plugin");
     for (const word of ["follow", "mute"]) {
       const one = harness({ fetch });
       expect(await runCli(["help", word], one.io)).toBe(EXIT.ok);

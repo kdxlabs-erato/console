@@ -150,8 +150,6 @@ describe("what a member is told of (ADR-0157)", () => {
     expect(person.defaults).toEqual(person.kinds);
     expect(person.projectsOff).toEqual([]);
     expect(person.ownAgents).toBe(false);
-    // No plugin carries notifications elsewhere here: none is named.
-    expect(person.carriers).toEqual([]);
     // An agent account is told of what asks something of it: nobody attends it.
     const account = restNotificationSettingsSchema.parse(await (await get(mira, SETTINGS)).json());
     expect(Object.keys(account.kinds).filter((kind) => account.kinds[kind])).toEqual([
@@ -456,11 +454,9 @@ describe("what a member is told of (ADR-0157)", () => {
     expect((await choose(bob, {})).status).toBe(400);
     expect((await choose(bob, { reset: true, ownAgents: true })).status).toBe(400);
     expect((await choose(bob, { projectsOff: ["nowhere"] })).status).toBe(404);
-    // What a plugin carries is chosen of a plugin that carries notifications here, and of a
-    // kind there is: no plugin does here, and nothing is kept of the word.
+    // What a plugin sends on is the plugin's own setting, and none the console keeps: a word
+    // of one names nothing to change here.
     expect((await choose(bob, { carriers: { messenger: { commented: false } } })).status).toBe(400);
-    expect((await choose(bob, { carriers: { messenger: { shouted: false } } })).status).toBe(400);
-    expect((await choose(bob, { reset: true, carriers: {} })).status).toBe(400);
     const off = restNotificationSettingsSchema.parse(
       await (await choose(bob, { projectsOff: ["ops"], ownAgents: true })).json(),
     );

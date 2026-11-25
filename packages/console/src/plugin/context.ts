@@ -636,10 +636,12 @@ export interface PluginHookEvent {
   readonly project: { readonly id: string; readonly key: string } | null;
   /**
    * What the event carries. Of a console event, with `notifications:read`, `told` is among it
-   * (ADR-0157): whom the console told of the event, each `{ personId, kind, woken }`, the kind
-   * one of `NOTIFICATION_KINDS`, and `woken` where the console told the member itself, by a
-   * wake of its agent account, so that whoever carries notifications elsewhere carries that one
-   * to nobody.
+   * (ADR-0157): whom the console told of the event, each `{ personId, kind, woken, followed }`,
+   * the kind one of `NOTIFICATION_KINDS`, `woken` where the console told the member itself, by
+   * a wake of its agent account, so that whoever carries notifications elsewhere carries that
+   * one to nobody, and `followed` where they are told because they turned that task's
+   * notifications on themselves, whatever their kinds. The list is the same for every plugin
+   * handed it, and the most there is to send: which of it a plugin sends is its own setting.
    */
   readonly data: unknown;
 }
@@ -651,6 +653,12 @@ export interface PluginHookTold {
   readonly kind: string;
   /** Whether the console told the member itself, by a wake of its agent account. */
   readonly woken: boolean;
+  /**
+   * Whether they are told because they turned the task's notifications on themselves: of
+   * everything on it, under a kind they may have off for every other task. A plugin that keeps
+   * a member's choice by kind tells by this that the member asked for this one task.
+   */
+  readonly followed: boolean;
 }
 
 /** What an endpoint receives: the request, bounded, with the headers the definition named. */

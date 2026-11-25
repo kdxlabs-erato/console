@@ -614,7 +614,6 @@ describe("what a member is told of (ADR-0157)", () => {
       defaults: { agent: true },
       projectsOff: [],
       ownAgents: false,
-      carriers: [{ key: "messenger", name: "Messenger", off: ["commented"] }],
     };
     const AT = "2026-11-24T03:00:00.000Z";
     const { send, calls } = fakeFetch({

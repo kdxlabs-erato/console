@@ -75,12 +75,7 @@ import {
   MIN_HANDLE_LENGTH,
   MIN_OPTIONS,
 } from "./limits.js";
-import {
-  MAX_NOTIFICATION_CARRIERS,
-  MAX_NOTIFICATION_PROJECTS_OFF,
-  MAX_NOTIFICATIONS_READ,
-} from "./notifications.js";
-import { MAX_PLUGIN_KEY_LENGTH } from "./plugin/limits.js";
+import { MAX_NOTIFICATION_PROJECTS_OFF, MAX_NOTIFICATIONS_READ } from "./notifications.js";
 import { PLUGIN_WIDGET_SIZE_NAMES } from "./plugin/manifest.js";
 import { hasForbiddenCodePoint } from "./text.js";
 import {
@@ -2401,46 +2396,29 @@ export type RestNotificationsRead = z.infer<typeof restNotificationsReadSchema>;
 
 /**
  * What a member is told of (ADR-0157): each kind on or off, by its name, with what it would
- * be had they chosen nothing; the projects they are told nothing of; whether they are told
- * of what an agent of their own did as them; and the plugins that carry notifications
- * elsewhere, to a messenger say, each with the kinds the member turned off for it: a plugin
- * carries what the console made for them, every kind but those. A map by name, so that a kind
- * a newer console adds is read.
+ * be had they chosen nothing; the projects they are told nothing of; and whether they are told
+ * of what an agent of their own did as them. A map by name, so that a kind a newer console
+ * adds is read. It is of everything a member is told: what a plugin that carries notifications
+ * elsewhere sends of it is that plugin's own setting, and none of the console's.
  */
 export const restNotificationSettingsSchema = z.object({
   kinds: z.record(z.string(), z.boolean()),
   defaults: z.record(z.string(), z.boolean()),
   projectsOff: z.array(z.object({ key: projectKey, name: z.string() })),
   ownAgents: z.boolean(),
-  carriers: z.array(z.object({ key: z.string(), name: z.string(), off: z.array(z.string()) })),
 });
 export type RestNotificationSettings = z.infer<typeof restNotificationSettingsSchema>;
 
 /**
  * What `PUT /api/v1/notifications/settings` is sent: the kinds turned on or off, by name, the
  * others staying as they are; the projects told nothing of, by their keys, the whole list;
- * whether one's own agents count; what a plugin carries, by the plugin's key, each kind named
- * carried (`true`) or not (`false`), the others staying as they are; or `reset`, alone, for
- * what a member who chose nothing has.
+ * whether one's own agents count; or `reset`, alone, for what a member who chose nothing has.
  */
 export const restNotificationSettingsInputSchema = z
   .object({
     kinds: z.optional(z.record(line(MAX_NOTIFICATION_KIND_LENGTH), z.boolean())),
     projectsOff: z.optional(z.array(projectKey).check(z.maxLength(MAX_NOTIFICATION_PROJECTS_OFF))),
     ownAgents: z.optional(z.boolean()),
-    carriers: z.optional(
-      z
-        .record(
-          line(MAX_PLUGIN_KEY_LENGTH),
-          z.record(line(MAX_NOTIFICATION_KIND_LENGTH), z.boolean()),
-        )
-        .check(
-          z.refine(
-            (carriers) => Object.keys(carriers).length <= MAX_NOTIFICATION_CARRIERS,
-            "names too many plugins",
-          ),
-        ),
-    ),
     reset: z.optional(z.literal(true)),
   })
   .check(
@@ -2449,12 +2427,10 @@ export const restNotificationSettingsInputSchema = z
         input.reset === true
           ? input.kinds === undefined &&
             input.projectsOff === undefined &&
-            input.ownAgents === undefined &&
-            input.carriers === undefined
+            input.ownAgents === undefined
           : input.kinds !== undefined ||
             input.projectsOff !== undefined ||
-            input.ownAgents !== undefined ||
-            input.carriers !== undefined,
+            input.ownAgents !== undefined,
       "must name something to change, or reset alone",
     ),
   );

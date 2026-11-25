@@ -2,8 +2,9 @@
 // member is told where they chose nothing, and how one event becomes at most one notification
 // for one member. The console decides who is told and keeps the record; carrying it out of the
 // console, to a messenger say, is a plugin's, of what the console made and no more: a kind a
-// member turned off is carried by nobody, and of the kinds they have on they choose which a
-// plugin carries too. The rules that name whom an event concerns are the worker's
+// member turned off is carried by nobody, and which of the kinds they have on a plugin carries
+// is that plugin's to offer and to keep, on a page and in a store of its own; the console
+// keeps no setting of a plugin's. The rules that name whom an event concerns are the worker's
 // (`apps/console`), which reads the board; what is here needs no database, and is read by the
 // pages and the command as the console reads it.
 
@@ -73,12 +74,6 @@ export interface ChosenNotifications {
   readonly projectsOff?: readonly string[] | undefined;
   /** Whether they are told of what an agent of their own did as them. */
   readonly ownAgents?: boolean | undefined;
-  /**
-   * The kinds a plugin that carries notifications elsewhere is not to carry for them, by the
-   * plugin's key: what they read in the console and do not want sent on. A kind not named is
-   * carried wherever it is on.
-   */
-  readonly carriersOff?: Readonly<Record<string, readonly NotificationKind[]>> | undefined;
 }
 
 /** What a member is told of: their choices over the defaults of what they are. */
@@ -86,7 +81,6 @@ export interface NotificationSettings {
   readonly kinds: NotificationKinds;
   readonly projectsOff: readonly string[];
   readonly ownAgents: boolean;
-  readonly carriersOff: Readonly<Record<string, readonly NotificationKind[]>>;
 }
 
 /** A member's settings from what they chose, `null` or nothing for a member who chose nothing. */
@@ -104,29 +98,7 @@ export function notificationSettingsOf(
     ) as Record<NotificationKind, boolean>,
     projectsOff: [...(chosen?.projectsOff ?? [])],
     ownAgents: chosen?.ownAgents === true,
-    carriersOff: Object.fromEntries(
-      Object.entries(chosen?.carriersOff ?? {}).map(([plugin, off]) => [plugin, [...off]]),
-    ),
   };
-}
-
-/**
- * Whether a plugin carries a notification of a kind to a member (ADR-0157): every notification
- * the console made for them, but of a kind they turned off for that plugin. The console's own
- * list is what there is to carry: a kind that is off makes no notification, and so reaches no
- * plugin as one, whatever is kept here of it.
- */
-export function carriedBy(
-  chosen: ChosenNotifications | null | undefined,
-  plugin: string,
-  kind: string,
-): boolean {
-  const off = chosen?.carriersOff;
-  return !(
-    off !== undefined &&
-    Object.hasOwn(off, plugin) &&
-    (off[plugin] as readonly string[] | undefined)?.includes(kind) === true
-  );
 }
 
 /**
@@ -229,7 +201,5 @@ export const MAX_NOTIFICATIONS_PAGE = 200;
 export const MAX_NOTIFICATIONS_READ = 200;
 /** How many projects a member may turn off. */
 export const MAX_NOTIFICATION_PROJECTS_OFF = 200;
-/** How many plugins a member may keep a choice of what each carries for. */
-export const MAX_NOTIFICATION_CARRIERS = 50;
 /** For how many days a notification is kept (the record is the feed's; this is the member's list of it). */
 export const NOTIFICATIONS_KEPT_DAYS = 90;

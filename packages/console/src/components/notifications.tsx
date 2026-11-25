@@ -277,9 +277,10 @@ export interface NotificationSettingsProps {
 
 /**
  * What a member is told of: each kind a choice that is lit while on, the projects they are
- * told nothing of, whether what their own agents do as them counts, and, for each plugin that
- * carries notifications elsewhere, which of the kinds they have on it sends them too. A choice
- * is kept as it is made: what the page shows is what holds.
+ * told nothing of, and whether what their own agents do as them counts. It is of everything
+ * they are told and names no plugin: what a plugin that carries notifications elsewhere sends
+ * of it is set on that plugin's own page. A choice is kept as it is made: what the page shows
+ * is what holds.
  */
 export function NotificationSettings(props: NotificationSettingsProps) {
   const words = useWords().notifications.settings;
@@ -290,17 +291,11 @@ export function NotificationSettings(props: NotificationSettingsProps) {
   const changed = Object.keys(settings.kinds).some(
     (kind) => settings.kinds[kind] !== settings.defaults[kind],
   );
-  const untouched =
-    !changed &&
-    off.size === 0 &&
-    !settings.ownAgents &&
-    settings.carriers.every((carrier) => carrier.off.length === 0);
+  const untouched = !changed && off.size === 0 && !settings.ownAgents;
   // A kind a newer console adds is offered under its own name, after the ones this page knows.
   const others = Object.keys(settings.kinds).filter((kind) => !isKnownKind(kind));
   const nameOf = (kind: string): string =>
     Object.hasOwn(kindWords, kind) ? (kindWords[kind] ?? kind) : kind;
-  // The kinds that are on, in the order the page reads them: what there is for a plugin to carry.
-  const on = [...KNOWN_KINDS, ...others].filter((kind) => settings.kinds[kind] === true);
   const choice = (kind: string) => (
     <label key={kind} className="sc-toggle-chip">
       <input
@@ -326,37 +321,6 @@ export function NotificationSettings(props: NotificationSettingsProps) {
               {kinds.filter((kind) => Object.hasOwn(settings.kinds, kind)).map(choice)}
               {group === "agents" && others.map(choice)}
             </fieldset>
-          </div>
-        </div>
-      ))}
-      {settings.carriers.map((carrier) => (
-        <div key={carrier.key} className="sc-settings-row">
-          <div>
-            <span className="sc-settings-label">{words.carrier.label(carrier.name)}</span>
-            <p className="sc-settings-hint">{words.carrier.hint(carrier.name)}</p>
-          </div>
-          <div className="sc-settings-control">
-            {on.length === 0 ? (
-              <p className="sc-muted">{words.carrier.none}</p>
-            ) : (
-              <fieldset className="sc-toggle-chips" aria-label={words.carrier.label(carrier.name)}>
-                {on.map((kind) => (
-                  <label key={kind} className="sc-toggle-chip">
-                    <input
-                      type="checkbox"
-                      checked={!carrier.off.includes(kind)}
-                      disabled={busy === true}
-                      onChange={(event) =>
-                        props.onChange({
-                          carriers: { [carrier.key]: { [kind]: event.target.checked } },
-                        })
-                      }
-                    />
-                    {nameOf(kind)}
-                  </label>
-                ))}
-              </fieldset>
-            )}
           </div>
         </div>
       ))}

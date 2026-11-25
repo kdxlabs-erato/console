@@ -812,12 +812,6 @@ export const ko: Messages = {
         agents:
           "나에게 보고하는 에이전트 계정이 멈추거나 실패하거나 응답이 없을 때, 다시 실행될 때, 그리고 나에게 결정을 올렸을 때입니다.",
       },
-      carrier: {
-        label: (plugin) => `${asWay(plugin)}도 받기`,
-        hint: (plugin) =>
-          `켜 둔 알림 가운데 ${asSubject(plugin)} 함께 보내는 것입니다. 위에서 끈 종류는 종을 직접 켠 작업에서만 알림이 되고, 그 알림은 함께 갑니다.`,
-        none: "위에서 알림을 켜면 여기서 고를 수 있습니다.",
-      },
       projects: "프로젝트",
       projectsHint: "끈 프로젝트의 작업 소식은 받지 않습니다. 종을 직접 켠 작업은 예외입니다.",
       ownAgents: "내 에이전트",

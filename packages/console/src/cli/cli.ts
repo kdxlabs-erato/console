@@ -3573,19 +3573,17 @@ const notifications: Command = async (args, io) => {
 };
 
 const NOTIFY_USAGE =
-  "console notify [--on <kind>]... [--off <kind>]... [--via <plugin>] [--project-off <key>]... [--project-on <key>]... [--own-agents on|off]  |  notify --reset";
+  "console notify [--on <kind>]... [--off <kind>]... [--project-off <key>]... [--project-on <key>]... [--own-agents on|off]  |  notify --reset";
 
 // What the member is told of (ADR-0157): each kind on or off, the projects they are told
-// nothing of, whether what an agent of their own did as them counts, and what a plugin that
-// carries notifications elsewhere sends on; read, or changed in what the flags say, or put
-// back to what a member who chose nothing has.
+// nothing of, and whether what an agent of their own did as them counts; read, or changed in
+// what the flags say, or put back to what a member who chose nothing has.
 const notify: Command = async (args, io) => {
   const { values } = parse(
     args,
     {
       on: { type: "string", multiple: true },
       off: { type: "string", multiple: true },
-      via: { type: "string" },
       "project-off": { type: "string", multiple: true },
       "project-on": { type: "string", multiple: true },
       "own-agents": { type: "string" },
@@ -3613,14 +3611,6 @@ const notify: Command = async (args, io) => {
     ...turnedOn.map((kind) => [kind, true] as const),
     ...turnedOff.map((kind) => [kind, false] as const),
   ];
-  // With --via, --on and --off say what that plugin carries of what is on, and not the kinds
-  // themselves.
-  const via = text(values, "via");
-  if (via !== undefined && kinds.length === 0) {
-    throw misuse(
-      `--via names the plugin --on and --off are said of: say a kind with one of them. ${NOTIFY_USAGE}`,
-    );
-  }
   const projects = projectsOff.length > 0 || projectsOn.length > 0;
   const changes = kinds.length > 0 || projects || ownAgents !== undefined;
   if (on(values, "reset") && changes) {
@@ -3657,11 +3647,7 @@ const notify: Command = async (args, io) => {
     await ofNotifications(
       io,
       client.updateNotificationSettings({
-        ...(kinds.length === 0
-          ? {}
-          : via === undefined
-            ? { kinds: Object.fromEntries(kinds) }
-            : { carriers: { [via]: Object.fromEntries(kinds) } }),
+        ...(kinds.length === 0 ? {} : { kinds: Object.fromEntries(kinds) }),
         ...(off === undefined ? {} : { projectsOff: off }),
         ...(ownAgents === undefined ? {} : { ownAgents }),
       }),

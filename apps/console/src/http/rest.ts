@@ -29,7 +29,6 @@ import {
   NOTIFICATION_DEFAULTS,
   NOTIFICATION_KINDS,
   NOTIFICATIONS_PAGE,
-  type NotificationKind,
   normalizeConnectCode,
   notificationSettingsOf,
   type ProjectIconType,
@@ -1957,15 +1956,6 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
         .filter((project) => settings.projectsOff.includes(project.id))
         .map((project) => ({ key: project.key, name: project.name })),
       ownAgents: settings.ownAgents,
-      // The plugins that carry notifications now: what was chosen of one that is gone is kept
-      // and named to nobody.
-      carriers: (await plugins.carriers(person.language)).map((carrier) => ({
-        ...carrier,
-        // By a key the member's own choices hold, and none every object has (`constructor`).
-        off: Object.hasOwn(settings.carriersOff, carrier.key)
-          ? [...(settings.carriersOff[carrier.key] ?? [])]
-          : [],
-      })),
     };
   };
 
@@ -1988,20 +1978,11 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
       await changeChosenNotifications(database, person.id, () => undefined, clock.now());
       return c.json(await notificationSettingsOfPerson(person));
     }
-    const unknown = [
-      ...Object.keys(input.kinds ?? {}),
-      ...Object.values(input.carriers ?? {}).flatMap((kinds) => Object.keys(kinds)),
-    ].find((kind) => !(NOTIFICATION_KINDS as readonly string[]).includes(kind));
+    const unknown = Object.keys(input.kinds ?? {}).find(
+      (kind) => !(NOTIFICATION_KINDS as readonly string[]).includes(kind),
+    );
     if (unknown !== undefined) {
       return invalid(c, `There is no kind of notification called ${unknown}.`);
-    }
-    // What a plugin carries is chosen of a plugin that carries notifications now, and no other.
-    if (input.carriers !== undefined) {
-      const carrying = new Set((await plugins.carriers()).map((carrier) => carrier.key));
-      const stranger = Object.keys(input.carriers).find((key) => !carrying.has(key));
-      if (stranger !== undefined) {
-        return invalid(c, `No plugin called ${stranger} carries notifications here.`);
-      }
     }
     // The projects named are looked up before anything is kept: one that is not there, or not
     // theirs to see, changes nothing.
@@ -2032,33 +2013,6 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
                 ...(before.projectsOff ?? []).filter((id) => !turned.visible.has(id)),
                 ...turned.ids,
               ];
-        // What a plugin carries: each kind named is carried or not from now on, and a plugin
-        // left with nothing turned off is kept no word of.
-        // Held in a map, so that a plugin keyed as something every object has is a key as any other.
-        const turnedOff = new Map<string, Set<NotificationKind>>(
-          Object.entries(before.carriersOff ?? {}).map(([key, off]) => [key, new Set(off)]),
-        );
-        for (const [key, kinds] of Object.entries(input.carriers ?? {})) {
-          const off = turnedOff.get(key) ?? new Set<NotificationKind>();
-          for (const [kind, carried] of Object.entries(kinds)) {
-            if (carried) {
-              off.delete(kind as NotificationKind);
-            } else {
-              off.add(kind as NotificationKind);
-            }
-          }
-          if (off.size === 0) {
-            turnedOff.delete(key);
-          } else {
-            turnedOff.set(key, off);
-          }
-        }
-        const carriersOff = Object.fromEntries(
-          [...turnedOff].map(([key, off]) => [
-            key,
-            NOTIFICATION_KINDS.filter((kind) => off.has(kind)),
-          ]),
-        );
         return {
           kinds: { ...before.kinds, ...(input.kinds as ChosenNotifications["kinds"]) },
           ...(projectsOff === undefined ? {} : { projectsOff }),
@@ -2067,7 +2021,6 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
               ? {}
               : { ownAgents: before.ownAgents }
             : { ownAgents: input.ownAgents }),
-          ...(Object.keys(carriersOff).length === 0 ? {} : { carriersOff }),
         };
       },
       clock.now(),
