@@ -5753,7 +5753,7 @@ const agentSignals = async (args: readonly string[], io: CliIo): Promise<number>
 };
 
 const AGENT_MESSAGES_USAGE =
-  "Say where, as a wake's header names it after messenger: console agent messages <source>:<conversation>[:<thread>] [--limit <n>]";
+  "Say where, as a wake's header names it after messenger: console agent messages <source>:<conversation>[:<thread>] [--limit <n>] [--after <moment>]";
 
 // What was said where a wake from the messenger was raised (ADR-0163): the latest messages of the
 // conversation, or of the thread, that the wake's key names, read by the wake source the key
@@ -5762,7 +5762,10 @@ const AGENT_MESSAGES_USAGE =
 // others may have answered meanwhile. What a source's line says is printed as it is, and what
 // someone wrote behind `>`, a line each, so that no word of a message reads as a line.
 const agentMessages = async (args: readonly string[], io: CliIo): Promise<number> => {
-  const { values, positionals } = parse(args, { limit: { type: "string" } });
+  const { values, positionals } = parse(args, {
+    limit: { type: "string" },
+    after: { type: "string" },
+  });
   const key = theOne(positionals, AGENT_MESSAGES_USAGE);
   const named = /^([a-z][a-z0-9-]{0,39}):(.+)$/.exec(key);
   const source =
@@ -5776,6 +5779,7 @@ const agentMessages = async (args: readonly string[], io: CliIo): Promise<number
   if (limit !== undefined && !(Number.isSafeInteger(Number(limit)) && Number(limit) >= 1)) {
     throw misuse(`Not a number of messages: ${limit}`);
   }
+  const after = text(values, "after");
   const session = await open(io, values);
   const read = await source.read(
     {
@@ -5795,6 +5799,7 @@ const agentMessages = async (args: readonly string[], io: CliIo): Promise<number
     named[2],
     {
       ...(limit === undefined ? {} : { limit: Number(limit) }),
+      ...(after === undefined ? {} : { after }),
       now: io.now(),
       signal: AbortSignal.timeout(30_000),
     },
@@ -5805,7 +5810,9 @@ const agentMessages = async (args: readonly string[], io: CliIo): Promise<number
         ? `Nothing was read: this account keeps no secret the ${named[1]} wake source reads a conversation with (no_token). The skill running-an-agent says which to keep.`
         : read.why === "not_a_conversation"
           ? `Nothing was read: ${named[2]} names no conversation as a wake of the ${named[1]} wake source does (not_a_conversation). ${AGENT_MESSAGES_USAGE}`
-          : `Nothing was read: the messenger did not answer the ${named[1]} wake source with the conversation (${read.why}).`,
+          : read.why === "not_a_moment"
+            ? `Nothing was read: ${after} is the moment of no message, as a wake of the ${named[1]} wake source says one (not_a_moment).`
+            : `Nothing was read: the messenger did not answer the ${named[1]} wake source with the conversation (${read.why}).`,
     );
   }
   answer(io, session, { key, parts: read.parts }, () =>

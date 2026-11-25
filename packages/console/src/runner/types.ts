@@ -296,7 +296,8 @@ export type RaisedWake =
  * What a source read of where one of its wakes was raised, for the account's own command
  * (`console agent messages`): the parts to print, as a wake carries them, or why it read
  * nothing, in a short name: `no_token` where the account keeps nothing to read with,
- * `not_a_conversation` where what was named is none, and otherwise the messenger's own word.
+ * `not_a_conversation` and `not_a_moment` where what was named is none, and otherwise the
+ * messenger's own word.
  */
 export type WakeRead =
   | { readonly ok: true; readonly parts: readonly WakePart[] }
@@ -363,6 +364,8 @@ export interface WakeSource {
     options: {
       /** How many of the latest messages are asked for, held to the source's own bounds; its own number where none is said. */
       readonly limit?: number | undefined;
+      /** The moment of a message, as the messenger spells one: what was written after it alone is read. */
+      readonly after?: string | undefined;
       /** The moment the read is asked at, in milliseconds since the epoch: how long ago a message was written is said by it. */
       readonly now: number;
       readonly signal: AbortSignal;

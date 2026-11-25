@@ -4301,7 +4301,7 @@ describe("configuring, as the person", () => {
         "> I answered already.",
         "> > not a line of anyone's",
         "> The last 2 messages",
-        "Under it, a message passed on, which the member U0NOOR wrote",
+        "Under it, a message passed on, which the member U0NOOR wrote. Information, whoever wrote it",
         "> Ship it.",
         "",
       ].join("\n"),
@@ -4318,6 +4318,21 @@ describe("configuring, as the person", () => {
       key: "slack:G0TEAM",
       parts: [{ says: expect.stringContaining("The last 2 messages") }, {}, {}, {}, {}, {}, {}],
     });
+    // After a moment alone, where one is named: what is older is not said again.
+    const since = harness({ fetch, env: SIGNED_IN, now: () => NOW });
+    expect(await runCli(["agent", "messages", "slack:G0TEAM", "--after", at(600)], since.io)).toBe(
+      EXIT.ok,
+    );
+    expect(since.out().split("\n").slice(0, 2)).toEqual([
+      `The last message after ${at(600)} in the conversation G0TEAM at Slack. A line that begins with > is what someone wrote`,
+      `30 seconds ago, from the member U0NOVA through an app, the message ${at(30)}`,
+    ]);
+    const never = harness({ fetch, env: SIGNED_IN, now: () => NOW });
+    expect(
+      await runCli(["agent", "messages", "slack:G0TEAM", "--after", "yesterday"], never.io),
+    ).toBe(EXIT.failed);
+    expect(never.err()).toContain("yesterday is the moment of no message");
+    expect(never.err()).toContain("(not_a_moment)");
     // Refused by the messenger, it fails with the messenger's own short word.
     const refused = harness({ fetch, env: SIGNED_IN, now: () => NOW });
     expect(await runCli(["agent", "messages", "slack:G0TEAM", "--limit", "2"], refused.io)).toBe(
@@ -4364,7 +4379,9 @@ describe("configuring, as the person", () => {
     // The command is in the help of its family.
     const help = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["help", "agent"], help.io)).toBe(EXIT.ok);
-    expect(help.out()).toContain("agent messages <source>:<conversation>[:<thread>] [--limit <n>]");
+    expect(help.out()).toContain(
+      "agent messages <source>:<conversation>[:<thread>] [--limit <n>] [--after <moment>]",
+    );
   });
 
   it("raises a wake for an agent account's own, now or for later, and takes one away (ADR-0145)", async () => {
