@@ -297,15 +297,19 @@ export interface Composed {
 
 /**
  * One message for the signals that arrived together, in order, a header each. Wakes with the
- * same source and reference are one entry, the latest, with how many there were. Beyond the
- * bounds the rest is said as "N more" with the command that reads them.
+ * same source and reference are one entry, the latest, with how many there were: but for a
+ * wake from the messenger, which carries a message no other wake carries again (ADR-0163),
+ * and stands as an entry of its own. Beyond the bounds the rest is said as "N more" with the
+ * command that reads them.
  */
 export function composeSignals(signals: readonly RestSignal[], options: MessageOptions): Composed {
   const entries: { signal: RestSignal; times: number }[] = [];
   const wakes = new Map<string, { signal: RestSignal; times: number }>();
   for (const signal of signals) {
     const same =
-      signal.kind === "wake" && signal.key !== null ? `${signal.source}\n${signal.key}` : undefined;
+      signal.kind === "wake" && signal.key !== null && signal.source !== "messenger"
+        ? `${signal.source}\n${signal.key}`
+        : undefined;
     const merged = same === undefined ? undefined : wakes.get(same);
     if (merged !== undefined) {
       merged.signal = signal;

@@ -313,9 +313,17 @@ export interface WakeHost {
   readonly channels: readonly string[];
   /**
    * Raises a wake: the console records it, and it reaches the agent in order, the source's own
-   * lines under the session's mark and everything else as someone else's words.
+   * lines under the session's mark and everything else as someone else's words. Answers
+   * whether the console took it: a wake raised past what the console takes within an hour is
+   * let go, and reaches nobody.
    */
-  raise(wake: RaisedWake): Promise<void>;
+  raise(wake: RaisedWake): Promise<boolean>;
+  /**
+   * What the source keeps from one run of its own to the next, under names of its own, for as
+   * long as the runner runs: a runner started again begins with nothing. Never a secret, and
+   * never a word of a message.
+   */
+  readonly kept: Map<string, string>;
   /** A line for whoever reads the runner's own output: never what a message says. */
   log(line: string): void;
   /**
