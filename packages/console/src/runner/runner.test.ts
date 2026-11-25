@@ -3379,7 +3379,7 @@ describe("the runner", () => {
   });
 
   it("lets go of what its wake sources raise once the console takes no more wakes within the hour, says so once, and raises again after a while", async () => {
-    const wakes: ((key: string) => Promise<void>)[] = [];
+    const wakes: ((key: string) => Promise<boolean>)[] = [];
     const { console, log } = setup({
       sources: [
         {
@@ -3394,13 +3394,14 @@ describe("the runner", () => {
       ],
     });
     await until("the source to listen", () => wakes.length === 1);
-    const raise = wakes[0] ?? (async () => undefined);
-    await raise("C1/1");
+    const raise = wakes[0] ?? (async () => false);
+    // The source is answered whether the console took the wake: what it let go reached nobody.
+    expect(await raise("C1/1")).toBe(true);
     expect(console.raised).toHaveLength(1);
     // As many as an hour takes: the next is refused, and the ones after it ask the console nothing.
     console.says.full.wakes = true;
-    await raise("C1/2");
-    await raise("C1/3");
+    expect(await raise("C1/2")).toBe(false);
+    expect(await raise("C1/3")).toBe(false);
     await raise("C1/4");
     expect(console.says.asked.wakes).toBe(2);
     expect(console.raised).toHaveLength(1);
@@ -3410,7 +3411,7 @@ describe("the runner", () => {
     // After a while it asks again, and is taken again once the hour has room.
     console.says.full.wakes = false;
     await sleep(170);
-    await raise("C1/5");
+    expect(await raise("C1/5")).toBe(true);
     expect(console.raised.map((one) => one.key)).toEqual(["C1/1", "C1/5"]);
     expect(log).toContain("the console takes the wakes of this runner's wake sources again");
     // Any other refusal is the source's to hear of, as before.

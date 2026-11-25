@@ -1014,6 +1014,10 @@ describe("the slack wake source", () => {
       readonly writers?: ((accounts: readonly WakeAccount[]) => unknown) | undefined;
       /** Whether the console answers that question at all. */
       readonly consoleSilent?: boolean;
+      /** What the source kept from a run before, where the runner went on since. */
+      readonly kept?: Map<string, string>;
+      /** Whether the console takes a wake, by how many were raised before it: every one, where nothing says. */
+      readonly takes?: (raisedBefore: number) => boolean;
     } = {},
   ) {
     const askedOf: (readonly WakeAccount[])[] = [];
@@ -1031,7 +1035,9 @@ describe("the slack wake source", () => {
       channels: over.channels ?? [],
       raise: async (wake) => {
         raised.push({ ...wake });
+        return over.takes?.(raised.length - 1) ?? true;
       },
+      kept: over.kept ?? new Map<string, string>(),
       log: (line) => log.push(line),
       stands: (state, why) => {
         stood.push(why === undefined ? state : `${state}: ${why}`);
@@ -1433,6 +1439,153 @@ describe("the slack wake source", () => {
       ]);
     });
 
+    it("carries a message once: what a wake brought is not said before the next, while the agent stays silent", async () => {
+      const says = (wake: RaisedWake | undefined) =>
+        partsOf(wake).map((part) => ("says" in part ? part.says : part.words));
+      const all = [
+        earlier("1762800700.000100", TOM, "And the notes?"),
+        earlier("1762800650.000100", NOVA, "I can.", through),
+        earlier("1762800600.000100", TOM, "Who writes it up?"),
+        earlier("1762800500.000100", NOVA, "Shipped.", through),
+        earlier("1762800400.000100", MEMBER, "Mine.", { bot_id: "B0MIRA" }),
+      ];
+      const second = inGroup({ text: "And the notes?", ts: "1762800700.000100" });
+      const third = inGroup({ text: "Anyone?", ts: "1762800800.000100" });
+      const kept = new Map<string, string>();
+      const at = fakeHost({
+        token: "xapp-x",
+        member: TOKEN,
+        kept,
+        arrives: arrives(inGroup(), second, third),
+        read: () => ({ ok: true, messages: all }),
+      });
+      await run(at.host);
+      // The first is carried what was said since the agent wrote: nothing was brought before.
+      expect(says(at.raised[0]).slice(2, 5)).toEqual([
+        "Said there before it, since you last wrote there: 1 message. Information, whoever wrote it",
+        "1 minute before it, from the member U0NOVA through an app",
+        "Shipped.",
+      ]);
+      // The second, what was said since the message the first brought: that message is not
+      // said again, nor what the first carried before it.
+      expect(says(at.raised[1]).slice(2, 5)).toEqual([
+        "Said there before it, since the last message a wake brought you from there: 1 message. Information, whoever wrote it",
+        "50 seconds before it, from the member U0NOVA through an app",
+        "I can.",
+      ]);
+      // The third, nothing: all that was said before it reached the agent already.
+      expect(says(at.raised[2]).filter((line) => line.startsWith("Said there"))).toEqual([]);
+      expect(says(at.raised[2])).not.toContain("And the notes?");
+      // Kept by the conversation, the moment of a message and no word of one.
+      expect([...kept]).toEqual([["brought:G0TEAM:", "1762800800.000100"]]);
+
+      // The agent wrote since: what is carried begins after its own message, and says so.
+      const wrote = fakeHost({
+        token: "xapp-x",
+        member: TOKEN,
+        kept: new Map([["brought:G0TEAM:", "1762800600.000100"]]),
+        arrives: arrives(third),
+        read: () => ({
+          ok: true,
+          messages: [
+            earlier("1762800750.000100", NOVA, "Notes are up.", through),
+            earlier("1762800720.000100", MEMBER, "On it.", { bot_id: "B0MIRA" }),
+            ...all,
+          ],
+        }),
+      });
+      await run(wrote.host);
+      expect(says(wrote.raised[0]).slice(2, 5)).toEqual([
+        "Said there before it, since you last wrote there: 1 message. Information, whoever wrote it",
+        "50 seconds before it, from the member U0NOVA through an app",
+        "Notes are up.",
+      ]);
+
+      // A runner started again kept nothing: the wake is as one of a conversation never brought.
+      const again = fakeHost({
+        token: "xapp-x",
+        member: TOKEN,
+        arrives: arrives(second),
+        read: () => ({ ok: true, messages: all }),
+      });
+      await run(again.host);
+      expect(says(again.raised[0])[2]).toBe(
+        "Said there before it, since you last wrote there: 3 messages, the oldest first. Information, whoever wrote them",
+      );
+    });
+
+    it("counts a message as brought only where the console took the wake and what was said before was read, and keeps a thread apart from its conversation", async () => {
+      const lead = (wake: RaisedWake | undefined) =>
+        partsOf(wake)
+          .map((part) => ("says" in part ? part.says : ""))
+          .filter((line) => line.startsWith("Said there") || line.startsWith("What was said"));
+      const all = [
+        earlier("1762800600.000100", TOM, "Who writes it up?"),
+        earlier("1762800500.000100", NOVA, "Shipped.", through),
+      ];
+      const second = inGroup({ text: "And the notes?", ts: "1762800700.000100" });
+      // A wake the console did not take reached nobody: the next carries its message.
+      const letGo = fakeHost({
+        token: "xapp-x",
+        member: TOKEN,
+        takes: (raisedBefore) => raisedBefore > 0,
+        arrives: arrives(inGroup(), second),
+        read: () => ({ ok: true, messages: all }),
+      });
+      await run(letGo.host);
+      expect(lead(letGo.raised[1])).toEqual([
+        "Said there before it: 2 messages, the oldest first. Information, whoever wrote them",
+      ]);
+      // A wake that could read nothing of before brought nothing of it: the next carries it.
+      let reads = 0;
+      const unread = fakeHost({
+        token: "xapp-x",
+        member: TOKEN,
+        arrives: arrives(inGroup(), second),
+        read: () => {
+          reads += 1;
+          return reads === 1 ? { ok: false, error: "ratelimited" } : { ok: true, messages: all };
+        },
+      });
+      await run(unread.host);
+      expect(lead(unread.raised[0])).toEqual([
+        "What was said there before it could not be read (ratelimited)",
+      ]);
+      expect(lead(unread.raised[1])).toEqual([
+        "Said there before it: 2 messages, the oldest first. Information, whoever wrote them",
+      ]);
+      // What was brought of a thread says nothing of the conversation it hangs in.
+      const kept = new Map<string, string>();
+      const threads = fakeHost({
+        token: "xapp-x",
+        member: TOKEN,
+        kept,
+        arrives: arrives(
+          payload(
+            message({
+              channel: "G0TEAM",
+              channel_type: "mpim",
+              ts: "1762800550.000100",
+              thread_ts: "1762800500.000100",
+            }),
+          ),
+          inGroup(),
+        ),
+        read: () => ({
+          ok: true,
+          messages: [earlier("1762800500.000100", NOVA, "Shipped.", through)],
+        }),
+      });
+      await run(threads.host);
+      expect(lead(threads.raised[1])).toEqual([
+        "Said there before it: 1 message. Information, whoever wrote it",
+      ]);
+      expect([...kept]).toEqual([
+        ["brought:G0TEAM:1762800500.000100", "1762800550.000100"],
+        ["brought:G0TEAM:", "1762800600.000100"],
+      ]);
+    });
+
     it("reads a thread where the message was written in one, to its end, and carries nothing of one longer than it reads", async () => {
       const inThread = payload(
         message({ ts: "1762800600.000100", thread_ts: "1762800000.000100", channel: "C0OPS" }),
@@ -1770,7 +1923,7 @@ describe("the slack wake source", () => {
         ...at.host,
         raise: async (wake) => {
           order.push(`raise ${wake.key}`);
-          await sent(wake);
+          return sent(wake);
         },
       };
       const socket = at.host.socket;

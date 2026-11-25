@@ -264,6 +264,21 @@ describe("one message for what arrived together", () => {
     ]);
   });
 
+  it("leaves each wake from the messenger an entry of its own: it carries a message no other carries again", () => {
+    const wake = (number: number, text: string) =>
+      signal(number, {
+        kind: "wake",
+        by: null,
+        source: "messenger",
+        key: "slack:C0OPS:1762800000.000100",
+        text: wakeTextOf([{ says: "A message" }, { words: text }]),
+      });
+    const text = composeSignals([wake(1, "First."), wake(2, "Second.")], options).text ?? "";
+    expect(text).toContain("First.");
+    expect(text).toContain("Second.");
+    expect(text).not.toContain("2 times");
+  });
+
   it("says how many more there are beyond the bounds, with the command that reads them", () => {
     const many = Array.from({ length: MAX_GROUP_SIGNALS + 5 }, (_, index) =>
       signal(index + 1, { text: `Word ${index + 1}.` }),

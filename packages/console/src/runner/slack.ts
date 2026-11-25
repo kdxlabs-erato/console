@@ -1056,11 +1056,13 @@ function earlierOf(
  * What a wake carries of the conversation it was raised in, after the message itself (ADR-0163),
  * read with the member's own token where the account keeps it:
  *
- * - what was said there since the agent last wrote there and before the message, the oldest
- *   first, each behind a line that says who wrote it and how long before: the last few, so much
- *   of each, and where there was more, how many and the command that reads them. An agent
- *   account's message wakes no other unless it names it, so this is where an agent reads what
- *   another answered. It is information, whoever wrote it;
+ * - what was said there before the message and since the later of two: the agent's own last
+ *   message there, and the last message a wake already brought it from there (`upTo`), so that
+ *   an agent that stays silent is handed each message once. The oldest first, each behind a line
+ *   that says who wrote it and how long before: the last few, so much of each, and where there
+ *   was more, how many and the command that reads them. An agent account's message wakes no
+ *   other unless it names it, so this is where an agent reads what another answered. It is
+ *   information, whoever wrote it;
  * - who else there writes through an app, as an agent account does, the last to write first,
  *   and with them what the agent judges by whether to answer: said in every conversation but
  *   a direct one where such an account was read, since one message wakes each of them and
@@ -1070,15 +1072,19 @@ function earlierOf(
  * where the messenger refuses the read or does not answer, a line says so, with why in a short
  * name of the messenger's. In a thread it is the thread that is read, and elsewhere the
  * conversation outside its threads.
+ *
+ * `read` says whether what was said there was read: only then is the message of this wake the
+ * last one the agent was brought from there, once the console took the wake.
  */
 async function beforeOf(
   host: Pick<WakeHost, "secret" | "fetch" | "wait" | "writers">,
   heard: Heard,
+  upTo: string | undefined,
   signal: AbortSignal,
-): Promise<WakePart[]> {
+): Promise<{ readonly parts: WakePart[]; readonly read: boolean }> {
   const token = await host.secret(SLACK_USER_TOKEN);
   if (token === undefined) {
-    return [];
+    return { parts: [], read: false };
   }
   const read =
     heard.thread === undefined
@@ -1092,15 +1098,21 @@ async function beforeOf(
       : await threadOf(host, token, heard.channel, heard.thread, signal);
   const command = readWith(heard.channel, heard.thread);
   if (!read.ok) {
-    return [{ says: `What was said there before it could not be read (${read.why})` }];
+    return {
+      parts: [{ says: `What was said there before it could not be read (${read.why})` }],
+      read: false,
+    };
   }
   if (heard.thread !== undefined && read.more) {
     // Its latest messages are past what was read: what was read is its beginning, and no more.
-    return [
-      {
-        says: `The thread is longer than a wake reads, so what was said there before it is not carried: ${command}`,
-      },
-    ];
+    return {
+      parts: [
+        {
+          says: `The thread is longer than a wake reads, so what was said there before it is not carried: ${command}`,
+        },
+      ],
+      read: false,
+    };
   }
   const earlier = read.messages.filter((message) => before(message.ts, heard.ts));
   // Who else writes there as an agent account does, the last to write first, the agent itself
@@ -1123,10 +1135,15 @@ async function beforeOf(
     heard.direct || heard.member === undefined || others.length === 0
       ? []
       : writers.slice(0, MAX_OTHERS + 1);
-  const last =
+  const wrote =
     heard.member === undefined
       ? -1
       : earlier.findLastIndex((message) => message.user === heard.member);
+  // What a wake already brought of this conversation, as the message that woke or among what
+  // was said before it, is not carried again: the agent has it, whether or not it answered.
+  const brought =
+    upTo === undefined ? -1 : earlier.findLastIndex((message) => !before(upTo, message.ts));
+  const last = Math.max(wrote, brought);
   const since = earlier.slice(last + 1);
   const latest = since.toReversed().slice(0, MAX_BEFORE);
   // Who wrote each, as the console says it (ADR-0164), asked once: said of an earlier message
@@ -1161,7 +1178,7 @@ async function beforeOf(
           },
         ];
   if (since.length === 0) {
-    return answering;
+    return { parts: answering, read: true };
   }
   // The latest first, for as many as there is room for: within the bounds of what a wake
   // carries of them, and within what the text of a signal still holds after the message itself
@@ -1170,7 +1187,7 @@ async function beforeOf(
   // How many there were is known where the agent's own last message was read, or the
   // conversation was read to its beginning: otherwise there were so many, and more.
   const whole = found || !read.more;
-  const said = `Said there before it${found ? ", since you last wrote there" : ""}: ${since.length} ${since.length === 1 ? "message" : "messages"}${whole ? "" : " and more"}`;
+  const said = `Said there before it${!found ? "" : brought > wrote ? ", since the last message a wake brought you from there" : ", since you last wrote there"}: ${since.length} ${since.length === 1 ? "message" : "messages"}${whole ? "" : " and more"}`;
   const leads = (carried: number): string =>
     carried === 0
       ? `${said}, none of which fits in this wake: ${command}`
@@ -1195,8 +1212,18 @@ async function beforeOf(
     carried.unshift(one);
     length += takes;
   }
-  return [{ says: leads(carried.length) }, ...carried.flat(), ...answering];
+  return {
+    parts: [{ says: leads(carried.length) }, ...carried.flat(), ...answering],
+    read: true,
+  };
 }
+
+/** How many conversations and threads the source keeps the last message it brought of, the latest. */
+const MAX_BROUGHT = 500;
+
+/** The name the source keeps the last message it brought of a conversation, or of a thread, under. */
+const broughtOf = (heard: Pick<Heard, "channel" | "thread">): string =>
+  `brought:${heard.channel}:${heard.thread ?? ""}`;
 
 /** Where a read is asked for, as a wake's key names it after the source's name: the conversation, and the thread in it. */
 const NAMED = /^([A-Z0-9]{1,24})(?::([0-9]{1,12}\.[0-9]{1,9}))?$/;
@@ -1364,16 +1391,35 @@ export const slack: WakeSource = {
                 : (heardOf(payload, host.channels, await whoOf(host, [event.from], signal)) ??
                   event);
             // A read that fails in a way of its own costs the wake nothing: it goes as it stands.
-            const read = await beforeOf(host, heard, signal).catch((): WakePart[] => [
-              { says: "What was said there before it could not be read (failed)" },
-            ]);
-            await host
-              .raise({ key: heard.key, parts: [...heard.parts, ...read] })
+            const name = broughtOf(heard);
+            const prior = await beforeOf(host, heard, host.kept.get(name), signal).catch(
+              (): { parts: WakePart[]; read: boolean } => ({
+                parts: [{ says: "What was said there before it could not be read (failed)" }],
+                read: false,
+              }),
+            );
+            const taken = await host
+              .raise({ key: heard.key, parts: [...heard.parts, ...prior.parts] })
               .catch((error: unknown) => {
                 host.log(
                   `a wake from slack was not raised (${error instanceof Error ? error.name : "error"})`,
                 );
+                return false;
               });
+            // Brought only once the console took the wake, and only where what was said before
+            // was read: a wake that was let go, or one that carried nothing of before, leaves
+            // the next one to carry it. The moment of a message is kept, never a word of one.
+            if (taken && prior.read) {
+              const was = host.kept.get(name);
+              host.kept.delete(name);
+              host.kept.set(name, was !== undefined && before(heard.ts, was) ? was : heard.ts);
+              for (const oldest of host.kept.keys()) {
+                if (host.kept.size <= MAX_BROUGHT) {
+                  break;
+                }
+                host.kept.delete(oldest);
+              }
+            }
           });
         }
       }
