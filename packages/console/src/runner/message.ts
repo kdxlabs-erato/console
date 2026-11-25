@@ -255,6 +255,14 @@ export function wakePartsOf(text: string): readonly WakePart[] | undefined {
 }
 
 /**
+ * What a signal says, without the session's mark: the mark is the runner's, and what someone wrote
+ * carries it nowhere, not even where it became known, quoted by the agent itself say. In any case
+ * of its letters, which read as the same.
+ */
+const unmarked = (text: string, mark: string): string =>
+  text.replaceAll(new RegExp(mark, "gi"), "[mark]");
+
+/**
  * A wake from outside the console as the agent reads it under its header (ADR-0163): each line
  * of the wake source's own on a line that carries the session's mark, as a header does, and what
  * someone else wrote in a block fenced longer than any run of fence characters it holds. Nothing
@@ -274,7 +282,7 @@ function outsideOf(text: string, mark: string): string[] {
 /** One signal as the agent reads it: its header, what it says under it, and the files that came with it. */
 function entryOf(signal: RestSignal, options: MessageOptions, times: number): string {
   const header = headerOf(signal, options, times);
-  const words = signal.text.trim();
+  const words = unmarked(signal.text.trim(), options.mark);
   const files = (options.attached?.(signal) ?? []).map((file) => attachedLine(file, options.mark));
   return [
     header,
@@ -300,7 +308,8 @@ export interface Composed {
  * same source and reference are one entry, the latest, with how many there were: but for a
  * wake from the messenger, which carries a message no other wake carries again (ADR-0163),
  * and stands as an entry of its own. Beyond the bounds the rest is said as "N more" with the
- * command that reads them.
+ * command that reads them: of the wakes from the messenger the oldest, so that what was said
+ * last there is read, and of everything else, which goes before them, the latest.
  */
 export function composeSignals(signals: readonly RestSignal[], options: MessageOptions): Composed {
   const entries: { signal: RestSignal; times: number }[] = [];
@@ -322,22 +331,27 @@ export function composeSignals(signals: readonly RestSignal[], options: MessageO
       wakes.set(same, entry);
     }
   }
-  const parts: string[] = [];
+  const carried = new Map<RestSignal, string>();
   let length = 0;
-  let carried = 0;
-  for (const entry of entries) {
-    const text = entryOf(entry.signal, options, entry.times);
-    if (parts.length >= MAX_GROUP_SIGNALS || length + text.length > MAX_GROUP_LENGTH) {
+  const carry = (those: typeof entries): void => {
+    for (const entry of those) {
+      const text = entryOf(entry.signal, options, entry.times);
       // The first is carried whatever its length: a signal is bounded where it is sent.
-      if (parts.length > 0) {
-        break;
+      if (
+        carried.size > 0 &&
+        (carried.size >= MAX_GROUP_SIGNALS || length + text.length > MAX_GROUP_LENGTH)
+      ) {
+        return;
       }
+      carried.set(entry.signal, text);
+      length += text.length + 2;
     }
-    parts.push(text);
-    length += text.length + 2;
-    carried += 1;
-  }
-  const more = entries.length - carried;
+  };
+  const outside = (entry: (typeof entries)[number]) => entry.signal.source === "messenger";
+  carry(entries.filter((entry) => !outside(entry)));
+  carry(entries.filter(outside).toReversed());
+  const parts = entries.flatMap((entry) => carried.get(entry.signal) ?? []);
+  const more = entries.length - carried.size;
   if (more > 0) {
     parts.push(
       `[console ${options.mark} · ${more} more ${more === 1 ? "signal" : "signals"}, not shown here: console agent signals me]`,
