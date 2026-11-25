@@ -1195,13 +1195,13 @@ describe("the slack wake source", () => {
     const GROUP =
       "A message in a group conversation at Slack, from the member U0TOM, in the conversation G0TEAM";
     const ANSWERING = (named: string, command: string, channel = false) =>
-      `Others here write through an app, as an agent account does, the last to write first: ${named}.${channel ? " An app that only posts here is none of you." : ""} One message wakes each of you, and none sees what another is about to answer, so one answers: whoever the message names; where it names nobody, whoever it answers or whose work it is about; and where it is nobody's in particular, whoever of you wrote there last. If that is not you, say nothing, or only what the one who answers cannot know. Before you send, read what was said meanwhile: ${command}`;
+      `Others here write through an app, as an agent account does, the last to write first: ${named}.${channel ? " An app that only posts here is none of you." : ""} One message wakes each of you, and none sees what another is about to answer. Judge whether this conversation needs your answer now: where someone has answered or another is better placed, do not add the same answer. Before you send, read what was said meanwhile: ${command}`;
     const arrives = (...events: unknown[]) =>
       events.map((one, at) => ({ type: "events_api", envelope_id: `e-${at + 1}`, payload: one }));
     const partsOf = (wake: RaisedWake | undefined): readonly WakePart[] =>
       wake !== undefined && "parts" in wake ? wake.parts : [];
 
-    it("reads what was said since the agent last wrote there, says who wrote each, who else writes as an agent account does, and who answers", async () => {
+    it("reads what was said since the agent last wrote there, says who wrote each, who else writes as an agent account does, and what to judge by whether to answer", async () => {
       const at = fakeHost({
         token: "xapp-not-a-real-token",
         member: TOKEN,
@@ -1286,7 +1286,7 @@ describe("the slack wake source", () => {
         { words: "I will ask Mira." },
       ]);
       // A direct conversation holds nobody else: an agent account that wrote there is the one
-      // spoken with, and nobody is told who answers.
+      // spoken with, and nobody is told of the others.
       const alone = fakeHost({
         token: "xapp-x",
         member: TOKEN,

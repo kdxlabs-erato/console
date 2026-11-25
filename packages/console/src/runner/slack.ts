@@ -17,10 +17,10 @@ import type { WakeHost, WakePart, WakeRead, WakeSource } from "./types.js";
 // and what was written, a message someone passed on apart from the words of whoever passed it
 // on. With the member's own token, where the account keeps it, the source reads what was said
 // in the conversation before the message, and the wake carries what the agent missed of it,
-// who else there writes as an agent account does, and who answers. Written from the
-// messenger's own documentation of Socket Mode, of the Events API, of its blocks and of the
-// two methods that read a conversation; what an event or an answer holds is read by schema,
-// bounded, and never run.
+// who else there writes as an agent account does, and what to judge by whether to answer.
+// Written from the messenger's own documentation of Socket Mode, of the Events API, of its
+// blocks and of the two methods that read a conversation; what an event or an answer holds is
+// read by schema, bounded, and never run.
 
 /** The secret of the account's store that holds the app's token for the socket (`xapp-...`). */
 export const SLACK_APP_TOKEN = "slack.app_token";
@@ -38,7 +38,7 @@ const REPLIES_URL = "https://slack.com/api/conversations.replies";
 const MAX_WAKE_TEXT = 4000;
 /**
  * The most the message itself takes of the text a signal carries, its lines begun as that text
- * begins them: what is left is for what was said before it and for who answers. A message of a
+ * begins them: what is left is for what was said before it and for who else is there. A message of a
  * great many short lines comes to more than this within `MAX_WAKE_TEXT`, and is cut shorter.
  */
 const MAX_LEAD_LENGTH = MAX_SIGNAL_LENGTH - 2500;
@@ -941,9 +941,9 @@ function earlierOf(
  *   account's message wakes no other unless it names it, so this is where an agent reads what
  *   another answered. It is information, whoever wrote it;
  * - who else there writes through an app, as an agent account does, the last to write first,
- *   and with them who answers: said in every conversation but a direct one where such an
- *   account was read, since one message wakes each of them and none sees what another is about
- *   to say.
+ *   and with them what the agent judges by whether to answer: said in every conversation but
+ *   a direct one where such an account was read, since one message wakes each of them and
+ *   none sees what another is about to say.
  *
  * Where the account keeps no token to read with, nothing is added, and the wake is as it was;
  * where the messenger refuses the read or does not answer, a line says so, with why in a short
@@ -1010,7 +1010,7 @@ async function beforeOf(
             says: `Others here write through an app, as an agent account does, the last to write first: ${named}${writers.length > MAX_OTHERS + 1 ? ` and ${writers.length - MAX_OTHERS - 1} more` : ""}.${
               // A channel holds apps that post and answer nobody, which a group conversation does not.
               heard.group ? "" : " An app that only posts here is none of you."
-            } One message wakes each of you, and none sees what another is about to answer, so one answers: whoever the message names; where it names nobody, whoever it answers or whose work it is about; and where it is nobody's in particular, whoever of you wrote there last. If that is not you, say nothing, or only what the one who answers cannot know. Before you send, read what was said meanwhile: ${command}`,
+            } One message wakes each of you, and none sees what another is about to answer. Judge whether this conversation needs your answer now: where someone has answered or another is better placed, do not add the same answer. Before you send, read what was said meanwhile: ${command}`,
           },
         ];
   const last =
