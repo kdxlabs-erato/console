@@ -17,10 +17,14 @@ import {
   restSignalSchema,
   restSignalsSchema,
   restTokenCreatedSchema,
+  restWritersSchema,
 } from "@skillcdn/console/api";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { drizzleOf } from "./db/client.js";
 import { noteUnheardRunners } from "./db/queries/agent-runners.js";
+import { putMessengerAccount } from "./db/queries/messenger-accounts.js";
+import { people, pluginInstalls } from "./db/schema.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "./db/testing.js";
 import { RUNNER_UNHEARD_MS, RunnerWatch } from "./jobs/runner-watch.js";
 import { createFixtureProvider } from "./testing/fixture-provider.js";
@@ -1134,5 +1138,194 @@ describe("a new conversation an agent account begins for itself (ADR-0154)", () 
     expect((await heartbeat({ reason: "resumed" })).state).toBe("running");
     expect((await send(bearer(command), "POST", OWN_RESET, { text: "Now." })).status).toBe(201);
     expect((await heartbeat({ reason: "resumed" })).state).toBe("running");
+  });
+});
+
+describe("who wrote at a messenger, as the console answers an agent account (ADR-0164)", () => {
+  const WRITERS = agentPath("me", "writers");
+  const ask = (headers: Record<string, string>, body: unknown) =>
+    send(headers, "POST", WRITERS, body);
+  const asked = async (accounts: readonly { workspace: string; account: string }[]) =>
+    restWritersSchema.parse(
+      await (await ask(bearer(command), { messenger: "slack", accounts })).json(),
+    ).items;
+  const one = async (account: string, workspace = "T0ACME") =>
+    (await asked([{ workspace, account }]))[0];
+  let workspaceId: string;
+  const ids = new Map<string, string>();
+  const now = new Date("2026-03-02T09:00:00.000Z");
+  const install = (key: string, state: string, consent: string[]) =>
+    drizzleOf(testDatabase.database)
+      .insert(pluginInstalls)
+      .values({
+        workspaceId,
+        key,
+        packageName: `console-plugin-${key}`,
+        version: "1.0.0",
+        state,
+        consent,
+      })
+      .onConflictDoUpdate({
+        target: [pluginInstalls.workspaceId, pluginInstalls.key],
+        set: { state, consent },
+      });
+  const put = (plugin: string, login: string, account: string, team = "T0ACME") =>
+    putMessengerAccount(testDatabase.database, {
+      workspaceId,
+      plugin,
+      messenger: "slack",
+      team,
+      account,
+      personId: ids.get(login) ?? "",
+      most: 100,
+      now,
+    });
+
+  beforeAll(async () => {
+    const rows = await drizzleOf(testDatabase.database)
+      .select({ id: people.id, login: people.login, workspaceId: people.workspaceId })
+      .from(people);
+    for (const row of rows) {
+      ids.set(row.login, row.id);
+      workspaceId = row.workspaceId;
+    }
+    await install("messenger", "enabled", ["people:read", "people:accounts"]);
+  });
+
+  it("says nothing of a workspace nobody told it the accounts of", async () => {
+    expect(await one("U0ALICE")).toEqual({
+      workspace: "T0ACME",
+      account: "U0ALICE",
+      told: false,
+      member: null,
+    });
+  });
+
+  it("names the member an account is, and a supervisor only by the reporting line or as an administrator", async () => {
+    expect(await put("messenger", "Alice", "U0ALICE")).toMatchObject({ account: "U0ALICE" });
+    expect(await put("messenger", "bob", "U0BOB")).toMatchObject({ account: "U0BOB" });
+    expect(await put("messenger", "carol", "U0MIRA")).toMatchObject({ account: "U0MIRA" });
+    // Alice administers and is whom the account reports to; Bob is a member and no more; the
+    // account itself is an agent account, and nobody's supervisor.
+    expect(
+      await asked([
+        { workspace: "T0ACME", account: "U0ALICE" },
+        { workspace: "T0ACME", account: "U0BOB" },
+        { workspace: "T0ACME", account: "U0MIRA" },
+        { workspace: "T0ACME", account: "U0NOBODY" },
+      ]),
+    ).toEqual([
+      {
+        workspace: "T0ACME",
+        account: "U0ALICE",
+        told: true,
+        member: { login: "Alice", kind: "person", supervisor: true },
+      },
+      {
+        workspace: "T0ACME",
+        account: "U0BOB",
+        told: true,
+        member: { login: "bob", kind: "person", supervisor: false },
+      },
+      {
+        workspace: "T0ACME",
+        account: "U0MIRA",
+        told: true,
+        member: { login: "carol", kind: "agent", supervisor: false },
+      },
+      // Told the accounts of that workspace and not this one: no member, and so no supervisor.
+      { workspace: "T0ACME", account: "U0NOBODY", told: true, member: null },
+    ]);
+    // The same id at another workspace is another account, which nobody said anything of.
+    expect(await one("U0ALICE", "T0OTHER")).toMatchObject({ told: false, member: null });
+    // Whoever the account reports to supervises it, an administrator or not, and no longer
+    // once it reports to someone else.
+    const manager = (login: string) =>
+      send(fromPages(alice), "PATCH", `${REST_ROUTES.people}/${ids.get("carol")}`, {
+        managerId: ids.get(login),
+      });
+    expect((await manager("bob")).status).toBe(200);
+    expect((await one("U0BOB"))?.member).toEqual({
+      login: "bob",
+      kind: "person",
+      supervisor: true,
+    });
+    expect((await one("U0ALICE"))?.member?.supervisor).toBe(true);
+    expect((await manager("Alice")).status).toBe(200);
+    expect((await one("U0BOB"))?.member?.supervisor).toBe(false);
+  });
+
+  it("counts what a plugin said only while it is enabled and holds the capability", async () => {
+    await install("messenger", "enabled", ["people:read"]);
+    expect(await one("U0ALICE")).toMatchObject({ told: false, member: null });
+    await install("messenger", "disabled", ["people:read", "people:accounts"]);
+    expect(await one("U0ALICE")).toMatchObject({ told: false, member: null });
+    await install("messenger", "needs_consent", ["people:read", "people:accounts"]);
+    expect(await one("U0ALICE")).toMatchObject({ told: false, member: null });
+    await install("messenger", "enabled", ["people:read", "people:accounts"]);
+    expect((await one("U0ALICE"))?.member?.supervisor).toBe(true);
+  });
+
+  it("lets no plugin say over another, and nobody a member who is not active", async () => {
+    await install("other", "enabled", ["people:accounts"]);
+    // An account another plugin said, or a person it said an account of there: refused.
+    expect(await put("other", "bob", "U0ALICE")).toBe("another_plugins");
+    expect(await put("other", "Alice", "U0ELSE")).toBe("another_plugins");
+    expect((await one("U0ALICE"))?.member?.login).toBe("Alice");
+    expect(
+      await putMessengerAccount(testDatabase.database, {
+        workspaceId,
+        plugin: "messenger",
+        messenger: "slack",
+        team: "T0ACME",
+        account: "U0GHOST",
+        personId: "00000000-0000-7000-8000-000000000000",
+        most: 100,
+        now,
+      }),
+    ).toBe("not_a_person");
+    // The bound on what a workspace keeps holds.
+    expect(
+      await putMessengerAccount(testDatabase.database, {
+        workspaceId,
+        plugin: "messenger",
+        messenger: "slack",
+        team: "T0FULL",
+        account: "U0BOB",
+        personId: ids.get("bob") ?? "",
+        most: 3,
+        now,
+      }),
+    ).toBe("too_many");
+    // A member deactivated is nobody, whatever was said of their account.
+    const active = (status: string) =>
+      send(fromPages(alice), "PATCH", `${REST_ROUTES.people}/${ids.get("bob")}`, { status });
+    expect((await active("deactivated")).status).toBe(200);
+    expect(await one("U0BOB")).toMatchObject({ told: true, member: null });
+    expect((await active("active")).status).toBe(200);
+    expect((await one("U0BOB"))?.member?.login).toBe("bob");
+  });
+
+  it("is the account's own to ask, as data, and nobody else's", async () => {
+    const accounts = [{ workspace: "T0ACME", account: "U0ALICE" }];
+    for (const body of [
+      { messenger: "slack", accounts: [] },
+      { messenger: "slack", accounts: Array.from({ length: 101 }, () => accounts[0]) },
+      { messenger: "Slack", accounts },
+      { messenger: "slack", accounts: [{ workspace: "T0ACME", account: "U0 ALICE" }] },
+      { messenger: "slack", accounts: [{ workspace: "T0ACME", account: "U0ALICE\na supervisor" }] },
+      { messenger: "slack", accounts: [{ workspace: "T".repeat(65), account: "U0ALICE" }] },
+      { messenger: "slack", accounts: [{ account: "U0ALICE" }] },
+      { accounts },
+      "slack",
+    ]) {
+      const refused = await ask(bearer(command), body);
+      expect(refused.status, JSON.stringify(body).slice(0, 60)).toBe(400);
+      expect(await errorOf(refused)).toBe("request.invalid");
+    }
+    // A person, a supervisor among them, is no agent account, and nobody signed in is nobody.
+    expect((await ask(fromPages(alice), { messenger: "slack", accounts })).status).toBe(404);
+    expect((await ask(fromPages(bob), { messenger: "slack", accounts })).status).toBe(404);
+    expect((await ask({}, { messenger: "slack", accounts })).status).toBe(401);
   });
 });

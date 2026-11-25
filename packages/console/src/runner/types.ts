@@ -302,6 +302,27 @@ export type WakeRead =
   | { readonly ok: true; readonly parts: readonly WakePart[] }
   | { readonly ok: false; readonly why: string };
 
+/** An account at a source's messenger, as a message names whoever wrote it: by the messenger's ids for the workspace and the account. */
+export interface WakeAccount {
+  readonly workspace: string;
+  readonly account: string;
+}
+
+/**
+ * Who an account at a messenger is to the agent, as the console says it (ADR-0164): `told` where
+ * the console is told the accounts of that workspace at all, and the member the account is, by
+ * their login, with what kind of member they are and whether they supervise the agent; `null`
+ * for an account that is no member's as far as the console is told.
+ */
+export interface WakeWriter extends WakeAccount {
+  readonly told: boolean;
+  readonly member: {
+    readonly login: string;
+    readonly kind: "person" | "agent";
+    readonly supervisor: boolean;
+  } | null;
+}
+
 /** What a wake source is given of the runner and of the machine. */
 export interface WakeHost {
   /** A secret of the account's store, by name; nothing where it keeps none. */
@@ -334,6 +355,14 @@ export interface WakeHost {
   socket(url: string): WakeSocket;
   /** Waits so long, or less where the signal ends the wait. */
   wait(ms: number, signal: AbortSignal): Promise<void>;
+  /**
+   * Who accounts at the source's messenger are, as the console knows them (ADR-0164), in the
+   * order asked: the one way a source learns that an account is a member's, or a supervisor's.
+   * It is the console's answer to the account's own sign-in, and nothing a message, a name or
+   * the messenger says stands in for it. Left out, or rejecting, where the console says nothing
+   * of it, one older than this say: the source then says of an account what the messenger does.
+   */
+  writers?(accounts: readonly WakeAccount[], signal: AbortSignal): Promise<readonly WakeWriter[]>;
 }
 
 /** A module that raises wakes from outside the console. `console`, the console's own stream of signals, is the runner's own. */
@@ -350,7 +379,7 @@ export interface WakeSource {
    * carried less than the agent needs. Left out by a source that reads nothing.
    */
   read?(
-    host: Pick<WakeHost, "secret" | "fetch">,
+    host: Pick<WakeHost, "secret" | "fetch" | "writers">,
     where: string,
     options: {
       /** How many of the latest messages are asked for, held to the source's own bounds; its own number where none is said. */
