@@ -65,9 +65,9 @@ const REFRESH_MS = 10_000;
 /** How many of a session's last events the page reads first, and how many more a step back reads. */
 const TAIL = 200;
 /**
- * How many steps back the page reads for the last word the agent took, where the events it
- * shows hold none; and for the call that started a sub-agent, where they hold what the
- * sub-agent did and not that call.
+ * How many steps back the page reads, quietly, for what the conversation's foot says: the last
+ * word the agent took, and the call that started a sub-agent, where the events shown hold
+ * neither.
  */
 const LOOK_BACK_STEPS = 5;
 
@@ -109,11 +109,9 @@ export function useRead<T>(
 
 /** What a session's events say to whoever puts something at the conversation's foot. */
 interface SessionRead {
+  /** The events shown, and those before them that were read back for the foot. */
   readonly events: readonly RestTranscriptEvent[];
-  /**
-   * The number of the last signal the session's events say the agent took; nothing where the
-   * events read, and a few steps before them, say none.
-   */
+  /** The number of the last signal these events say the agent took; nothing where they say none. */
   readonly taken: number | undefined;
 }
 
@@ -160,10 +158,8 @@ function SessionTranscript(props: {
   const [standing, setStanding] = useState<StreamStanding>("waiting");
   /** Whether the events before the first one shown are being read: asked for once at a time. */
   const [readingEarlier, setReadingEarlier] = useState(false);
-  /** The last signal taken before the events read, once looked for: `0` where a few steps back say none. */
-  const [before, setBefore] = useState<number | undefined>(undefined);
-  /** How many steps back were read for the call that started a sub-agent, of the session shown. */
-  const steppedBack = useRef(0);
+  /** The events before those shown that were read for the foot alone, and stand nowhere else. */
+  const [behind, setBehind] = useState<readonly RestTranscriptEvent[]>([]);
   const ended = useRef(onEnded);
   ended.current = onEnded;
   const open = session.ended === null;
@@ -185,8 +181,7 @@ function SessionTranscript(props: {
     setProblem(false);
     setStanding("waiting");
     setReadingEarlier(false);
-    setBefore(undefined);
-    steppedBack.current = 0;
+    setBehind([]);
     // What is there is read, and what arrives is followed; a stream that closed for good, as
     // one does while the console restarts, is opened again from the last event read.
     return followSession({
@@ -201,37 +196,37 @@ function SessionTranscript(props: {
       onEnded: () => ended.current?.(),
     });
   }, [client, handle, session.id]);
-  // Which of the words sent still wait is read off the last signal the agent took. Where the
-  // events read hold none, a long turn since the last word say, the ones before are read a few
-  // steps back for it, and not shown.
-  const known = takenOf(events);
-  const looks = props.foot !== undefined && open && known === undefined && from > 0;
+  // What stands at the conversation's foot is read off what is shown and, where that does not
+  // say it, off the events before, a step at a time and a few at most: the last signal the agent
+  // took, by which the words that still wait are told, and the call that started a sub-agent
+  // (ADR-0161), which one that has worked for long has far back. None of them is shown, so that
+  // nothing moves under whoever reads, and one that could not be read is left at that.
+  const all = behind.length === 0 ? events : withEarlier(events, behind, from);
+  const taken = takenOf(all);
+  const upTo = Math.min(from, (behind[0]?.n ?? Number.POSITIVE_INFINITY) - 1);
+  const looks =
+    props.foot !== undefined &&
+    open &&
+    events.length > 0 &&
+    upTo > 0 &&
+    from - upTo < LOOK_BACK_STEPS * TAIL &&
+    (taken === undefined || lacksStarter(all));
   useEffect(() => {
-    if (!looks || before !== undefined) {
+    if (!looks) {
       return;
     }
     const controller = new AbortController();
-    void (async () => {
-      let upTo = from;
-      for (let step = 0; step < LOOK_BACK_STEPS && upTo > 0; step += 1) {
-        const after = Math.max(0, upTo - TAIL);
-        const page = await client.transcript(
-          handle,
-          session.id,
-          { after, limit: upTo - after },
-          controller.signal,
-        );
-        const found = takenOf(page.items);
-        if (found !== undefined) {
-          setBefore(found);
-          return;
+    const after = Math.max(0, upTo - TAIL);
+    client
+      .transcript(handle, session.id, { after, limit: upTo - after }, controller.signal)
+      .then((page) => {
+        if (!controller.signal.aborted) {
+          setBehind((current) => [...page.items, ...current]);
         }
-        upTo = after;
-      }
-      setBefore(0);
-    })().catch(() => undefined);
+      })
+      .catch(() => undefined);
     return () => controller.abort();
-  }, [looks, before, from, client, handle, session.id]);
+  }, [looks, upTo, client, handle, session.id]);
   const earlier = () => {
     if (readingEarlier) {
       return;
@@ -260,21 +255,6 @@ function SessionTranscript(props: {
         }
       });
   };
-  // What a sub-agent did is read under the call that started it, and one that has worked for
-  // long, in the background above all (ADR-0161), has that call before the events read: the
-  // ones before are read too, a few steps back at most, until the call is among them. Past
-  // that, what it did stands where it arrived, under its name, as before.
-  const readEarlier = useRef(earlier);
-  readEarlier.current = earlier;
-  const lacks = from > 0 && lacksStarter(events);
-  useEffect(() => {
-    if (!lacks || readingEarlier || steppedBack.current >= LOOK_BACK_STEPS) {
-      return;
-    }
-    steppedBack.current += 1;
-    readEarlier.current();
-  }, [lacks, readingEarlier]);
-  const taken = known ?? (before !== undefined && before > 0 ? before : undefined);
   return (
     <section className="sc-agent-transcript" aria-label={words.transcript}>
       {session.away && <Callout tone="warning">{words.away}</Callout>}
@@ -298,7 +278,7 @@ function SessionTranscript(props: {
         onReadWhole={async (n) => (await client.transcriptText(handle, session.id, n)).text}
         live={props.working ?? open}
         empty={session.away ? null : <p className="sc-field-hint">{words.empty}</p>}
-        foot={props.foot?.({ events, taken })}
+        foot={props.foot?.({ events: all, taken })}
       />
       {/* At the conversation's end, where what is new would stand and a pane that follows it looks. */}
       {open && standing === "lost" && (

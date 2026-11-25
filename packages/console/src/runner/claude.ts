@@ -337,6 +337,8 @@ interface Read {
    * the task.
    */
   readonly tasks: Map<string, string>;
+  /** The calls the product started a sub-agent of in the background, until each is answered. */
+  readonly launched: Set<string>;
   /**
    * The usage limit the turn under way ran into, where it did: until when, where the product
    * said, and the words it was said in, which the turn's result says again.
@@ -380,9 +382,8 @@ const TASK_ENDS: ReadonlySet<string> = new Set(["completed", "failed", "stopped"
 
 /**
  * What the product says when a sub-agent ended (`task_notification`, as its documentation has
- * the line; seen with 2.1.330 of one that completed, in the background and in the foreground),
- * as an event of that sub-agent's: how it ended, `completed`, `failed` or `stopped`, under
- * `over`. A sub-agent that goes on in the background is answered for when it starts, so this
+ * the line; seen with 2.1.322 of the three) as an event of that sub-agent's: how it ended,
+ * `completed`, `failed` or `stopped`, under `over`. A sub-agent that goes on in the background is answered for when it starts, so this
  * is the one word the record has of its end. Nothing for a task that is no sub-agent the
  * driver knows the call of: a command, a watch, or one a process before this one started.
  */
@@ -398,8 +399,8 @@ function overOf(line: Json, state: Read): DriverEvent | undefined {
   if (parent === undefined) {
     return undefined;
   }
-  // Why it failed is the product's to say, in words of its own that are not seen yet: shown
-  // within a bound, cut after the secrets are out.
+  // Why it failed is the product's to say, in words of its own: shown within a bound, cut
+  // after the secrets are out.
   const why = how === "failed" ? (textOf(line.summary)?.trim() ?? "") : "";
   const text =
     how === "completed"
@@ -412,10 +413,12 @@ function overOf(line: Json, state: Read): DriverEvent | undefined {
 
 /**
  * Whether what a tool answered is the product's word that the sub-agent the call started goes
- * on in the background, and not what that sub-agent answered: the structured output the
- * product writes beside the result says so (`tool_use_result`, whose `status` is
- * `async_launched` there, as its own declaration of the tool's output has it; seen with
- * 2.1.330). It is the output of the one result a line carries.
+ * on in the background, and not what that sub-agent answered, as the structured output the
+ * product writes beside the result says it (`tool_use_result`, whose `status` is
+ * `async_launched` there, as its own declaration of the tool's output has it): the output of
+ * the one result a line carries, for a call that was moved to the background after it was made.
+ * A call made so says it as its sub-agent starts (`task_started`), the one word there is of a
+ * call a sub-agent made, whose answer carries no such output (seen with 2.1.322).
  */
 const launchedOf = (line: Json, results: number): boolean =>
   results === 1 &&
@@ -542,17 +545,27 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
         });
       } else if (line.subtype === "task_started") {
         // A sub-agent is a task of the product's own, which names the call that started it
-        // (`task_type`, `tool_use_id`, as its documentation has them). One known already is
-        // one started again, by another call than the one its events name: left as it is.
+        // (`task_type`, `tool_use_id`, as its documentation has them).
         const task = textOf(line.task_id);
         const call = textOf(line.tool_use_id);
-        if (
-          line.task_type === "local_agent" &&
-          task !== undefined &&
-          call !== undefined &&
-          !state.tasks.has(task)
-        ) {
-          remember(state.tasks, task, call);
+        if (line.task_type === "local_agent" && task !== undefined && call !== undefined) {
+          const known = state.tasks.get(task);
+          if (known === undefined) {
+            remember(state.tasks, task, call);
+            if (line.is_backgrounded === true) {
+              state.launched.add(call);
+            }
+          } else {
+            // One known already is started again, by a message the agent sent it or by the
+            // product once a command of its own ended (seen with 2.1.322): an event of the
+            // sub-agent's, under the call its events name, whatever call this line names.
+            events.push({
+              type: "event",
+              kind: "status",
+              text: "The sub-agent was started again.",
+              data: factsOf(known, state),
+            });
+          }
         }
       } else if (line.subtype === "task_notification") {
         const over = overOf(line, state);
@@ -655,11 +668,12 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
       const results = blocks.filter((block) => isObject(block) && block.type === "tool_result");
       // An answer that says the sub-agent goes on in the background is not that sub-agent's
       // answer: said, so that whoever reads the session takes it for at work from there on.
-      const launched = launchedOf(line, results.length);
+      const moved = launchedOf(line, results.length);
       for (const block of results) {
         if (!isObject(block)) {
           continue;
         }
+        const launched = state.launched.delete(textOf(block.tool_use_id) ?? "") || moved;
         state.results += 1;
         const result = resultOf(block.content, `tool-${state.results}`);
         events.push({
@@ -872,6 +886,7 @@ function sessionOf(
     acknowledges: false,
     subagents: new Map(),
     tasks: new Map(),
+    launched: new Set(),
     limit: undefined,
     resets: undefined,
     cut,

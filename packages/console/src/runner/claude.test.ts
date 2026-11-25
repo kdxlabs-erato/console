@@ -996,8 +996,7 @@ describe("the claude driver", () => {
   });
 
   it("says how a sub-agent ended as the product does, by the task it knows the sub-agent as, and nothing of a task that is none", async () => {
-    // A sub-agent that failed and one that was stopped, as the product's documentation has the
-    // line: neither was seen run.
+    // A sub-agent that failed and one that was stopped, as 2.1.322 wrote the line of each.
     const SECRET = "not-a-real-token-4f9a2c71";
     const redact = redactorOf([SECRET]);
     const { session, says, exits } = started({
@@ -1121,6 +1120,94 @@ describe("the claude driver", () => {
       { id: "toolu_6", error: false },
       { id: "toolu_7", error: false },
       { id: "toolu_8", error: false },
+    ]);
+  });
+
+  it("reads a sub-agent that was stopped in the middle of a call, one started again, and one a sub-agent started", async () => {
+    // As 2.1.322 wrote each, the lines cut down and every id invented.
+    const { session, says, exits } = started();
+    const launches = (id: string, about: string, parent: string | null = null) => ({
+      type: "assistant",
+      message: {
+        content: [{ type: "tool_use", id, name: "Agent", input: { description: about } }],
+      },
+      parent_tool_use_id: parent,
+      ...(parent === null ? {} : { agent_id: "task-1" }),
+    });
+    const starts = (task: string, call: string, background = true) => ({
+      type: "system",
+      subtype: "task_started",
+      task_id: task,
+      tool_use_id: call,
+      is_backgrounded: background,
+      task_type: "local_agent",
+    });
+    const answers = (id: string, parent: string | null, more: object = {}) => ({
+      type: "user",
+      message: {
+        role: "user",
+        content: [{ tool_use_id: id, type: "tool_result", content: "Launched." }],
+      },
+      parent_tool_use_id: parent,
+      ...more,
+    });
+    const ends = (task: string, call: string, status: string) => ({
+      type: "system",
+      subtype: "task_notification",
+      task_id: task,
+      tool_use_id: call,
+      status,
+    });
+    const does = (id: string, parent: string, task: string) => ({
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id, name: "Bash", input: { command: "make" } }] },
+      parent_tool_use_id: parent,
+      agent_id: task,
+    });
+    says(INIT);
+    says(launches("toolu_a1", "Build"));
+    says(starts("task-1", "toolu_a1"));
+    says(answers("toolu_a1", null, { tool_use_result: { status: "async_launched" } }));
+    // It starts a sub-agent of its own: the answer carries no output beside it, and the line
+    // that says the sub-agent started says that it goes on in the background.
+    says(launches("toolu_n1", "Test", "toolu_a1"));
+    says(starts("task-2", "toolu_n1"));
+    says(answers("toolu_n1", "toolu_a1", { agent_id: "task-1" }));
+    // Stopped in the middle of a call: that it ended first, what became of the call after.
+    says(does("toolu_s1", "toolu_a1", "task-1"));
+    says(ends("task-1", "toolu_a1", "stopped"));
+    says(answers("toolu_s1", "toolu_a1", { agent_id: "task-1" }));
+    // The one it started goes on past it, is done, and is started again by a message: the
+    // message's call is answered as any other, and what it does names the call that made it.
+    says(ends("task-2", "toolu_n1", "completed"));
+    says(starts("task-2", "toolu_m1"));
+    says(answers("toolu_m1", null, { tool_use_result: { success: true } }));
+    says(does("toolu_s2", "toolu_n1", "task-2"));
+    // One in the foreground says it started too, and its call's answer is its own.
+    says(launches("toolu_f1", "Read"));
+    says(starts("task-3", "toolu_f1", false));
+    says(answers("toolu_f1", null, { tool_use_result: { status: "completed" } }));
+    exits(0);
+    const build = { parent: "toolu_a1", subagent: "Build" };
+    const test = { parent: "toolu_n1", subagent: "Test" };
+    expect(
+      (await collect(session.events))
+        .slice(STARTED.length)
+        .flatMap((event) => (event.type === "event" ? [[event.kind, event.data]] : [])),
+    ).toEqual([
+      ["tool_call", { tool: "Agent", id: "toolu_a1", starts: "Build" }],
+      ["tool_result", { id: "toolu_a1", error: false, background: true }],
+      ["tool_call", { tool: "Agent", id: "toolu_n1", starts: "Test", ...build }],
+      ["tool_result", { id: "toolu_n1", error: false, background: true, ...build }],
+      ["tool_call", { tool: "Bash", id: "toolu_s1", ...build }],
+      ["status", { ...build, over: "stopped" }],
+      ["tool_result", { id: "toolu_s1", error: false, ...build }],
+      ["status", { ...test, over: "completed" }],
+      ["status", test],
+      ["tool_result", { id: "toolu_m1", error: false }],
+      ["tool_call", { tool: "Bash", id: "toolu_s2", ...test }],
+      ["tool_call", { tool: "Agent", id: "toolu_f1", starts: "Read" }],
+      ["tool_result", { id: "toolu_f1", error: false }],
     ]);
   });
 

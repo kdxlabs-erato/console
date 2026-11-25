@@ -2877,6 +2877,54 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     ).toBe("running");
   });
 
+  it("reads a sub-agent that was stopped in the middle of a call as stopped, one started again as at work, and one a sub-agent started past that one's end", () => {
+    const of = (parent: string) => ({ parent, subagent: parent });
+    const starts = (n: number, id: string, more: object = {}) =>
+      event(n, { kind: "tool_call", text: "{}", data: { tool: "Agent", id, starts: id, ...more } });
+    const goesOn = (n: number, id: string, more: object = {}) =>
+      event(n, { kind: "tool_result", data: { id, error: false, background: true, ...more } });
+    const over = (n: number, parent: string, how: string) =>
+      event(n, { kind: "status", text: "x", data: { ...of(parent), over: how } });
+    const turn = (n: number) =>
+      event(n, { kind: "status", text: "The turn completed.", data: { turn: "completed" } });
+    const names = (all: Parameters<typeof talkOf>[0]) =>
+      atWorkOf(all, Date.parse(WHEN)).map((one) => one.name);
+    // Stopped in the middle of a call, as a product says it: that the sub-agent ended first, and
+    // then what became of the call. Nothing of that is work, and no turn changes it.
+    const stopped = [
+      starts(1, "b1"),
+      goesOn(2, "b1"),
+      turn(3),
+      event(4, { kind: "tool_call", text: "make", data: { id: "s1", ...of("b1") } }),
+      over(5, "b1", "stopped"),
+      event(6, { kind: "tool_result", text: "no", data: { id: "s1", error: true, ...of("b1") } }),
+      event(7, { kind: "permission", text: "no", data: { answer: "denied", ...of("b1") } }),
+      turn(8),
+    ];
+    expect(names(stopped)).toEqual([]);
+    const first = talkOf(stopped)[0];
+    expect(first && subAgentOf(first, { now: Date.parse(WHEN), live: true })?.state).toBe("ended");
+    // Its own word that it was started again, before anything it does: at work from there.
+    const again = [
+      ...stopped,
+      event(9, { kind: "status", text: "The sub-agent was started again.", data: of("b1") }),
+      turn(10),
+    ];
+    expect(names(again)).toEqual(["b1"]);
+    expect(names([...again, over(11, "b1", "completed")])).toEqual([]);
+    // One a sub-agent started in the background goes on past the end of that one.
+    const nested = [
+      starts(1, "b1"),
+      goesOn(2, "b1"),
+      starts(3, "n1", of("b1")),
+      goesOn(4, "n1", of("b1")),
+      over(5, "b1", "completed"),
+      turn(6),
+    ];
+    expect(names(nested)).toEqual(["n1"]);
+    expect(names([...nested, over(7, "n1", "completed")])).toEqual([]);
+  });
+
   it("says whether the events read hold a sub-agent's work without the call that started it", () => {
     const call = event(1, { kind: "tool_call", text: "{}", data: { tool: "Agent", id: "a1" } });
     const step = event(2, { kind: "tool_call", text: "ls", data: { id: "s1", parent: "a1" } });
