@@ -391,6 +391,8 @@ export function registerAgentRunnerRest(
                 login: one.member.person.login,
                 kind: one.member.person.kind,
                 supervisor: one.member.supervisor,
+                administrator: one.member.administrator,
+                line: one.member.line ?? null,
               },
       })),
     };

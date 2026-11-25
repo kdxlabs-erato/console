@@ -2162,6 +2162,55 @@ describe("the slack wake source", () => {
       );
     });
 
+    it("says how a member stands to the agent both ways: its manager, anyone above, an administrator in the line or out of it, and whoever reports to it, themselves or through others", async () => {
+      const stands = async (member: NonNullable<WakeWriter["member"]>) =>
+        /\(@kim in the console, (.*)\), in the conversation/.exec(
+          (await heard(from(ALICE), { writers: console_({ [ALICE]: member }) })).first,
+        )?.[1];
+      const kim = { login: "kim", kind: "person" as const };
+      // Above the agent: whom it reports to, and every level above them.
+      expect(
+        await stands({ ...kim, supervisor: true, administrator: false, line: "manager" }),
+      ).toBe("a supervisor of yours: your manager");
+      expect(await stands({ ...kim, supervisor: true, administrator: false, line: "above" })).toBe(
+        "a supervisor of yours: above your manager",
+      );
+      // An administrator supervises from outside the line, and may stand in it as well.
+      expect(await stands({ ...kim, supervisor: true, administrator: true, line: null })).toBe(
+        "a supervisor of yours: an administrator",
+      );
+      expect(await stands({ ...kim, supervisor: true, administrator: true, line: "manager" })).toBe(
+        "a supervisor of yours: your manager and an administrator",
+      );
+      expect(await stands({ ...kim, supervisor: true, administrator: true, line: "above" })).toBe(
+        "a supervisor of yours: above your manager and an administrator",
+      );
+      // Below the agent: whoever reports to it, and every level below them. No supervisor by
+      // that, unless an administrator, who is one wherever they stand.
+      expect(
+        await stands({ ...kim, supervisor: false, administrator: false, line: "report" }),
+      ).toBe("no supervisor of yours, reports to you");
+      expect(await stands({ ...kim, supervisor: false, administrator: false, line: "below" })).toBe(
+        "no supervisor of yours, reports to you through others",
+      );
+      expect(await stands({ ...kim, supervisor: true, administrator: true, line: "report" })).toBe(
+        "a supervisor of yours: an administrator, who reports to you",
+      );
+      expect(await stands({ ...kim, supervisor: true, administrator: true, line: "below" })).toBe(
+        "a supervisor of yours: an administrator, who reports to you through others",
+      );
+      // Nowhere in the line and no administrator: a member, and no more.
+      expect(await stands({ ...kim, supervisor: false, administrator: false, line: null })).toBe(
+        "no supervisor of yours",
+      );
+      // How a member is a supervisor never makes one: only the console's own word for it does.
+      expect(
+        await stands({ ...kim, supervisor: false, administrator: true, line: "manager" }),
+      ).toBe("no supervisor of yours");
+      // A console that says only whether a member supervises is said as it was.
+      expect(await stands({ ...kim, supervisor: true })).toBe("a supervisor of yours");
+    });
+
     it("says nothing where the console says nothing: an older console, one that fails, one that does not answer, a workspace it is told nothing of", async () => {
       expect((await heard(from(ALICE), {})).first).toBe(DIRECT.replace(TOM, ALICE));
       const failing = await heard(from(ALICE), {

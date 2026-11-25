@@ -312,7 +312,9 @@ export interface WakeAccount {
  * Who an account at a messenger is to the agent, as the console says it (ADR-0164): `told` where
  * the console is told the accounts of that workspace at all, and the member the account is, by
  * their login, with what kind of member they are and whether they supervise the agent; `null`
- * for an account that is no member's as far as the console is told.
+ * for an account that is no member's as far as the console is told. `administrator` and `line`
+ * say how: an administrator, and where in the agent's reporting line the member stands, its
+ * `manager`, anyone further `above`, a `report` of its own or anyone further `below`.
  */
 export interface WakeWriter extends WakeAccount {
   readonly told: boolean;
@@ -320,6 +322,8 @@ export interface WakeWriter extends WakeAccount {
     readonly login: string;
     readonly kind: "person" | "agent";
     readonly supervisor: boolean;
+    readonly administrator?: boolean | undefined;
+    readonly line?: "manager" | "above" | "report" | "below" | null | undefined;
   } | null;
 }
 

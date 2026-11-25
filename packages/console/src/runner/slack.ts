@@ -2,7 +2,7 @@ import * as z from "zod/mini";
 import { MAX_SIGNAL_LENGTH } from "../limits.js";
 import { withoutForbiddenCodePoints } from "../text.js";
 import { wakeTextOf } from "./message.js";
-import type { WakeAccount, WakeHost, WakePart, WakeRead, WakeSource } from "./types.js";
+import type { WakeAccount, WakeHost, WakePart, WakeRead, WakeSource, WakeWriter } from "./types.js";
 
 // The `slack` wake source (ADR-0085): one app for one agent account, which receives over its
 // Socket Mode connection the events the agent's own member of the workspace can see, and raises
@@ -588,11 +588,43 @@ function accountOf(message: Written): WakeAccount | undefined {
 }
 
 /**
+ * How a member stands to the agent, as a line says it after who they are: a supervisor of its
+ * own or none, and where the console says more, how: its manager, anyone above its manager or
+ * an administrator, who supervises from outside the line and may stand in it too; and of
+ * anyone below the agent in its line, that they report to it, themselves or through others.
+ * A console that says only whether a member supervises is said as it was.
+ */
+function standsOf(member: NonNullable<WakeWriter["member"]>): string {
+  const reports =
+    member.line === "report"
+      ? "reports to you"
+      : member.line === "below"
+        ? "reports to you through others"
+        : undefined;
+  // A supervisor only where the console says so in so many words: how it is one says more of
+  // it, and never makes one.
+  if (member.supervisor !== true) {
+    return `no supervisor of yours${reports === undefined ? "" : `, ${reports}`}`;
+  }
+  const how = [
+    member.line === "manager"
+      ? "your manager"
+      : member.line === "above"
+        ? "above your manager"
+        : undefined,
+    member.administrator === true ? "an administrator" : undefined,
+  ].filter((one) => one !== undefined);
+  return `a supervisor of yours${how.length === 0 ? "" : `: ${how.join(" and ")}`}${reports === undefined ? "" : `, who ${reports}`}`;
+}
+
+/**
  * Asks the console who wrote (ADR-0164), once for the messages of a wake or of a read, and
  * answers what a line says of each writer after the account:
  *
  * - the member it is, by their login in the console, an agent account said as one, and whether
- *   they supervise the agent: `(@kim in the console, a supervisor of yours)`;
+ *   they supervise the agent: `(@kim in the console, a supervisor of yours: your manager)`,
+ *   with how, its manager, anyone above its manager or an administrator, and of anyone below
+ *   the agent in its line that they report to it, themselves or through others (`standsOf`);
  * - that it is no member the console knows, and so no supervisor, where the console is told the
  *   accounts of that workspace and not this one;
  * - nothing, where the console is told no account of that workspace, where it does not answer
@@ -649,7 +681,7 @@ async function whoOf(
         keyOf(one),
         member === null
           ? " (no member the console knows, so no supervisor of yours)"
-          : ` (${named}${member.kind === "agent" ? ", an agent account" : ""}, ${member.supervisor === true ? "a supervisor of yours" : "no supervisor of yours"})`,
+          : ` (${named}${member.kind === "agent" ? ", an agent account" : ""}, ${standsOf(member)})`,
       );
     }
     return (message) => {

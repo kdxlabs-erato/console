@@ -19,11 +19,12 @@ import {
   restTokenCreatedSchema,
   restWritersSchema,
 } from "@skillcdn/console/api";
+import { eq } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { drizzleOf } from "./db/client.js";
 import { noteUnheardRunners } from "./db/queries/agent-runners.js";
-import { putMessengerAccount } from "./db/queries/messenger-accounts.js";
+import { putMessengerAccount, removeMessengerAccount } from "./db/queries/messenger-accounts.js";
 import { people, pluginInstalls } from "./db/schema.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "./db/testing.js";
 import { RUNNER_UNHEARD_MS, RunnerWatch } from "./jobs/runner-watch.js";
@@ -1219,19 +1220,37 @@ describe("who wrote at a messenger, as the console answers an agent account (ADR
         workspace: "T0ACME",
         account: "U0ALICE",
         told: true,
-        member: { login: "Alice", kind: "person", supervisor: true },
+        member: {
+          login: "Alice",
+          kind: "person",
+          supervisor: true,
+          administrator: true,
+          line: "manager",
+        },
       },
       {
         workspace: "T0ACME",
         account: "U0BOB",
         told: true,
-        member: { login: "bob", kind: "person", supervisor: false },
+        member: {
+          login: "bob",
+          kind: "person",
+          supervisor: false,
+          administrator: false,
+          line: null,
+        },
       },
       {
         workspace: "T0ACME",
         account: "U0MIRA",
         told: true,
-        member: { login: "carol", kind: "agent", supervisor: false },
+        member: {
+          login: "carol",
+          kind: "agent",
+          supervisor: false,
+          administrator: false,
+          line: null,
+        },
       },
       // Told the accounts of that workspace and not this one: no member, and so no supervisor.
       { workspace: "T0ACME", account: "U0NOBODY", told: true, member: null },
@@ -1249,10 +1268,114 @@ describe("who wrote at a messenger, as the console answers an agent account (ADR
       login: "bob",
       kind: "person",
       supervisor: true,
+      administrator: false,
+      line: "manager",
     });
     expect((await one("U0ALICE"))?.member?.supervisor).toBe(true);
     expect((await manager("Alice")).status).toBe(200);
     expect((await one("U0BOB"))?.member?.supervisor).toBe(false);
+  });
+
+  it("reads the line whole, both ways: the manager, every level above, an administrator in the line or out of it, a report and every level below", async () => {
+    const db = drizzleOf(testDatabase.database);
+    const reportsTo = (login: string, manager: string | null) =>
+      db
+        .update(people)
+        .set({ managerId: manager === null ? null : (ids.get(manager) ?? null) })
+        .where(eq(people.id, ids.get(login) ?? ""));
+    // Invented members, each at a place of its own: nobody signs in as them.
+    const added: [login: string, role: "admin" | "member"][] = [
+      ["dana", "member"],
+      ["erin", "member"],
+      ["frank", "member"],
+      ["gina", "admin"],
+      ["henry", "member"],
+      ["ida", "admin"],
+    ];
+    for (const [login, role] of added) {
+      const [row] = await db
+        .insert(people)
+        .values({
+          workspaceId,
+          host: "gh",
+          hostAccountId: `invented-${login}`,
+          login,
+          role,
+          lastLoginAt: now,
+        })
+        .returning({ id: people.id });
+      ids.set(login, row?.id ?? "");
+    }
+    // Another agent account, made as the first was: Alice's, until it reports to Bob below.
+    const made = await send(fromPages(alice), "POST", REST_ROUTES.agents, {
+      host: "gh",
+      login: "nova",
+      handle: "nova",
+      name: "Nova",
+      project: "ops",
+    });
+    expect(made.status).toBe(201);
+    const [nova] = await db.select({ id: people.id }).from(people).where(eq(people.login, "nova"));
+    ids.set("nova", nova?.id ?? "");
+    for (const login of [...added.map(([one]) => one), "nova"]) {
+      expect(await put("messenger", login, `U0${login.toUpperCase()}`)).toMatchObject({
+        plugin: "messenger",
+      });
+    }
+    // Above the account: it reports to Bob, Bob to Dana, Dana to Gina, an administrator. Alice
+    // administers and is nowhere in the line; Ida administers too, and reports two levels
+    // below the account. Below it: Erin reports to it, Frank to Erin. Henry is nowhere, and
+    // Nova, another agent account, reports to Bob beside it.
+    await reportsTo("carol", "bob");
+    await reportsTo("bob", "dana");
+    await reportsTo("dana", "gina");
+    await reportsTo("erin", "carol");
+    await reportsTo("frank", "erin");
+    await reportsTo("ida", "erin");
+    await reportsTo("nova", "bob");
+    const stands = async (login: string, account = `U0${login.toUpperCase()}`) => {
+      const member = (await one(account))?.member;
+      return member === null || member === undefined
+        ? undefined
+        : [member.supervisor, member.administrator, member.line];
+    };
+    // The manager, and the manager's manager: supervisors by the line alone.
+    expect(await stands("bob")).toEqual([true, false, "manager"]);
+    expect(await stands("dana")).toEqual([true, false, "above"]);
+    // An administrator three levels up is both, and one out of the line supervises all the same.
+    expect(await stands("gina")).toEqual([true, true, "above"]);
+    expect(await stands("Alice", "U0ALICE")).toEqual([true, true, null]);
+    // Whoever reports to the account, and whoever reports to them: below it, and no supervisor.
+    expect(await stands("erin")).toEqual([false, false, "report"]);
+    expect(await stands("frank")).toEqual([false, false, "below"]);
+    // An administrator below the account supervises it, and reports to it through another.
+    expect(await stands("ida")).toEqual([true, true, "below"]);
+    // Beside the account under one manager, or nowhere at all: no line, and no supervisor.
+    expect(await stands("nova")).toEqual([false, false, null]);
+    expect(await stands("henry")).toEqual([false, false, null]);
+    // The line moved: who was above is none of it, and who is above now is.
+    await reportsTo("carol", "dana");
+    expect(await stands("bob")).toEqual([false, false, null]);
+    expect(await stands("dana")).toEqual([true, false, "manager"]);
+    expect(await stands("gina")).toEqual([true, true, "above"]);
+    // As it was for the tests after this one: the account reports to Alice, and the invented
+    // members are no account's at the messenger.
+    await reportsTo("carol", "Alice");
+    await reportsTo("bob", null);
+    await reportsTo("nova", "Alice");
+    for (const login of [...added.map(([one]) => one), "nova"]) {
+      if (login !== "nova") {
+        await reportsTo(login, null);
+      }
+      await removeMessengerAccount(testDatabase.database, {
+        workspaceId,
+        plugin: "messenger",
+        messenger: "slack",
+        team: "T0ACME",
+        personId: ids.get(login) ?? "",
+        now,
+      });
+    }
   });
 
   it("counts what a plugin said only while it is enabled and holds the capability", async () => {

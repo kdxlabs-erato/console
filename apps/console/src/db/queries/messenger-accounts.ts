@@ -247,6 +247,13 @@ export interface AccountWriter {
         readonly person: PersonRecord;
         /** Whether they supervise the agent account (ADR-0084): an administrator, or above it in the reporting line. */
         readonly supervisor: boolean;
+        /** Whether they administer the workspace: a supervisor of every agent account, in its line or not. */
+        readonly administrator: boolean;
+        /**
+         * Where they stand in the reporting line of whoever asks: whom it reports to, anyone
+         * further above, whoever reports to it, anyone further below, or nowhere in it.
+         */
+        readonly line: "manager" | "above" | "report" | "below" | undefined;
       }
     | undefined;
 }
@@ -256,6 +263,11 @@ export interface AccountWriter {
  * whether they supervise `agent`. Only what a plugin said that is enabled now and holds the
  * capability now counts; a member who is deactivated is nobody; and a supervisor is who
  * `supervises` says: an administrator, or whoever is above the account in the reporting line.
+ *
+ * The relation is read whole, both ways (AGENTS.md, "Conventions"): the direct link, every
+ * level of the line, and administrators. Above the account its manager and everyone above
+ * them; below it whoever reports to it and everyone below them; and an administrator, who
+ * supervises from outside the line and may stand anywhere in it as well.
  */
 export async function writersFor(
   database: Database,
@@ -307,6 +319,32 @@ export async function writersFor(
     ).rows.map((row) => row.id),
   );
   const found = new Map(rows.map((row) => [`${row.team} ${row.account}`, toPerson(row.person)]));
+  // Whoever is below the account, at any depth: climbed from each member found, since they are
+  // few and what is below an account may be many. Pairs, so that the climb ends as the one
+  // above does.
+  const members = [...new Set(rows.map((row) => row.person.id))];
+  const below = new Set(
+    members.length === 0
+      ? []
+      : (
+          await db.execute<{ start: string }>(
+            sql`with recursive up(start, id) as (select id, manager_id from people where id in (${sql.join(
+              members.map((id) => sql`${id}::uuid`),
+              sql`, `,
+            )}) and manager_id is not null union select up.start, p.manager_id from people p join up on p.id = up.id where p.manager_id is not null) select start from up where id = ${agent.id}::uuid`,
+          )
+        ).rows.map((row) => row.start),
+  );
+  const lineOf = (person: PersonRecord): "manager" | "above" | "report" | "below" | undefined =>
+    person.id === agent.managerId
+      ? "manager"
+      : above.has(person.id)
+        ? "above"
+        : person.managerId === agent.id
+          ? "report"
+          : below.has(person.id)
+            ? "below"
+            : undefined;
   return accounts.map(({ workspace, account }) => {
     const person = found.get(`${workspace} ${account}`);
     return {
@@ -319,6 +357,8 @@ export async function writersFor(
           : {
               person,
               supervisor: agent.kind === "agent" && (administers(person) || above.has(person.id)),
+              administrator: administers(person),
+              line: lineOf(person),
             },
     };
   });

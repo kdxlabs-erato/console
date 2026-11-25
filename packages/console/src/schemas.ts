@@ -945,6 +945,13 @@ export type RestWritersInput = z.infer<typeof restWritersInputSchema>;
  * every account. `member` is the active member whose account it is, by their login, with what
  * kind of member they are and whether they supervise the account that asks; `null` for an
  * account that is no member's as far as the console is told, which is then no supervisor's.
+ *
+ * `supervisor` is the whole of ADR-0084, point 5: an administrator, or anyone above the asker
+ * in the reporting line, its manager and every level above. `administrator` and `line` say
+ * which, and the other way too: `line` is where the member stands in the asker's line,
+ * `manager` whom it reports to, `above` anyone further up, `report` whoever reports to it,
+ * `below` anyone further down, `null` nowhere in it. An administrator may stand anywhere in
+ * the line, below the asker too, and supervises it all the same.
  */
 export const restWriterSchema = z.object({
   workspace: z.string(),
@@ -955,6 +962,8 @@ export const restWriterSchema = z.object({
       login: z.string(),
       kind: z.enum(PERSON_KINDS),
       supervisor: z.boolean(),
+      administrator: z.boolean(),
+      line: z.nullable(z.enum(["manager", "above", "report", "below"])),
     }),
   ),
 });

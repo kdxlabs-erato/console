@@ -2276,7 +2276,13 @@ describe("the runner", () => {
             items: input.accounts.map((one) => ({
               ...one,
               told: true,
-              member: { login: "alice", kind: "person" as const, supervisor: true },
+              member: {
+                login: "alice",
+                kind: "person" as const,
+                supervisor: true,
+                administrator: true,
+                line: "manager" as const,
+              },
             })),
           };
         };
@@ -2291,7 +2297,13 @@ describe("the runner", () => {
         workspace: "T0ACME",
         account: "U0ALICE",
         told: true,
-        member: { login: "alice", kind: "person", supervisor: true },
+        member: {
+          login: "alice",
+          kind: "person",
+          supervisor: true,
+          administrator: true,
+          line: "manager",
+        },
       },
     ]);
     first.runner.stop();
