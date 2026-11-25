@@ -147,11 +147,11 @@ export function DeskPage(props: DeskPageProps) {
       })
       .catch((failure: unknown) => {
         if (!controller.signal.aborted) {
-          setProblem(errorWords(failure, couldNotLoad));
+          setProblem(errorWords(failure, couldNotLoad, pack));
         }
       });
     return () => controller.abort();
-  }, [client, view, personId, couldNotLoad]);
+  }, [client, view, personId, couldNotLoad, pack]);
 
   // The closed work is read each time a view that shows it is come to, or its words change:
   // the first page of each project, for the figures everything, for the archive what the
@@ -173,7 +173,7 @@ export function DeskPage(props: DeskPageProps) {
       })
       .catch((failure: unknown) => {
         if (!controller.signal.aborted) {
-          setProblem(errorWords(failure, couldNotLoad));
+          setProblem(errorWords(failure, couldNotLoad, pack));
         }
       })
       .finally(() => {
@@ -182,7 +182,7 @@ export function DeskPage(props: DeskPageProps) {
         }
       });
     return () => controller.abort();
-  }, [client, reads, wanted, personId, projects, couldNotLoad]);
+  }, [client, reads, wanted, personId, projects, couldNotLoad, pack]);
 
   if (personId === undefined) {
     return null;
@@ -203,7 +203,7 @@ export function DeskPage(props: DeskPageProps) {
         };
         (shown.words.length === 0 ? setWhole : setFound)(next);
       })
-      .catch((failure: unknown) => setProblem(errorWords(failure, couldNotLoad)))
+      .catch((failure: unknown) => setProblem(errorWords(failure, couldNotLoad, pack)))
       .finally(() => setBusy(false));
   };
   // A run that ended on a task still open has its title on the plate, where the plate was read.

@@ -2612,11 +2612,11 @@ function PlatePage(props: {
         ) {
           setForbidden(true);
         } else {
-          setProblem(errorWords(failure, couldNotLoad));
+          setProblem(errorWords(failure, couldNotLoad, words));
         }
       });
     return () => controller.abort();
-  }, [load, couldNotLoad, refused, remember, early]);
+  }, [load, couldNotLoad, refused, remember, early, words]);
   return (
     <>
       {props.headless !== true && (
@@ -2766,6 +2766,7 @@ function useMyDecisions(
   /** What the first page is remembered by, with whose it is. */
   remember: string,
 ): DecisionsRead {
+  const words = useWords();
   const [items, setItems] = useState<RestMyDecisions["items"] | undefined>(
     () => rememberedAs<RememberedDecisions>(remember)?.items,
   );
@@ -2795,7 +2796,7 @@ function useMyDecisions(
         setMore(page.more);
       } catch (failure: unknown) {
         if (signal?.aborted !== true) {
-          setProblem(errorWords(failure, couldNotLoad));
+          setProblem(errorWords(failure, couldNotLoad, words));
         }
       } finally {
         if (signal?.aborted !== true) {
@@ -2803,7 +2804,7 @@ function useMyDecisions(
         }
       }
     },
-    [myDecisions, raised, couldNotLoad, remember],
+    [myDecisions, raised, couldNotLoad, remember, words],
   );
   useEffect(() => {
     const controller = new AbortController();
@@ -2836,7 +2837,8 @@ function NotificationsBell(props: {
   readonly data: ConsoleData;
   readonly onNavigate: (href: string) => void;
 }) {
-  const said = useWords().notifications;
+  const words = useWords();
+  const said = words.notifications;
   const { data } = props;
   const { notifications, readNotifications } = data.actions;
   const [items, setItems] = useState<RestNotifications["items"] | undefined>(undefined);
@@ -2866,10 +2868,10 @@ function NotificationsBell(props: {
       setMore(page.more);
     } catch (failure: unknown) {
       if (mine === turn.current) {
-        setProblem(errorWords(failure, said.couldNotLoad));
+        setProblem(errorWords(failure, said.couldNotLoad, words));
       }
     }
-  }, [notifications, readNotifications, said.couldNotLoad]);
+  }, [notifications, readNotifications, said.couldNotLoad, words]);
   const readMore = useCallback(async () => {
     const mine = turn.current;
     try {
@@ -2941,11 +2943,11 @@ function NotificationSettingsPage(props: { readonly data: ConsoleData }) {
       })
       .catch((failure: unknown) => {
         if (!controller.signal.aborted) {
-          setProblem(errorWords(failure, said.couldNotLoad));
+          setProblem(errorWords(failure, said.couldNotLoad, words));
         }
       });
     return () => controller.abort();
-  }, [notificationSettings, said.couldNotLoad]);
+  }, [notificationSettings, said.couldNotLoad, words]);
   const shownProblem = problem ?? error;
   return (
     <>
