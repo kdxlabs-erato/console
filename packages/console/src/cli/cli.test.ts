@@ -4261,7 +4261,7 @@ describe("configuring, as the person", () => {
     expect(mine.out()).toBe("No signal yet.\n");
   });
 
-  it("reads what was said where a wake from the messenger was raised, for the account itself (ADR-0162)", async () => {
+  it("reads what was said where a wake from the messenger was raised, for the account itself (ADR-0163)", async () => {
     const NOW = Date.parse("2026-11-10T19:00:00.000Z");
     const at = (secondsAgo: number) => `${NOW / 1000 - secondsAgo}.000100`;
     const TOKEN = "xoxp-not-a-real-token";

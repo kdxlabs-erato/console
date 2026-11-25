@@ -13,7 +13,7 @@ import type { WakeHost, WakePart, WakeRead, WakeSource } from "./types.js";
 // it, read from its blocks where it has them. Its first line is the source's own, and says of
 // the account that wrote what the event says of it: its id, its workspace where that is
 // another than the agent's (ADR-0160), and that it wrote through an app where it did. A wake is
-// raised in parts (ADR-0162): the source's own lines, which nothing a message holds reaches,
+// raised in parts (ADR-0163): the source's own lines, which nothing a message holds reaches,
 // and what was written, a message someone passed on apart from the words of whoever passed it
 // on. With the member's own token, where the account keeps it, the source reads what was said
 // in the conversation before the message, and the wake carries what the agent missed of it,
@@ -421,7 +421,7 @@ const shownBy = (blocks: readonly unknown[]): string =>
  * link to it brought along, a preview of a page, a table the messenger shows apart. Each is
  * carried apart, behind a line of the source's own that says what it is, and for a message
  * passed on who wrote it, by the id the messenger gives for its writer: carried in the words,
- * what a supervisor passed on would read as the supervisor's asking (ADR-0160, ADR-0162). It is
+ * what a supervisor passed on would read as the supervisor's asking (ADR-0160, ADR-0163). It is
  * read from its blocks, since a table may stand there, from the blocks of the message passed
  * on, or from the words it has in their place. One that says nothing is marked in the words,
  * and so are those past the first few.
@@ -932,7 +932,7 @@ function earlierOf(
 }
 
 /**
- * What a wake carries of the conversation it was raised in, after the message itself (ADR-0162),
+ * What a wake carries of the conversation it was raised in, after the message itself (ADR-0163),
  * read with the member's own token where the account keeps it:
  *
  * - what was said there since the agent last wrote there and before the message, the oldest

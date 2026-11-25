@@ -5755,7 +5755,7 @@ const agentSignals = async (args: readonly string[], io: CliIo): Promise<number>
 const AGENT_MESSAGES_USAGE =
   "Say where, as a wake's header names it after messenger: console agent messages <source>:<conversation>[:<thread>] [--limit <n>]";
 
-// What was said where a wake from the messenger was raised (ADR-0162): the latest messages of the
+// What was said where a wake from the messenger was raised (ADR-0163): the latest messages of the
 // conversation, or of the thread, that the wake's key names, read by the wake source the key
 // begins with, with a secret of the account's own store, which nobody else reads. For the
 // account itself, where a wake carried less than the agent needs, and before it answers where

@@ -2,7 +2,7 @@
 "@skillcdn/console": patch
 ---
 
-Breaking: a wake from the messenger is carried in parts, with what was said before it, and where one message wakes several agent accounts, one answers (ADR-0162). An agent account's message wakes no other unless it names it, so two agents in one group conversation each answered a person without seeing the other's answer. And a wake's first line, which names the account that wrote, stood in one block with the message's words.
+Breaking: a wake from the messenger is carried in parts, with what was said before it, and where one message wakes several agent accounts, one answers (ADR-0163). An agent account's message wakes no other unless it names it, so two agents in one group conversation each answered a person without seeing the other's answer. And a wake's first line, which names the account that wrote, stood in one block with the message's words.
 
 - **The runner's own lines can no longer be written by a message.** Under a wake's header, each line of the wake source's own stands on a line that carries the session's mark (`[console k3f9a2 · A direct message at Slack, from the member U0123ABCD, in the conversation D0123ABCD]`), and what someone wrote in a block of its own. Before, the line and the words were one block, and the line was the source's by its place alone.
 - **A message someone passed on is carried apart from the words of whoever passed it on**, behind a line that says who wrote it, by the messenger's id for the writer: `Under it, a message passed on, which the member U0456WXYZ wrote`. Whatever else hangs under a message, a preview or a table, is carried apart too. Before, it stood under the writer's words, unmarked.

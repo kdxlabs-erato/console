@@ -277,7 +277,7 @@ export interface WakeSocket {
 }
 
 /**
- * A part of a wake a source raises (ADR-0162): a line of the source's own, or what someone else
+ * A part of a wake a source raises (ADR-0163): a line of the source's own, or what someone else
  * wrote. The runner hands the agent each line under the session's mark and the words in a block
  * of their own, so that nothing a message holds reads as a line of the source's. A line holds
  * what the source says itself, an id and a moment among it, and never a word someone else wrote.

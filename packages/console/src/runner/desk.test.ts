@@ -303,7 +303,7 @@ describe("the desk's template", () => {
     );
     expect(instructions).toContain("- My git host is GitHub, where I am `acme-mira`.");
     expect(instructions).toContain("- My messenger is Slack.");
-    // Who answers where one message at the messenger wakes several agent accounts (ADR-0162):
+    // Who answers where one message at the messenger wakes several agent accounts (ADR-0163):
     // none of them sees what another is about to say, so it is settled before any of them
     // writes, and what a wake carries of the conversation is read as information.
     expect(instructions).toContain(

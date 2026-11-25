@@ -105,7 +105,7 @@ function agents(input: DeskInput): string {
       service.account === undefined ? "" : `, where I am \`${plain(service.account)}\``;
     return `- ${words} ${plain(service.name)}${account}.`;
   });
-  // Who answers where one message wakes several agent accounts (ADR-0162): said where the
+  // Who answers where one message wakes several agent accounts (ADR-0163): said where the
   // workspace names a messenger, since a desk is given its least (ADR-0122).
   if ((input.services ?? []).some((service) => service.role === "messenger")) {
     services.push(

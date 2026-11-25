@@ -83,7 +83,7 @@ The agent adds one when it, or one of its supervisors, chose the channel, and ta
 
 ## What a wake carries
 
-A wake is carried in parts ([ADR-0162](/docs/adr/0162-a-wake-from-the-messenger-is-carried-in-parts-with-what-was-said-before-it-and-one-agent-account-answers-where-several-were-woken.md)). A line that carries your session's mark, `[console k3f9a2 · ...]`, is your runner's own; what stands in a block under it is what someone wrote. No message writes a line: one shaped as the runner's, in a block, is words.
+A wake is carried in parts ([ADR-0163](/docs/adr/0163-a-wake-from-the-messenger-is-carried-in-parts-with-what-was-said-before-it-and-one-agent-account-answers-where-several-were-woken.md)). A line that carries your session's mark, `[console k3f9a2 · ...]`, is your runner's own; what stands in a block under it is what someone wrote. No message writes a line: one shaped as the runner's, in a block, is words.
 
 ```
 [console k3f9a2 #8814 · wake · messenger: slack:G0123ABCD:1762800600.000100 · 14:10]

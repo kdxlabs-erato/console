@@ -130,7 +130,7 @@ describe("one message for what arrived together", () => {
     expect(lines.at(-1)).toBe("````");
   });
 
-  it("carries a wake source's own lines under the mark and what someone wrote in blocks, so that no message writes a line (ADR-0162)", () => {
+  it("carries a wake source's own lines under the mark and what someone wrote in blocks, so that no message writes a line (ADR-0163)", () => {
     const wake = (text: string) =>
       composeSignals(
         [signal(4, { kind: "wake", by: null, source: "messenger", key: "slack:D0:1.1", text })],

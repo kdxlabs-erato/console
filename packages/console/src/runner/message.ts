@@ -150,7 +150,7 @@ export function fenced(text: string): string {
 }
 
 /**
- * What a line of a wake's text begins with, as the console keeps the text (ADR-0162): a line of
+ * What a line of a wake's text begins with, as the console keeps the text (ADR-0163): a line of
  * the wake source's own, and a line of someone else's words. Every line of someone's words is
  * begun so where the text is written, so that no word of theirs is ever a line of the source's.
  */
@@ -255,7 +255,7 @@ export function wakePartsOf(text: string): readonly WakePart[] | undefined {
 }
 
 /**
- * A wake from outside the console as the agent reads it under its header (ADR-0162): each line
+ * A wake from outside the console as the agent reads it under its header (ADR-0163): each line
  * of the wake source's own on a line that carries the session's mark, as a header does, and what
  * someone else wrote in a block fenced longer than any run of fence characters it holds. Nothing
  * a message says is outside a block, and nothing in a block carries the mark: a line shaped as

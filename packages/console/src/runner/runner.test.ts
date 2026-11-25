@@ -2281,7 +2281,7 @@ describe("the runner", () => {
     await until("the wake to reach the agent", () => session.sent.length === 1);
     // Raised to the console, which records it, and delivered from its record in order. A text
     // with no line of the source's own is someone's words whole: every line of it is written as
-    // one (ADR-0162), so that none reads as the source's when the signal returns.
+    // one (ADR-0163), so that none reads as the source's when the signal returns.
     expect(console.raised).toEqual([
       {
         source: "messenger",
@@ -2306,7 +2306,7 @@ describe("the runner", () => {
     await done;
   });
 
-  it("hands the agent a wake source's own lines under the session's mark, apart from what someone wrote (ADR-0162)", async () => {
+  it("hands the agent a wake source's own lines under the session's mark, apart from what someone wrote (ADR-0163)", async () => {
     const source: WakeSource = {
       name: "chat",
       async run(host, signal) {

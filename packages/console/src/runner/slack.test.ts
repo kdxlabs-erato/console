@@ -458,7 +458,7 @@ describe("what an event of the messenger wakes the agent for", () => {
     );
   });
 
-  it("carries a message someone passed on apart from the words of whoever passed it on, and says who wrote it (ADR-0162)", () => {
+  it("carries a message someone passed on apart from the words of whoever passed it on, and says who wrote it (ADR-0163)", () => {
     // A message someone passed on hangs under theirs: it is carried as a part of its own, behind
     // a line of the source's that says so, and never among the words of whoever passed it on.
     const passedOn = slackWakeOf(
@@ -1167,7 +1167,7 @@ describe("the slack wake source", () => {
     }
   });
 
-  describe("what a wake carries of the conversation it was raised in (ADR-0162)", () => {
+  describe("what a wake carries of the conversation it was raised in (ADR-0163)", () => {
     const NOVA = "U0NOVA";
     const TOKEN = "xoxp-not-a-real-token";
     const HISTORY = "https://slack.com/api/conversations.history";
@@ -1763,7 +1763,7 @@ describe("the slack wake source", () => {
     });
   });
 
-  describe("what the source reads of a conversation for the account's own command (ADR-0162)", () => {
+  describe("what the source reads of a conversation for the account's own command (ADR-0163)", () => {
     const TOKEN = "xoxp-not-a-real-token";
     const NOW = 1_762_801_000_000;
     const reader = (
