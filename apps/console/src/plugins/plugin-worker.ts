@@ -200,6 +200,9 @@ function contextOf(
         put: group("console.accounts")("put") as never,
         remove: group("console.accounts")("remove") as never,
       },
+      notifications: {
+        settings: group("console.notifications")("settings") as never,
+      },
       teams: {
         list: group("console.teams")("list") as never,
         get: group("console.teams")("get") as never,
