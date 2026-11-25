@@ -41,7 +41,7 @@ const direct = (over: Record<string, unknown> = {}) =>
 const DIRECT = "A direct message at Slack, from the member U0TOM, in the conversation D0MIRA";
 
 describe("what an event of the messenger wakes the agent for", () => {
-  it("is a person's call of everyone in a channel its member is in, named in runner.json or not", () => {
+  it("is a call of everyone in a channel its member is in, named in runner.json or not, whoever wrote it", () => {
     for (const word of ["here", "channel", "everyone"]) {
       // As the messenger writes one, and with what it shows for it after a bar.
       for (const written of [`<!${word}>`, `<!${word}|@${word}>`, `<!${word}|${word}>`]) {
@@ -65,13 +65,36 @@ describe("what an event of the messenger wakes the agent for", () => {
     expect(slackWakeOf(payload(message({ text: "<!channel> stand-up" })), ["C0OPS"])?.text).toMatch(
       /^A call of everyone \(@channel\) in the channel C0OPS /,
     );
-    // An app's call wakes nobody, and neither does the agent's own, nor an edit of one.
+    // Another agent account's call is a member's as a person's is: what it writes arrives as an
+    // app's does, and wakes as a person's call does. Without the call it wakes nobody there.
     expect(
-      slackWakeOf(payload(message({ text: "<!channel> build 412 failed", bot_id: "B0DEPLOY" }))),
+      slackWakeOf(
+        payload(message({ text: "<!here> the review is in", user: "U0ERATO", bot_id: "B0ERATO" })),
+      )?.text,
+    ).toBe(
+      "A call of everyone (@here) in the channel C0OPS at Slack, from the member U0ERATO, in the thread 1762800000.000100:\n<!here> the review is in",
+    );
+    expect(
+      slackWakeOf(
+        payload(message({ text: "the review is in", user: "U0ERATO", bot_id: "B0ERATO" })),
+      ),
+    ).toBeUndefined();
+    // The agent's own call wakes nobody, nor an edit of one: its own arrives as an app's does.
+    expect(
+      slackWakeOf(
+        payload(message({ text: "<!here> back in five", user: MEMBER, bot_id: "B0MIRA" })),
+      ),
     ).toBeUndefined();
     expect(
       slackWakeOf(payload(message({ text: "<!here> back in five", user: MEMBER }))),
     ).toBeUndefined();
+    // Where the event does not say which member it was delivered for, its own call cannot be
+    // told from another's: what arrives as an app's then wakes nobody, and a person's still does.
+    const unnamed = (over: Record<string, unknown>) =>
+      payload(message({ text: "<!here> back in five", ...over }), null);
+    expect(slackWakeOf(unnamed({ user: MEMBER, bot_id: "B0MIRA" }))).toBeUndefined();
+    expect(slackWakeOf(unnamed({ user: "U0ERATO", bot_id: "B0ERATO" }))).toBeUndefined();
+    expect(slackWakeOf(unnamed({}))?.text).toMatch(/^A call of everyone \(@here\) /);
     expect(
       slackWakeOf(payload(message({ text: "<!here> typo", subtype: "message_changed" }))),
     ).toBeUndefined();

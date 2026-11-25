@@ -330,9 +330,9 @@ const EVERYONE_CALLED = /<!(here|channel|everyone)(?:\|[^<>]{0,40})?>/;
  * The wake an event of the messenger means, or nothing: a message in a direct conversation, or
  * one that mentions the member the app acts for, from anyone but that member; and, mentioned or
  * not, a person's message in a group conversation the member is in or in one of the channels
- * `runner.json` names, and a person's call of everyone (`@here`, `@channel`, `@everyone`) in
- * any channel the member is in. A message that is an edit, a join or anything else than
- * someone's words wakes nobody.
+ * `runner.json` names, and a call of everyone (`@here`, `@channel`, `@everyone`) in any
+ * channel the member is in, whoever wrote it. A message that is an edit, a join or anything else
+ * than someone's words wakes nobody.
  */
 export function slackWakeOf(
   payload: unknown,
@@ -366,11 +366,18 @@ export function slackWakeOf(
   // conversation the agent listens to is not said to it, and would wake it at every post.
   const listened = event.bot_id === undefined && (group || channels.includes(event.channel));
   // Whoever calls everyone in a channel calls the agent that is in it, whether the channel is
-  // one it listens to or not: an event arrives only of a conversation its member is in. A
-  // person's call alone, as with what it listens to: an app that calls a channel at every
-  // report would wake it at every one, and two agents would call each other without an end.
+  // one it listens to or not: an event arrives only of a conversation its member is in. And
+  // whoever it is: an agent account is a member as a person is, and what it writes arrives as
+  // an app's does (with a `bot_id`), so a call held to a person's would be deaf to every agent.
+  // A call is written on purpose, as a name is, and an answer to one holds none: nothing here
+  // goes round as it would where every message of a conversation woke. Where the event does
+  // not say which member it was delivered for, the agent's own call cannot be told from
+  // another's by who wrote it: what arrives with a `bot_id`, as its own does, then wakes
+  // nobody, so that the agent is never woken by itself.
   const called =
-    event.bot_id === undefined ? EVERYONE_CALLED.exec(event.text ?? "")?.[1] : undefined;
+    member === undefined && event.bot_id !== undefined
+      ? undefined
+      : EVERYONE_CALLED.exec(event.text ?? "")?.[1];
   if (!direct && !mentioned && !listened && called === undefined) {
     return undefined;
   }

@@ -78,8 +78,8 @@ The agent adds one when it, or whoever manages it, chose the channel, and takes 
 
 - A message in a direct conversation with the agent, and a message anywhere the agent is that mentions it, from anyone but the agent itself.
 - What a person says in a group conversation the agent is in, and in a channel `channels` names, whether it names the agent or not.
-- A person's call of everyone, `@here`, `@channel` or `@everyone`, in any channel the agent is in: the wake's first line says it was one.
-- Not what is said in any other channel without naming it, not what an app posted in a group conversation or a channel without naming it, not an edit, a join, a deletion or a reaction, and nothing the agent said. To be heard by another agent in a group conversation or a channel, name it.
+- A call of everyone, `@here`, `@channel` or `@everyone`, in any channel the agent is in, whoever wrote it, a person, another agent or an app: the wake's first line says it was one.
+- Not what is said in any other channel without naming it, not what an app posted in a group conversation or a channel without naming it, not an edit, a join, a deletion or a reaction, and nothing the agent said. To be heard by another agent in a group conversation or a channel, name it, or call everyone there.
 
 A wake carries where it was said, by which member, and the message's words as someone else's: what the message shows, with a table as rows between bars and a list, code and a quote as the messenger writes them in a message's text. What it does not carry of a message, a picture, a button or a file, stands in the words where it was (`[image, not carried in this wake]`, a file by its name), and words longer than 4,000 characters are cut: the wake's first line then says so, with the moment of the message to read whole. The agent reads the thread with the messenger's own tool before it answers there, and the message itself wherever its wake says that something of it is missing.
 
