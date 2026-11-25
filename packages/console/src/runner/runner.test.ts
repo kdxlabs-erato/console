@@ -420,6 +420,9 @@ function setup(
     now?: () => number;
     /** How often the runner's heartbeat timer fires; every forty milliseconds where left out. */
     heartbeatMs?: number;
+    /** How long the runner waits for sub-agents in the background, and for the turn that hands in a report; its own durations where left out. */
+    subagentsMs?: number;
+    reportMs?: number;
   } = {},
 ) {
   const console = fakeConsole();
@@ -491,6 +494,8 @@ function setup(
       holdMs: 150,
       maxHoldMs: 300,
       resetMarginMs: 30,
+      ...(over.subagentsMs === undefined ? {} : { subagentsMs: over.subagentsMs }),
+      ...(over.reportMs === undefined ? {} : { reportMs: over.reportMs }),
     },
   });
   const done = runner.run();
@@ -3477,5 +3482,293 @@ describe("the runner", () => {
     await until("the message", () => session.sent.length === 1);
     expect(asked).toBeGreaterThanOrEqual(2);
     expect(log.some((line) => line.includes("the stream of signals ended (network)"))).toBe(true);
+  });
+});
+
+// What goes on in a session once the agent's own turn is over (ADR-0162): sub-agents at work in
+// the background, as a driver says how many, and the turn the product starts to hand the agent
+// a report.
+describe("the runner, with sub-agents at work in the background", () => {
+  const background = (agents: number): DriverEvent => ({ type: "background", agents });
+  const BEGAN: DriverEvent = { type: "turn_started" };
+  const DONE: DriverEvent = { type: "turn_completed" };
+  const said = (text: string): DriverEvent => ({ type: "event", kind: "assistant", text });
+  /** A session whose agent started sub-agents in the background and ended its turn. */
+  async function atWork(made: ReturnType<typeof setup>, agents = 1) {
+    made.console.signal({ text: "Begin." });
+    const session = await sessionOf(made.product);
+    await until("the message", () => session.sent.length === 1);
+    session.emit(...STARTED, ...(agents === 0 ? [] : [background(agents)]), said("Started."), DONE);
+    await until("the turn to be over", () =>
+      made.console.events().some(([, , text]) => text === "The turn completed."),
+    );
+    return session;
+  }
+  /** A model chosen, which the product takes when it starts: what ends a session that is idle. */
+  async function choose(
+    made: ReturnType<typeof setup>,
+    session: Awaited<ReturnType<typeof sessionOf>>,
+  ) {
+    made.console.signal({ kind: "set", set: { model: "sonnet", effort: "low" } });
+    await until("the driver to be asked", () => session.state.set.length === 1);
+  }
+  const recordOf = (console: ReturnType<typeof fakeConsole>, index = 1) =>
+    console.events(index).map(([, kind, text]) => `${kind}: ${text}`);
+
+  it("holds a model chosen until no sub-agent is at work and its report was read, and says on the record that it waits", async () => {
+    const made = setup({ reportMs: 60 });
+    const { console, product } = made;
+    const session = await atWork(made, 2);
+    await choose(made, session);
+    await sleep(120);
+    // No turn is under way, and the session is not ended under its sub-agents.
+    expect(console.ended).toEqual([]);
+    expect(session.state.stopped).toBe(false);
+    expect(recordOf(console)).toContain(
+      "status: The session is to end for the model or the effort chosen, with 2 sub-agents at work in the background: the runner waits until none is at work, 60 minutes at most.",
+    );
+    // One ended, one at work still.
+    session.emit(background(1));
+    await sleep(120);
+    expect(console.ended).toEqual([]);
+    // The last one ended: the product hands the agent its report in a turn it starts itself,
+    // which the runner started none of, and the session is not ended in the middle of it,
+    // however long the model takes for its first word.
+    session.emit(background(0), BEGAN);
+    await sleep(150);
+    expect(console.ended).toEqual([]);
+    session.emit(said("Both are done."), DONE);
+    await until("the session to end", () => console.ended.length === 1);
+    expect(console.ended).toEqual(["restarted"]);
+    // Said once, however long it waited.
+    expect(
+      recordOf(console).filter((line) => line.includes("the runner waits until")),
+    ).toHaveLength(1);
+    console.signal({ text: "Go on." });
+    const second = await sessionOf(product, 2);
+    expect(second.options).toMatchObject({ model: "sonnet", effort: "low", resume: "c-1" });
+  });
+
+  it("ends the session a moment after the last sub-agent ended where the product starts no turn for its report", async () => {
+    const made = setup({ reportMs: 80 });
+    const session = await atWork(made);
+    await choose(made, session);
+    session.emit(background(0));
+    await sleep(30);
+    expect(made.console.ended).toEqual([]);
+    await until("the session to end", () => made.console.ended.length === 1);
+    expect(made.console.ended).toEqual(["restarted"]);
+  });
+
+  it("leaves the product its moment after a turn too, for the report that came while the turn was under way", async () => {
+    const made = setup({ reportMs: 80 });
+    const session = await atWork(made);
+    made.console.signal({ text: "And this?" });
+    await until("the second message", () => session.sent.length === 2);
+    await choose(made, session);
+    session.emit({ type: "taken" }, background(0));
+    await sleep(120);
+    session.emit(DONE);
+    await sleep(40);
+    expect(made.console.ended).toEqual([]);
+    session.emit(BEGAN);
+    await sleep(120);
+    expect(made.console.ended).toEqual([]);
+    session.emit(said("It is done."), DONE);
+    await until("the session to end", () => made.console.ended.length === 1);
+  });
+
+  it("waits for a sub-agent that is started again before it does anything", async () => {
+    const made = setup({ account: MIRA.id, reportMs: 20 });
+    const session = await atWork(made);
+    session.emit(background(0), BEGAN, said("It is done."), DONE);
+    await sleep(80);
+    // In a turn of its own the agent sends the sub-agent more, resets itself, and is done.
+    made.console.signal({ text: "Have it go on." });
+    await until("the second message", () => session.sent.length === 2);
+    session.emit({ type: "taken" }, BEGAN, background(1));
+    made.console.signal({ kind: "reset", by: MIRA, text: "Begin anew." });
+    await sleep(40);
+    session.emit(DONE);
+    await sleep(120);
+    expect(made.console.ended).toEqual([]);
+    session.emit(background(0));
+    await until("the session to end", () => made.console.ended.length === 1);
+    expect(made.console.ended).toEqual(["reset"]);
+  });
+
+  it("holds the account's own reset for its sub-agents, and no longer than it waits: the session then ends with them at work, and the record says so", async () => {
+    const made = setup({ account: MIRA.id, subagentsMs: 150, reportMs: 20 });
+    const { console, product, log } = made;
+    await atWork(made);
+    console.signal({ kind: "reset", by: MIRA, text: "The work is handed over. Begin anew." });
+    await sleep(80);
+    expect(console.ended).toEqual([]);
+    const second = await sessionOf(product, 2);
+    await until("the message", () => second.sent.length === 1);
+    expect(console.ended).toEqual(["reset"]);
+    expect(second.options.resume).toBeUndefined();
+    expect(second.sent[0]?.text).toContain("The work is handed over. Begin anew.");
+    expect(recordOf(console)).toContain(
+      "status: The runner waited 0 minutes for the sub-agents in the background, and waits no longer: the session ends for the account's own reset, with 1 sub-agent at work in the background.",
+    );
+    expect(log.some((line) => line.includes("waited for long enough"))).toBe(true);
+  });
+
+  it("ends the session at once for a supervisor's stop, restart and reset, and for the runner's own stop, whatever is at work", async () => {
+    for (const kind of ["stop", "restart", "reset"] as const) {
+      const made = setup({ account: MIRA.id });
+      const session = await atWork(made);
+      made.console.signal({ kind });
+      await until(`the ${kind}`, () => made.console.ended.length === 1);
+      expect(made.console.ended).toEqual([
+        kind === "stop" ? "stopped" : kind === "restart" ? "restarted" : "reset",
+      ]);
+      expect(session.state.stopped).toBe(true);
+      // Nothing was waited for, and nothing says so.
+      expect(recordOf(made.console).some((line) => line.includes("the runner waits"))).toBe(false);
+    }
+    const made = setup();
+    await atWork(made);
+    made.runner.stop();
+    expect(await made.done).toBe("stopped");
+    expect(made.console.ended).toEqual(["exited"]);
+  });
+
+  it("holds an update for its sub-agents and goes on handing over what arrives meanwhile, then ends for it", async () => {
+    let version = "0.5.0";
+    const made = setup({ installed: async () => version, reportMs: 20 });
+    const { console, done, log } = made;
+    const session = await atWork(made);
+    version = "0.5.1";
+    await until("the update to be seen", () =>
+      log.some((line) => line.startsWith("the command the runner runs from is 0.5.1 now")),
+    );
+    await sleep(80);
+    expect(console.ended).toEqual([]);
+    // An hour may pass so: the agent reads what it is sent meanwhile, in a turn of its own.
+    console.signal({ text: "And then this." });
+    await until("the message", () => session.sent.length === 2);
+    session.emit({ type: "taken" }, DONE);
+    await sleep(80);
+    expect(console.ended).toEqual([]);
+    session.emit(background(0), BEGAN, DONE);
+    expect(await done).toBe("updated");
+    expect(console.ended).toEqual(["restarted"]);
+    const record = recordOf(console);
+    expect(record).toContain(
+      "status: The session is to end for an update of the command the runner runs from, with 1 sub-agent at work in the background: the runner waits until none is at work, 60 minutes at most.",
+    );
+    expect(record.at(-1)).toBe("status: The session ended: restarted.");
+  });
+
+  it("holds a runner.json that changed for its sub-agents, and counts anew where the file was put back meanwhile", async () => {
+    let now: "same" | "changed" = "same";
+    const made = setup({ reconfigured: async () => now, subagentsMs: 400, reportMs: 20 });
+    const { console, done, log } = made;
+    const session = await atWork(made);
+    now = "changed";
+    await until("the change to be seen", () =>
+      log.some((line) => line.startsWith("runner.json changed since the runner started")),
+    );
+    await sleep(60);
+    expect(console.ended).toEqual([]);
+    // Put back: nothing is to end the session, and what it waited is not counted on.
+    now = "same";
+    await until("the file to be seen as before", () =>
+      log.some((line) => line.startsWith("runner.json is as the runner was started with it")),
+    );
+    await sleep(400);
+    expect(console.ended).toEqual([]);
+    now = "changed";
+    await until(
+      "the change to be seen again",
+      () => log.filter((line) => line.startsWith("runner.json changed since")).length === 2,
+    );
+    await sleep(100);
+    expect(console.ended).toEqual([]);
+    session.emit(background(0));
+    expect(await done).toBe("changed");
+    expect(console.ended).toEqual(["restarted"]);
+  });
+
+  it("goes on with the conversation at a new day where sub-agents are at work, as it does under a turn", async () => {
+    const made = setup({ config: { conversation: "daily" } });
+    const { console, product } = made;
+    const session = await atWork(made);
+    console.signal({
+      kind: "wake",
+      by: null,
+      source: "schedule",
+      key: "day",
+      text: "The day's briefing.",
+    });
+    await until("the briefing", () => session.sent.length === 2);
+    expect(console.ended).toEqual([]);
+    expect(product.sessions).toHaveLength(1);
+  });
+
+  it("waits for nothing in a session whose driver said no sub-agent is in the background, whatever it writes after its turn", async () => {
+    let version = "0.5.0";
+    const made = setup({ installed: async () => version });
+    const { console, done, log } = made;
+    const session = await atWork(made, 0);
+    // A sub-agent in the foreground ended with its turn, and something of the product's comes late.
+    session.emit(
+      {
+        type: "event",
+        kind: "status",
+        text: "The sub-agent is done.",
+        data: { parent: "call-9", over: "completed" },
+      },
+      { type: "event", kind: "tool_call", text: "late", data: { id: "x", tool: "execute" } },
+    );
+    await choose(made, session);
+    await until("the session to end", () => console.ended.length === 1);
+    expect(console.ended).toEqual(["restarted"]);
+    console.signal({ text: "Go on." });
+    const second = await sessionOf(made.product, 2);
+    await until("the message", () => second.sent.length === 1);
+    second.emit({ type: "taken" }, said("On it."), DONE, said("And one more thing."));
+    version = "0.5.1";
+    await until("the update to be seen", () =>
+      log.some((line) => line.startsWith("the command the runner runs from is 0.5.1 now")),
+    );
+    expect(await done).toBe("updated");
+  });
+
+  it("ends a session for a model chosen in a turn only where the turn completed: not on a usage limit, and a crash is a crash", async () => {
+    const crashed = setup();
+    const first = await atWork(crashed, 0);
+    crashed.console.signal({ text: "Go on." });
+    await until("the message", () => first.sent.length === 2);
+    await choose(crashed, first);
+    first.emit(
+      { type: "taken" },
+      { type: "cannot_go_on", state: "failed", reason: "crashed" },
+      { type: "ended", how: "crashed" },
+    );
+    await until("the session to end", () => crashed.console.ended.length === 1);
+    expect(crashed.console.ended).toEqual(["crashed"]);
+
+    const limited = setup();
+    const second = await atWork(limited, 0);
+    limited.console.signal({ text: "Go on." });
+    await until("the message", () => second.sent.length === 2);
+    await choose(limited, second);
+    second.emit(
+      { type: "taken" },
+      {
+        type: "cannot_go_on",
+        state: "failed",
+        reason: "usage_limit",
+        until: Date.now() + 60_000,
+      },
+    );
+    await until("the state to be said", () =>
+      limited.console.beats.some((beat) => beat.reason === "usage_limit"),
+    );
+    await sleep(80);
+    expect(limited.console.ended).toEqual([]);
   });
 });

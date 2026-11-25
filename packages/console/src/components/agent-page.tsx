@@ -252,8 +252,16 @@ export type TalkItem =
        * their parent, read as a conversation of their own. Nothing for a call that started none.
        */
       readonly steps?: readonly TalkItem[] | undefined;
-      /** When the turn or the session it ran in ended, where that came before its answer. */
+      /**
+       * When the turn or the session it ran in ended, where that came before its answer; for a
+       * sub-agent that goes on in the background, when its session ended before it did.
+       */
       readonly endedAt?: string | undefined;
+      /**
+       * The event of the sub-agent's that says it ended, and how (`over`, ADR-0161): the last
+       * of them, and none where the sub-agent did something after it, as one started again does.
+       */
+      readonly over?: RestTranscriptEvent | undefined;
     };
 
 /** The most characters of a sub-agent's name that a label shows. */
@@ -291,7 +299,26 @@ const endsTurn = (event: RestTranscriptEvent): boolean =>
   event.sealed === null &&
   (event.data.turn === "completed" || typeof event.data.ended === "string");
 
+/** Whether an event is a sub-agent's word that it ended: a runner writes how under `over` (ADR-0161). */
+const saysOver = (event: RestTranscriptEvent): boolean =>
+  event.kind === "status" && typeof event.data.over === "string";
+
+/**
+ * The kinds of event by which a sub-agent that ended is at work again: what it says, thinks and
+ * calls, and its own word that it was started again. A tool's answer is none: a product that
+ * stops a sub-agent in the middle of a call says first that it ended, and then what became of
+ * the call.
+ */
+const AT_WORK: ReadonlySet<string> = new Set(["assistant", "thinking", "tool_call", "status"]);
+
 type ToolItem = Extract<TalkItem, { type: "tool" }>;
+
+/**
+ * Whether a call was answered with the word that its sub-agent goes on in the background
+ * (`background` on its answer, ADR-0161): the answer is then not the sub-agent's, which goes on
+ * past it, and past the turn it was started in.
+ */
+const goesOn = (item: ToolItem): boolean => item.result?.data.background === true;
 
 /** Things in the order they are read: the session's own, or one sub-agent's. */
 type TalkLineOf = TalkItem[];
@@ -313,7 +340,9 @@ interface TalkPlace {
  * not a thing of the line the call stands in. A call that says it starts a sub-agent (`starts`)
  * has such a line from the first, empty; one a runner of before wrote has it from the first
  * event that names it. An event that names a call the events do not hold stays where it stood.
- * A turn or a session that ended ends every sub-agent still open in it.
+ * A turn or a session that ended ends every sub-agent still open in it, but for one that goes on
+ * in the background (ADR-0161): its own line says when it ended, and nothing but its session's
+ * end ends it before.
  */
 export function talkOf(events: readonly RestTranscriptEvent[]): TalkItem[] {
   const top: TalkLineOf = [];
@@ -323,7 +352,7 @@ export function talkOf(events: readonly RestTranscriptEvent[]): TalkItem[] {
   const calls = new Map<string, TalkPlace>();
   /** The line of each sub-agent, by the id of the call that started it. */
   const lines = new Map<string, TalkLineOf>();
-  /** The calls that started a sub-agent and were not answered, as far as the events read say. */
+  /** The calls that started a sub-agent that nothing ended yet, as far as the events read say. */
   let running: TalkPlace[] = [];
   const toolAt = (place: TalkPlace | undefined): ToolItem | undefined => {
     const item = place === undefined ? undefined : place.line[place.at];
@@ -370,6 +399,13 @@ export function talkOf(events: readonly RestTranscriptEvent[]): TalkItem[] {
     const parent = parentOf(event);
     const starter = parent === undefined ? undefined : calls.get(parent);
     const line = parent === undefined || starter === undefined ? top : lineOf(parent, starter);
+    // What a sub-agent's own line says of its end stands until the sub-agent does something
+    // after it, as one that was started again does: then it is at work again.
+    const begun = toolAt(starter);
+    if (starter !== undefined && begun !== undefined && event.sealed === null) {
+      const over = saysOver(event) ? event : AT_WORK.has(event.kind) ? undefined : begun.over;
+      set(starter, { ...begun, over });
+    }
     // A sealed event says who sealed it and why, wherever it stood.
     if (event.sealed !== null) {
       line.push({ type: "note", event });
@@ -442,15 +478,26 @@ export function talkOf(events: readonly RestTranscriptEvent[]): TalkItem[] {
     } else {
       line.push({ type: "note", event });
       // Where the session's own line says a turn ended, or the session did, nothing started in
-      // it goes on: a sub-agent that was not answered by then is ended there.
+      // it goes on: a sub-agent that was not answered by then is ended there. One that goes on
+      // in the background goes on past a turn's end, and is ended by its session's alone.
       if (parent === undefined && endsTurn(event)) {
+        const session = typeof event.data.ended === "string";
+        const still: TalkPlace[] = [];
         for (const place of running) {
           const tool = toolAt(place);
-          if (tool !== undefined && tool.result === undefined && tool.endedAt === undefined) {
+          if (tool === undefined) {
+            continue;
+          }
+          if (goesOn(tool) && !session) {
+            still.push(place);
+          } else if (
+            (goesOn(tool) ? tool.over === undefined : tool.result === undefined) &&
+            tool.endedAt === undefined
+          ) {
             set(place, { ...tool, endedAt: event.at });
           }
         }
-        running = [];
+        running = still;
       }
     }
   }
@@ -527,6 +574,11 @@ function atOf(steps: readonly TalkItem[]): Working {
  * otherwise, which only an open session's is (`live`); how long it ran, to its answer, to where
  * it was ended or to the last thing it did, and to `now` while it runs; how many tools it
  * called; and what it is at. Nothing for a thing that is no call that started a sub-agent.
+ *
+ * One that goes on in the background (ADR-0161) is not answered for by its call's answer, which
+ * says only that it was started: it stands by its own word that it ended, done, failed or
+ * stopped, is ended where its session ended first, and is at work otherwise, whatever turn
+ * ended meanwhile.
  */
 export function subAgentOf(
   item: TalkItem,
@@ -544,24 +596,34 @@ export function subAgentOf(
   const named = typeof said === "string" ? said : steps.map(firstOf).find(Boolean)?.data.subagent;
   const name = typeof named === "string" ? named.trim().slice(0, MAX_SUBAGENT_NAME) : "";
   const started = Date.parse(first.at);
-  const answered = item.result === undefined ? Number.NaN : Date.parse(item.result.at);
+  // What the sub-agent answered: the call's answer, but for one that says the sub-agent goes on.
+  const answer = goesOn(item) ? undefined : item.result;
+  const how = item.over?.data.over;
   const cut = item.endedAt === undefined ? Number.NaN : Date.parse(item.endedAt);
   const state: SubAgentState =
-    item.result !== undefined
-      ? item.result.data.error === true
+    answer !== undefined
+      ? answer.data.error === true
         ? "failed"
         : "done"
-      : item.endedAt !== undefined || refusedOf(item) || !input.live
-        ? "ended"
-        : "running";
+      : item.over !== undefined
+        ? how === "failed"
+          ? "failed"
+          : how === "stopped"
+            ? "ended"
+            : "done"
+        : item.endedAt !== undefined || refusedOf(item) || !input.live
+          ? "ended"
+          : "running";
   const until =
     state === "running"
       ? input.now
-      : item.result !== undefined
-        ? answered
-        : item.endedAt !== undefined
-          ? cut
-          : Math.max(started, ...steps.flatMap(momentsOf));
+      : answer !== undefined
+        ? Date.parse(answer.at)
+        : item.over !== undefined
+          ? Date.parse(item.over.at)
+          : item.endedAt !== undefined
+            ? cut
+            : Math.max(started, ...steps.flatMap(momentsOf));
   const seconds = Math.floor((until - started) / 1000);
   return {
     n: first.n,
@@ -588,22 +650,33 @@ function subAgentsIn(
 }
 
 /**
- * The sub-agents at work in the turn under way, read off a session's events alone, in the order
- * they were started: those a call of this turn started that was not answered yet. None where the
- * session has no event, or its last turn is over.
+ * The sub-agents at work in an open session, read off its events alone, in the order they were
+ * started: those a call of the turn under way started that was not answered yet, and those that
+ * go on in the background, whatever turn started them, until each says it ended (ADR-0161).
+ * None where the session has no event; none but those in the background where its last turn is
+ * over.
  */
 export function atWorkOf(events: readonly RestTranscriptEvent[], now: number): readonly SubAgent[] {
-  let from = 0;
-  for (let at = events.length - 1; at >= 0; at -= 1) {
-    const event = events[at];
-    if (event !== undefined && parentOf(event) === undefined && endsTurn(event)) {
-      from = at + 1;
-      break;
+  return subAgentsIn(talkOf(events), { now, live: true }).filter((one) => one.state === "running");
+}
+
+/**
+ * Whether the events read hold what a sub-agent did and not the call that started it: the call
+ * then stands before them, as it does once a sub-agent has worked for long, and what it did is
+ * read under it only once the events before are read too.
+ */
+export function lacksStarter(events: readonly RestTranscriptEvent[]): boolean {
+  const calls = new Set<string>();
+  for (const event of events) {
+    const id = event.kind === "tool_call" ? idOf(event) : undefined;
+    if (id !== undefined) {
+      calls.add(id);
     }
   }
-  return subAgentsIn(talkOf(events.slice(from)), { now, live: true }).filter(
-    (one) => one.state === "running",
-  );
+  return events.some((event) => {
+    const parent = parentOf(event);
+    return parent !== undefined && !calls.has(parent);
+  });
 }
 
 /**
@@ -956,7 +1029,8 @@ function sameItem(a: TalkItem, b: TalkItem): boolean {
       a.call === b.call &&
       a.result === b.result &&
       a.permission === b.permission &&
-      a.endedAt === b.endedAt
+      a.endedAt === b.endedAt &&
+      a.over === b.over
     );
   }
   return a.type === b.type && a.event === b.event;
@@ -1462,7 +1536,8 @@ const TalkLine: NamedExoticComponent<TalkLineProps> = memo(function Line(
     );
   }
   // A wake, a status, an error, and whatever a newer runner calls otherwise: a note between.
-  // What the note's own words say already, how a session ended, is not said twice as a fact.
+  // What the note's own words say already, how a session or a sub-agent ended, is not said
+  // twice as a fact.
   // The id of the call that started a sub-agent is for joining, and says nothing to a reader;
   // whose a note is, is not said again under the sub-agent that made it.
   const facts = Object.entries(event.data).filter(
@@ -1471,6 +1546,7 @@ const TalkLine: NamedExoticComponent<TalkLineProps> = memo(function Line(
       name !== "signal" &&
       name !== "kind" &&
       name !== "ended" &&
+      name !== "over" &&
       name !== "parent" &&
       !(name === "subagent" && props.inside === true),
   );
@@ -1709,22 +1785,24 @@ export function TalkWaiting(props: TalkWaitingProps) {
  * The sign that the agent is at work while a turn is under way: its picture, three dots, and
  * what it is at, a thought, a tool by its name, or the work between. Where sub-agents run, it
  * says how many, with each under it: its name, what it is at, how many tools it called and how
- * long it has run, which the page counts by itself (ADR-0141). A row of the conversation's list;
- * nothing where no turn is under way.
+ * long it has run, which the page counts by itself (ADR-0141). Sub-agents that go on in the
+ * background are at work past the turn that started them (ADR-0161), and the sign stands for
+ * them alone then. A row of the conversation's list; nothing where no turn is under way and no
+ * sub-agent is at work.
  */
 export function TalkWorking(props: {
   readonly working: Working | undefined;
   readonly agent?: RestPerson | undefined;
-  /** The sub-agents at work in the turn under way: `atWorkOf` says which. */
+  /** The sub-agents at work in the session: `atWorkOf` says which. */
   readonly agents?: readonly SubAgent[] | undefined;
 }) {
   const live = useWords().agents.page.live;
   const words = live.working;
   const { working } = props;
-  if (working === undefined) {
+  const agents = props.agents ?? [];
+  if (working === undefined && agents.length === 0) {
     return null;
   }
-  const agents = props.agents ?? [];
   return (
     <li
       className={cx(
