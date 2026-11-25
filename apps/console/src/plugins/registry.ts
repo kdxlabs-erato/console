@@ -33,6 +33,7 @@ import {
   isPluginSecretKey,
   type LinkTarget,
   legacyWidgetSize,
+  localizedText,
   MAX_PLUGIN_EVENT_BYTES,
   PLUGIN_COMMAND_MS,
   PLUGIN_ENDPOINT_MS,
@@ -3101,6 +3102,30 @@ export class Plugins {
       throw new PluginRefusal(result.error.code, result.error.message, result.error.data);
     }
     return result.value;
+  }
+
+  /**
+   * The enabled, loaded plugins that carry notifications elsewhere (`notifications:read`,
+   * ADR-0157), by key and by name in a language: what a member chooses among where their
+   * notifications are sent on.
+   */
+  async carriers(language = "en"): Promise<{ readonly key: string; readonly name: string }[]> {
+    if (this.entries.size === 0) {
+      return [];
+    }
+    const workspace = await this.options.workspace();
+    const carriers: { key: string; name: string }[] = [];
+    for (const install of await listInstalls(this.options.database, workspace.id)) {
+      const entry = this.entries.get(install.key);
+      if (
+        install.state === "enabled" &&
+        entry?.manifest !== undefined &&
+        install.consent.includes("notifications:read")
+      ) {
+        carriers.push({ key: install.key, name: localizedText(entry.manifest.name, language) });
+      }
+    }
+    return carriers.sort((a, b) => a.key.localeCompare(b.key));
   }
 
   /** The enabled, loaded plugins with their hooks, as the dispatcher delivers to them. */

@@ -535,11 +535,14 @@ export class PluginDispatcher {
       event.projectId === undefined
         ? undefined
         : await findProjectBrief(this.options.database, workspace.id, event.projectId);
-    // Whom the console told of it, for a plugin that carries notifications elsewhere.
+    // Whom the console told of it, for a plugin that carries notifications elsewhere: what
+    // there is for it to carry, without whoever turned the kind off for this plugin.
     const told = target.consent.includes("notifications:read")
       ? {
           told:
-            (await notificationsOfEvents(this.options.database, [event.id])).get(event.id) ?? [],
+            (await notificationsOfEvents(this.options.database, [event.id], target.key)).get(
+              event.id,
+            ) ?? [],
         }
       : {};
     return {

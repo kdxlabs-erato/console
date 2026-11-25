@@ -23,7 +23,7 @@ import { DecisionForm } from "./decision-form.js";
 import type { DecisionAddressing } from "./decision-list.js";
 import { EventFeed } from "./event-feed.js";
 import { Markdown } from "./markdown.js";
-import { TaskFollow, type TaskFollowProps } from "./notifications.js";
+import { TaskBell, type TaskBellProps } from "./notifications.js";
 import { type GoalSearch, TaskForm, type TaskSearch } from "./task-form.js";
 import {
   Badge,
@@ -105,7 +105,7 @@ export interface TaskViewProps {
    * What the reader is told of this task (ADR-0157), and the way to change it: everything, as
    * their settings say, or nothing. Left out, it is not offered: a console that keeps none.
    */
-  readonly follow?: TaskFollowProps | undefined;
+  readonly follow?: TaskBellProps | undefined;
 }
 
 export function TaskView(props: TaskViewProps) {
@@ -175,14 +175,19 @@ export function TaskView(props: TaskViewProps) {
             )}
           </div>
         </div>
-        {props.formHref !== undefined && (
+        {(props.formHref !== undefined || props.follow !== undefined) && (
           <div className="sc-task-actions">
-            <a className="sc-button sc-button-secondary" href={props.formHref("edit")}>
-              {words.common.edit}
-            </a>
-            <a className="sc-button sc-button-secondary" href={props.formHref("ask")}>
-              {words.task.raiseDecision}
-            </a>
+            {props.follow !== undefined && <TaskBell {...props.follow} />}
+            {props.formHref !== undefined && (
+              <>
+                <a className="sc-button sc-button-secondary" href={props.formHref("edit")}>
+                  {words.common.edit}
+                </a>
+                <a className="sc-button sc-button-secondary" href={props.formHref("ask")}>
+                  {words.task.raiseDecision}
+                </a>
+              </>
+            )}
             {props.onArchive !== undefined && task.archivedAt === null && (
               <Button
                 variant="secondary"
@@ -406,14 +411,6 @@ export function TaskView(props: TaskViewProps) {
                 <Time iso={task.updatedAt} />
               </dd>
             </div>
-            {props.follow !== undefined && (
-              <div>
-                <dt>{words.notifications.task.label}</dt>
-                <dd>
-                  <TaskFollow {...props.follow} />
-                </dd>
-              </div>
-            )}
           </dl>
         </aside>
       </div>

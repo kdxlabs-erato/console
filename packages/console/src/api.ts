@@ -224,6 +224,8 @@ export {
 export { projectColorOf, projectGlyphOf, projectSymbolOf } from "./marks.js";
 export {
   type ChosenNotifications,
+  carriedBy,
+  MAX_NOTIFICATION_CARRIERS,
   MAX_NOTIFICATION_PROJECTS_OFF,
   MAX_NOTIFICATIONS_PAGE,
   MAX_NOTIFICATIONS_READ,
@@ -237,7 +239,12 @@ export {
   notificationKindFor,
   notificationSettingsOf,
   TASK_FOLLOW_STATES,
+  TASK_KINDS_OF,
   type TaskFollowState,
+  taskFollowToKeep,
+  taskTold,
+  taskToldByDefault,
+  unseenSince,
 } from "./notifications.js";
 export {
   type OnboardingInput,

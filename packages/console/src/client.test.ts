@@ -614,17 +614,23 @@ describe("what a member is told of (ADR-0157)", () => {
       defaults: { agent: true },
       projectsOff: [],
       ownAgents: false,
+      carriers: [{ key: "messenger", name: "Messenger", off: ["commented"] }],
     };
+    const AT = "2026-11-24T03:00:00.000Z";
     const { send, calls } = fakeFetch({
       "GET https://console.test/api/v1/notifications?unread=true&limit=5": {
         body: { items: [], more: false, unread: 0 },
       },
-      "POST https://console.test/api/v1/notifications/read": { body: { read: 2, unread: 1 } },
+      "POST https://console.test/api/v1/notifications/read": {
+        body: { read: 2, unread: 1, at: AT },
+      },
       "GET https://console.test/api/v1/notifications/settings": { body: settings },
       "PUT https://console.test/api/v1/notifications/settings": { body: settings },
-      "GET https://console.test/api/v1/projects/web/tasks/7/follow": { body: { state: null } },
+      "GET https://console.test/api/v1/projects/web/tasks/7/follow": {
+        body: { on: true, usual: true, all: false },
+      },
       "PUT https://console.test/api/v1/projects/web/tasks/7/follow": {
-        body: { state: "muted" },
+        body: { on: false, usual: true, all: false },
       },
     });
     const client = createClient({ baseUrl: "https://console.test", token: "t", fetch: send });
@@ -633,17 +639,17 @@ describe("what a member is told of (ADR-0157)", () => {
       more: false,
       unread: 0,
     });
-    expect(await client.readNotifications({ all: true })).toEqual({ read: 2, unread: 1 });
+    expect(await client.readNotifications({ all: true })).toEqual({ read: 2, unread: 1, at: AT });
     expect(await client.notificationSettings()).toEqual(settings);
     expect(await client.updateNotificationSettings({ kinds: { agent: false } })).toEqual(settings);
     const web = client.project("web");
-    expect(await web.taskFollow("7")).toEqual({ state: null });
-    expect(await web.followTask("7", "muted")).toEqual({ state: "muted" });
+    expect(await web.taskFollow("7")).toEqual({ on: true, usual: true, all: false });
+    expect(await web.followTask("7", false)).toEqual({ on: false, usual: true, all: false });
     // None of them is left to an address of the page the code happens to run on.
     expect(
       calls.map((call) => call.url).every((url) => url.startsWith("https://console.test/")),
     ).toBe(true);
     expect(JSON.parse(String(calls[3]?.init?.body))).toEqual({ kinds: { agent: false } });
-    expect(JSON.parse(String(calls[5]?.init?.body))).toEqual({ state: "muted" });
+    expect(JSON.parse(String(calls[5]?.init?.body))).toEqual({ on: false });
   });
 });

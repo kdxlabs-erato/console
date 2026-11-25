@@ -29,6 +29,7 @@ import {
   NOTIFICATION_DEFAULTS,
   NOTIFICATION_KINDS,
   NOTIFICATIONS_PAGE,
+  type NotificationKind,
   normalizeConnectCode,
   notificationSettingsOf,
   type ProjectIconType,
@@ -119,6 +120,9 @@ import {
   restTokenInputSchema,
   rulesPath,
   TASK_STATES,
+  taskFollowToKeep,
+  taskTold,
+  taskToldByDefault,
 } from "@skillcdn/console/api";
 import {
   CONNECT_AGENT_MAX_LENGTH,
@@ -1918,15 +1922,19 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
     if (input instanceof Response) {
       return input;
     }
+    // One moment for all that is marked: whoever opens their list reads it at once, and
+    // what was read at this moment is what was new to them.
+    const at = clock.now();
     const read = await markNotificationsRead(
       database,
       caller.person,
       input.ids === undefined ? "all" : { ids: input.ids },
-      clock.now(),
+      at,
     );
     const body: RestNotificationsRead = {
       read,
       unread: await countUnreadNotifications(database, caller.person),
+      at: at.toISOString(),
     };
     return c.json(body);
   });
@@ -1949,6 +1957,15 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
         .filter((project) => settings.projectsOff.includes(project.id))
         .map((project) => ({ key: project.key, name: project.name })),
       ownAgents: settings.ownAgents,
+      // The plugins that carry notifications now: what was chosen of one that is gone is kept
+      // and named to nobody.
+      carriers: (await plugins.carriers(person.language)).map((carrier) => ({
+        ...carrier,
+        // By a key the member's own choices hold, and none every object has (`constructor`).
+        off: Object.hasOwn(settings.carriersOff, carrier.key)
+          ? [...(settings.carriersOff[carrier.key] ?? [])]
+          : [],
+      })),
     };
   };
 
@@ -1971,11 +1988,20 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
       await changeChosenNotifications(database, person.id, () => undefined, clock.now());
       return c.json(await notificationSettingsOfPerson(person));
     }
-    const unknown = Object.keys(input.kinds ?? {}).find(
-      (kind) => !(NOTIFICATION_KINDS as readonly string[]).includes(kind),
-    );
+    const unknown = [
+      ...Object.keys(input.kinds ?? {}),
+      ...Object.values(input.carriers ?? {}).flatMap((kinds) => Object.keys(kinds)),
+    ].find((kind) => !(NOTIFICATION_KINDS as readonly string[]).includes(kind));
     if (unknown !== undefined) {
       return invalid(c, `There is no kind of notification called ${unknown}.`);
+    }
+    // What a plugin carries is chosen of a plugin that carries notifications now, and no other.
+    if (input.carriers !== undefined) {
+      const carrying = new Set((await plugins.carriers()).map((carrier) => carrier.key));
+      const stranger = Object.keys(input.carriers).find((key) => !carrying.has(key));
+      if (stranger !== undefined) {
+        return invalid(c, `No plugin called ${stranger} carries notifications here.`);
+      }
     }
     // The projects named are looked up before anything is kept: one that is not there, or not
     // theirs to see, changes nothing.
@@ -2006,6 +2032,33 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
                 ...(before.projectsOff ?? []).filter((id) => !turned.visible.has(id)),
                 ...turned.ids,
               ];
+        // What a plugin carries: each kind named is carried or not from now on, and a plugin
+        // left with nothing turned off is kept no word of.
+        // Held in a map, so that a plugin keyed as something every object has is a key as any other.
+        const turnedOff = new Map<string, Set<NotificationKind>>(
+          Object.entries(before.carriersOff ?? {}).map(([key, off]) => [key, new Set(off)]),
+        );
+        for (const [key, kinds] of Object.entries(input.carriers ?? {})) {
+          const off = turnedOff.get(key) ?? new Set<NotificationKind>();
+          for (const [kind, carried] of Object.entries(kinds)) {
+            if (carried) {
+              off.delete(kind as NotificationKind);
+            } else {
+              off.add(kind as NotificationKind);
+            }
+          }
+          if (off.size === 0) {
+            turnedOff.delete(key);
+          } else {
+            turnedOff.set(key, off);
+          }
+        }
+        const carriersOff = Object.fromEntries(
+          [...turnedOff].map(([key, off]) => [
+            key,
+            NOTIFICATION_KINDS.filter((kind) => off.has(kind)),
+          ]),
+        );
         return {
           kinds: { ...before.kinds, ...(input.kinds as ChosenNotifications["kinds"]) },
           ...(projectsOff === undefined ? {} : { projectsOff }),
@@ -2014,6 +2067,7 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
               ? {}
               : { ownAgents: before.ownAgents }
             : { ownAgents: input.ownAgents }),
+          ...(Object.keys(carriersOff).length === 0 ? {} : { carriersOff }),
         };
       },
       clock.now(),
@@ -2930,9 +2984,24 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
     return task === undefined ? noSuchTask(c) : c.json(restTask(task));
   });
 
-  // What the asker made of one task for themselves (ADR-0157): following it, told of everything
-  // that happens on it; muted, told of nothing of it; or neither, told as their settings say.
-  // Anyone who may see the task, by its id or its number.
+  /**
+   * Whether a task tells a member anything where they chose nothing of it (ADR-0157): by what
+   * they are to it and what they have on, as `taskToldByDefault` reads it.
+   */
+  const toldByDefault = async (person: PersonRecord, task: TaskRecord): Promise<boolean> =>
+    taskToldByDefault({
+      settings: notificationSettingsOf(
+        person.kind === "agent" ? "agent" : "person",
+        await chosenNotificationsOf(database, person.id),
+      ),
+      owner: task.owner.id === person.id,
+      worker: task.workers.some((worker) => worker.id === person.id),
+      projectId: task.projectId,
+    });
+
+  // Whether one task tells the asker anything (ADR-0157): on where their settings tell them of
+  // it and they did not turn it off, or where they turned it on themselves, which tells them
+  // of everything on it. Anyone who may see the task, by its id or its number.
   app.get(`${PROJECT}/tasks/:id/follow`, async (c) => {
     const found = await reading(c);
     if (found instanceof Response) {
@@ -2942,8 +3011,12 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
     if (task === undefined) {
       return noSuchTask(c);
     }
+    const usual = await toldByDefault(found.person, task);
+    const chosen = await followOf(database, task.id, found.person.id);
     const body: RestTaskFollow = {
-      state: (await followOf(database, task.id, found.person.id)) ?? null,
+      on: taskTold(chosen, usual),
+      usual,
+      all: chosen === "following",
     };
     return c.json(body);
   });
@@ -2961,13 +3034,17 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
     if (task === undefined) {
       return noSuchTask(c);
     }
+    // Kept only where it is not what their settings say already: a task turned off and on
+    // again is told as it was before, by their kinds.
+    const usual = await toldByDefault(found.person, task);
+    const kept = taskFollowToKeep(input.on, usual);
     await setFollow(database, {
       taskId: task.id,
       personId: found.person.id,
-      state: input.state ?? undefined,
+      state: kept,
       now: clock.now(),
     });
-    const body: RestTaskFollow = { state: input.state };
+    const body: RestTaskFollow = { on: input.on, usual, all: kept === "following" };
     return c.json(body);
   });
 

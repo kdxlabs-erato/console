@@ -67,7 +67,7 @@
     },
     {
       "key": "messages",
-      "icons": ["comment", "mail", "messenger", "notice", "bell", "send"]
+      "icons": ["comment", "mail", "messenger", "notice", "bell", "bell-off", "send"]
     },
     {
       "key": "states",

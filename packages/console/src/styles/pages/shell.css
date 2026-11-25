@@ -159,9 +159,8 @@
   font-size: var(--sc-text-sm);
 }
 
-/* The views of the agents' page stand as the people's do, and those of a member's notifications. */
-.sc-agents-views,
-.sc-notifications-views {
+/* The views of the agents' page stand as the people's do. */
+.sc-agents-views {
   margin-bottom: var(--sc-space-5);
 }
 

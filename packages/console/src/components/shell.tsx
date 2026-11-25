@@ -55,6 +55,8 @@ export interface ShellProps {
   readonly onSignOut?: (() => void) | undefined;
   /** Whether the feed is connected: a dot in the header says so. */
   readonly live?: boolean | undefined;
+  /** What stands in the head before the person's menu: the bell their notifications open under. */
+  readonly notifications?: ReactNode;
   /** Whether the page takes the whole width of the window, as the board does, rather than the column the rest read in. */
   readonly wide?: boolean | undefined;
   readonly children: ReactNode;
@@ -433,6 +435,7 @@ export function Shell(props: ShellProps) {
                 </span>
               </span>
             )}
+            {props.person !== undefined && props.notifications}
             {props.person !== undefined && (
               <PersonMenu
                 person={props.person}

@@ -47,6 +47,7 @@ import {
   RULES_PATH,
   RULES_TITLE,
   type TaskState,
+  unseenSince,
   type WeekStart,
 } from "./api.js";
 import { AVATAR_SETS, type AvatarSet } from "./avatar.js";
@@ -73,7 +74,7 @@ import { EventFeed, type EventFeedProps } from "./components/event-feed.js";
 import { GoalForm, GoalList, type GoalListProps, GoalView, goalMonth } from "./components/goals.js";
 import { HomeGrid, type HomeGridProps, type ProjectGlance } from "./components/home.js";
 import { MyDecisions, ReachedDecision } from "./components/my-decisions.js";
-import { NotificationList, NotificationSettings } from "./components/notifications.js";
+import { NotificationSettings, NotificationsMenu } from "./components/notifications.js";
 import { PackTokenWays } from "./components/pack-token.js";
 import { PAGE_SIZE } from "./components/paged.js";
 import {
@@ -165,11 +166,9 @@ import {
   matchRoute,
   myDecisionHref,
   type Navigation,
-  type NotificationsView,
   newDecisionHref,
   newGoalHref,
   newTaskHref,
-  notificationsHref,
   PATHS,
   personAgentsHref,
   personWorkHref,
@@ -1093,11 +1092,11 @@ function TaskPage(props: {
         follow === undefined
           ? undefined
           : {
-              state: follow.state,
+              on: follow.on,
               busy,
-              onChange: (state) =>
+              onChange: (on) =>
                 void act(async () => {
-                  setFollow(await followTask(task.id, state));
+                  setFollow(await followTask(task.id, on));
                 }),
             }
       }
@@ -1990,11 +1989,15 @@ function ProjectSettingsPage(props: {
 }
 
 /**
- * The views of the settings: the workspace's, read by everyone, and the browsers the person is
- * signed in on (board #309), which a console that holds a token does not offer, and so does not
- * name.
+ * The views of the settings: the workspace's, read by everyone; what the person chose to be
+ * told of (ADR-0157), their own; and the browsers the person is signed in on (board #309),
+ * which a console that holds a token does not offer, and so does not name.
  */
-function SettingsViews(props: { readonly on: "workspace" | "sessions" | "categories" }) {
+function SettingsViews(props: {
+  readonly on: "workspace" | "notifications" | "sessions" | "categories";
+  /** Whether the console keeps what a member is told of (ADR-0157), and so has that view. */
+  readonly told: boolean;
+}) {
   const settings = useWords().settings;
   const views = settings.views;
   return (
@@ -2006,6 +2009,15 @@ function SettingsViews(props: { readonly on: "workspace" | "sessions" | "categor
       >
         {views.workspace}
       </a>
+      {props.told && (
+        <a
+          className={cx("sc-tab", props.on === "notifications" && "sc-tab-current")}
+          href={PATHS.notificationSettings}
+          aria-current={props.on === "notifications" ? "page" : undefined}
+        >
+          {views.notifications}
+        </a>
+      )}
       <a
         className={cx("sc-tab", props.on === "sessions" && "sc-tab-current")}
         href={PATHS.sessions}
@@ -2058,7 +2070,7 @@ function SessionsPage(props: {
       <div className="sc-page-head">
         <h1 className="sc-page-title">{words.settings.title}</h1>
       </div>
-      <SettingsViews on="sessions" />
+      <SettingsViews on="sessions" told={keepsNotifications(data)} />
       {(error ?? failure) !== undefined && <Callout tone="danger">{error ?? failure}</Callout>}
       {sessions === undefined ? (
         failure === undefined && (
@@ -2263,7 +2275,7 @@ function WorkspaceSettingsPage(props: {
   return (
     <>
       {head}
-      {!holdsToken(data) && <SettingsViews on="workspace" />}
+      {!holdsToken(data) && <SettingsViews on="workspace" told={keepsNotifications(data)} />}
       {error !== undefined && <Callout tone="danger">{error}</Callout>}
       {workspace !== undefined && (
         <section className="sc-panel" aria-label={words.settings.workspace.aria}>
@@ -2807,90 +2819,75 @@ function useMyDecisions(
   return { items, more, busy, problem, readMore, reload };
 }
 
-/** How many notifications the page reads at a time. */
-const NOTIFICATIONS_READ = 50;
+/** How many notifications the list under the bell reads at a time. */
+const NOTIFICATIONS_READ = 20;
+
+/** Whether the console keeps what a member is told of (ADR-0157): an older one answers none of it. */
+const keepsNotifications = (data: ConsoleData): boolean =>
+  data.me?.notifications !== undefined && data.me.notifications !== null;
 
 /**
- * What the person is told of what happens on the board (ADR-0157): their notifications, the
- * newest first, all of them or those not read, and what they chose to be told of. A
- * notification opened is read; the count beside the page's name follows.
+ * The bell in the page's head (ADR-0157): the person's notifications open under it, the
+ * newest first. Opening the list reads all of it at one moment, so that the mark on the bell
+ * goes; what was read at that moment is shown as new this once, and as seen from the next
+ * opening on.
  */
-function NotificationsPage(props: {
+function NotificationsBell(props: {
   readonly data: ConsoleData;
-  readonly view: NotificationsView;
+  readonly onNavigate: (href: string) => void;
 }) {
-  const words = useWords();
-  const said = words.notifications;
-  const { data, view } = props;
-  const { notifications, readNotifications, notificationSettings, updateNotificationSettings } =
-    data.actions;
+  const said = useWords().notifications;
+  const { data } = props;
+  const { notifications, readNotifications } = data.actions;
   const [items, setItems] = useState<RestNotifications["items"] | undefined>(undefined);
   const [more, setMore] = useState(false);
-  const [unread, setUnread] = useState<number | undefined>(undefined);
-  const [settings, setSettings] = useState<RestNotificationSettings | undefined>(undefined);
+  const [since, setSince] = useState<string | undefined>(undefined);
   const [problem, setProblem] = useState<string | undefined>(undefined);
-  const { busy, error, act } = useAction();
-  const listed = view !== "settings";
-  const read = useCallback(
-    async (offset: number, signal?: AbortSignal) => {
-      try {
-        const page = await notifications(
-          { unread: view === "unread", limit: NOTIFICATIONS_READ, offset },
-          signal,
-        );
-        if (signal?.aborted === true) {
-          return;
-        }
-        // A list that moved between two reads, by what arrived or what was read meanwhile,
-        // answers a row a second time: each is shown once.
-        setItems((before) => {
-          if (offset === 0 || before === undefined) {
-            return page.items;
-          }
-          const shownAlready = new Set(before.map((one) => one.id));
-          return [...before, ...page.items.filter((one) => !shownAlready.has(one.id))];
-        });
-        setMore(page.more);
-        setUnread(page.unread);
-      } catch (failure: unknown) {
-        if (signal?.aborted !== true) {
-          setProblem(errorWords(failure, said.couldNotLoad));
-        }
-      }
-    },
-    [notifications, view, said.couldNotLoad],
-  );
-  useEffect(() => {
-    const controller = new AbortController();
+  // The opening whose answer is shown: one that answers after a later one began is let go.
+  const turn = useRef(0);
+  // The moment an opening read something at whose rows were never shown (`unseenSince`).
+  const unseen = useRef<string | undefined>(undefined);
+  const open = useCallback(async () => {
+    turn.current += 1;
+    const mine = turn.current;
     setProblem(undefined);
-    if (listed) {
-      setItems(undefined);
-      void read(0, controller.signal);
-    } else {
-      notificationSettings(controller.signal)
-        .then((found) => {
-          if (!controller.signal.aborted) {
-            setSettings(found);
-          }
-        })
-        .catch((failure: unknown) => {
-          if (!controller.signal.aborted) {
-            setProblem(errorWords(failure, said.couldNotLoad));
-          }
-        });
+    try {
+      // Read first, then listed: what the list answers as read at that moment is what was
+      // new, and one that arrives between the two is not read yet, and new all the same.
+      const read = await readNotifications({ all: true });
+      unseen.current = unseenSince(unseen.current, read);
+      const page = await notifications({ limit: NOTIFICATIONS_READ, offset: 0 });
+      if (mine !== turn.current) {
+        return;
+      }
+      setSince(unseen.current ?? read.at);
+      unseen.current = undefined;
+      setItems(page.items);
+      setMore(page.more);
+    } catch (failure: unknown) {
+      if (mine === turn.current) {
+        setProblem(errorWords(failure, said.couldNotLoad));
+      }
     }
-    return () => controller.abort();
-  }, [listed, read, notificationSettings, said.couldNotLoad]);
-  const shown = unread ?? data.me?.notifications?.unread ?? 0;
-  const views: readonly {
-    readonly view: NotificationsView;
-    readonly label: string;
-    readonly count?: number;
-  }[] = [
-    { view: "all", label: said.views.all },
-    { view: "unread", label: said.views.unread, count: shown },
-    { view: "settings", label: said.views.settings },
-  ];
+  }, [notifications, readNotifications, said.couldNotLoad]);
+  const readMore = useCallback(async () => {
+    const mine = turn.current;
+    try {
+      const page = await notifications({ limit: NOTIFICATIONS_READ, offset: items?.length ?? 0 });
+      if (mine !== turn.current) {
+        return;
+      }
+      // A list that moved between two reads, by what arrived meanwhile, answers a row a second
+      // time: each is shown once.
+      setItems((before) => {
+        const shown = new Set((before ?? []).map((one) => one.id));
+        return [...(before ?? []), ...page.items.filter((one) => !shown.has(one.id))];
+      });
+      setMore(page.more);
+    } catch {
+      // The rows that are shown stay: more is still offered, and asked for again by a press.
+    }
+  }, [notifications, items]);
   const visible = (key: string) => data.projects.some((project) => project.key === key);
   /** Where what a notification is of is read: the task, the decision, the agent account. */
   const hrefOf = (notification: RestNotification): string | undefined => {
@@ -2905,108 +2902,78 @@ function NotificationsPage(props: {
     }
     return event.data.handle === undefined ? undefined : agentHref(event.data.handle);
   };
+  return (
+    <NotificationsMenu
+      unread={data.me?.notifications?.unread ?? 0}
+      notifications={items}
+      since={since}
+      problem={problem}
+      href={hrefOf}
+      settingsHref={PATHS.notificationSettings}
+      more={more}
+      onMore={() => void readMore()}
+      onOpen={() => void open()}
+      onNavigate={props.onNavigate}
+    />
+  );
+}
+
+/**
+ * What the person chose to be told of (ADR-0157): a view of the settings, their own. Each
+ * choice is kept as it is made.
+ */
+function NotificationSettingsPage(props: { readonly data: ConsoleData }) {
+  const words = useWords();
+  const said = words.notifications;
+  const { data } = props;
+  const { notificationSettings, updateNotificationSettings } = data.actions;
+  const [settings, setSettings] = useState<RestNotificationSettings | undefined>(undefined);
+  const [problem, setProblem] = useState<string | undefined>(undefined);
+  const { busy, error, act } = useAction();
+  useEffect(() => {
+    const controller = new AbortController();
+    setProblem(undefined);
+    notificationSettings(controller.signal)
+      .then((found) => {
+        if (!controller.signal.aborted) {
+          setSettings(found);
+        }
+      })
+      .catch((failure: unknown) => {
+        if (!controller.signal.aborted) {
+          setProblem(errorWords(failure, said.couldNotLoad));
+        }
+      });
+    return () => controller.abort();
+  }, [notificationSettings, said.couldNotLoad]);
   const shownProblem = problem ?? error;
   return (
     <>
       <div className="sc-page-head">
-        <h1 className="sc-page-title">{said.title}</h1>
-        {listed && (
-          <Button
-            variant="secondary"
-            disabled={busy || shown === 0}
-            onClick={() =>
-              void act(async () => {
-                await readNotifications({ all: true });
-                await read(0);
-              })
-            }
-          >
-            {said.markAllRead}
-          </Button>
-        )}
+        <h1 className="sc-page-title">{words.settings.title}</h1>
       </div>
-      <nav className="sc-subtabs sc-notifications-views" aria-label={said.views.aria}>
-        {views.map((one) => (
-          <a
-            key={one.view}
-            className={cx("sc-tab", one.view === view && "sc-tab-current")}
-            href={notificationsHref(one.view)}
-            aria-current={one.view === view ? "page" : undefined}
-          >
-            {one.label}
-            {one.count !== undefined && one.count > 0 && (
-              <span className="sc-tab-count">{one.count}</span>
-            )}
-          </a>
-        ))}
-      </nav>
+      {!holdsToken(data) && <SettingsViews on="notifications" told />}
       {shownProblem !== undefined && <Callout tone="danger">{shownProblem}</Callout>}
-      {!listed ? (
-        settings === undefined ? (
-          shownProblem === undefined && (
-            <div className="sc-loading">
-              <Spinner label={said.loading} />
-            </div>
-          )
-        ) : (
-          <section className="sc-panel" aria-label={said.views.settings}>
-            <NotificationSettings
-              settings={settings}
-              projects={data.projects.map((project) => ({ key: project.key, name: project.name }))}
-              agent={data.me?.person?.kind === "agent"}
-              busy={busy}
-              onChange={(input) =>
-                void act(async () => {
-                  setSettings(await updateNotificationSettings(input));
-                })
-              }
-            />
-          </section>
-        )
-      ) : items === undefined ? (
+      {settings === undefined ? (
         shownProblem === undefined && (
           <div className="sc-loading">
             <Spinner label={said.loading} />
           </div>
         )
-      ) : items.length === 0 ? (
-        view === "unread" ? (
-          <EmptyState title={said.emptyUnread.title} body={said.emptyUnread.body} />
-        ) : (
-          <EmptyState
-            title={said.empty.title}
-            body={said.empty.body}
-            action={
-              <LinkButton href={notificationsHref("settings")} variant="secondary">
-                {said.views.settings}
-              </LinkButton>
+      ) : (
+        <section className="sc-panel" aria-label={said.settings.title}>
+          <NotificationSettings
+            settings={settings}
+            projects={data.projects.map((project) => ({ key: project.key, name: project.name }))}
+            agent={data.me?.person?.kind === "agent"}
+            busy={busy}
+            onChange={(input) =>
+              void act(async () => {
+                setSettings(await updateNotificationSettings(input));
+              })
             }
           />
-        )
-      ) : (
-        <NotificationList
-          notifications={items}
-          href={hrefOf}
-          onOpen={(notification) => {
-            // Read as it is opened: the page that follows needs no answer of this, and one
-            // opened beside this page finds it shown as read here.
-            const at = new Date().toISOString();
-            void readNotifications({ ids: [notification.id] })
-              .then((answer) => {
-                setUnread(answer.unread);
-                setItems((before) =>
-                  before?.map((one) =>
-                    one.id === notification.id && one.readAt === null
-                      ? { ...one, readAt: at }
-                      : one,
-                  ),
-                );
-              })
-              .catch(() => undefined);
-          }}
-          more={more}
-          onMore={() => void read(items.length)}
-        />
+        </section>
       )}
     </>
   );
@@ -3332,8 +3299,8 @@ function WorkspacePage(props: {
   if (route.name === "my-decision") {
     return <MyDecisionPage id={route.id} data={data} />;
   }
-  if (route.name === "notifications") {
-    return <NotificationsPage data={data} view={route.view} />;
+  if (route.name === "notification-settings") {
+    return <NotificationSettingsPage data={data} />;
   }
   if (route.name === "person-work") {
     return <PersonWorkPage id={route.id} data={data} components={components} week={route.week} />;
@@ -3360,7 +3327,7 @@ function WorkspacePage(props: {
         <div className="sc-page-head">
           <h1 className="sc-page-title">{words.settings.title}</h1>
         </div>
-        {!holdsToken(data) && <SettingsViews on="categories" />}
+        {!holdsToken(data) && <SettingsViews on="categories" told={keepsNotifications(data)} />}
         {error !== undefined && <Callout tone="danger">{error}</Callout>}
         <components.CategoryList
           categories={data.categories}
@@ -3891,17 +3858,6 @@ export function createConsole(config: ConsoleConfig = {}): ConsoleApp {
           current: route.name === "my-decisions" || route.name === "my-decision",
           count: data.me?.decisions?.waiting,
         },
-        // Where the console keeps what a member is told of (ADR-0157): an older one answers none.
-        ...(data.me?.notifications === undefined || data.me.notifications === null
-          ? []
-          : [
-              {
-                href: PATHS.notifications,
-                label: words.nav.notifications,
-                current: route.name === "notifications",
-                count: data.me.notifications.unread,
-              },
-            ]),
         {
           href: PATHS.people,
           label: words.nav.people,
@@ -3950,6 +3906,7 @@ export function createConsole(config: ConsoleConfig = {}): ConsoleApp {
           label: words.nav.settings,
           current:
             route.name === "workspace-settings" ||
+            route.name === "notification-settings" ||
             route.name === "sessions" ||
             route.name === "categories" ||
             route.name === "plugins-settings",
@@ -4142,6 +4099,12 @@ export function createConsole(config: ConsoleConfig = {}): ConsoleApp {
           onLanguage={(tag) => void data.actions.updateMe({ language: tag }).catch(() => undefined)}
           person={data.me.person}
           live={projectKey === undefined ? undefined : data.live}
+          notifications={
+            // Where the console keeps what a member is told of (ADR-0157): an older one answers none.
+            keepsNotifications(data) ? (
+              <NotificationsBell data={data} onNavigate={(href) => navigation.go(href)} />
+            ) : undefined
+          }
           wide={
             route.name === "board" ||
             route.name === "calendar" ||

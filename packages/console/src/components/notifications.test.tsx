@@ -2,11 +2,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { RestEvent, RestNotification, RestNotificationSettings } from "../api.js";
 import { KOREAN, LanguageContext } from "../i18n/index.js";
-import { matchRoute, notificationsHref } from "../router.js";
-import { NotificationList, NotificationSettings, TaskFollow } from "./notifications.js";
+import { matchRoute, PATHS } from "../router.js";
+import {
+  NotificationSettings,
+  NotificationsMenu,
+  type NotificationsMenuProps,
+  TaskBell,
+} from "./notifications.js";
 
-// What a member is told of (ADR-0157), as the pages show it: a notification a row, said as the
-// feed says the event, what they chose to be told of, and what they made of one task.
+// What a member is told of (ADR-0157), as the pages show it: a bell in the page's head with the
+// list that opens under it, a notification a row said as the feed says the event, what they
+// chose to be told of, and a task's own bell.
 
 const alice = {
   id: "0195c0de-0000-7000-8000-000000000001",
@@ -47,59 +53,110 @@ const notification = (over: Partial<RestNotification> = {}): RestNotification =>
   ...over,
 });
 
-describe("a member's notifications", () => {
-  const drawn = (items: readonly RestNotification[], href?: string) =>
+/** The moment the list was read at when it opened. */
+const SINCE = "2026-11-24T03:00:00.000Z";
+
+describe("the bell a member's notifications open under", () => {
+  const menu = (over: Partial<NotificationsMenuProps> = {}) =>
     renderToStaticMarkup(
-      <NotificationList notifications={items} href={() => href} more onMore={() => undefined} />,
+      <NotificationsMenu
+        unread={0}
+        notifications={[]}
+        href={() => undefined}
+        settingsHref={PATHS.notificationSettings}
+        onOpen={() => undefined}
+        onNavigate={() => undefined}
+        {...over}
+      />,
     );
+  const drawn = (items: readonly RestNotification[], href?: string) =>
+    menu({ notifications: items, since: SINCE, href: () => href });
 
-  it("says each as the feed says the event, with who did it, why the member is told and where", () => {
+  it("is marked while something is not read, and says so to whoever does not see it", () => {
+    const quiet = menu();
+    expect(quiet).toContain('aria-label="Notifications"');
+    expect(quiet).not.toContain("sc-nav-dot");
+    const marked = menu({ unread: 3 });
+    expect(marked).toContain('aria-label="Notifications, 3 new"');
+    expect(marked).toMatch(
+      /<summary[^>]*>.*<span class="sc-nav-dot" aria-hidden="true"><\/span><\/summary>/s,
+    );
+    expect(menu({ unread: 1 })).toContain('aria-label="Notifications, 1 new"');
+  });
+
+  it("leads to what the member chose to be told of, among the settings", () => {
+    expect(menu()).toContain(
+      '<a class="sc-menu-head-link" href="/settings/notifications">Settings</a>',
+    );
+  });
+
+  it("says each as the feed says the event, with who did it, and why, where and when under it", () => {
     const seen = drawn([notification()], "/projects/ops/tasks/12");
-    expect(seen).toContain('<ul class="sc-task-rows" aria-label="Notifications">');
-    expect(seen).toContain("Alice Example");
+    expect(seen).toContain('<ul class="sc-menu-rows" aria-label="Notifications">');
+    expect(seen).toContain('<a class="sc-menu-row sc-menu-row-new" href="/projects/ops/tasks/12">');
+    expect(seen).toContain('<span class="sc-menu-row-who">Alice Example</span>');
+    expect(seen).toContain("commented on #12 Fix the import: Is this still due?");
+    // Why and where, which give way where the row is narrow, then when, which does not.
     expect(seen).toContain(
-      '<a class="sc-task-row-title" href="/projects/ops/tasks/12">commented on #12 Fix the import: Is this still due?</a>',
+      '<span class="sc-menu-row-facts"><span class="sc-menu-row-why">Comment · Operations</span><time',
     );
-    expect(seen).toContain('<span class="sc-task-row-project">Comment · Operations</span>');
-    expect(seen).toContain(">New</span>");
     expect(seen).toContain('dateTime="2026-11-24T02:58:00.000Z"');
-    expect(seen).toContain("Show more");
   });
 
-  it("draws one that was read quieter, and with no word that it is new", () => {
-    const seen = drawn([notification({ readAt: "2026-11-24T03:00:00.000Z" })], "/somewhere");
-    expect(seen).toContain('<li class="sc-task-row sc-task-row-seen">');
-    expect(seen).not.toContain(">New</span>");
+  it("marks what was new when the list opened, by when it was read, and nothing read before", () => {
+    // Not read yet: it arrived as the list was being read.
+    expect(drawn([notification()])).toContain('aria-label="New"');
+    // Read at the moment the list opened: new until then.
+    const opened = drawn([notification({ readAt: SINCE })]);
+    expect(opened).toContain("sc-menu-row-new");
+    expect(opened).toContain('aria-label="New"');
+    // Read before: seen at an opening before this one.
+    const before = drawn([notification({ readAt: "2026-11-24T02:59:59.999Z" })]);
+    expect(before).not.toContain("sc-menu-row-new");
+    expect(before).not.toContain('aria-label="New"');
+    // With no moment of opening, only what is not read is new.
+    expect(menu({ notifications: [notification({ readAt: SINCE })] })).not.toContain(
+      "sc-menu-row-new",
+    );
   });
 
-  it("says a task the member follows as one, a kind it has no word for as it came, and an agent's doing as its own", () => {
+  it("says a task the member turned on as one, a kind it has no word for as it came, and an agent's doing as its own", () => {
     expect(drawn([notification({ followed: true })])).toContain(
-      "A task you get everything of · Operations",
+      "A task you turned on · Operations",
     );
     expect(drawn([notification({ kind: "mentioned", project: null })])).toContain(
-      '<span class="sc-task-row-project">mentioned</span>',
+      '<span class="sc-menu-row-why">mentioned</span>',
     );
     // What every object has is no word of the pack.
     expect(drawn([notification({ kind: "constructor", project: null })])).toContain(
-      '<span class="sc-task-row-project">constructor</span>',
+      '<span class="sc-menu-row-why">constructor</span>',
     );
     const through = drawn([notification({ event: event({ agent: "Claude Code on a laptop" }) })]);
     expect(through).toContain("sc-feed-agent");
-    // Where it leads nowhere the reader may go, it is words and no link.
-    expect(drawn([notification()])).toContain(
-      '<span class="sc-task-row-title">commented on #12 Fix the import: Is this still due?</span>',
-    );
-    // The console's own doing has nobody's name.
-    expect(
-      drawn([notification({ event: event({ actor: null, kind: "task.archived" }) })]),
-    ).toContain("sc-person-login");
+    // Where it leads nowhere the reader may go, it is a row and no link.
+    expect(drawn([notification()])).toContain('<span class="sc-menu-row sc-menu-row-new">');
+    // The console's own doing has nobody's picture, and is said as the console's.
+    const own = drawn([notification({ event: event({ actor: null, kind: "task.archived" }) })]);
+    expect(own).toContain("sc-menu-row-glyph");
+    expect(own).toContain('<span class="sc-menu-row-who">The console</span>');
   });
 
-  it("cuts a long comment short, and never a text as markup", () => {
+  it("cuts a long title, comment or question short in the row, keeps it whole in the row's title, and never reads a text as markup", () => {
     const long = "x".repeat(300);
-    const seen = drawn([notification({ event: event({ data: { number: 1, excerpt: long } }) })]);
-    expect(seen).toContain(`${"x".repeat(80)}…`);
-    expect(seen).not.toContain("x".repeat(81));
+    const seen = drawn([
+      notification({ event: event({ data: { number: 1, title: "t".repeat(90), excerpt: long } }) }),
+    ]);
+    expect(seen).toContain(`#1 ${"t".repeat(44)}…`);
+    expect(seen).toContain(`${"x".repeat(72)}…`);
+    // Whole where the pointer rests: the row's title.
+    expect(seen).toContain(`title="commented on #1 ${"t".repeat(90)}: ${long}"`);
+    const asked = drawn([
+      notification({
+        kind: "decision",
+        event: event({ kind: "decision.raised", data: { question: "q".repeat(200) } }),
+      }),
+    ]);
+    expect(asked).toContain(`${"q".repeat(72)}…`);
     const hostile = drawn([
       notification({
         event: event({ data: { number: 1, title: "<b>bold</b>", excerpt: "<script>x</script>" } }),
@@ -109,15 +166,36 @@ describe("a member's notifications", () => {
     expect(hostile).not.toContain("<script>");
   });
 
+  it("says that it is on its way, that there is nothing yet, what went wrong, and that there is more", () => {
+    expect(menu({ notifications: undefined })).toContain("Loading your notifications");
+    const empty = menu();
+    expect(empty).toContain("No notifications yet");
+    expect(empty).not.toContain("sc-menu-rows");
+    expect(menu({ problem: "The notifications could not be loaded." })).toContain(
+      '<p class="sc-menu-note" role="alert">The notifications could not be loaded.</p>',
+    );
+    const more = menu({ notifications: [notification()], more: true, onMore: () => undefined });
+    expect(more).toContain('<button type="button" class="sc-menu-link">Show more</button>');
+    expect(menu({ notifications: [notification()] })).not.toContain("Show more");
+  });
+
   it("reads in Korean", () => {
     const seen = renderToStaticMarkup(
       <LanguageContext.Provider value={KOREAN}>
-        <NotificationList notifications={[notification()]} href={() => undefined} />
+        <NotificationsMenu
+          unread={2}
+          notifications={[notification()]}
+          href={() => undefined}
+          settingsHref={PATHS.notificationSettings}
+          onOpen={() => undefined}
+          onNavigate={() => undefined}
+        />
       </LanguageContext.Provider>,
     );
-    expect(seen).toContain('aria-label="알림"');
-    expect(seen).toContain("댓글 · Operations");
-    expect(seen).toContain(">새 알림</span>");
+    expect(seen).toContain('aria-label="알림, 새 알림 2개"');
+    expect(seen).toContain(">알림 설정</a>");
+    expect(seen).toContain(">댓글 · Operations</span><time");
+    expect(seen).toContain('aria-label="새 알림"');
   });
 });
 
@@ -134,7 +212,14 @@ describe("what a member chose to be told of", () => {
       answered: false,
       agent: true,
     };
-    return { kinds: defaults, defaults, projectsOff: [], ownAgents: false, ...over };
+    return {
+      kinds: defaults,
+      defaults,
+      projectsOff: [],
+      ownAgents: false,
+      carriers: [],
+      ...over,
+    };
   };
   const projects = [
     { key: "ops", name: "Operations" },
@@ -161,6 +246,37 @@ describe("what a member chose to be told of", () => {
     expect(seen.indexOf("Decisions")).toBeLessThan(seen.indexOf("Agent accounts"));
   });
 
+  it("offers, for a plugin that carries notifications elsewhere, the kinds that are on and no other", () => {
+    const messenger = { key: "messenger", name: "Messenger", off: ["commented"] };
+    const seen = drawn(
+      settings({
+        kinds: { ...settings().kinds, commented: true, decision: true },
+        carriers: [messenger],
+      }),
+    );
+    const row = seen.slice(seen.indexOf("Also sent by Messenger"), seen.indexOf("Projects"));
+    // What is on is carried unless it was turned off for this plugin; what is off is not
+    // offered, since nobody carries what the console does not tell.
+    expect(row).toContain(chip("Comment", false));
+    expect(row).toContain(chip("Waits for your answer", true));
+    expect(row).toContain(chip("Your agent account", true));
+    expect(row).not.toContain("Given to you");
+    // A kind that is off is told only of a task whose bell was turned on, and is sent with the rest.
+    expect(row).toContain("is told to you only of a task whose bell you turned on");
+    // A choice made of a plugin is something to put back.
+    expect(seen).not.toMatch(/<button[^>]*disabled=""[^>]*>Back to the defaults<\/button>/);
+    // With nothing on, there is nothing for it to carry.
+    const none = drawn(
+      settings({
+        kinds: { ...settings().kinds, agent: false },
+        carriers: [{ ...messenger, off: [] }],
+      }),
+    );
+    expect(none).toContain("Turn something on above to choose here.");
+    // No plugin carries notifications: nothing is said of one.
+    expect(drawn(settings())).not.toContain("Also sent by");
+  });
+
   it("offers each project on unless it was turned off, and nothing to reset where nothing was chosen", () => {
     const untouched = drawn(settings());
     expect(untouched).toContain(chip("Operations", true));
@@ -178,39 +294,54 @@ describe("what a member chose to be told of", () => {
     expect(account).not.toContain("Tell me of what my agents do as me");
     expect(account).toContain("wakes the account");
   });
-});
 
-describe("what a member is told of one task", () => {
-  it("offers the three, the one that holds lit", () => {
-    for (const [state, label] of [
-      [null, "By my settings"],
-      ["following", "Everything"],
-      ["muted", "Nothing"],
-    ] as const) {
-      const seen = renderToStaticMarkup(<TaskFollow state={state} onChange={() => undefined} />);
-      expect(seen.split('type="radio"')).toHaveLength(4);
-      expect(seen.split('checked=""')).toHaveLength(2);
-      expect(seen).toMatch(new RegExp(`checked=""[^>]*/>${label}</label>`));
-    }
-    const korean = renderToStaticMarkup(
+  it("names a plugin in Korean with the particle its name takes", () => {
+    const seen = renderToStaticMarkup(
       <LanguageContext.Provider value={KOREAN}>
-        <TaskFollow state="muted" onChange={() => undefined} />
+        <NotificationSettings
+          settings={settings({ carriers: [{ key: "messenger", name: "Messenger", off: [] }] })}
+          projects={projects}
+          onChange={() => undefined}
+        />
       </LanguageContext.Provider>,
     );
-    expect(korean).toContain('aria-label="알림"');
-    expect(korean).toMatch(/checked=""[^>]*\/>받지 않기<\/label>/);
+    expect(seen).toContain("Messenger로도 받기");
+    expect(seen).toContain("Messenger가 함께 보내는 것입니다");
   });
 });
 
-describe("the address of a member's notifications", () => {
-  it("is the page itself for all of them, and names the other views in its query", () => {
-    expect(notificationsHref()).toBe("/notifications");
-    expect(notificationsHref("unread")).toBe("/notifications?view=unread");
-    expect(matchRoute("/notifications", "")).toEqual({ name: "notifications", view: "all" });
-    expect(matchRoute("/notifications", "?view=settings")).toEqual({
-      name: "notifications",
-      view: "settings",
-    });
-    expect(matchRoute("/notifications", "?view=everything")).toMatchObject({ name: "not-found" });
+describe("a task's own bell", () => {
+  it("is lit while the task tells the reader something, struck through while it does not, and says what a press does", () => {
+    const on = renderToStaticMarkup(<TaskBell on onChange={() => undefined} />);
+    expect(on).toContain('aria-pressed="true"');
+    expect(on).toContain('aria-label="Turn this task&#x27;s notifications off"');
+    expect(on).toContain('title="Notifications of this task are on"');
+    const off = renderToStaticMarkup(<TaskBell on={false} onChange={() => undefined} />);
+    expect(off).toContain('aria-pressed="false"');
+    expect(off).toContain('aria-label="Turn this task&#x27;s notifications on"');
+    // Two glyphs, told apart by their lines: the bell that is off is struck through, and has
+    // no tinted part.
+    const STRUCK = '<path d="M3.5 3.5l13 13"></path>';
+    expect(off).toContain(STRUCK);
+    expect(on).not.toContain(STRUCK);
+    expect(on).toContain("sc-icon-tint");
+    expect(off).not.toContain("sc-icon-tint");
+    expect(renderToStaticMarkup(<TaskBell on busy onChange={() => undefined} />)).toContain(
+      'disabled=""',
+    );
+    const korean = renderToStaticMarkup(
+      <LanguageContext.Provider value={KOREAN}>
+        <TaskBell on={false} onChange={() => undefined} />
+      </LanguageContext.Provider>,
+    );
+    expect(korean).toContain('aria-label="이 작업의 알림 켜기"');
+  });
+});
+
+describe("the address of what a member chose to be told of", () => {
+  it("is a view of the settings, and the list has no page of its own", () => {
+    expect(PATHS.notificationSettings).toBe("/settings/notifications");
+    expect(matchRoute("/settings/notifications", "")).toEqual({ name: "notification-settings" });
+    expect(matchRoute("/notifications", "")).toMatchObject({ name: "not-found" });
   });
 });

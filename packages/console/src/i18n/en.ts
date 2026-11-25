@@ -323,7 +323,6 @@ export const en = {
     projects: "Projects",
     work: "My work",
     myDecisions: "My decisions",
-    notifications: "Notifications",
     people: "People",
     agents: "Agents",
     board: "Board",
@@ -845,26 +844,20 @@ export const en = {
 
   notifications: {
     title: "Notifications",
+    /** The bell's name, and its name while something is new. */
+    open: "Notifications",
+    openNew: (n: number) => (n === 1 ? "Notifications, 1 new" : `Notifications, ${n} new`),
     list: "Notifications",
     loading: "Loading your notifications",
     couldNotLoad: "The notifications could not be loaded.",
-    markAllRead: "Mark all as read",
-    unread: "New",
-    followed: "A task you get everything of",
+    /** What the dot at the end of a row says. */
+    fresh: "New",
+    followed: "A task you turned on",
     more: "Show more",
-    views: {
-      aria: "Views of your notifications",
-      all: "All",
-      unread: "Unread",
-      settings: "Settings",
-    },
+    settingsLink: "Settings",
     empty: {
       title: "No notifications yet",
-      body: "What you chose to be told of shows up here. Turn kinds on under Settings, or choose Everything on a task's page.",
-    },
-    emptyUnread: {
-      title: "Nothing unread",
-      body: "You have read everything you were told of.",
+      body: "What you chose to be told of shows up here.",
     },
     kinds: {
       assigned: "Given to you",
@@ -878,10 +871,11 @@ export const en = {
       agent: "Your agent account",
     },
     settings: {
+      title: "Notifications",
       intro:
-        "Choose what you are told of. What is on shows up in this list, and a messenger connected to the console carries it to you there.",
+        "Choose what you are told of. What is on shows up under the bell at the top of the page.",
       introAgent:
-        "Choose what this account is told of. What is on shows up in this list, and wakes the account.",
+        "Choose what this account is told of. What is on is kept in its list, and wakes the account.",
       groups: { tasks: "Tasks", decisions: "Decisions", agents: "Agent accounts" },
       hints: {
         tasks: "What happens on the tasks you own or work on.",
@@ -889,9 +883,16 @@ export const en = {
         agents:
           "An agent account that reports to you stopped, failed or is not heard from, or runs again; or it raised a decision for you.",
       },
+      /** A plugin that carries notifications elsewhere, by its name: which of the kinds that are on it sends too. */
+      carrier: {
+        label: (plugin: string) => `Also sent by ${plugin}`,
+        hint: (plugin: string) =>
+          `Of what you have on, what ${plugin} sends you too. A kind that is off above is told to you only of a task whose bell you turned on, and is sent with the rest.`,
+        none: "Turn something on above to choose here.",
+      },
       projects: "Projects",
       projectsHint:
-        "A project that is off tells you nothing of its tasks, but for a task you chose Everything on.",
+        "A project that is off tells you nothing of its tasks, but for a task whose bell you turned on.",
       ownAgents: "Your own agents",
       ownAgentsHint:
         "What an agent does as you is your own doing, and tells you nothing unless you say so.",
@@ -899,13 +900,10 @@ export const en = {
       reset: "Back to the defaults",
     },
     task: {
-      label: "Notifications",
-      settings: "By my settings",
-      settingsHint: "Told of what your notification settings have on",
-      following: "Everything",
-      followingHint: "Told of everything that happens on this task",
-      muted: "Nothing",
-      mutedHint: "Told of nothing of this task",
+      on: "Notifications of this task are on",
+      off: "Notifications of this task are off",
+      turnOn: "Turn this task's notifications on",
+      turnOff: "Turn this task's notifications off",
     },
   },
   myDecisions: {
@@ -1212,7 +1210,12 @@ export const en = {
 
   settings: {
     title: "Settings",
-    views: { aria: "Settings", workspace: "Workspace", sessions: "Sessions" },
+    views: {
+      aria: "Settings",
+      workspace: "Workspace",
+      notifications: "Notifications",
+      sessions: "Sessions",
+    },
     categories: "Categories",
     manageCategories: "Manage the categories",
     skills: "Skills",
@@ -1617,6 +1620,7 @@ export const en = {
       unlock: "open public",
       eye: "show visible watch view",
       "eye-off": "hide hidden invisible",
+      "bell-off": "notification mute silent quiet off",
       bell: "notification alert remind",
       star: "favourite rate important",
       spark: "ai sparkle magic new",

@@ -163,12 +163,12 @@ export {
 export { Markdown, type MarkdownProps } from "./components/markdown.js";
 export { MyDecisions, type MyDecisionsProps } from "./components/my-decisions.js";
 export {
-  NotificationList,
-  type NotificationListProps,
   NotificationSettings,
   type NotificationSettingsProps,
-  TaskFollow,
-  type TaskFollowProps,
+  NotificationsMenu,
+  type NotificationsMenuProps,
+  TaskBell,
+  type TaskBellProps,
 } from "./components/notifications.js";
 export {
   PackConnect,
@@ -503,11 +503,9 @@ export {
   matchRoute,
   movedFrom,
   type Navigation,
-  type NotificationsView,
   newDecisionHref,
   newGoalHref,
   newTaskHref,
-  notificationsHref,
   PATHS,
   type ProjectPage,
   personAgentsHref,

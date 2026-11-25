@@ -279,7 +279,6 @@ export const ko: Messages = {
     projects: "프로젝트",
     work: "내 작업",
     myDecisions: "내 결정",
-    notifications: "알림",
     people: "사람들",
     agents: "에이전트",
     board: "보드",
@@ -777,26 +776,18 @@ export const ko: Messages = {
 
   notifications: {
     title: "알림",
+    open: "알림",
+    openNew: (n) => `알림, 새 알림 ${n}개`,
     list: "알림",
     loading: "알림을 불러오는 중",
     couldNotLoad: "알림을 불러오지 못했습니다.",
-    markAllRead: "모두 읽음으로 표시",
-    unread: "새 알림",
-    followed: "모두 받는 작업",
+    fresh: "새 알림",
+    followed: "알림을 켠 작업",
     more: "더 보기",
-    views: {
-      aria: "알림 보기",
-      all: "전체",
-      unread: "안 읽음",
-      settings: "설정",
-    },
+    settingsLink: "알림 설정",
     empty: {
       title: "아직 알림이 없습니다",
-      body: "받기로 한 소식이 여기에 쌓입니다. 설정에서 종류를 켜거나, 작업 페이지에서 그 작업의 알림을 모두 받기로 바꾸세요.",
-    },
-    emptyUnread: {
-      title: "안 읽은 알림이 없습니다",
-      body: "받은 알림을 모두 읽었습니다.",
+      body: "받기로 한 소식이 여기에 쌓입니다.",
     },
     kinds: {
       assigned: "나에게 맡겨짐",
@@ -810,10 +801,10 @@ export const ko: Messages = {
       agent: "내 에이전트 계정",
     },
     settings: {
-      intro:
-        "무엇을 알림으로 받을지 고릅니다. 켠 종류는 이 목록에 쌓이고, 콘솔에 연결된 메신저가 있으면 그쪽으로도 전해집니다.",
+      title: "알림",
+      intro: "무엇을 알림으로 받을지 고릅니다. 켠 종류는 화면 위쪽 종 아래에 쌓입니다.",
       introAgent:
-        "이 계정이 무엇을 알림으로 받을지 고릅니다. 켠 종류는 이 목록에 쌓이고 계정을 깨웁니다.",
+        "이 계정이 무엇을 알림으로 받을지 고릅니다. 켠 종류는 계정의 알림 목록에 남고 계정을 깨웁니다.",
       groups: { tasks: "작업", decisions: "결정", agents: "에이전트 계정" },
       hints: {
         tasks: "내가 소유하거나 맡은 작업에서 일어난 일입니다.",
@@ -821,8 +812,14 @@ export const ko: Messages = {
         agents:
           "나에게 보고하는 에이전트 계정이 멈추거나 실패하거나 응답이 없을 때, 다시 실행될 때, 그리고 나에게 결정을 올렸을 때입니다.",
       },
+      carrier: {
+        label: (plugin) => `${asWay(plugin)}도 받기`,
+        hint: (plugin) =>
+          `켜 둔 알림 가운데 ${asSubject(plugin)} 함께 보내는 것입니다. 위에서 끈 종류는 종을 직접 켠 작업에서만 알림이 되고, 그 알림은 함께 갑니다.`,
+        none: "위에서 알림을 켜면 여기서 고를 수 있습니다.",
+      },
       projects: "프로젝트",
-      projectsHint: "끈 프로젝트의 작업 소식은 받지 않습니다. 모두 받기로 한 작업은 예외입니다.",
+      projectsHint: "끈 프로젝트의 작업 소식은 받지 않습니다. 종을 직접 켠 작업은 예외입니다.",
       ownAgents: "내 에이전트",
       ownAgentsHint:
         "내 에이전트가 나로서 한 일은 내가 한 일이라 알리지 않습니다. 받고 싶으면 켜세요.",
@@ -830,13 +827,10 @@ export const ko: Messages = {
       reset: "기본값으로",
     },
     task: {
-      label: "알림",
-      settings: "설정대로",
-      settingsHint: "알림 설정에서 켠 종류만 받습니다",
-      following: "모두 받기",
-      followingHint: "이 작업에서 일어나는 모든 일을 받습니다",
-      muted: "받지 않기",
-      mutedHint: "이 작업의 소식을 받지 않습니다",
+      on: "이 작업의 알림이 켜져 있습니다",
+      off: "이 작업의 알림이 꺼져 있습니다",
+      turnOn: "이 작업의 알림 켜기",
+      turnOff: "이 작업의 알림 끄기",
     },
   },
   myDecisions: {
@@ -1131,7 +1125,12 @@ export const ko: Messages = {
 
   settings: {
     title: "설정",
-    views: { aria: "설정", workspace: "워크스페이스", sessions: "로그인 세션" },
+    views: {
+      aria: "설정",
+      workspace: "워크스페이스",
+      notifications: "알림",
+      sessions: "로그인 세션",
+    },
     categories: "카테고리",
     manageCategories: "카테고리 관리",
     skills: "스킬",
@@ -1527,6 +1526,7 @@ export const ko: Messages = {
       unlock: "열림 공개 잠금 해제",
       eye: "눈 보임 보기 표시",
       "eye-off": "눈 가림 숨김 숨기기",
+      "bell-off": "알림 끔 종 음소거 조용히",
       bell: "알림 종",
       star: "별 즐겨찾기 중요",
       spark: "반짝임 인공지능 새로움",

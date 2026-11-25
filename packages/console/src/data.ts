@@ -93,7 +93,7 @@ const FEED_MAX_PAGES = 20;
 /** How long changes that arrive together are gathered before the lists are loaded once. */
 const RELOAD_DELAY_MS = 150;
 /**
- * How long after something happened on a task or a decision the count beside Notifications is
+ * How long after something happened on a task or a decision the mark on the bell is
  * asked for again: the console makes a member's notifications a few seconds after the event,
  * as its worker reads the feed (ADR-0157).
  */
@@ -131,13 +131,13 @@ export interface ConsoleActions {
   fetchTask(ref: string, signal?: AbortSignal): Promise<RestTask>;
   /** What the person made of a task of the project the page is on (ADR-0157): told of everything on it, of nothing, or as their settings say. */
   taskFollow(ref: string, signal?: AbortSignal): Promise<RestTaskFollow>;
-  followTask(ref: string, state: RestTaskFollow["state"]): Promise<RestTaskFollow>;
+  followTask(ref: string, on: boolean): Promise<RestTaskFollow>;
   /** A page of what the person is told of (ADR-0157), the newest first, read when the page asks. */
   notifications(
     filter: { readonly unread?: boolean; readonly limit: number; readonly offset: number },
     signal?: AbortSignal,
   ): Promise<RestNotifications>;
-  /** Marks notifications as read, those named or all; the count beside Notifications follows. */
+  /** Marks notifications as read, those named or all; the mark on the bell follows. */
   readNotifications(input: RestNotificationsReadInput): Promise<RestNotificationsRead>;
   /** What the person is told of, and changing it. */
   notificationSettings(signal?: AbortSignal): Promise<RestNotificationSettings>;
@@ -708,7 +708,7 @@ export function useConsoleData(client: ConsoleClient, projectKey: string | undef
               refreshMe(signal).catch(() => undefined);
             }
           }, RELOAD_DELAY_MS);
-          // What happened may be told to the person: the count beside Notifications follows,
+          // What happened may be told to the person: the mark on the bell follows,
           // once the console has had the time to make the notification.
           if (event.kind.startsWith("task.") || event.kind.startsWith("decision.")) {
             clearTimeout(toldTimer);
@@ -812,11 +812,12 @@ export function useConsoleData(client: ConsoleClient, projectKey: string | undef
       },
       fetchTask: (ref, signal) => scope().task(ref, signal),
       taskFollow: (ref, signal) => scope().taskFollow(ref, signal),
-      followTask: (ref, state) => scope().followTask(ref, state),
+      followTask: (ref, on) => scope().followTask(ref, on),
       notifications: (filter, signal) => client.notifications(filter, signal),
       async readNotifications(input) {
         const read = await client.readNotifications(input);
-        await refreshMe().catch(() => undefined);
+        // Not waited for: the list that opens is read meanwhile, and the mark goes when this answers.
+        void refreshMe().catch(() => undefined);
         return read;
       },
       notificationSettings: (signal) => client.notificationSettings(signal),

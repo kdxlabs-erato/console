@@ -9713,6 +9713,7 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
     },
     projectsOff: [{ key: "ops", name: "Operations" }],
     ownAgents: false,
+    carriers: [],
   };
   const ALL = "GET /api/v1/notifications?limit=50&offset=0";
   const READ = "POST /api/v1/notifications/read";
@@ -9803,7 +9804,10 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
 
   it("marks the notifications named read, or every one, and says how many are still unread", async () => {
     const { fetch, calls } = fakeConsole({
-      [READ]: [{ body: { read: 2, unread: 3 } }, { body: { read: 3, unread: 0 } }],
+      [READ]: [
+        { body: { read: 2, unread: 3, at: "2026-11-24T03:00:00.000Z" } },
+        { body: { read: 3, unread: 0, at: "2026-11-24T03:00:05.000Z" } },
+      ],
     });
     const some = harness({ fetch, env: SIGNED_IN });
     expect(
@@ -9843,7 +9847,7 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("says what one is told of: each kind, the projects turned off, and one's own agents", async () => {
+  it("says what one is told of: each kind, the projects turned off, one's own agents, and what a plugin sends on", async () => {
     const { fetch, calls } = fakeConsole({
       [`GET ${SETTINGS_AT}`]: {
         // A kind a newer console has is read, and said by its name alone.
@@ -9851,6 +9855,10 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
           ...SETTINGS,
           kinds: { ...SETTINGS.kinds, mentioned: true },
           defaults: { ...SETTINGS.defaults, mentioned: true },
+          carriers: [
+            { key: "messenger", name: "Messenger", off: ["ready"] },
+            { key: "pager", name: "Pager", off: [] },
+          ],
         },
       },
     });
@@ -9871,10 +9879,35 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
         "mentioned  on",
         "projects off: ops (Operations)",
         "own agents: off  (what an agent of your own did as you is not told to you)",
+        "also sent by messenger (Messenger): every kind that is on but ready",
+        "also sent by pager (Pager): every kind that is on",
         "",
       ].join("\n"),
     );
     expect(calls.map((call) => call.key)).toEqual([`GET ${SETTINGS_AT}`]);
+  });
+
+  it("says what a plugin sends on with --via, and leaves the kinds as they are", async () => {
+    const now = {
+      ...SETTINGS,
+      carriers: [{ key: "messenger", name: "Messenger", off: ["ready"] }],
+    };
+    const { fetch, calls } = fakeConsole({ [`PUT ${SETTINGS_AT}`]: { body: now } });
+    const h = harness({ fetch, env: SIGNED_IN });
+    expect(
+      await runCli(["notify", "--via", "messenger", "--off", "ready", "--on", "agent"], h.io),
+    ).toBe(EXIT.ok);
+    // What the plugin carries, by its key: no kind is turned on or off by it.
+    expect(calls.map((call) => call.key)).toEqual([`PUT ${SETTINGS_AT}`]);
+    expect(calls[0]?.body).toEqual({ carriers: { messenger: { agent: true, ready: false } } });
+    expect(h.out()).toContain(
+      "also sent by messenger (Messenger): every kind that is on but ready\n",
+    );
+    // The plugin is named with a kind, or nothing is understood.
+    const alone = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["notify", "--via", "messenger"], alone.io)).toBe(EXIT.usage);
+    expect(alone.err()).toContain("--via names the plugin --on and --off are said of");
+    expect(calls).toHaveLength(1);
   });
 
   it("turns kinds on and off, and one's own agents, in one change, and prints the settings as they are now", async () => {
@@ -9976,50 +10009,54 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("follows a task, mutes it, and takes either back, saying what holds now", async () => {
+  it("turns a task's notifications on with follow and off with mute, saying what holds now", async () => {
     const FOLLOW = `PUT ${IN}/tasks/${TASK.id}/follow`;
     const { fetch, calls } = fakeConsole({
       [`GET ${IN}/tasks/7`]: { body: TASK },
       [`GET /api/v1/projects/ops/tasks/${TASK.id}`]: { body: TASK },
       [FOLLOW]: [
-        { body: { state: "following" } },
-        { body: { state: "muted" } },
-        { body: { state: null } },
-        { body: { state: null } },
+        // Turned on where the settings would be silent of it, then off again, as they have it.
+        { body: { on: true, usual: false, all: true } },
+        { body: { on: false, usual: false, all: false } },
+        // Turned off where the settings tell of it, then on again, as they have it.
+        { body: { on: false, usual: true, all: false } },
+        { body: { on: true, usual: true, all: false } },
       ],
-      [`PUT /api/v1/projects/ops/tasks/${TASK.id}/follow`]: { body: { state: "following" } },
+      [`PUT /api/v1/projects/ops/tasks/${TASK.id}/follow`]: {
+        body: { on: true, usual: false, all: true },
+      },
     });
     const followed = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["follow", "7"], followed.io)).toBe(EXIT.ok);
     // The task is read for what it is called, then the choice is kept by its id.
     expect(calls.map((call) => call.key)).toEqual([`GET ${IN}/tasks/7`, FOLLOW]);
-    expect(calls.at(-1)?.body).toEqual({ state: "following" });
+    expect(calls.at(-1)?.body).toEqual({ on: true });
     expect(followed.out()).toBe(
-      "Following #7 Fix the parser: you are told of everything that happens on it, whatever kinds you have on. Take it back: console follow 7 --off\n",
+      "Notifications of #7 Fix the parser are on: you are told of everything that happens on it. Turn them off: console mute 7\n",
+    );
+    const back = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["mute", "7"], back.io)).toBe(EXIT.ok);
+    expect(calls.at(-1)?.body).toEqual({ on: false });
+    expect(back.out()).toBe(
+      "Notifications of #7 Fix the parser are off, as your settings have it. Turn them on: console follow 7\n",
     );
     const muted = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["mute", "7"], muted.io)).toBe(EXIT.ok);
-    expect(calls.at(-1)?.body).toEqual({ state: "muted" });
     expect(muted.out()).toBe(
-      "Muted #7 Fix the parser: you are told of nothing of it. Take it back: console mute 7 --off\n",
+      "Notifications of #7 Fix the parser are off: you are told of nothing of it. Turn them on: console follow 7\n",
     );
-    // --off on either takes the choice back, whichever it was.
-    for (const word of ["follow", "mute"]) {
-      const back = harness({ fetch, env: SIGNED_IN });
-      expect(await runCli([word, "7", "--off"], back.io)).toBe(EXIT.ok);
-      expect(calls.at(-1)?.key).toBe(FOLLOW);
-      expect(calls.at(-1)?.body).toEqual({ state: null });
-      expect(back.out()).toBe(
-        "#7 Fix the parser is neither followed nor muted: you are told of it as console notify says.\n",
-      );
-    }
+    const again = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["follow", "7"], again.io)).toBe(EXIT.ok);
+    expect(again.out()).toBe(
+      "Notifications of #7 Fix the parser are on, as your settings have it: you are told of it by the kinds you have on (console notify). Turn them off: console mute 7\n",
+    );
     // By its id, in the project the flag names; --json is the console's own answer.
     const elsewhere = harness({ fetch, env: SIGNED_IN });
     expect(await runCli(["follow", TASK.id, "--project", "ops", "--json"], elsewhere.io)).toBe(
       EXIT.ok,
     );
     expect(calls.at(-1)?.key).toBe(`PUT /api/v1/projects/ops/tasks/${TASK.id}/follow`);
-    expect(JSON.parse(elsewhere.out())).toEqual({ state: "following" });
+    expect(JSON.parse(elsewhere.out())).toEqual({ on: true, usual: false, all: true });
   });
 
   it("asks which task to follow or to mute, and says a task that is not there as the console does", async () => {
@@ -10030,11 +10067,14 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
       },
     });
     for (const word of ["follow", "mute"]) {
-      for (const args of [[word], [word, "7", "8"], [word, "--off"]]) {
+      for (const args of [[word], [word, "7", "8"]]) {
         const h = harness({ fetch, env: SIGNED_IN });
         expect(await runCli(args, h.io), args.join(" ")).toBe(EXIT.usage);
-        expect(h.err()).toContain(`Say which task: console ${word} <number|id> [--off]`);
+        expect(h.err()).toContain(`Say which task: console ${word} <number|id>`);
       }
+      // Turning one back is the other word: there is no flag for it.
+      const flagged = harness({ fetch, env: SIGNED_IN });
+      expect(await runCli([word, "7", "--off"], flagged.io)).toBe(EXIT.usage);
     }
     expect(calls).toHaveLength(0);
     const missing = harness({ fetch, env: SIGNED_IN });
@@ -10049,7 +10089,7 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
     expect(nowhere.err()).toContain("Say which project: --project <key>");
   });
 
-  it("says on a task that one follows it or muted it, and nothing where one did neither", async () => {
+  it("says on a task whether its notifications are on, and by whose doing", async () => {
     const routes = {
       [`GET ${IN}/tasks/7`]: { body: TASK },
       [`GET ${IN}/decisions?task=${TASK.id}`]: { body: { more: false, items: [] } },
@@ -10058,33 +10098,41 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
       [`GET ${IN}/tasks/${TASK.id}/comments`]: { body: { items: [] } },
     };
     const AT = `GET ${IN}/tasks/${TASK.id}/follow`;
-    const following = harness({
-      fetch: fakeConsole({ ...routes, [AT]: { body: { state: "following" } } }).fetch,
-      env: SIGNED_IN,
-    });
-    expect(await runCli(["task", "7"], following.io)).toBe(EXIT.ok);
-    expect(following.out()).toContain(
-      "\nnotifications: following, you are told of everything that happens on it, whatever kinds you have on\n",
-    );
-    const muted = harness({
-      fetch: fakeConsole({ ...routes, [AT]: { body: { state: "muted" } } }).fetch,
-      env: SIGNED_IN,
-    });
-    expect(await runCli(["task", "7"], muted.io)).toBe(EXIT.ok);
-    expect(muted.out()).toContain("\nnotifications: muted, you are told of nothing of it\n");
-    const neither = harness({
-      fetch: fakeConsole({ ...routes, [AT]: { body: { state: null } } }).fetch,
-      env: SIGNED_IN,
-    });
-    expect(await runCli(["task", "7"], neither.io)).toBe(EXIT.ok);
-    expect(neither.out()).not.toContain("notifications:");
-    // --json carries the choice beside the task.
+    for (const [follow, line] of [
+      [
+        { on: true, usual: false, all: true },
+        "notifications: on, turned on by you: you are told of everything that happens on it",
+      ],
+      // Turned on by hand before the settings came to say on too: everything still.
+      [
+        { on: true, usual: true, all: true },
+        "notifications: on, turned on by you: you are told of everything that happens on it",
+      ],
+      [
+        { on: false, usual: true, all: false },
+        "notifications: off, turned off by you: you are told of nothing of it",
+      ],
+      [{ on: true, usual: true, all: false }, "notifications: on, as your settings have it"],
+      [{ on: false, usual: false, all: false }, "notifications: off, as your settings have it"],
+    ] as const) {
+      const h = harness({
+        fetch: fakeConsole({ ...routes, [AT]: { body: follow } }).fetch,
+        env: SIGNED_IN,
+      });
+      expect(await runCli(["task", "7"], h.io)).toBe(EXIT.ok);
+      expect(h.out()).toContain(`\n${line}\n`);
+    }
+    // --json carries it beside the task.
     const asJson = harness({
-      fetch: fakeConsole({ ...routes, [AT]: { body: { state: "muted" } } }).fetch,
+      fetch: fakeConsole({ ...routes, [AT]: { body: { on: false, usual: true, all: false } } })
+        .fetch,
       env: SIGNED_IN,
     });
     expect(await runCli(["task", "7", "--json"], asJson.io)).toBe(EXIT.ok);
-    expect(JSON.parse(asJson.out())).toMatchObject({ task: { number: 7 }, follow: "muted" });
+    expect(JSON.parse(asJson.out())).toMatchObject({
+      task: { number: 7 },
+      follow: { on: false, usual: true, all: false },
+    });
     // A console of before has no such route: the task is printed, and nothing is said of it.
     const older = harness({ fetch: fakeConsole(routes).fetch, env: SIGNED_IN });
     expect(await runCli(["task", "7"], older.io)).toBe(EXIT.ok);
@@ -10118,7 +10166,7 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
       ["notify", "--project-off", "web"],
       ["notify", "--reset"],
       ["follow", "7"],
-      ["mute", "7", "--off"],
+      ["mute", "7"],
     ]) {
       const h = harness({ fetch: old.fetch, env: SIGNED_IN });
       expect(await runCli(args, h.io), args.join(" ")).toBe(EXIT.failed);
@@ -10143,10 +10191,13 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
       "kind: one of assigned, ready, moved, changed, commented, archived, decision, answered, agent",
     );
     expect(notify.out()).toContain("--own-agents on|off");
+    expect(notify.out()).toContain("[--via <plugin>]");
     for (const word of ["follow", "mute"]) {
       const one = harness({ fetch });
       expect(await runCli(["help", word], one.io)).toBe(EXIT.ok);
-      expect(one.out()).toContain(`console ${word} <number|id> [--off]`);
+      expect(one.out()).toContain(`console ${word} <number|id>
+`);
+      expect(one.out()).not.toContain("--off");
       expect(one.out()).toContain("a console older than the command has no notifications yet");
     }
   });

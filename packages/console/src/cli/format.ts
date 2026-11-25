@@ -1,11 +1,7 @@
 import { createHash } from "node:crypto";
 import { usageNear, usageSaidTogether, usageStanding, usedHundredths } from "../agent-usage.js";
 import { describeEvent } from "../feed-words.js";
-import {
-  NOTIFICATION_KINDS,
-  type NotificationKind,
-  type TaskFollowState,
-} from "../notifications.js";
+import { NOTIFICATION_KINDS, type NotificationKind } from "../notifications.js";
 import { argUsage } from "../plugin/args.js";
 import type {
   RestAgent,
@@ -51,6 +47,7 @@ import type {
   RestSignal,
   RestTask,
   RestTaskBrief,
+  RestTaskFollow,
   RestTeam,
   RestVersion,
   RestVersionSummary,
@@ -456,8 +453,8 @@ export function formatTask(
   comments?: readonly RestComment[],
   /** The address of the task's page at the console, where the command knows it: what a person is given to open. */
   page?: string,
-  /** What the member made of the task for themselves (ADR-0157), where the command read it: said where they follow it or muted it. */
-  follow?: TaskFollowState | null,
+  /** Whether the task tells the member anything (ADR-0157), where the command read it. */
+  follow?: RestTaskFollow | null,
 ): string {
   const lines = [
     `#${task.number} ${task.title}`,
@@ -465,7 +462,9 @@ export function formatTask(
     `id: ${task.id}${task.parentId === null ? "" : `  part of: ${task.parentId}`}`,
     ...(page === undefined ? [] : [pageLine(page)]),
     ...(task.agent == null ? [] : [`written through: ${task.agent}`]),
-    ...(follow == null ? [] : [`notifications: ${follow}, ${TOLD_OF[follow]}`]),
+    ...(follow == null
+      ? []
+      : [`notifications: ${follow.on ? "on" : "off"}, ${toldOfTask(follow)}`]),
     ...scheduleLines(task),
   ];
   if (task.links.length > 0) {
@@ -1265,7 +1264,7 @@ export function formatPluginEvents(
 
 /**
  * One notification in a line (ADR-0157): its id, which `--read` takes; whether the member read
- * it; when; why they are told, the kind and that they follow the task where that is why; the
+ * it; when; why they are told, the kind and that they turned the task on where that is why; the
  * project's key where it happened in one; and what happened, who did it and then the feed's own
  * sentence for the event. What an event carries is what someone wrote, so the line is kept one.
  * A task is named in the sentence by its number; a decision is not, so its id follows, which
@@ -1317,8 +1316,10 @@ const onOrOff = (value: boolean): string => (value ? "on" : "off");
 /**
  * What a member is told of (ADR-0157): a line per kind, on or off, with what it is of and, where
  * they chose otherwise, what it is for a member who chose nothing; then the projects they are
- * told nothing of, and whether what an agent of their own did as them counts. The kinds stand
- * in the vocabulary's order, and one a newer console answers after them, by its name alone.
+ * told nothing of, whether what an agent of their own did as them counts, and a line for each
+ * plugin that carries notifications elsewhere, with the kinds it is not to carry. The kinds
+ * stand in the vocabulary's order, and one a newer console answers after them, by its name
+ * alone.
  */
 export function formatNotificationSettings(settings: RestNotificationSettings): string {
   const known: readonly string[] = NOTIFICATION_KINDS;
@@ -1336,28 +1337,41 @@ export function formatNotificationSettings(settings: RestNotificationSettings): 
     }),
     `projects off: ${settings.projectsOff.length === 0 ? "none" : settings.projectsOff.map((project) => `${project.key} (${project.name})`).join(", ")}`,
     `own agents: ${onOrOff(settings.ownAgents)}  (${settings.ownAgents ? "what an agent of your own did as you is told to you too" : "what an agent of your own did as you is not told to you"})`,
+    // A plugin that carries notifications elsewhere sends what is on, every kind but those
+    // turned off for it: console notify --via <key> --off <kind>.
+    ...settings.carriers.map(
+      (carrier) =>
+        `also sent by ${carrier.key} (${carrier.name}): every kind that is on${carrier.off.length === 0 ? "" : ` but ${carrier.off.join(", ")}`}`,
+    ),
   ].join("\n");
 }
 
-/** What a member who follows a task, or muted it, is told of it (ADR-0157). */
-const TOLD_OF: Readonly<Record<TaskFollowState, string>> = {
-  following: "you are told of everything that happens on it, whatever kinds you have on",
-  muted: "you are told of nothing of it",
-};
+/** What holds of a task's notifications for a member (ADR-0157), in the words that follow on or off. */
+const toldOfTask = (follow: RestTaskFollow): string =>
+  follow.on
+    ? follow.all
+      ? "turned on by you: you are told of everything that happens on it"
+      : "as your settings have it"
+    : follow.usual
+      ? "turned off by you: you are told of nothing of it"
+      : "as your settings have it";
 
 /**
- * What holds of a task for a member once they followed it, muted it or took the choice back
- * (ADR-0157), in a line, with what takes it back where there is something to.
+ * Whether a task tells a member anything, once they turned its notifications on or off
+ * (ADR-0157), in a line, with what turns them the other way.
  */
 export function formatTaskFollow(
   task: Pick<RestTask, "number" | "title">,
-  state: TaskFollowState | null,
+  follow: RestTaskFollow,
 ): string {
-  const named = `#${task.number} ${task.title}`;
-  if (state === null) {
-    return `${named} is neither followed nor muted: you are told of it as console notify says.`;
+  const named = `Notifications of #${task.number} ${task.title} are ${follow.on ? "on" : "off"}`;
+  const other = follow.on
+    ? `Turn them off: console mute ${task.number}`
+    : `Turn them on: console follow ${task.number}`;
+  if (follow.on ? !follow.all : !follow.usual) {
+    return `${named}, as your settings have it${follow.on ? ": you are told of it by the kinds you have on (console notify)" : ""}. ${other}`;
   }
-  return `${state === "following" ? "Following" : "Muted"} ${named}: ${TOLD_OF[state]}. Take it back: console ${state === "following" ? "follow" : "mute"} ${task.number} --off`;
+  return `${named}: ${follow.on ? "you are told of everything that happens on it" : "you are told of nothing of it"}. ${other}`;
 }
 
 /** One plugin in full: what it is, how it stands, what one may run, its skills and its settings. */

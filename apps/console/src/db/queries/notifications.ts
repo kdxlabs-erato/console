@@ -1,4 +1,9 @@
-import type { ChosenNotifications, NotificationKind, TaskFollowState } from "@skillcdn/console/api";
+import {
+  type ChosenNotifications,
+  carriedBy,
+  type NotificationKind,
+  type TaskFollowState,
+} from "@skillcdn/console/api";
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { decisionReachableBy, mayWorkIn, projectVisibleTo, supervises } from "../../auth/policy.js";
@@ -78,7 +83,7 @@ export async function membersToTell(
   return rows.map((row) => ({ person: toPerson(row.person), chosen: row.chosen ?? undefined }));
 }
 
-/** What each of the members who made something of a task made of it: following it, or muted. */
+/** What each of the members who chose something of a task chose: its notifications on (`following`), or off (`muted`). */
 export async function followsOfTask(
   database: Database,
   taskId: string,
@@ -90,7 +95,7 @@ export async function followsOfTask(
   return new Map(rows.map((row) => [row.personId, row.state]));
 }
 
-/** What one member made of a task: following it, muted, or nothing. */
+/** What one member chose of a task: its notifications on, off, or nothing where they left it as their settings have it. */
 export async function followOf(
   database: Database,
   taskId: string,
@@ -104,7 +109,7 @@ export async function followOf(
   return row?.state;
 }
 
-/** Keeps what a member makes of a task, or takes it back with nothing. */
+/** Keeps what a member chose of a task, or takes it back with nothing. */
 export async function setFollow(
   database: Database,
   input: {
@@ -302,12 +307,15 @@ export async function changeChosenNotifications(
 }
 
 /**
- * Whom the console told of each of some events, and under which kind: what a plugin that
- * carries notifications elsewhere is handed with an event (ADR-0157).
+ * Whom the console told of each of some events, and under which kind, as one plugin that
+ * carries notifications elsewhere is handed them with an event (ADR-0157): every member a
+ * notification was made for, but those who turned that kind off for this plugin. A member who
+ * turned the kind off altogether has no notification, and so is none of them.
  */
 export async function notificationsOfEvents(
   database: Database,
   eventIds: readonly number[],
+  plugin: string,
 ): Promise<
   Map<number, { readonly personId: string; readonly kind: string; readonly woken: boolean }[]>
 > {
@@ -321,11 +329,16 @@ export async function notificationsOfEvents(
       personId: notifications.personId,
       kind: notifications.kind,
       woken: notifications.woken,
+      chosen: people.notifications,
     })
     .from(notifications)
+    .innerJoin(people, eq(people.id, notifications.personId))
     .where(inArray(notifications.eventId, [...eventIds]))
     .orderBy(notifications.eventId, notifications.personId);
   for (const row of rows) {
+    if (!carriedBy(row.chosen, plugin, row.kind)) {
+      continue;
+    }
     const list = found.get(row.eventId) ?? [];
     list.push({ personId: row.personId, kind: row.kind, woken: row.woken });
     found.set(row.eventId, list);

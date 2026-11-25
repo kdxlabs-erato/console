@@ -1,9 +1,11 @@
 // What a member is told of what happens on the board (ADR-0157): the kinds of it, what each
 // member is told where they chose nothing, and how one event becomes at most one notification
 // for one member. The console decides who is told and keeps the record; carrying it out of the
-// console, to a messenger say, is a plugin's. The rules that name whom an event concerns are the
-// worker's (`apps/console`), which reads the board; what is here needs no database, and is read
-// by the pages and the command as the console reads it.
+// console, to a messenger say, is a plugin's, of what the console made and no more: a kind a
+// member turned off is carried by nobody, and of the kinds they have on they choose which a
+// plugin carries too. The rules that name whom an event concerns are the worker's
+// (`apps/console`), which reads the board; what is here needs no database, and is read by the
+// pages and the command as the console reads it.
 
 /**
  * What a notification is of, as the member reads why they are told:
@@ -33,7 +35,12 @@ export const NOTIFICATION_KINDS = [
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
-/** What a member made of one task for themselves: told of everything on it, or of nothing. */
+/**
+ * What a member made of one task for themselves, as it is kept: its notifications turned on
+ * where their settings would tell them nothing of it (`following`, told of everything on it),
+ * or turned off where their settings would tell them (`muted`, told of nothing). A member who
+ * left a task as their settings have it keeps nothing: see `taskFollowToKeep`.
+ */
 export const TASK_FOLLOW_STATES = ["following", "muted"] as const;
 export type TaskFollowState = (typeof TASK_FOLLOW_STATES)[number];
 
@@ -66,6 +73,12 @@ export interface ChosenNotifications {
   readonly projectsOff?: readonly string[] | undefined;
   /** Whether they are told of what an agent of their own did as them. */
   readonly ownAgents?: boolean | undefined;
+  /**
+   * The kinds a plugin that carries notifications elsewhere is not to carry for them, by the
+   * plugin's key: what they read in the console and do not want sent on. A kind not named is
+   * carried wherever it is on.
+   */
+  readonly carriersOff?: Readonly<Record<string, readonly NotificationKind[]>> | undefined;
 }
 
 /** What a member is told of: their choices over the defaults of what they are. */
@@ -73,6 +86,7 @@ export interface NotificationSettings {
   readonly kinds: NotificationKinds;
   readonly projectsOff: readonly string[];
   readonly ownAgents: boolean;
+  readonly carriersOff: Readonly<Record<string, readonly NotificationKind[]>>;
 }
 
 /** A member's settings from what they chose, `null` or nothing for a member who chose nothing. */
@@ -90,8 +104,76 @@ export function notificationSettingsOf(
     ) as Record<NotificationKind, boolean>,
     projectsOff: [...(chosen?.projectsOff ?? [])],
     ownAgents: chosen?.ownAgents === true,
+    carriersOff: Object.fromEntries(
+      Object.entries(chosen?.carriersOff ?? {}).map(([plugin, off]) => [plugin, [...off]]),
+    ),
   };
 }
+
+/**
+ * Whether a plugin carries a notification of a kind to a member (ADR-0157): every notification
+ * the console made for them, but of a kind they turned off for that plugin. The console's own
+ * list is what there is to carry: a kind that is off makes no notification, and so reaches no
+ * plugin as one, whatever is kept here of it.
+ */
+export function carriedBy(
+  chosen: ChosenNotifications | null | undefined,
+  plugin: string,
+  kind: string,
+): boolean {
+  const off = chosen?.carriersOff;
+  return !(
+    off !== undefined &&
+    Object.hasOwn(off, plugin) &&
+    (off[plugin] as readonly string[] | undefined)?.includes(kind) === true
+  );
+}
+
+/**
+ * The kinds a task goes on telling a member under by what they are to it: its owner of where
+ * it goes and of what is said and changed on it, whoever is at work on it of its being ready
+ * and of the same. Being given a task (`assigned`) is said once, when it is given, and is
+ * none of what a task still tells. Held equal to the worker's rules by its test
+ * (`apps/console`, `notifications.int.test.ts`).
+ */
+export const TASK_KINDS_OF: Readonly<Record<"owner" | "worker", readonly NotificationKind[]>> = {
+  owner: ["moved", "changed", "commented", "archived"],
+  worker: ["ready", "changed", "commented", "archived"],
+};
+
+/**
+ * Whether a task tells a member anything where they chose nothing of it: they own it or are at
+ * work on it, have one of the kinds on that it tells such a member under, and did not turn its
+ * project off. It is what a task's bell shows before anyone touched it.
+ */
+export function taskToldByDefault(input: {
+  readonly settings: NotificationSettings;
+  readonly owner: boolean;
+  readonly worker: boolean;
+  readonly projectId: string;
+}): boolean {
+  const { settings } = input;
+  if (settings.projectsOff.includes(input.projectId)) {
+    return false;
+  }
+  const on = (kinds: readonly NotificationKind[]): boolean =>
+    kinds.some((kind) => settings.kinds[kind]);
+  return (input.owner && on(TASK_KINDS_OF.owner)) || (input.worker && on(TASK_KINDS_OF.worker));
+}
+
+/** Whether a task tells a member anything, by what they chose of it over what their settings say. */
+export const taskTold = (chosen: TaskFollowState | undefined, usual: boolean): boolean =>
+  chosen === undefined ? usual : chosen === "following";
+
+/**
+ * What is kept when a member turns a task's notifications on or off: nothing where that is
+ * what their settings say already, so that a task turned off and on again is told as before,
+ * by their kinds; `following` where they turn on a task their settings would be silent of,
+ * which then tells them of everything on it, since no kind of theirs would; `muted` where
+ * they turn off one their settings would tell them of.
+ */
+export const taskFollowToKeep = (on: boolean, usual: boolean): TaskFollowState | undefined =>
+  on === usual ? undefined : on ? "following" : "muted";
 
 /**
  * The kind an event is told to one member under, or nothing where they are told nothing of it.
@@ -99,9 +181,10 @@ export function notificationSettingsOf(
  * that says most first: a task made ready that they are at work on is `ready` before it is
  * `assigned`.
  *
- * - A task they muted tells them nothing, whatever they are to it.
- * - A task they follow tells them everything, under the first kind, whatever their settings:
- *   following is the member saying so of that one task.
+ * - A task whose notifications they turned off (`muted`) tells them nothing, whatever they
+ *   are to it.
+ * - A task whose notifications they turned on themselves (`following`) tells them everything,
+ *   under the first kind, whatever their settings: it is the member saying so of that one task.
  * - Otherwise they are told under the first kind they have on, and of nothing in a project
  *   they turned off.
  *
@@ -127,6 +210,18 @@ export function notificationKindFor(input: {
   return candidates.find((kind) => settings.kinds[kind]);
 }
 
+/**
+ * The moment from which a member's list shows what is new, kept from one opening of it to the
+ * next until its rows were shown: the moment the first of them read something at. An opening
+ * whose answer never arrived, the list closed and opened again before it or the listing
+ * failed, read the notifications all the same, so that the next opening reads nothing and
+ * would show nothing as new: what it shows as new is what was read at the kept moment on.
+ */
+export const unseenSince = (
+  kept: string | undefined,
+  read: { readonly read: number; readonly at: string },
+): string | undefined => kept ?? (read.read > 0 ? read.at : undefined);
+
 /** How many notifications a listing answers at once, and at most. */
 export const NOTIFICATIONS_PAGE = 50;
 export const MAX_NOTIFICATIONS_PAGE = 200;
@@ -134,5 +229,7 @@ export const MAX_NOTIFICATIONS_PAGE = 200;
 export const MAX_NOTIFICATIONS_READ = 200;
 /** How many projects a member may turn off. */
 export const MAX_NOTIFICATION_PROJECTS_OFF = 200;
+/** How many plugins a member may keep a choice of what each carries for. */
+export const MAX_NOTIFICATION_CARRIERS = 50;
 /** For how many days a notification is kept (the record is the feed's; this is the member's list of it). */
 export const NOTIFICATIONS_KEPT_DAYS = 90;

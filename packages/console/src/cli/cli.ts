@@ -58,7 +58,6 @@ import {
   MAX_NOTIFICATIONS_PAGE,
   NOTIFICATION_KINDS,
   NOTIFICATIONS_PAGE,
-  type TaskFollowState,
 } from "../notifications.js";
 import { onboardingTitle } from "../onboarding.js";
 import { capabilityWords } from "../plugin/capabilities.js";
@@ -3475,10 +3474,10 @@ const task: Command = async (args, io) => {
     // for the console's own answer.
     session.json ? project.runs({ task: found.id }) : project.runBriefs({ task: found.id }),
     project.comments(found.id),
-    // What the member made of the task for themselves (ADR-0157). A console of before has no
-    // such route, and nothing is said of it then.
+    // Whether the task tells the member anything (ADR-0157). A console of before has no such
+    // route, and nothing is said of it then.
     project.taskFollow(found.id).then(
-      (kept) => kept.state,
+      (kept) => kept,
       (error: unknown) => {
         if (noSuchRoute(error)) {
           return null;
@@ -3574,17 +3573,19 @@ const notifications: Command = async (args, io) => {
 };
 
 const NOTIFY_USAGE =
-  "console notify [--on <kind>]... [--off <kind>]... [--project-off <key>]... [--project-on <key>]... [--own-agents on|off]  |  notify --reset";
+  "console notify [--on <kind>]... [--off <kind>]... [--via <plugin>] [--project-off <key>]... [--project-on <key>]... [--own-agents on|off]  |  notify --reset";
 
 // What the member is told of (ADR-0157): each kind on or off, the projects they are told
-// nothing of, and whether what an agent of their own did as them counts; read, or changed in
-// what the flags say, or put back to what a member who chose nothing has.
+// nothing of, whether what an agent of their own did as them counts, and what a plugin that
+// carries notifications elsewhere sends on; read, or changed in what the flags say, or put
+// back to what a member who chose nothing has.
 const notify: Command = async (args, io) => {
   const { values } = parse(
     args,
     {
       on: { type: "string", multiple: true },
       off: { type: "string", multiple: true },
+      via: { type: "string" },
       "project-off": { type: "string", multiple: true },
       "project-on": { type: "string", multiple: true },
       "own-agents": { type: "string" },
@@ -3612,6 +3613,14 @@ const notify: Command = async (args, io) => {
     ...turnedOn.map((kind) => [kind, true] as const),
     ...turnedOff.map((kind) => [kind, false] as const),
   ];
+  // With --via, --on and --off say what that plugin carries of what is on, and not the kinds
+  // themselves.
+  const via = text(values, "via");
+  if (via !== undefined && kinds.length === 0) {
+    throw misuse(
+      `--via names the plugin --on and --off are said of: say a kind with one of them. ${NOTIFY_USAGE}`,
+    );
+  }
   const projects = projectsOff.length > 0 || projectsOn.length > 0;
   const changes = kinds.length > 0 || projects || ownAgents !== undefined;
   if (on(values, "reset") && changes) {
@@ -3648,7 +3657,11 @@ const notify: Command = async (args, io) => {
     await ofNotifications(
       io,
       client.updateNotificationSettings({
-        ...(kinds.length === 0 ? {} : { kinds: Object.fromEntries(kinds) }),
+        ...(kinds.length === 0
+          ? {}
+          : via === undefined
+            ? { kinds: Object.fromEntries(kinds) }
+            : { carriers: { [via]: Object.fromEntries(kinds) } }),
         ...(off === undefined ? {} : { projectsOff: off }),
         ...(ownAgents === undefined ? {} : { ownAgents }),
       }),
@@ -3656,25 +3669,22 @@ const notify: Command = async (args, io) => {
   );
 };
 
-// What a member makes of one task for themselves (ADR-0157): `follow`, told of everything that
-// happens on it whatever their kinds say, and `mute`, told of nothing of it; `--off` on either
-// takes the choice back, whichever it was.
+// Whether one task tells a member anything (ADR-0157): `follow` turns its notifications on,
+// `mute` off. A task turned on that their settings would be silent of tells them of
+// everything on it; one turned to what their settings say already is told by their kinds.
 const following =
-  (state: TaskFollowState): Command =>
+  (turned: boolean): Command =>
   async (args, io) => {
-    const { values, positionals } = parse(args, { off: { type: "boolean" } });
+    const { values, positionals } = parse(args, {});
     const ref = theOne(
       positionals,
-      `Say which task: console ${state === "following" ? "follow" : "mute"} <number|id> [--off]`,
+      `Say which task: console ${turned ? "follow" : "mute"} <number|id>`,
     );
     const session = await open(io, values);
     const project = await session.project();
     const found = await project.task(ref);
-    const kept = await ofNotifications(
-      io,
-      project.followTask(found.id, on(values, "off") ? null : state),
-    );
-    answer(io, session, kept, () => formatTaskFollow(found, kept.state));
+    const kept = await ofNotifications(io, project.followTask(found.id, turned));
+    answer(io, session, kept, () => formatTaskFollow(found, kept));
     return EXIT.ok;
   };
 
@@ -7549,8 +7559,8 @@ const COMMANDS: Readonly<Record<string, Command>> = {
   work,
   notifications,
   notify,
-  follow: following("following"),
-  mute: following("muted"),
+  follow: following(true),
+  mute: following(false),
   tasks,
   task,
   goals,

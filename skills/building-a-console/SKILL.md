@@ -5,7 +5,7 @@ license: MIT
 compatibility: A shell with Node.js 24 or newer and npm or pnpm, and an agent that reads and writes files. For looking at the pages against a board, the console command signed in by a person. A browser the agent can drive is optional. No key of the agent's own is needed, and it never sees a token.
 metadata:
   author: skillcdn
-  version: "1.12"
+  version: "1.13"
 skillcdn:
   translations:
     ko:
@@ -69,7 +69,7 @@ Produces the **configuration**, as [configuring.md](references/configuring.md) l
 
 ### Phase 3: Compose pages of one's own
 
-Produces the **pages**. For a page the default console lacks: `useConsoleData(client, projectKey)` answers the workspace and the project the page is on, kept current by the project's stream, with the actions; the components take their data as props and nothing from the network; `matchRoute`, `PATHS`, `projectHref`, `taskHref`, `decisionHref` and `docHref` name the addresses; `Shell` is the header with the tabs and the person's menu. A page as a tab is `pages` in the configuration, its `render` composing the components over what it is given (the README's "Pages of your own" says what that is), with figures drawn by the charts (the README's "Charts" says which is for what) and icons taken from the console's pack by name (`Icon`; the README's "Icons"); a composition of one's own is `src/console.tsx` with pages added or taken away (configuring.md "A page of one's own"). A page composes the board's own data and holds none of its own: a page that would keep records, run logic or reach outside is a feature of the organization's work, which is a plugin, not a page ([building-a-plugin](/skills/building-a-plugin/SKILL.md)); a plugin's pages come in its package and run in frames the console serves, drawn into the tabs by the console itself, so that a console's pages need no build and no change for one. A request without a page of its own skips this phase.
+Produces the **pages**. For a page the default console lacks: `useConsoleData(client, projectKey)` answers the workspace and the project the page is on, kept current by the project's stream, with the actions; the components take their data as props and nothing from the network; `matchRoute`, `PATHS`, `projectHref`, `taskHref`, `decisionHref` and `docHref` name the addresses; `Shell` is the header with the tabs and the person's menu, with what it is given as `notifications` before the menu, the bell a person's notifications open under (`NotificationsMenu`). A page as a tab is `pages` in the configuration, its `render` composing the components over what it is given (the README's "Pages of your own" says what that is), with figures drawn by the charts (the README's "Charts" says which is for what) and icons taken from the console's pack by name (`Icon`; the README's "Icons"); a composition of one's own is `src/console.tsx` with pages added or taken away (configuring.md "A page of one's own"). A page composes the board's own data and holds none of its own: a page that would keep records, run logic or reach outside is a feature of the organization's work, which is a plugin, not a page ([building-a-plugin](/skills/building-a-plugin/SKILL.md)); a plugin's pages come in its package and run in frames the console serves, drawn into the tabs by the console itself, so that a console's pages need no build and no change for one. A request without a page of its own skips this phase.
 
 ### Phase 4: Run it against the board
 

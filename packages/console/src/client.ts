@@ -132,7 +132,6 @@ import {
   type RestTask,
   type RestTaskBriefs,
   type RestTaskFollow,
-  type RestTaskFollowInput,
   type RestTaskInput,
   type RestTaskPatch,
   type RestTasks,
@@ -427,10 +426,10 @@ export interface ProjectClient {
   taskBriefs(filter?: TaskFilter, signal?: AbortSignal): Promise<RestTaskBriefs>;
   /** One task, by its id or by its number. */
   task(ref: string, signal?: AbortSignal): Promise<RestTask>;
-  /** What the asker made of a task for themselves (ADR-0157): following it, muted, or neither. By its id or its number. */
+  /** Whether a task tells the asker anything (ADR-0157), and whether their settings alone would have it so. By its id or its number. */
   taskFollow(ref: string, signal?: AbortSignal): Promise<RestTaskFollow>;
-  /** Follows a task, mutes it, or with `null` takes the choice back. */
-  followTask(ref: string, state: RestTaskFollowInput["state"]): Promise<RestTaskFollow>;
+  /** Turns a task's notifications on or off for the asker. */
+  followTask(ref: string, on: boolean): Promise<RestTaskFollow>;
   createTask(input: RestTaskInput): Promise<RestTask>;
   updateTask(id: string, patch: RestTaskPatch): Promise<RestTask>;
   /** Puts a done or dropped task away (ADR-0029), or brings one back. */
@@ -1335,8 +1334,8 @@ export function createClient(options: ClientOptions = {}): ConsoleClient {
           restTaskFollowSchema,
           signal,
         ),
-      followTask: (ref, state) =>
-        request("PUT", `${base}${at("tasks", ref)}/follow`, { state }, restTaskFollowSchema),
+      followTask: (ref, on) =>
+        request("PUT", `${base}${at("tasks", ref)}/follow`, { on }, restTaskFollowSchema),
       createTask: (input) => request("POST", `${base}${at("tasks")}`, input, restTaskSchema),
       updateTask: (id, patch) =>
         request("PATCH", `${base}${at("tasks", id)}`, patch, restTaskSchema),

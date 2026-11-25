@@ -76,10 +76,11 @@ import {
   MIN_OPTIONS,
 } from "./limits.js";
 import {
+  MAX_NOTIFICATION_CARRIERS,
   MAX_NOTIFICATION_PROJECTS_OFF,
   MAX_NOTIFICATIONS_READ,
-  TASK_FOLLOW_STATES,
 } from "./notifications.js";
+import { MAX_PLUGIN_KEY_LENGTH } from "./plugin/limits.js";
 import { PLUGIN_WIDGET_SIZE_NAMES } from "./plugin/manifest.js";
 import { hasForbiddenCodePoint } from "./text.js";
 import {
@@ -2354,9 +2355,13 @@ export const restNotificationSchema = z.object({
   id: uuid,
   /** Why they are told, one of `NOTIFICATION_KINDS`; read as a word, so that a kind a newer console adds is read too. */
   kind: z.string(),
-  /** Whether they are told because they follow the task, whatever their settings say. */
+  /** Whether they are told because they turned the task's notifications on themselves, whatever their settings say. */
   followed: z.boolean(),
-  /** When they read it; `null` while they have not. */
+  /**
+   * When they read it; `null` while they have not. Whoever opens their list reads all of it at
+   * one moment, the `at` marking as read answers: a notification read at that moment was new
+   * to them until then, and one read before it was not.
+   */
   readAt: z.nullable(instant),
   createdAt: instant,
   event: restEventSchema,
@@ -2387,34 +2392,55 @@ export const restNotificationsReadInputSchema = z
   );
 export type RestNotificationsReadInput = z.infer<typeof restNotificationsReadInputSchema>;
 
-/** What marking as read answers: how many were marked, and how many are still not read. */
-export const restNotificationsReadSchema = z.object({ read: count, unread: count });
+/**
+ * What marking as read answers: how many were marked, how many are still not read, and the
+ * moment those marked were read at, which is their `readAt` from now on.
+ */
+export const restNotificationsReadSchema = z.object({ read: count, unread: count, at: instant });
 export type RestNotificationsRead = z.infer<typeof restNotificationsReadSchema>;
 
 /**
  * What a member is told of (ADR-0157): each kind on or off, by its name, with what it would
- * be had they chosen nothing; the projects they are told nothing of; and whether they are told
- * of what an agent of their own did as them. A map by name, so that a kind a newer console
- * adds is read.
+ * be had they chosen nothing; the projects they are told nothing of; whether they are told
+ * of what an agent of their own did as them; and the plugins that carry notifications
+ * elsewhere, to a messenger say, each with the kinds the member turned off for it: a plugin
+ * carries what the console made for them, every kind but those. A map by name, so that a kind
+ * a newer console adds is read.
  */
 export const restNotificationSettingsSchema = z.object({
   kinds: z.record(z.string(), z.boolean()),
   defaults: z.record(z.string(), z.boolean()),
   projectsOff: z.array(z.object({ key: projectKey, name: z.string() })),
   ownAgents: z.boolean(),
+  carriers: z.array(z.object({ key: z.string(), name: z.string(), off: z.array(z.string()) })),
 });
 export type RestNotificationSettings = z.infer<typeof restNotificationSettingsSchema>;
 
 /**
  * What `PUT /api/v1/notifications/settings` is sent: the kinds turned on or off, by name, the
  * others staying as they are; the projects told nothing of, by their keys, the whole list;
- * whether one's own agents count; or `reset`, alone, for what a member who chose nothing has.
+ * whether one's own agents count; what a plugin carries, by the plugin's key, each kind named
+ * carried (`true`) or not (`false`), the others staying as they are; or `reset`, alone, for
+ * what a member who chose nothing has.
  */
 export const restNotificationSettingsInputSchema = z
   .object({
     kinds: z.optional(z.record(line(MAX_NOTIFICATION_KIND_LENGTH), z.boolean())),
     projectsOff: z.optional(z.array(projectKey).check(z.maxLength(MAX_NOTIFICATION_PROJECTS_OFF))),
     ownAgents: z.optional(z.boolean()),
+    carriers: z.optional(
+      z
+        .record(
+          line(MAX_PLUGIN_KEY_LENGTH),
+          z.record(line(MAX_NOTIFICATION_KIND_LENGTH), z.boolean()),
+        )
+        .check(
+          z.refine(
+            (carriers) => Object.keys(carriers).length <= MAX_NOTIFICATION_CARRIERS,
+            "names too many plugins",
+          ),
+        ),
+    ),
     reset: z.optional(z.literal(true)),
   })
   .check(
@@ -2423,28 +2449,35 @@ export const restNotificationSettingsInputSchema = z
         input.reset === true
           ? input.kinds === undefined &&
             input.projectsOff === undefined &&
-            input.ownAgents === undefined
+            input.ownAgents === undefined &&
+            input.carriers === undefined
           : input.kinds !== undefined ||
             input.projectsOff !== undefined ||
-            input.ownAgents !== undefined,
+            input.ownAgents !== undefined ||
+            input.carriers !== undefined,
       "must name something to change, or reset alone",
     ),
   );
 export type RestNotificationSettingsInput = z.infer<typeof restNotificationSettingsInputSchema>;
 
 /**
- * What the asker made of one task for themselves (ADR-0157): `following`, told of everything
- * that happens on it whatever their settings; `muted`, told of nothing of it; `null`, told as
- * their settings say. The answer of `GET` and `PUT .../tasks/<id>/follow`.
+ * Whether one task tells the asker anything (ADR-0157): `on`, as it stands, and `usual`, as
+ * their settings have it where they chose nothing of the task, on for a task that is theirs
+ * and that a kind they have on would tell them of. A task turned on where `usual` is off
+ * tells them of everything on it, which `all` says, and goes on doing so whatever their
+ * settings come to say; one turned off tells them nothing; one left as usual tells them by
+ * their kinds. The answer of `GET` and `PUT .../tasks/<id>/follow`.
  */
 export const restTaskFollowSchema = z.object({
-  state: z.nullable(z.enum(TASK_FOLLOW_STATES)),
+  on: z.boolean(),
+  usual: z.boolean(),
+  all: z.boolean(),
 });
 export type RestTaskFollow = z.infer<typeof restTaskFollowSchema>;
 
-/** What `PUT .../tasks/<id>/follow` is sent: the same, `null` to take the choice back. */
+/** What `PUT .../tasks/<id>/follow` is sent: the task's notifications on, or off. */
 export const restTaskFollowInputSchema = z.object({
-  state: z.nullable(z.enum(TASK_FOLLOW_STATES)),
+  on: z.boolean(),
 });
 export type RestTaskFollowInput = z.infer<typeof restTaskFollowInputSchema>;
 

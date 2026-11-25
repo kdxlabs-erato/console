@@ -38,7 +38,8 @@ import {
   listSearch,
   Markdown,
   Meter,
-  NotificationList,
+  NotificationSettings,
+  NotificationsMenu,
   Pager,
   PersonChip,
   PersonOption,
@@ -62,6 +63,7 @@ import {
   StateBadge,
   Stats,
   TASK_STATES,
+  TaskBell,
   TaskList,
   Time,
   useWords,
@@ -128,6 +130,65 @@ import {
 
 const TODAY_NOON = "2026-03-12T12:00:00.000Z";
 let noticed = 0;
+
+/** A task's bell that turns as it is pressed. */
+function BellSpecimen() {
+  const [on, setOn] = useState(true);
+  return <TaskBell on={on} onChange={setOn} />;
+}
+
+/** What a member is told of, with a plugin that carries it elsewhere: each choice kept as it is made. */
+function NotificationSettingsSpecimen() {
+  const defaults = {
+    assigned: false,
+    ready: false,
+    moved: false,
+    changed: false,
+    commented: false,
+    archived: false,
+    decision: false,
+    answered: false,
+    agent: true,
+  };
+  const [kinds, setKinds] = useState<Record<string, boolean>>({
+    ...defaults,
+    commented: true,
+    decision: true,
+  });
+  const [off, setOff] = useState<readonly string[]>(["commented"]);
+  return (
+    <NotificationSettings
+      settings={{
+        kinds,
+        defaults,
+        projectsOff: [],
+        ownAgents: false,
+        carriers: [{ key: "messenger", name: "Messenger", off: [...off] }],
+      }}
+      projects={[
+        { key: "ledger", name: "Ledger" },
+        { key: "ops", name: "Operations" },
+      ]}
+      onChange={(input) => {
+        if (input.reset === true) {
+          setKinds(defaults);
+          setOff([]);
+          return;
+        }
+        setKinds((before) => ({ ...before, ...input.kinds }));
+        const carried = input.carriers?.messenger;
+        if (carried !== undefined) {
+          setOff((before) => [
+            ...before.filter((kind) => carried[kind] !== true),
+            ...Object.keys(carried).filter(
+              (kind) => carried[kind] === false && !before.includes(kind),
+            ),
+          ]);
+        }
+      }}
+    />
+  );
+}
 
 /** A notification of an invented event: why the reader is told, what happened, and when they read it. */
 function notice(
@@ -916,7 +977,7 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
     <Part
       name="button"
       classes="sc-button*"
-      use="Anything pressed. Primary is the one act of a form or a page, secondary the act beside it, ghost an act among content, danger what takes something away; small in a row or a head."
+      use="Anything pressed. Primary is the one act of a form or a page, secondary the act beside it, ghost an act among content, danger what takes something away; small in a row or a head; a glyph alone where it is pressed to turn something on or off."
     >
       <Specimen label="The variants" row>
         <Button variant="primary">Save the task</Button>
@@ -954,6 +1015,13 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
         <span className="sc-button sc-button-secondary sc-button-sm" aria-disabled="true">
           Previous
         </span>
+      </Specimen>
+      <Specimen
+        label="A glyph alone, pressed to turn something on or off: a task's bell, on and off"
+        row
+      >
+        <BellSpecimen />
+        <TaskBell on={false} onChange={() => undefined} />
       </Specimen>
       <Specimen label="A link that reads as a button" row>
         <LinkButton href="#button" variant="primary">
@@ -1237,7 +1305,7 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
     <Part
       name="menu"
       classes="sc-menu*"
-      use="What opens from a button over the page: the person's menu, a card's."
+      use="What opens from a button over the page: the person's menu, a card's, and the notifications under their bell."
     >
       <Specimen label="At the header's end: press it, and it opens over the page">
         <HeaderBar>
@@ -1259,6 +1327,63 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
         <div className="sc-menu">
           <MenuPanel className="dev-static" />
         </div>
+      </Specimen>
+      <Specimen label="Opened from a glyph alone, with a dot while something is new: press the bell, and what the member is told of opens under it, two new and two seen before">
+        <HeaderBar>
+          <div className="sc-header-inner">
+            <div className="sc-header-end">
+              <NotificationsMenu
+                unread={2}
+                notifications={[
+                  notice("commented", "task.commented", null, {
+                    number: 14,
+                    title: "Reconcile the three differences of the February close",
+                    excerpt: "The third one is the bank's, I wrote to them this morning.",
+                  }),
+                  notice("decision", "decision.raised", TODAY_NOON, {
+                    question: "Which of the two statements is the one we file?",
+                  }),
+                  notice("moved", "task.moved", "2026-03-11T08:00:00.000Z", {
+                    number: 9,
+                    title: "Fix the bank statement import that fails",
+                    from: "in_progress",
+                    to: "in_review",
+                  }),
+                  notice("agent", "agent.state_changed", "2026-03-11T08:00:00.000Z", {
+                    login: "acme-mira",
+                    handle: "mira",
+                    state: "stopped",
+                    was: "running",
+                    detail: "stopped",
+                  }),
+                ]}
+                since={TODAY_NOON}
+                href={() => "#menu"}
+                settingsHref="#menu"
+                more
+                onMore={() => undefined}
+                onOpen={() => undefined}
+                onNavigate={() => undefined}
+              />
+            </div>
+          </div>
+        </HeaderBar>
+      </Specimen>
+      <Specimen label="With nothing new, and nothing in it yet">
+        <HeaderBar>
+          <div className="sc-header-inner">
+            <div className="sc-header-end">
+              <NotificationsMenu
+                unread={0}
+                notifications={[]}
+                href={() => undefined}
+                settingsHref="#menu"
+                onOpen={() => undefined}
+                onNavigate={() => undefined}
+              />
+            </div>
+          </div>
+        </HeaderBar>
       </Specimen>
     </Part>
 
@@ -1752,8 +1877,8 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
 
     <Part
       name="count"
-      classes="sc-column-count, sc-nav-count"
-      use="A number beside a title or a tab."
+      classes="sc-column-count, sc-nav-count, sc-nav-dot"
+      use="A number beside a title or a tab; and a dot where something is new and how many says nothing more."
     >
       <Specimen label="Beside a title">
         <h3 className="sc-section-title">
@@ -1772,6 +1897,11 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
           <span className="sc-tab-label">My work</span>
           <span className="sc-nav-count">24</span>
         </a>
+      </Specimen>
+      <Specimen label="A dot where something is new and how many says nothing more" row>
+        <span className="dev-row">
+          Something new <span className="sc-nav-dot" role="img" aria-label="New" />
+        </span>
       </Specimen>
     </Part>
 
@@ -2236,6 +2366,9 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
       classes="sc-settings*"
       use="Settings as rows: a label, its control, a hint."
     >
+      <Specimen label="What a member is told of: each kind a choice, and of what is on, what a plugin sends too">
+        <NotificationSettingsSpecimen />
+      </Specimen>
       <Specimen label="Read: a row per setting, its name beside its value">
         <dl className="sc-settings-list">
           <div className="sc-settings-item">
@@ -2323,7 +2456,7 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
     <Part
       name="rows"
       classes="sc-task-row*, sc-task-rows*"
-      use="A list as rows, each a link with a title and what is said of it at the end; a row of something already seen is lighter."
+      use="A list as rows, each a link with a title and what is said of it at the end."
     >
       <Specimen label="Tasks, each with its project, its state and what is said of it">
         <TaskList
@@ -2341,34 +2474,6 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
           taskHref={() => "#rows"}
           today={TODAY}
           label="Tasks with a day further off"
-        />
-      </Specimen>
-      <Specimen label="What a member is told of: two not read yet, and two that were, lighter">
-        <NotificationList
-          notifications={[
-            notice("commented", "task.commented", null, {
-              number: 14,
-              title: "Reconcile the three differences of the February close",
-              excerpt: "The third one is the bank's, I wrote to them this morning.",
-            }),
-            notice("decision", "decision.raised", null, {
-              question: "Which of the two statements is the one we file?",
-            }),
-            notice("moved", "task.moved", TODAY_NOON, {
-              number: 9,
-              title: "Fix the bank statement import that fails",
-              from: "in_progress",
-              to: "in_review",
-            }),
-            notice("agent", "agent.state_changed", TODAY_NOON, {
-              login: "acme-mira",
-              handle: "mira",
-              state: "stopped",
-              was: "running",
-              detail: "stopped",
-            }),
-          ]}
-          href={() => "#rows"}
         />
       </Specimen>
     </Part>

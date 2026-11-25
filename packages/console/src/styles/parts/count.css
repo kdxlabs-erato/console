@@ -12,6 +12,16 @@
   line-height: 1.25rem;
 }
 
+/* Something new, where how many says nothing more: a dot in the point colour, at the corner
+   of the button that opens it and at the end of each row that is new. */
+.sc-nav-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--sc-radius-full);
+  background: var(--sc-color-point);
+}
+
 .sc-column-count {
   display: inline-flex;
   align-items: center;

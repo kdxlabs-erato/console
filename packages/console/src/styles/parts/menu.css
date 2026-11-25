@@ -90,6 +90,188 @@
   }
 }
 
+/* A menu opened from a glyph alone, the bell in the page's head: a square as high as a
+   control, with a dot at its corner while something there is new. */
+.sc-menu-summary-glyph {
+  position: relative;
+  justify-content: center;
+  width: var(--sc-control-size);
+  padding-inline: 0;
+}
+
+.sc-menu-summary-glyph > .sc-nav-dot {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  box-shadow: 0 0 0 2px var(--sc-color-bg);
+}
+
+/* A menu that is a list of what happened, the notifications: wider than a menu of pages, with
+   a head that stays while the rows scroll under it. On a phone it is as wide as the window
+   leaves, under the page's head, wherever its button stands. */
+.sc-menu-panel-list {
+  width: 24rem;
+  max-width: calc(100vw - 2 * var(--sc-space-3));
+  max-height: min(36rem, calc(100dvh - 4.5rem));
+  padding: 0;
+}
+
+@media (max-width: 40rem) {
+  .sc-menu-panel-list {
+    position: fixed;
+    top: var(--sc-header-height);
+    right: var(--sc-space-3);
+    left: var(--sc-space-3);
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - var(--sc-header-height) - var(--sc-space-3));
+  }
+}
+
+.sc-menu-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sc-space-3);
+  padding: var(--sc-space-3) var(--sc-space-4);
+  border-bottom: var(--sc-border);
+  border-radius: var(--sc-radius-lg) var(--sc-radius-lg) 0 0;
+  background: var(--sc-color-bg-raised);
+}
+
+.sc-menu-title {
+  margin: 0;
+  color: var(--sc-color-text);
+  font-weight: var(--sc-weight-medium);
+}
+
+.sc-menu-head-link {
+  color: var(--sc-color-text-muted);
+  font-size: var(--sc-text-xs);
+  text-decoration: none;
+}
+
+.sc-menu-head-link:hover {
+  color: var(--sc-color-accent);
+}
+
+/* What a list says in place of its rows: that it is on its way, that it is empty, what went wrong. */
+.sc-menu-note {
+  display: grid;
+  justify-items: center;
+  gap: var(--sc-space-1);
+  margin: 0;
+  padding: var(--sc-space-6) var(--sc-space-4);
+  color: var(--sc-color-text-muted);
+  text-align: center;
+}
+
+.sc-menu-note > p {
+  margin: 0;
+}
+
+.sc-menu-rows {
+  display: grid;
+  margin: 0;
+  padding: var(--sc-space-1);
+  list-style: none;
+}
+
+/* One thing that happened: who did it as a picture, what happened in two lines at most, and
+   under them why the reader is told, where and when, on one line. The whole row leads to the
+   thing. One that is new is in the text's own colour with a dot at its end; one seen before is
+   quieter, so that what is new stands out among them. */
+.sc-menu-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--sc-space-3);
+  padding: var(--sc-space-2) var(--sc-space-3);
+  border-radius: var(--sc-radius-md);
+  color: var(--sc-color-text-muted);
+  text-decoration: none;
+  transition: background var(--sc-transition);
+}
+
+a.sc-menu-row:hover {
+  background: var(--sc-color-bg-inset);
+}
+
+.sc-menu-row > .sc-avatar,
+.sc-menu-row-glyph {
+  margin-top: 0.125rem;
+}
+
+.sc-menu-row-glyph {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--sc-color-text-faint);
+}
+
+.sc-menu-row-text {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.sc-menu-row-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+  line-height: var(--sc-leading-snug);
+}
+
+.sc-menu-row-who {
+  font-weight: var(--sc-weight-medium);
+}
+
+.sc-menu-row-new .sc-menu-row-title {
+  color: var(--sc-color-text);
+}
+
+/* Why and where give way to when: a long project's name is cut, and the moment never. */
+.sc-menu-row-facts {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sc-space-2);
+  min-width: 0;
+  color: var(--sc-color-text-faint);
+  font-size: var(--sc-text-xs);
+  white-space: nowrap;
+}
+
+.sc-menu-row-why {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sc-menu-row-facts > .sc-time {
+  flex: none;
+  margin-inline-start: auto;
+}
+
+.sc-menu-row > .sc-nav-dot {
+  margin-top: 0.4375rem;
+}
+
+.sc-menu-foot {
+  padding: var(--sc-space-1);
+  border-top: var(--sc-border);
+}
+
+.sc-menu-foot > .sc-menu-link {
+  text-align: center;
+}
+
 .sc-menu-who {
   display: flex;
   flex-direction: column;

@@ -22,7 +22,7 @@ Handing a task over frees your session only where a message reaches you while th
 
 ## Tips for your allowance
 
-Your product runs on a subscription, and what it allows is counted in windows that reset: Claude Code counts a short one and the week. Every session signed in with it draws on the one allowance, your main session and each subagent alike.
+Your product runs on a subscription, and what it allows is counted in windows that reset, which are the product's and the plan's to name: Claude Code counts a short one, where the plan keeps one, the week, and a week of one model's own beside it. Every session signed in with it draws on the one allowance, your main session and each subagent alike.
 
 - **Look at it when it matters:** before you start work that spends much of it, several subagents at once or a long task, and once more if that work runs long; not at every turn. Speak of it to people only where it changes what they wait for, as when work stops until a reset.
 

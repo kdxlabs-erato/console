@@ -73,6 +73,23 @@
   color: var(--sc-color-danger);
 }
 
+/* A button that is a glyph alone, a bell that is pressed to turn it: a square, as wide as it
+   is high. Its name is its label, which is read and not shown. One that is on stands in the
+   text's colour, one that is off quieter. */
+.sc-button-glyph {
+  flex: none;
+  aspect-ratio: 1;
+  padding: 0;
+}
+
+.sc-button-glyph[aria-pressed="true"] {
+  color: var(--sc-color-text);
+}
+
+.sc-button-glyph[aria-pressed="false"] {
+  color: var(--sc-color-text-faint);
+}
+
 .sc-button-danger:hover:not(:disabled) {
   background: var(--sc-color-danger-subtle);
   border-color: var(--sc-color-danger);
@@ -99,5 +116,11 @@
     min-height: 2.25rem;
     padding: 0 var(--sc-space-3);
     font-size: var(--sc-text-sm);
+  }
+
+  /* A glyph alone stays a square among them. */
+  .sc-page-head .sc-button-glyph,
+  .sc-task-actions > .sc-button-glyph {
+    padding: 0;
   }
 }

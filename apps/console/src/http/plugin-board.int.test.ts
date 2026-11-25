@@ -12,6 +12,7 @@ import {
   restErrorSchema,
   restEventsSchema,
   restMyDecisionsSchema,
+  restNotificationSettingsSchema,
   restPeopleSchema,
   restPluginDetailSchema,
   restPluginEventsSchema,
@@ -1444,6 +1445,57 @@ describe("a plugin on the board", () => {
       });
     } finally {
       await consented(held);
+    }
+  });
+
+  it("names a plugin that carries notifications among what a member is told of, and keeps which kinds it is not to carry (ADR-0157)", async () => {
+    const installs = drizzleOf(testDatabase.database);
+    const [install] = await installs
+      .select({ consent: pluginInstalls.consent })
+      .from(pluginInstalls)
+      .where(eq(pluginInstalls.key, "audit"));
+    const held = install?.consent ?? [];
+    const consented = (consent: readonly string[]) =>
+      installs
+        .update(pluginInstalls)
+        .set({ consent: [...consent] })
+        .where(eq(pluginInstalls.key, "audit"));
+    const AT = `${REST_ROUTES.notifications}/settings`;
+    const read = async (response: Response) =>
+      restNotificationSettingsSchema.parse(await response.json()).carriers;
+    const settings = async () => read(await h.request(AT, { headers: { cookie: member } }));
+    const choose = (body: unknown) => h.request(AT, json(body, member, "PUT"));
+    // No plugin was given the capability: none carries, and none is named or chosen of.
+    expect(await settings()).toEqual([]);
+    expect((await choose({ carriers: { audit: { commented: false } } })).status).toBe(400);
+    await consented([...held, "notifications:read"]);
+    try {
+      // By its key and its name, with nothing turned off: it carries whatever is on.
+      const named = await settings();
+      expect(named).toHaveLength(1);
+      expect(named[0]).toMatchObject({ key: "audit", off: [] });
+      expect(named[0]?.name).not.toBe("");
+      // A kind is turned off for it by name, another on again, the rest left as they were; the
+      // kinds themselves are not changed by it.
+      expect(
+        await read(await choose({ carriers: { audit: { commented: false, moved: false } } })),
+      ).toEqual([{ ...named[0], off: ["moved", "commented"] }]);
+      const after = restNotificationSettingsSchema.parse(
+        await (await choose({ carriers: { audit: { moved: true } } })).json(),
+      );
+      expect(after.carriers).toEqual([{ ...named[0], off: ["commented"] }]);
+      expect(after.kinds).toEqual(after.defaults);
+      // A plugin that carries none, and a kind there is not, change nothing.
+      expect((await choose({ carriers: { leave: { commented: false } } })).status).toBe(400);
+      expect((await choose({ carriers: { audit: { shouted: false } } })).status).toBe(400);
+      expect(await settings()).toEqual([{ ...named[0], off: ["commented"] }]);
+      // With every kind carried again, nothing is kept of the plugin; and a reset lets go of it too.
+      expect(await read(await choose({ carriers: { audit: { commented: true } } }))).toEqual(named);
+      await choose({ carriers: { audit: { agent: false } } });
+      expect(await read(await choose({ reset: true }))).toEqual(named);
+    } finally {
+      await consented(held);
+      await choose({ reset: true });
     }
   });
 

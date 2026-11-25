@@ -5,7 +5,7 @@ license: MIT
 compatibility: Needs a shell with the console command on the PATH (npm install -g @skillcdn/console, Node.js 24 or newer), signed in by a person. Nothing else; the command needs no key of its own and the agent never sees a token.
 metadata:
   author: skillcdn
-  version: "1.43"
+  version: "1.44"
 skillcdn:
   translations:
     ko:
@@ -28,7 +28,7 @@ Beside this skill: the board's rules, which `console take` prints with the task,
 - **Go-ahead:** the task's body is the go-ahead. What it says the agent may decide alone is decided within that; anything else that changes scope, cost or a trade-off is a decision.
 - **Changes mid-run:** a person changes the task or answers a decision on the board; the run takes it from there and says so in its next report.
 - **A briefing:** asked what is on their plate, start from `console work`: the decisions waiting for the person's answer first, each with what waits on it and since when; then the tasks by their days.
-- **What they were told:** `console notifications` lists what the board told the person, `--unread` what they have not read; reading it marks nothing, and nothing is marked read (`--read`) but on their word. A task they want to hear everything of, or nothing, is followed or muted for them when they say so: `console follow <number>`, `console mute <number>`.
+- **What they were told:** `console notifications` lists what the board told the person, `--unread` what they have not read; reading it marks nothing, and nothing is marked read (`--read`) but on their word. A task's notifications are turned on or off for them when they say so: `console follow <number>` turns them on, which has a task their settings would be silent of tell them of everything on it, and `console mute <number>` turns them off; `console task <number>` says how they stand.
 - **Work given in chat:** one piece of a project's work goes on the board first, as the opening says. Several tasks to write, a goal or the project's own set-up is [planning-the-board](/skills/planning-the-board/SKILL.md); a plan asked for as the work itself (a plan for payments, for a launch) is one piece of work, done here; a task whose body asks for the project itself (a member, a category, the rules, a goal) is worked as a run all the same, with that skill's commands. What a member does in their own desk for themselves, its setting-up, a record, a page, is on no board unless they say to put it there: no task is written for it, and the person is not asked whether to.
 - **A review:** a task whose run finished or failed is up for review, and the verdict is a person's, never the agent's own. Told that it passes: where the run's summary named something left, a change not committed, a check not run, say what is left before closing; then, on their word, `console task edit <number> --state done`. Told to drop it: `--state dropped`. Told that more is wanted: write what is wanted as a comment on the task, what the person said as theirs and anything you add marked as your own, and take the task again; where someone else will take it, set it `ready` instead.
 
