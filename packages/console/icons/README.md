@@ -25,7 +25,7 @@ The pack is a duotone ([ADR-0149](../../../docs/adr/0149-the-icon-pack-tints-one
 - **Never a head.** A person's or an agent's face is not tinted; tint the body, or nothing.
 - **Nothing to fill, no tint.** A plus, a check, an arrow, a chevron, dots: lines alone.
 
-The colour, and where the tint goes away (`xs`, a line of text with `sc-icon-plain`, a filled button, a project's mark), are the part's, in `../src/styles/parts/icon.css`.
+The colour, and where the tint goes away (`xs`, a line of text with `sc-icon-plain`, a filled button, a project's mark, a place of a tone of its own: a danger button, a callout or a badge of a tone), are the part's, in `../src/styles/parts/icon.css`.
 
 Flatten transforms and outline nothing: a glyph stays strokes. Export plain SVG. The reader refuses what is none of the above, a style, a class, an id, a transform, a text, a mask, a link, and says which file and what to change; the width and height of twenty and the stroke's own attributes, which a tool writes out, are fine.
 

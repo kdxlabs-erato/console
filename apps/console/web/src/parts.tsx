@@ -1664,6 +1664,20 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
           <Icon name="document" size="sm" /> New document
         </Button>
       </Specimen>
+      <Specimen
+        label="In a place of a tone of its own, its lines alone: a danger button, a callout and a badge of a tone"
+        row
+      >
+        <Button variant="danger" size="sm">
+          <Icon name="trash" size="sm" /> Delete the project
+        </Button>
+        <Badge tone="warning">
+          <Icon name="clock" size="sm" /> Late
+        </Badge>
+        <Callout tone="warning" action={<Icon name="lock" size="md" />}>
+          Only an administrator turns this on.
+        </Callout>
+      </Specimen>
       {ICON_GROUP_LIST.map((group) => (
         <Specimen key={group.key} label={`The pack: ${group.key}`}>
           <div className="dev-icons">
