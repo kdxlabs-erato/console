@@ -54,6 +54,12 @@ import {
   MIN_OPTIONS,
   OWN_WAKE_KEY,
 } from "../limits.js";
+import {
+  MAX_NOTIFICATIONS_PAGE,
+  NOTIFICATION_KINDS,
+  NOTIFICATIONS_PAGE,
+  type TaskFollowState,
+} from "../notifications.js";
 import { onboardingTitle } from "../onboarding.js";
 import { capabilityWords } from "../plugin/capabilities.js";
 import { PLUGIN_LIST_LIMIT } from "../plugin/limits.js";
@@ -85,6 +91,7 @@ import {
   type RestClaim,
   type RestDecision,
   type RestMember,
+  type RestNotificationSettings,
   type RestPackConnectStarted,
   type RestPerson,
   type RestPluginDetail,
@@ -168,6 +175,8 @@ import {
   formatListingLine,
   formatMemberLine,
   formatMore,
+  formatNotificationSettings,
+  formatNotifications,
   formatOptions,
   formatOwnWakeLine,
   formatPersonLine,
@@ -192,6 +201,7 @@ import {
   formatSecretLine,
   formatSignalLine,
   formatTask,
+  formatTaskFollow,
   formatTaskLine,
   formatTeamLine,
   formatVersion,
@@ -3459,22 +3469,214 @@ const task: Command = async (args, io) => {
   const session = await open(io, values);
   const project = await session.project();
   const found = await project.task(ref);
-  const [decisions, runs, comments] = await Promise.all([
+  const [decisions, runs, comments, follow] = await Promise.all([
     project.decisions({ task: found.id }),
     // The runs are a line each, with their reports counted: the brief form, unless --json asks
     // for the console's own answer.
     session.json ? project.runs({ task: found.id }) : project.runBriefs({ task: found.id }),
     project.comments(found.id),
+    // What the member made of the task for themselves (ADR-0157). A console of before has no
+    // such route, and nothing is said of it then.
+    project.taskFollow(found.id).then(
+      (kept) => kept.state,
+      (error: unknown) => {
+        if (noSuchRoute(error)) {
+          return null;
+        }
+        throw error;
+      },
+    ),
   ]);
   const page = await taskPage(session, found.number);
   answer(
     io,
     session,
-    { task: found, decisions: decisions.items, runs: runs.items, comments: comments.items },
-    () => formatTask(found, decisions.items, runs.items, comments.items, page),
+    { task: found, decisions: decisions.items, runs: runs.items, comments: comments.items, follow },
+    () => formatTask(found, decisions.items, runs.items, comments.items, page, follow),
   );
   return EXIT.ok;
 };
+
+/** Whether a console answered that it has nothing at a path: what one of before a route does. */
+const noSuchRoute = (error: unknown): boolean =>
+  error instanceof ApiError && error.status === 404 && error.code === "not_found";
+
+/**
+ * What the console answers of the notifications (ADR-0157), where it has them: one of before
+ * answers their paths as nothing, which is said as what it is, since "nothing at this path"
+ * says nothing of why.
+ */
+async function ofNotifications<T>(io: CliIo, asked: Promise<T>): Promise<T> {
+  try {
+    return await asked;
+  } catch (error) {
+    if (noSuchRoute(error)) {
+      const version = io.consoleVersion?.();
+      throw failed(
+        `This console${version === undefined ? "" : `, ${version},`} has no notifications yet: it is older than the command.`,
+      );
+    }
+    throw error;
+  }
+}
+
+const NOTIFICATIONS_USAGE =
+  "console notifications [--unread] [--limit <n>] [--offset <n>]  |  notifications --read <id> [<id>...]  |  notifications --read-all";
+
+// What the board told the member (ADR-0157), the newest first, and which of it they have read:
+// their own, a person's as an agent account's, across the projects, so that no project is named.
+const notifications: Command = async (args, io) => {
+  const { values, positionals } = parse(args, {
+    unread: { type: "boolean" },
+    read: { type: "boolean" },
+    "read-all": { type: "boolean" },
+    ...PAGE_OPTIONS,
+  });
+  const some = on(values, "read");
+  const all = on(values, "read-all");
+  const unread = on(values, "unread");
+  const limit = countOf(text(values, "limit"), "limit", { least: 1, most: MAX_NOTIFICATIONS_PAGE });
+  const offset = countOf(text(values, "offset"), "offset", { least: 0 });
+  if (some || all) {
+    if (unread || limit !== undefined || offset !== undefined) {
+      throw misuse(
+        `--unread, --limit and --offset are a listing's, and go with neither --read nor --read-all: ${NOTIFICATIONS_USAGE}`,
+      );
+    }
+    if (some === all || (all && positionals.length > 0)) {
+      throw misuse(
+        `Say one: --read <id> [<id>...] for the notifications named, or --read-all alone for every one: ${NOTIFICATIONS_USAGE}`,
+      );
+    }
+    if (some && positionals.length === 0) {
+      throw misuse(
+        "Say which, by the ids the listing prints: console notifications --read <id> [<id>...]; or --read-all for every one",
+      );
+    }
+    const session = await open(io, values);
+    const marked = await ofNotifications(
+      io,
+      session.client.readNotifications(all ? { all: true } : { ids: [...new Set(positionals)] }),
+    );
+    answer(io, session, marked, () => `Marked ${marked.read} read; ${marked.unread} still unread.`);
+    return EXIT.ok;
+  }
+  if (positionals.length > 0) {
+    throw misuse(
+      `A listing takes no word but its flags, and an id goes with --read: ${NOTIFICATIONS_USAGE}`,
+    );
+  }
+  const asked = { unread, limit: limit ?? NOTIFICATIONS_PAGE, offset: offset ?? 0 };
+  const session = await open(io, values);
+  const found = await ofNotifications(io, session.client.notifications(asked));
+  answer(io, session, found, () => formatNotifications(found, asked));
+  return EXIT.ok;
+};
+
+const NOTIFY_USAGE =
+  "console notify [--on <kind>]... [--off <kind>]... [--project-off <key>]... [--project-on <key>]... [--own-agents on|off]  |  notify --reset";
+
+// What the member is told of (ADR-0157): each kind on or off, the projects they are told
+// nothing of, and whether what an agent of their own did as them counts; read, or changed in
+// what the flags say, or put back to what a member who chose nothing has.
+const notify: Command = async (args, io) => {
+  const { values } = parse(
+    args,
+    {
+      on: { type: "string", multiple: true },
+      off: { type: "string", multiple: true },
+      "project-off": { type: "string", multiple: true },
+      "project-on": { type: "string", multiple: true },
+      "own-agents": { type: "string" },
+      reset: { type: "boolean" },
+    },
+    false,
+  );
+  // A kind the vocabulary does not have is refused here, with the kinds there are, before the
+  // console is asked anything: it would refuse the whole change for it.
+  const kindOf = (value: string) => wordOf(value, NOTIFICATION_KINDS, "a kind of notification");
+  const turnedOn = texts(values, "on").map(kindOf);
+  const turnedOff = texts(values, "off").map(kindOf);
+  const projectsOff = texts(values, "project-off");
+  const projectsOn = texts(values, "project-on");
+  const twice =
+    turnedOn.find((kind) => turnedOff.includes(kind)) ??
+    projectsOn.find((key) => projectsOff.includes(key));
+  if (twice !== undefined) {
+    throw misuse(`${twice} is said both on and off: say one. ${NOTIFY_USAGE}`);
+  }
+  const own = text(values, "own-agents");
+  const ownAgents =
+    own === undefined ? undefined : wordOf(own, ["on", "off"], "what --own-agents takes") === "on";
+  const kinds = [
+    ...turnedOn.map((kind) => [kind, true] as const),
+    ...turnedOff.map((kind) => [kind, false] as const),
+  ];
+  const projects = projectsOff.length > 0 || projectsOn.length > 0;
+  const changes = kinds.length > 0 || projects || ownAgents !== undefined;
+  if (on(values, "reset") && changes) {
+    throw misuse(
+      `--reset stands alone: it puts everything back to what a member who chose nothing is told of. ${NOTIFY_USAGE}`,
+    );
+  }
+  const session = await open(io, values);
+  const { client } = session;
+  // The settings as they are now, whatever was asked: read, changed or put back.
+  const say = (settings: RestNotificationSettings): number => {
+    answer(io, session, settings, () => formatNotificationSettings(settings));
+    return EXIT.ok;
+  };
+  if (on(values, "reset")) {
+    return say(await ofNotifications(io, client.updateNotificationSettings({ reset: true })));
+  }
+  if (!changes) {
+    return say(await ofNotifications(io, client.notificationSettings()));
+  }
+  // The projects turned off are sent whole: those that were, read as they stand, less the ones
+  // turned on again, and the ones turned off now.
+  const off = projects
+    ? [
+        ...new Set([
+          ...(await ofNotifications(io, client.notificationSettings())).projectsOff
+            .map((project) => project.key)
+            .filter((key) => !projectsOn.includes(key)),
+          ...projectsOff,
+        ]),
+      ]
+    : undefined;
+  return say(
+    await ofNotifications(
+      io,
+      client.updateNotificationSettings({
+        ...(kinds.length === 0 ? {} : { kinds: Object.fromEntries(kinds) }),
+        ...(off === undefined ? {} : { projectsOff: off }),
+        ...(ownAgents === undefined ? {} : { ownAgents }),
+      }),
+    ),
+  );
+};
+
+// What a member makes of one task for themselves (ADR-0157): `follow`, told of everything that
+// happens on it whatever their kinds say, and `mute`, told of nothing of it; `--off` on either
+// takes the choice back, whichever it was.
+const following =
+  (state: TaskFollowState): Command =>
+  async (args, io) => {
+    const { values, positionals } = parse(args, { off: { type: "boolean" } });
+    const ref = theOne(
+      positionals,
+      `Say which task: console ${state === "following" ? "follow" : "mute"} <number|id> [--off]`,
+    );
+    const session = await open(io, values);
+    const project = await session.project();
+    const found = await project.task(ref);
+    const kept = await ofNotifications(
+      io,
+      project.followTask(found.id, on(values, "off") ? null : state),
+    );
+    answer(io, session, kept, () => formatTaskFollow(found, kept.state));
+    return EXIT.ok;
+  };
 
 /**
  * A word in the discussion on a task (ADR-0024): what is said, as given, from a file or from
@@ -7345,6 +7547,10 @@ const COMMANDS: Readonly<Record<string, Command>> = {
   projects,
   use,
   work,
+  notifications,
+  notify,
+  follow: following("following"),
+  mute: following("muted"),
   tasks,
   task,
   goals,

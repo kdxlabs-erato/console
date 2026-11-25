@@ -323,6 +323,7 @@ export const en = {
     projects: "Projects",
     work: "My work",
     myDecisions: "My decisions",
+    notifications: "Notifications",
     people: "People",
     agents: "Agents",
     board: "Board",
@@ -508,6 +509,11 @@ export const en = {
       "events:plugins": {
         name: "Other plugins' events",
         opens: "Runs hooks on the events other plugins emit.",
+      },
+      "notifications:read": {
+        name: "Notifications",
+        opens:
+          "Reads whom the console tells of what happens in its board projects, to carry it to them elsewhere.",
       },
       jobs: { name: "Schedule", opens: "Runs at the times it names." },
       endpoints: {
@@ -837,6 +843,71 @@ export const en = {
     },
   },
 
+  notifications: {
+    title: "Notifications",
+    list: "Notifications",
+    loading: "Loading your notifications",
+    couldNotLoad: "The notifications could not be loaded.",
+    markAllRead: "Mark all as read",
+    unread: "New",
+    followed: "A task you get everything of",
+    more: "Show more",
+    views: {
+      aria: "Views of your notifications",
+      all: "All",
+      unread: "Unread",
+      settings: "Settings",
+    },
+    empty: {
+      title: "No notifications yet",
+      body: "What you chose to be told of shows up here. Turn kinds on under Settings, or choose Everything on a task's page.",
+    },
+    emptyUnread: {
+      title: "Nothing unread",
+      body: "You have read everything you were told of.",
+    },
+    kinds: {
+      assigned: "Given to you",
+      ready: "Ready to begin",
+      commented: "Comment",
+      moved: "Moved",
+      changed: "Changed",
+      archived: "Put away",
+      decision: "Waits for your answer",
+      answered: "Your question was answered",
+      agent: "Your agent account",
+    },
+    settings: {
+      intro:
+        "Choose what you are told of. What is on shows up in this list, and a messenger connected to the console carries it to you there.",
+      introAgent:
+        "Choose what this account is told of. What is on shows up in this list, and wakes the account.",
+      groups: { tasks: "Tasks", decisions: "Decisions", agents: "Agent accounts" },
+      hints: {
+        tasks: "What happens on the tasks you own or work on.",
+        decisions: "The decisions addressed to you, and the ones you raised.",
+        agents:
+          "An agent account that reports to you stopped, failed or is not heard from, or runs again.",
+      },
+      projects: "Projects",
+      projectsHint:
+        "A project that is off tells you nothing of its tasks, but for a task you chose Everything on.",
+      ownAgents: "Your own agents",
+      ownAgentsHint:
+        "What an agent does as you is your own doing, and tells you nothing unless you say so.",
+      ownAgentsOn: "Tell me of what my agents do as me",
+      reset: "Back to the defaults",
+    },
+    task: {
+      label: "Notifications",
+      settings: "By my settings",
+      settingsHint: "Told of what your notification settings have on",
+      following: "Everything",
+      followingHint: "Told of everything that happens on this task",
+      muted: "Nothing",
+      mutedHint: "Told of nothing of this task",
+    },
+  },
   myDecisions: {
     title: "My decisions",
     loading: "Loading your decisions",

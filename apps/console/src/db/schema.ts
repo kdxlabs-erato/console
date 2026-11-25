@@ -2,11 +2,13 @@ import {
   AGENT_STATES,
   ARTIFACT_KINDS,
   CATEGORY_COLORS,
+  type ChosenNotifications,
   COLOR_NAMES,
   CONNECT_AS,
   GOAL_STATES,
   LINK_SOURCES,
   MEMBERSHIP_SOURCES,
+  NOTIFICATION_KINDS,
   PEOPLE_VISIBILITIES,
   PERSON_KINDS,
   PERSON_ROLES,
@@ -25,6 +27,7 @@ import {
   SESSION_KINDS,
   SIGNAL_KINDS,
   SIGNAL_SOURCES,
+  TASK_FOLLOW_STATES,
   TASK_PRIORITIES,
   TASK_STATES,
   TRANSCRIPT_KINDS,
@@ -192,6 +195,8 @@ export const people = pgTable(
     email: text(),
     /** The person's own front page (ADR-0061), what they took off it and what they arranged at each width; null while they have arranged nothing. */
     home: jsonb().$type<RestHome>(),
+    /** What the member chose to be told of (ADR-0157): the kinds, the projects turned off, whether their own agents count; null while they chose nothing, and what they did not choose follows the defaults. */
+    notifications: jsonb().$type<ChosenNotifications>(),
     /** When the member last signed in; null for an agent account nobody has signed in with yet. */
     lastLoginAt: instant(),
     createdAt: createdAt(),
@@ -1017,6 +1022,71 @@ export const taskWorkers = pgTable(
   (table) => [
     primaryKey({ name: "task_workers_pkey", columns: [table.taskId, table.personId] }),
     index("task_workers_person_idx").on(table.personId),
+  ],
+);
+
+/**
+ * What a member made of one task for themselves (ADR-0157): `following`, told of everything
+ * that happens on it whatever their settings say, or `muted`, told of nothing of it. No row
+ * for a task they are told of as their settings say.
+ */
+export const taskFollows = pgTable(
+  "task_follows",
+  {
+    taskId: uuid()
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    personId: uuid()
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    state: text({ enum: TASK_FOLLOW_STATES }).notNull(),
+    updatedAt: instant().notNull(),
+  },
+  (table) => [
+    primaryKey({ name: "task_follows_pkey", columns: [table.taskId, table.personId] }),
+    index("task_follows_person_idx").on(table.personId),
+  ],
+);
+
+/**
+ * A notification (ADR-0157): one event of the feed that one member is told of, under the kind
+ * that says why, made by the worker as it reads the feed, once for a member and an event.
+ * What happened is the event's own; the row names the thing it is of, so that it is read only
+ * while the member may still see that thing, and says whether they read it. `woken` is the
+ * console having told the member itself, by a wake of its agent account: a plugin that carries
+ * notifications elsewhere carries that one to nobody. Kept for a time and then let go: the
+ * record is the feed.
+ */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: id(),
+    workspaceId: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    personId: uuid()
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    eventId: bigint({ mode: "number" })
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    kind: text({ enum: NOTIFICATION_KINDS }).notNull(),
+    /** Whether the member is told because they follow the task, whatever their settings say. */
+    followed: boolean().notNull().default(false),
+    woken: boolean().notNull().default(false),
+    projectId: uuid().references(() => projects.id, { onDelete: "cascade" }),
+    taskId: uuid().references(() => tasks.id, { onDelete: "cascade" }),
+    decisionId: uuid().references(() => decisions.id, { onDelete: "cascade" }),
+    /** The agent account it is about, for one of how an account stands. */
+    aboutId: uuid().references(() => people.id, { onDelete: "cascade" }),
+    createdAt: instant().notNull(),
+    readAt: instant(),
+  },
+  (table) => [
+    uniqueIndex("notifications_person_event_key").on(table.personId, table.eventId),
+    index("notifications_person_idx").on(table.personId, table.createdAt),
+    index("notifications_event_idx").on(table.eventId),
+    index("notifications_created_idx").on(table.createdAt),
   ],
 );
 

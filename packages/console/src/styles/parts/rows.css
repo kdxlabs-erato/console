@@ -33,6 +33,17 @@
   color: var(--sc-color-accent);
 }
 
+/* A row of something already seen, a notification that was read: its title lighter, so that
+   what is new stands out among them. */
+.sc-task-row-seen .sc-task-row-title {
+  color: var(--sc-color-text-muted);
+  font-weight: var(--sc-weight-normal);
+}
+
+.sc-task-row-seen .sc-task-row-title:hover {
+  color: var(--sc-color-accent);
+}
+
 .sc-task-row-project {
   grid-column: 1;
   color: var(--sc-color-text-faint);

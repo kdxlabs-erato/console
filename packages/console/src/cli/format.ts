@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
 import { usageNear, usageSaidTogether, usageStanding, usedHundredths } from "../agent-usage.js";
+import { describeEvent } from "../feed-words.js";
+import {
+  NOTIFICATION_KINDS,
+  type NotificationKind,
+  type TaskFollowState,
+} from "../notifications.js";
 import { argUsage } from "../plugin/args.js";
 import type {
   RestAgent,
@@ -17,6 +23,9 @@ import type {
   RestGoal,
   RestListing,
   RestMember,
+  RestNotification,
+  RestNotificationSettings,
+  RestNotifications,
   RestOwnWake,
   RestPerson,
   RestPersonWork,
@@ -447,6 +456,8 @@ export function formatTask(
   comments?: readonly RestComment[],
   /** The address of the task's page at the console, where the command knows it: what a person is given to open. */
   page?: string,
+  /** What the member made of the task for themselves (ADR-0157), where the command read it: said where they follow it or muted it. */
+  follow?: TaskFollowState | null,
 ): string {
   const lines = [
     `#${task.number} ${task.title}`,
@@ -454,6 +465,7 @@ export function formatTask(
     `id: ${task.id}${task.parentId === null ? "" : `  part of: ${task.parentId}`}`,
     ...(page === undefined ? [] : [pageLine(page)]),
     ...(task.agent == null ? [] : [`written through: ${task.agent}`]),
+    ...(follow == null ? [] : [`notifications: ${follow}, ${TOLD_OF[follow]}`]),
     ...scheduleLines(task),
   ];
   if (task.links.length > 0) {
@@ -1219,14 +1231,16 @@ function pluginEventSays(event: RestEvent): string {
   return carried === "{}" ? "" : carried.length > 300 ? `${carried.slice(0, 300)}...` : carried;
 }
 
+/** Who did what an event says, as a line names them: the member, with the agent they acted as, or the console. */
+const eventBy = (event: RestEvent): string =>
+  event.actor === null
+    ? "the console"
+    : `${calledOf(event.actor)}${event.agent === null ? "" : ` as ${event.agent}`}`;
+
 /** One event of a plugin in a line: its number, when, its kind, who did it and through what, and what it says. */
 export function formatPluginEventLine(event: RestEvent): string {
-  const who =
-    event.actor === null
-      ? "the console"
-      : `${calledOf(event.actor)}${event.agent === null ? "" : ` as ${event.agent}`}`;
   const says = pluginEventSays(event);
-  return `#${event.id}  ${moment(event.createdAt)}  ${event.kind}  ${who}${says === "" ? "" : `  ${says}`}`;
+  return `#${event.id}  ${moment(event.createdAt)}  ${event.kind}  ${eventBy(event)}${says === "" ? "" : `  ${says}`}`;
 }
 
 /**
@@ -1247,6 +1261,103 @@ export function formatPluginEvents(
     return `${none}${formatMore(page.more, asked.limit, asked.offset)}`;
   }
   return `${page.items.map(formatPluginEventLine).join("\n")}${formatMore(page.more, asked.limit, asked.offset)}`;
+}
+
+/**
+ * One notification in a line (ADR-0157): its id, which `--read` takes; whether the member read
+ * it; when; why they are told, the kind and that they follow the task where that is why; the
+ * project's key where it happened in one; and what happened, who did it and then the feed's own
+ * sentence for the event. What an event carries is what someone wrote, so the line is kept one.
+ * A task is named in the sentence by its number; a decision is not, so its id follows, which
+ * the commands that read and answer it take.
+ */
+export function formatNotificationLine(notification: RestNotification): string {
+  const { event, project } = notification;
+  const why = `${notification.kind}${notification.followed ? " (followed)" : ""}`;
+  const happened = `${eventBy(event)} ${describeEvent(event)}`.replaceAll(/\s+/g, " ");
+  const decision = event.decisionId === null ? "" : `  (decision ${event.decisionId})`;
+  return `${notification.id}  ${notification.readAt === null ? "unread" : "read"}  ${moment(notification.createdAt)}  ${why}  ${project === null ? "" : `${project.key}  `}${happened}${decision}`;
+}
+
+/**
+ * A page of one's notifications, the newest first: a line each, then how many are not read
+ * yet, with what marks them read where some are, and how the next page is asked for.
+ */
+export function formatNotifications(
+  page: RestNotifications,
+  asked: { readonly unread: boolean; readonly limit: number; readonly offset: number },
+): string {
+  const more = formatMore(page.more, asked.limit, asked.offset);
+  if (page.items.length === 0) {
+    return `${asked.unread ? "No unread notifications" : "No notifications"}${asked.offset > 0 ? " that far back" : ""}.${more}`;
+  }
+  const unread =
+    page.unread === 0
+      ? "None unread."
+      : `${page.unread} unread. Mark read: console notifications --read <id> [<id>...], or --read-all.`;
+  return `${page.items.map(formatNotificationLine).join("\n")}\n${unread}${more}`;
+}
+
+/** What each kind of notification is of (`NOTIFICATION_KINDS`), in a few words said to the member. */
+const NOTIFICATION_KIND_WORDS: Readonly<Record<NotificationKind, string>> = {
+  assigned: "a task was given to you, as its owner or to work on",
+  ready: "a task you work on is ready to begin",
+  moved: "a task you own went from one state to another",
+  changed: "the title, the body or the days of a task of yours changed",
+  commented: "someone wrote on a task of yours",
+  archived: "a task of yours was put away",
+  decision: "a decision waits for you",
+  answered: "a decision you raised was answered",
+  agent:
+    "an agent account that reports to you stopped, was refused, failed or is not heard from, or runs again",
+};
+
+const onOrOff = (value: boolean): string => (value ? "on" : "off");
+
+/**
+ * What a member is told of (ADR-0157): a line per kind, on or off, with what it is of and, where
+ * they chose otherwise, what it is for a member who chose nothing; then the projects they are
+ * told nothing of, and whether what an agent of their own did as them counts. The kinds stand
+ * in the vocabulary's order, and one a newer console answers after them, by its name alone.
+ */
+export function formatNotificationSettings(settings: RestNotificationSettings): string {
+  const known: readonly string[] = NOTIFICATION_KINDS;
+  const kinds = [
+    ...NOTIFICATION_KINDS.filter((kind) => Object.hasOwn(settings.kinds, kind)),
+    ...Object.keys(settings.kinds).filter((kind) => !known.includes(kind)),
+  ];
+  const words: Readonly<Record<string, string | undefined>> = NOTIFICATION_KIND_WORDS;
+  return [
+    ...kinds.map((kind) => {
+      const told = settings.kinds[kind] === true;
+      const usual = settings.defaults[kind];
+      const what = words[kind];
+      return `${kind}  ${onOrOff(told)}${what === undefined ? "" : `  ${what}`}${usual === undefined || usual === told ? "" : `  (default: ${onOrOff(usual)})`}`;
+    }),
+    `projects off: ${settings.projectsOff.length === 0 ? "none" : settings.projectsOff.map((project) => `${project.key} (${project.name})`).join(", ")}`,
+    `own agents: ${onOrOff(settings.ownAgents)}  (${settings.ownAgents ? "what an agent of your own did as you is told to you too" : "what an agent of your own did as you is not told to you"})`,
+  ].join("\n");
+}
+
+/** What a member who follows a task, or muted it, is told of it (ADR-0157). */
+const TOLD_OF: Readonly<Record<TaskFollowState, string>> = {
+  following: "you are told of everything that happens on it, whatever kinds you have on",
+  muted: "you are told of nothing of it",
+};
+
+/**
+ * What holds of a task for a member once they followed it, muted it or took the choice back
+ * (ADR-0157), in a line, with what takes it back where there is something to.
+ */
+export function formatTaskFollow(
+  task: Pick<RestTask, "number" | "title">,
+  state: TaskFollowState | null,
+): string {
+  const named = `#${task.number} ${task.title}`;
+  if (state === null) {
+    return `${named} is neither followed nor muted: you are told of it as console notify says.`;
+  }
+  return `${state === "following" ? "Following" : "Muted"} ${named}: ${TOLD_OF[state]}. Take it back: console ${state === "following" ? "follow" : "mute"} ${task.number} --off`;
 }
 
 /** One plugin in full: what it is, how it stands, what one may run, its skills and its settings. */

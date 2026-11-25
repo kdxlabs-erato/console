@@ -68,6 +68,11 @@ import {
   type RestMembers,
   type RestMePatch,
   type RestMyDecisions,
+  type RestNotificationSettings,
+  type RestNotificationSettingsInput,
+  type RestNotifications,
+  type RestNotificationsRead,
+  type RestNotificationsReadInput,
   type RestOwnResetInput,
   type RestOwnWakeInput,
   type RestOwnWakeRaised,
@@ -126,6 +131,8 @@ import {
   type RestSkills,
   type RestTask,
   type RestTaskBriefs,
+  type RestTaskFollow,
+  type RestTaskFollowInput,
   type RestTaskInput,
   type RestTaskPatch,
   type RestTasks,
@@ -184,6 +191,9 @@ import {
   restMembersSchema,
   restMeSchema,
   restMyDecisionsSchema,
+  restNotificationSettingsSchema,
+  restNotificationsReadSchema,
+  restNotificationsSchema,
   restOwnWakeRaisedSchema,
   restOwnWakesSchema,
   restPackConnectSchema,
@@ -223,6 +233,7 @@ import {
   restSkillRowsSchema,
   restSkillsSchema,
   restTaskBriefsSchema,
+  restTaskFollowSchema,
   restTaskSchema,
   restTasksSchema,
   restTeamSchema,
@@ -416,6 +427,10 @@ export interface ProjectClient {
   taskBriefs(filter?: TaskFilter, signal?: AbortSignal): Promise<RestTaskBriefs>;
   /** One task, by its id or by its number. */
   task(ref: string, signal?: AbortSignal): Promise<RestTask>;
+  /** What the asker made of a task for themselves (ADR-0157): following it, muted, or neither. By its id or its number. */
+  taskFollow(ref: string, signal?: AbortSignal): Promise<RestTaskFollow>;
+  /** Follows a task, mutes it, or with `null` takes the choice back. */
+  followTask(ref: string, state: RestTaskFollowInput["state"]): Promise<RestTaskFollow>;
   createTask(input: RestTaskInput): Promise<RestTask>;
   updateTask(id: string, patch: RestTaskPatch): Promise<RestTask>;
   /** Puts a done or dropped task away (ADR-0029), or brings one back. */
@@ -946,6 +961,19 @@ export interface ConsoleClient {
     filter?: { readonly open?: boolean; readonly raised?: boolean } & Page,
     signal?: AbortSignal,
   ): Promise<RestMyDecisions>;
+  /** What the asker is told of (ADR-0157): a page of their notifications, the newest first, with `unread` those they have not read alone. */
+  notifications(
+    filter?: { readonly unread?: boolean } & Page,
+    signal?: AbortSignal,
+  ): Promise<RestNotifications>;
+  /** Marks notifications as read: those named, or all of the asker's. */
+  readNotifications(input: RestNotificationsReadInput): Promise<RestNotificationsRead>;
+  /** What the asker is told of: each kind on or off, the projects turned off, whether their own agents count. */
+  notificationSettings(signal?: AbortSignal): Promise<RestNotificationSettings>;
+  /** Changes what the asker is told of, or puts it back to what a member who chose nothing has. */
+  updateNotificationSettings(
+    input: RestNotificationSettingsInput,
+  ): Promise<RestNotificationSettings>;
   /**
    * One decision by its id, wherever it is (ADR-0068): in a project the asker may see, or one
    * that reaches them from elsewhere, addressed to them, raised by them, or a plugin's addressed
@@ -1299,6 +1327,16 @@ export function createClient(options: ClientOptions = {}): ConsoleClient {
         ),
       task: (ref, signal) =>
         request("GET", `${base}${at("tasks", ref)}`, undefined, restTaskSchema, signal),
+      taskFollow: (ref, signal) =>
+        request(
+          "GET",
+          `${base}${at("tasks", ref)}/follow`,
+          undefined,
+          restTaskFollowSchema,
+          signal,
+        ),
+      followTask: (ref, state) =>
+        request("PUT", `${base}${at("tasks", ref)}/follow`, { state }, restTaskFollowSchema),
       createTask: (input) => request("POST", `${base}${at("tasks")}`, input, restTaskSchema),
       updateTask: (id, patch) =>
         request("PATCH", `${base}${at("tasks", id)}`, patch, restTaskSchema),
@@ -2003,6 +2041,40 @@ export function createClient(options: ClientOptions = {}): ConsoleClient {
         undefined,
         restMyDecisionsSchema,
         signal,
+      ),
+    notifications: (filter = {}, signal) =>
+      request(
+        "GET",
+        withQuery(REST_ROUTES.notifications, {
+          unread: filter.unread === true ? "true" : undefined,
+          limit: number(filter.limit),
+          offset: number(filter.offset),
+        }),
+        undefined,
+        restNotificationsSchema,
+        signal,
+      ),
+    readNotifications: (input) =>
+      request(
+        "POST",
+        `${base}${REST_ROUTES.notifications}/read`,
+        input,
+        restNotificationsReadSchema,
+      ),
+    notificationSettings: (signal) =>
+      request(
+        "GET",
+        `${base}${REST_ROUTES.notifications}/settings`,
+        undefined,
+        restNotificationSettingsSchema,
+        signal,
+      ),
+    updateNotificationSettings: (input) =>
+      request(
+        "PUT",
+        `${base}${REST_ROUTES.notifications}/settings`,
+        input,
+        restNotificationSettingsSchema,
       ),
     decision: (id, signal) =>
       request("GET", `${base}${decisionPath(id)}`, undefined, restReachedDecisionSchema, signal),

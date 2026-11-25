@@ -1,6 +1,6 @@
 # ADR-0071: The console sends no notification of its own; a plugin carries them out of the board and back
 
-- Status: Accepted
+- Status: Accepted; that a plugin chooses whom to tell, and that the console keeps no list of what a member was told and no preference of theirs, is superseded by [ADR-0157](0157-the-console-decides-who-is-told-of-what-and-keeps-the-record-and-a-plugin-carries-it-out.md): the console decides who is told of what and keeps the record, and carrying it out of the console stays a plugin's
 - Date: 2026-11-08
 - Closes open question 2 of [architecture.md](../architecture.md), under which notifications were a port of the console's with adapters to come. Follows [ADR-0049](0049-a-plugin-is-an-npm-package-installed-into-the-image-and-enabled-by-an-administrator.md), under which a feature of an organization's work is a plugin, and [console-plugins ADR-0008](https://github.com/skillcdn/console-plugins/blob/main/docs/adr/0008-every-notification-leaves-the-console-through-the-messenger-plugin-which-reads-what-it-tells-as-a-principal.md), where the plugins' side of this was decided first.
 

@@ -1,5 +1,5 @@
 import type { EventKind, RestEventData } from "@skillcdn/console/api";
-import { and, asc, desc, eq, gt, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
 import { pluginEventReadableBy } from "../../auth/policy.js";
 import { type Database, drizzleOf, type Transaction } from "../client.js";
 import { events } from "../schema.js";
@@ -233,6 +233,21 @@ export async function listAllEventsAfter(
     .orderBy(asc(events.id))
     .limit(limit);
   return rows.map(toEvent);
+}
+
+/** Some events of the workspace by their numbers: what a member's notifications are of. */
+export async function listEventsByIds(
+  database: Database,
+  workspaceId: string,
+  ids: readonly number[],
+): Promise<Map<number, EventRecord>> {
+  if (ids.length === 0) {
+    return new Map();
+  }
+  const rows = await selectEvents(database).where(
+    and(eq(events.workspaceId, workspaceId), inArray(events.id, [...ids])),
+  );
+  return new Map(rows.map((row) => [row.id, toEvent(row)]));
 }
 
 /**

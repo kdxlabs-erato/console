@@ -142,6 +142,7 @@ describe("signing in", () => {
       console: { version: "0.1.18", clientRange: ">=0.1.0 <0.2.0" },
       // Nothing waits for Alice yet.
       decisions: { waiting: 0 },
+      notifications: { unread: 0 },
       person: {
         id: expect.stringMatching(/^[0-9a-f-]{36}$/),
         login: "Alice",
@@ -181,6 +182,7 @@ describe("signing in", () => {
       person: null,
       // Nobody has decisions to answer.
       decisions: null,
+      notifications: null,
       signIn: [{ key: "gh", label: "GitHub", admits: { organization: null, domains: [] } }],
     });
   });
@@ -683,6 +685,7 @@ describe("a deployment where nobody signs in", () => {
       console: { version: "0.1.18", clientRange: ">=0.1.0 <0.2.0" },
       person: null,
       decisions: null,
+      notifications: null,
       signIn: [],
     });
     expect((await h.request(AUTH_ROUTES.login("gh"))).status).toBe(404);

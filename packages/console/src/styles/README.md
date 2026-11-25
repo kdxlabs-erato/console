@@ -80,7 +80,7 @@ A part is a file under `parts/` and a row here, with the classes that are its ow
 | `spinner` | `sc-spinner*` | `Spinner` | Something is on its way. |
 | `steps` | `sc-steps*`, `sc-step*` | | Steps done in order, each with its mark, the next one pointed out. |
 | `settings` | `sc-settings*` | | Settings as rows: a label, its control, a hint. |
-| `rows` | `sc-task-row*`, `sc-task-rows*` | `TaskList` | A list as rows, each a link with a title and what is said of it at the end. |
+| `rows` | `sc-task-row*`, `sc-task-rows*` | `TaskList`, `NotificationList` | A list as rows, each a link with a title and what is said of it at the end. `sc-task-row-seen` is a row of something already seen, a notification that was read: its title lighter. |
 | `detail` | `sc-task-header`, `sc-task-heading`, `sc-task-parent`, `sc-task-title`, `sc-task-badges`, `sc-task-actions`, `sc-task-main`, `sc-task-body`, `sc-task-aside`, `sc-task-section` | | A page about one thing: its head with the title, the badges and the actions, a main column and an aside. A task, a goal and a document are laid out by it. |
 | `calendar` | `sc-calendar*` | `Calendar` | A month as a grid of days, with bars across days, dots, a legend and a head. |
 | `crumbs` | `sc-crumb*`, `sc-doc-crumbs*` | | The way down to where the page is, each step a link. |

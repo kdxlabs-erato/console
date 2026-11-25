@@ -38,6 +38,7 @@ import {
   listSearch,
   Markdown,
   Meter,
+  NotificationList,
   Pager,
   PersonChip,
   PersonOption,
@@ -46,6 +47,8 @@ import {
   ProgressBar,
   ProjectMark,
   peopleSearch,
+  type RestEvent,
+  type RestNotification,
   type RestPerson,
   type RestTeam,
   RoleBadge,
@@ -122,6 +125,43 @@ import {
 // takes is invented (parts-data.ts). `pnpm check:styles` holds the sections to the catalogue.
 
 // --- the page's own pieces ---------------------------------------------------------------------
+
+const TODAY_NOON = "2026-03-12T12:00:00.000Z";
+let noticed = 0;
+
+/** A notification of an invented event: why the reader is told, what happened, and when they read it. */
+function notice(
+  kind: string,
+  event: RestEvent["kind"],
+  readAt: string | null,
+  data: RestEvent["data"],
+): RestNotification {
+  noticed += 1;
+  const agent = event === "agent.state_changed";
+  return {
+    id: `0195c0de-0000-7000-8000-${String(noticed).padStart(12, "0")}`,
+    kind,
+    followed: false,
+    readAt,
+    createdAt: NOW,
+    event: {
+      id: noticed,
+      kind: event,
+      actor: agent ? mira : bob,
+      agent: null,
+      projectId: null,
+      taskId: null,
+      decisionId: null,
+      runId: null,
+      documentId: null,
+      goalId: null,
+      plugin: null,
+      data,
+      createdAt: NOW,
+    },
+    project: agent ? null : { ...ledger, icon: null },
+  };
+}
 
 interface PartProps {
   /** The part's name, as its row of the catalogue has it. Written first, a plain string: the check reads it from this file's text. */
@@ -2269,7 +2309,7 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
     <Part
       name="rows"
       classes="sc-task-row*, sc-task-rows*"
-      use="A list as rows, each a link with a title and what is said of it at the end."
+      use="A list as rows, each a link with a title and what is said of it at the end; a row of something already seen is lighter."
     >
       <Specimen label="Tasks, each with its project, its state and what is said of it">
         <TaskList
@@ -2287,6 +2327,34 @@ const sections: ReactElement<{ readonly children: ReactNode }> = (
           taskHref={() => "#rows"}
           today={TODAY}
           label="Tasks with a day further off"
+        />
+      </Specimen>
+      <Specimen label="What a member is told of: two not read yet, and two that were, lighter">
+        <NotificationList
+          notifications={[
+            notice("commented", "task.commented", null, {
+              number: 14,
+              title: "Reconcile the three differences of the February close",
+              excerpt: "The third one is the bank's, I wrote to them this morning.",
+            }),
+            notice("decision", "decision.raised", null, {
+              question: "Which of the two statements is the one we file?",
+            }),
+            notice("moved", "task.moved", TODAY_NOON, {
+              number: 9,
+              title: "Fix the bank statement import that fails",
+              from: "in_progress",
+              to: "in_review",
+            }),
+            notice("agent", "agent.state_changed", TODAY_NOON, {
+              login: "acme-mira",
+              handle: "mira",
+              state: "stopped",
+              was: "running",
+              detail: "stopped",
+            }),
+          ]}
+          href={() => "#rows"}
         />
       </Specimen>
     </Part>

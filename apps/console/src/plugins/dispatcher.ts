@@ -2,8 +2,10 @@ import type { PluginHookEvent } from "@skillcdn/console/plugin";
 import { PLUGIN_HOOK_MS, PLUGIN_HOOK_RETRIES } from "@skillcdn/console/plugin";
 import { sql } from "drizzle-orm";
 import { type Database, drizzleOf } from "../db/client.js";
+import { wakeCursorOf } from "../db/queries/board-wakes.js";
 import { settledEnd } from "../db/queries/event-order.js";
 import { type EventRecord, listAllEventsAfter } from "../db/queries/events.js";
+import { notificationsOfEvents } from "../db/queries/notifications.js";
 import {
   beginCursor,
   findProjectByKey,
@@ -230,16 +232,20 @@ export class PluginDispatcher {
       target.consent.includes("events:console") &&
       target.hooks.some((h) => h.startsWith("console:"))
     ) {
+      // A plugin that is handed whom the console told of an event (ADR-0157) hears an event
+      // once the board's pass has read it, and so told whom it concerns: no further than that
+      // pass's place, which is behind the feed's end by a few seconds at most.
+      const toldEnd = target.consent.includes("notifications:read")
+        ? await wakeCursorOf(database, workspace.id)
+        : undefined;
+      const readEnd =
+        consoleEnd === undefined || toldEnd === undefined
+          ? consoleEnd
+          : Math.min(consoleEnd, toldEnd);
       const events =
-        consoleEnd === undefined
+        readEnd === undefined
           ? []
-          : await listAllEventsAfter(
-              database,
-              workspace.id,
-              cursor.consoleAfter,
-              BATCH,
-              consoleEnd,
-            );
+          : await listAllEventsAfter(database, workspace.id, cursor.consoleAfter, BATCH, readEnd);
       for (const event of events) {
         const hook = `console:${event.kind}`;
         const attempt = cursor.attempts + 1;
@@ -529,6 +535,13 @@ export class PluginDispatcher {
       event.projectId === undefined
         ? undefined
         : await findProjectBrief(this.options.database, workspace.id, event.projectId);
+    // Whom the console told of it, for a plugin that carries notifications elsewhere.
+    const told = target.consent.includes("notifications:read")
+      ? {
+          told:
+            (await notificationsOfEvents(this.options.database, [event.id])).get(event.id) ?? [],
+        }
+      : {};
     return {
       source: "console",
       id: hookEventId("console", event.id),
@@ -537,7 +550,7 @@ export class PluginDispatcher {
       at: event.createdAt.toISOString(),
       plugin: event.plugin ?? null,
       project: project === undefined ? null : { id: project.id, key: project.key },
-      data: { ...ids, ...content, ...answer },
+      data: { ...ids, ...content, ...answer, ...told },
     };
   }
 

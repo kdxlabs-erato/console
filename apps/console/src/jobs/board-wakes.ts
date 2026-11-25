@@ -5,6 +5,8 @@ import { RunnerError, sendSignal } from "../db/queries/agent-runners.js";
 import { dueOwnWakes, OwnWakeGone, takeOwnWake } from "../db/queries/agent-wakes.js";
 import {
   accountsToBrief,
+  type BoardTelling,
+  boardTellingsOf,
   boardWakesOf,
   moveWakeCursor,
   noteBriefed,
@@ -15,6 +17,7 @@ import {
 } from "../db/queries/board-wakes.js";
 import { settledEnd, unsettledFor } from "../db/queries/event-order.js";
 import { type EventRecord, listAllEventsAfter } from "../db/queries/events.js";
+import { makeNotification } from "../db/queries/notifications.js";
 import { readWorkspaceSettings } from "../db/queries/workspaces.js";
 import type { Logger } from "../logger.js";
 import type { Clock } from "../ports/clock.js";
@@ -71,13 +74,17 @@ export function dayIn(zone: string | null | undefined, now: Date): string {
   return parts("UTC");
 }
 
+/** A member was told of this event already, by a pass that ended before it kept its place. */
+class AlreadyTold extends Error {}
+
 /**
- * The board's wakes (ADR-0085, point 10): the worker reads the feed from where it read it to,
- * and sends each agent account the wakes an event means to it, a signal each on the account's
- * record. One pass at a time, in whatever process: the place in the feed is the pass's lock.
- * An event's wakes are sent before the place moves past it, and the place is kept a batch at a
- * time: a pass that ends halfway sends again the wakes of the batch it was in, which an agent
- * reads as one, never those of the batches before it, and never loses one. A pass reads no
+ * Whom the board tells (ADR-0157, and ADR-0085, point 10): the worker reads the feed from where
+ * it read it to, and makes each member the notification an event means to them, which for an
+ * agent account is a wake too, a signal on the account's record made with its notification or
+ * not at all. One pass at a time, in whatever process: the place in the feed is the pass's
+ * lock. An event is told before the place moves past it, and the place is kept a batch at a
+ * time: a pass that ends halfway reads again the batch it was in and tells nobody twice, since
+ * a member is told of an event once, and never loses one. A pass reads no
  * further than the feed's settled end (ADR-0125): an event numbered before another and
  * committed after it is read when it is there, never passed over. An event whose wakes fail
  * pass after pass is passed over after `WAKE_TRIES` of them, with an error in the log that
@@ -168,15 +175,15 @@ export class BoardWakes {
         try {
           for (const event of events) {
             at = event;
-            for (const wake of await boardWakesOf(database, event, today)) {
+            for (const telling of await boardTellingsOf(database, event, today)) {
+              woke += await this.#tell(event, telling, now);
+            }
+            // What the console says of its own accord: no notification, and nobody's to turn off.
+            for (const wake of await boardWakesOf(database, event)) {
               await sendSignal(database, {
                 account: wake.account,
                 kind: "wake",
-                // Who did what woke it, where the board says: the header names them.
-                by:
-                  wake.source === "board" && event.actor !== undefined
-                    ? { id: event.actor.id, agent: event.agent }
-                    : undefined,
+                by: undefined,
                 source: wake.source,
                 key: wake.key,
                 text: wake.text,
@@ -237,6 +244,56 @@ export class BoardWakes {
       }
     }
     return sent;
+  }
+
+  /**
+   * Tells one member of an event: their notification, and for an agent account the wake that
+   * is how it learns of anything, the two made together or neither. How many were woken.
+   */
+  async #tell(event: EventRecord, telling: BoardTelling, now: Date): Promise<number> {
+    const database = this.#database;
+    const make = (tx: Parameters<typeof makeNotification>[0], woken: boolean) =>
+      makeNotification(tx, {
+        workspaceId: event.workspaceId,
+        personId: telling.person.id,
+        eventId: event.id,
+        kind: telling.kind,
+        followed: telling.followed,
+        woken,
+        projectId: telling.projectId,
+        taskId: telling.taskId,
+        decisionId: telling.decisionId,
+        aboutId: telling.aboutId,
+        createdAt: event.createdAt,
+      });
+    if (telling.person.kind !== "agent") {
+      await drizzleOf(database).transaction((tx) => make(tx, false));
+      return 0;
+    }
+    try {
+      await sendSignal(database, {
+        account: telling.person,
+        kind: "wake",
+        // Who did what woke it, where the board says: the header names them.
+        by: event.actor === undefined ? undefined : { id: event.actor.id, agent: event.agent },
+        source: "board",
+        key: telling.key,
+        text: telling.text,
+        set: undefined,
+        within: async (tx) => {
+          if (!(await make(tx, true))) {
+            throw new AlreadyTold();
+          }
+        },
+        now,
+      });
+      return 1;
+    } catch (error) {
+      if (error instanceof AlreadyTold) {
+        return 0;
+      }
+      throw error;
+    }
   }
 
   /**

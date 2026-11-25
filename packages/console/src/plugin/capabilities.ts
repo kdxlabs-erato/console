@@ -18,6 +18,7 @@ export const PLUGIN_CAPABILITIES = [
   "board:documents",
   "events:console",
   "events:plugins",
+  "notifications:read",
   "jobs",
   "endpoints",
   "storage:sql",
@@ -103,6 +104,11 @@ export const CAPABILITY_WORDS: Readonly<Record<PluginCapability, CapabilityWords
   "events:plugins": {
     opens: "hooks on the events other plugins emit",
     reach: "what they publish",
+  },
+  "notifications:read": {
+    opens:
+      "with a console event it hears, whom the console told of it and under which kind, to carry it to them elsewhere",
+    reach: "who is told of what on those boards, and so what each member chose to be told of",
   },
   jobs: {
     opens: "runs on a schedule",

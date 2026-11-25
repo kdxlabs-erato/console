@@ -137,6 +137,8 @@ export type Route =
   | { readonly name: "work"; readonly week: string | undefined }
   /** The decisions addressed to the person (ADR-0042), across the projects they may see. */
   | { readonly name: "my-decisions" }
+  /** What the person is told of (ADR-0157): their notifications, those not read alone, or what they chose to be told of. */
+  | { readonly name: "notifications"; readonly view: NotificationsView }
   /** One decision wherever it is (ADR-0068), for whoever it reaches: in a project they may see or not. */
   | { readonly name: "my-decision"; readonly id: string }
   /** The categories tasks are sorted into; an administrator keeps them here. */
@@ -197,6 +199,8 @@ export const PATHS = {
   work: "/work",
   /** The decisions addressed to the person (ADR-0042), across the projects they may see. */
   decisions: "/decisions",
+  /** What the person is told of what happens on the board (ADR-0157). */
+  notifications: "/notifications",
   people: "/people",
   /** The form where an administrator lets someone in by login. */
   newListing: "/people/new",
@@ -340,6 +344,10 @@ export function matchRoute(pathname: string, search = ""): Route {
   if (path.startsWith(`${PATHS.decisions}/`)) {
     const id = path.slice(PATHS.decisions.length + 1);
     return UUID.test(id) ? { name: "my-decision", id } : NOT_FOUND;
+  }
+  if (path === PATHS.notifications) {
+    const view = params.get("view") ?? "all";
+    return isNotificationsView(view) ? { name: "notifications", view } : NOT_FOUND;
   }
   if (path === PATHS.people) {
     return { name: "people" };
@@ -596,6 +604,18 @@ export type AgentsView = (typeof AGENTS_VIEWS)[number];
 
 const isAgentsView = (value: string): value is AgentsView =>
   (AGENTS_VIEWS as readonly string[]).includes(value);
+
+/** The views of a member's notifications: all of them, those not read, and what they chose to be told of. */
+export const NOTIFICATIONS_VIEWS = ["all", "unread", "settings"] as const;
+export type NotificationsView = (typeof NOTIFICATIONS_VIEWS)[number];
+
+const isNotificationsView = (value: string): value is NotificationsView =>
+  (NOTIFICATIONS_VIEWS as readonly string[]).includes(value);
+
+/** Where a view of the notifications is: the page itself for the first, named in the query for the others. */
+export function notificationsHref(view: NotificationsView = "all"): string {
+  return view === "all" ? PATHS.notifications : `${PATHS.notifications}?view=${view}`;
+}
 
 /** Where a view of the agents' page is: the page itself for the first, named in the query for the others. */
 export function agentsHref(view: AgentsView = "mine"): string {

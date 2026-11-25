@@ -27,6 +27,7 @@ import type { CommandSession, SessionClient, Sessions } from "../auth/sessions.j
 import type { Tokens } from "../auth/tokens.js";
 import type { Database } from "../db/client.js";
 import { countWaitingDecisionsFor } from "../db/queries/decisions.js";
+import { countUnreadNotifications } from "../db/queries/notifications.js";
 import {
   homeOf,
   languageOf,
@@ -288,6 +289,10 @@ export function registerAuth(app: Hono<AppEnv>, dependencies: AuthDependencies):
         person === undefined
           ? null
           : { waiting: await countWaitingDecisionsFor(database, found.id, person) },
+      // What the person is told of and has not read (ADR-0157), counted for the pages to say
+      // beside Notifications.
+      notifications:
+        person === undefined ? null : { unread: await countUnreadNotifications(database, person) },
       signIn: auth === undefined ? [] : [...auth.providers],
       console: {
         version: dependencies.console.version,

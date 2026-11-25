@@ -35,6 +35,7 @@ import {
   MAX_LINKS,
   MAX_LOGIN_LENGTH,
   MAX_NOTE_LENGTH,
+  MAX_NOTIFICATION_KIND_LENGTH,
   MAX_OPTION_LABEL_LENGTH,
   MAX_OPTIONS,
   MAX_PERSON_NAME_LENGTH,
@@ -74,6 +75,11 @@ import {
   MIN_HANDLE_LENGTH,
   MIN_OPTIONS,
 } from "./limits.js";
+import {
+  MAX_NOTIFICATION_PROJECTS_OFF,
+  MAX_NOTIFICATIONS_READ,
+  TASK_FOLLOW_STATES,
+} from "./notifications.js";
 import { PLUGIN_WIDGET_SIZE_NAMES } from "./plugin/manifest.js";
 import { hasForbiddenCodePoint } from "./text.js";
 import {
@@ -702,6 +708,11 @@ export const restMeSchema = z.object({
    * console's answer.
    */
   decisions: z.optional(z.nullable(z.object({ waiting: count }))),
+  /**
+   * How many notifications the person has not read (ADR-0157), for the pages to say beside
+   * Notifications; `null` for nobody. Answered from 0.6.1 and read as optional.
+   */
+  notifications: z.optional(z.nullable(z.object({ unread: count }))),
 });
 export type RestMe = z.infer<typeof restMeSchema>;
 
@@ -2333,6 +2344,109 @@ export const restEventSchema = z.object({
   createdAt: instant,
 });
 export type RestEvent = z.infer<typeof restEventSchema>;
+
+/**
+ * A notification (ADR-0157): one thing that happened on the board that the member asking is
+ * told of, with why and whether they read it. What happened is the feed's own event, said as
+ * the feed says it; the project is named for the page to link the thing.
+ */
+export const restNotificationSchema = z.object({
+  id: uuid,
+  /** Why they are told, one of `NOTIFICATION_KINDS`; read as a word, so that a kind a newer console adds is read too. */
+  kind: z.string(),
+  /** Whether they are told because they follow the task, whatever their settings say. */
+  followed: z.boolean(),
+  /** When they read it; `null` while they have not. */
+  readAt: z.nullable(instant),
+  createdAt: instant,
+  event: restEventSchema,
+  /** The project it happened in; `null` for what happened to the workspace itself, an agent account's standing say. */
+  project: z.nullable(projectRef),
+});
+export type RestNotification = z.infer<typeof restNotificationSchema>;
+
+/** `GET /api/v1/notifications`: a page of the asker's notifications, the newest first, whether there is more, and how many they have not read. */
+export const restNotificationsSchema = z.object({
+  items: z.array(restNotificationSchema),
+  more: z.boolean(),
+  unread: count,
+});
+export type RestNotifications = z.infer<typeof restNotificationsSchema>;
+
+/** What `POST /api/v1/notifications/read` is sent: the notifications read, by their ids, or `all` for every one. */
+export const restNotificationsReadInputSchema = z
+  .object({
+    ids: z.optional(z.array(uuid).check(z.minLength(1), z.maxLength(MAX_NOTIFICATIONS_READ))),
+    all: z.optional(z.literal(true)),
+  })
+  .check(
+    z.refine(
+      (input) => (input.ids === undefined) !== (input.all === undefined),
+      "must name the notifications read, or all of them",
+    ),
+  );
+export type RestNotificationsReadInput = z.infer<typeof restNotificationsReadInputSchema>;
+
+/** What marking as read answers: how many were marked, and how many are still not read. */
+export const restNotificationsReadSchema = z.object({ read: count, unread: count });
+export type RestNotificationsRead = z.infer<typeof restNotificationsReadSchema>;
+
+/**
+ * What a member is told of (ADR-0157): each kind on or off, by its name, with what it would
+ * be had they chosen nothing; the projects they are told nothing of; and whether they are told
+ * of what an agent of their own did as them. A map by name, so that a kind a newer console
+ * adds is read.
+ */
+export const restNotificationSettingsSchema = z.object({
+  kinds: z.record(z.string(), z.boolean()),
+  defaults: z.record(z.string(), z.boolean()),
+  projectsOff: z.array(z.object({ key: projectKey, name: z.string() })),
+  ownAgents: z.boolean(),
+});
+export type RestNotificationSettings = z.infer<typeof restNotificationSettingsSchema>;
+
+/**
+ * What `PUT /api/v1/notifications/settings` is sent: the kinds turned on or off, by name, the
+ * others staying as they are; the projects told nothing of, by their keys, the whole list;
+ * whether one's own agents count; or `reset`, alone, for what a member who chose nothing has.
+ */
+export const restNotificationSettingsInputSchema = z
+  .object({
+    kinds: z.optional(z.record(line(MAX_NOTIFICATION_KIND_LENGTH), z.boolean())),
+    projectsOff: z.optional(z.array(projectKey).check(z.maxLength(MAX_NOTIFICATION_PROJECTS_OFF))),
+    ownAgents: z.optional(z.boolean()),
+    reset: z.optional(z.literal(true)),
+  })
+  .check(
+    z.refine(
+      (input) =>
+        input.reset === true
+          ? input.kinds === undefined &&
+            input.projectsOff === undefined &&
+            input.ownAgents === undefined
+          : input.kinds !== undefined ||
+            input.projectsOff !== undefined ||
+            input.ownAgents !== undefined,
+      "must name something to change, or reset alone",
+    ),
+  );
+export type RestNotificationSettingsInput = z.infer<typeof restNotificationSettingsInputSchema>;
+
+/**
+ * What the asker made of one task for themselves (ADR-0157): `following`, told of everything
+ * that happens on it whatever their settings; `muted`, told of nothing of it; `null`, told as
+ * their settings say. The answer of `GET` and `PUT .../tasks/<id>/follow`.
+ */
+export const restTaskFollowSchema = z.object({
+  state: z.nullable(z.enum(TASK_FOLLOW_STATES)),
+});
+export type RestTaskFollow = z.infer<typeof restTaskFollowSchema>;
+
+/** What `PUT .../tasks/<id>/follow` is sent: the same, `null` to take the choice back. */
+export const restTaskFollowInputSchema = z.object({
+  state: z.nullable(z.enum(TASK_FOLLOW_STATES)),
+});
+export type RestTaskFollowInput = z.infer<typeof restTaskFollowInputSchema>;
 
 /** What an agent reported while at work: Markdown, shown as text or rendered to elements. */
 export const restReportSchema = z.object({

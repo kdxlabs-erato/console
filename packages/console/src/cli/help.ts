@@ -53,6 +53,14 @@ import {
   MIN_HANDLE_LENGTH,
   MIN_OPTIONS,
 } from "../limits.js";
+import {
+  MAX_NOTIFICATION_PROJECTS_OFF,
+  MAX_NOTIFICATIONS_PAGE,
+  MAX_NOTIFICATIONS_READ,
+  NOTIFICATION_KINDS,
+  NOTIFICATIONS_KEPT_DAYS,
+  NOTIFICATIONS_PAGE,
+} from "../notifications.js";
 import { COLOR_NAMES } from "../vocabulary.js";
 
 // What the command says about itself: for an agent that meets it for the first time, and for a
@@ -129,6 +137,10 @@ const TASK_FIELD_REFUSALS = [
   "task.invalid_parent: the parent is not a task of the project, or would make a loop",
 ];
 
+/** What a command of the notifications (ADR-0157) meets at a console of before them, which has none of their routes. */
+const NO_NOTIFICATIONS =
+  "a console older than the command has no notifications yet: the command says so, and ends with 1";
+
 export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
   login: {
     usage:
@@ -185,6 +197,53 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     about:
       "What is on your plate across the projects you may see: the open tasks you work on, the sooner due first, each with its project; and the decisions waiting for your answer (ADR-0042), each with who asked it and when, which is since when it waits. Needs no project. --person <login> shows another person's plate, for an administrator or for an owner of a project they are in: the open tasks they work on within the projects you may see, without the decisions.",
   },
+  notifications: {
+    usage:
+      "notifications [--unread] [--limit <n>] [--offset <n>]  |  notifications --read <id> [<id>...]  |  notifications --read-all",
+    synopsis: "What the board told you, newest first; or some of it marked read.",
+    about: `What the board told you (ADR-0157), the newest first, across the projects you may see: the console decides whom a thing that happens is told to and keeps the record, for a person as for an agent account, and for an agent account what it is told is also what wakes it. One line each: its id, unread or read, when, why you are told, which is the kind (console notify says each) with (followed) where you are told because you follow the task, the project's key where it happened in one, and what happened, who did it and then the feed's sentence for it, which names a task by its number; a decision's id follows it, as console decision and console answer take it. A line after them says how many are unread, with what marks them read. --unread keeps the ones you have not read. A page at a time: ${NOTIFICATIONS_PAGE} unless --limit says otherwise, from --offset on; a last line says when there is more. Reading the listing marks nothing: --read marks the notifications named, by the ids the listing prints, and --read-all every one, and either says how many were marked and how many are still unread. Needs no project.`,
+    limits: [
+      `limit: 1 to ${MAX_NOTIFICATIONS_PAGE}`,
+      `read: up to ${MAX_NOTIFICATIONS_READ} ids at once`,
+      `a notification is kept for ${NOTIFICATIONS_KEPT_DAYS} days; what happened stays in the feed`,
+    ],
+    refusals: [
+      "--read without an id, --read with --read-all, or either with --unread, --limit or --offset: not understood, and nothing is asked of the console",
+      NO_NOTIFICATIONS,
+    ],
+  },
+  notify: {
+    usage:
+      "notify [--on <kind>]... [--off <kind>]... [--project-off <key>]... [--project-on <key>]... [--own-agents on|off]  |  notify --reset",
+    overview: "notify [--on <kind>]... [--off <kind>]... [flags]  |  notify --reset",
+    synopsis:
+      "What you are told of: each kind on or off, the projects turned off; or some changed.",
+    about:
+      "What you are told of (ADR-0157). Alone: a line per kind, on or off, with what it is of, and (default: ...) where you chose otherwise than a member who chose nothing has; then the projects you turned off, and whether what an agent of your own did as you is told to you. The kinds: assigned, a task was given to you, as its owner or to work on; ready, a task you work on is ready to begin, and not planned for a later day; moved, a task you own went from one state to another; changed, the title, the body or the days of a task of yours changed; commented, someone wrote on a task of yours; archived, a task of yours was put away; decision, a decision waits for you; answered, a decision you raised was answered; agent, an agent account that reports to you stopped, was refused, failed or is not heard from, or runs again after. A person who chose nothing is told of agent alone, which is what cannot wait. An agent account is told of ready, commented, decision, answered and agent, what asks something of it: nobody attends it, and what it is told of is what wakes it. --on <kind> and --off <kind>, each given again for several, turn a kind on or off, the others staying as they are. --project-off <key> turns a project off, of which you are then told nothing but what happens on a task you follow; --project-on <key> turns it on again. --own-agents on has you told of what an agent of your own did as you; off, which it is until said, leaves that out. --reset, alone, puts everything back to what a member who chose nothing has. After a change the settings are printed as they are now. One task is yours to say apart from the kinds: console follow <number> has you told of everything on it, console mute <number> of nothing. Needs no project.",
+    limits: [
+      `kind: one of ${NOTIFICATION_KINDS.join(", ")}`,
+      `at most ${MAX_NOTIFICATION_PROJECTS_OFF} projects turned off`,
+    ],
+    refusals: [
+      "a kind that is none of them, a kind or a project said both on and off, or --reset beside another flag: not understood, and nothing is asked of the console",
+      "project.not_found: no project has a key named, or it is not yours to see; nothing was changed",
+      NO_NOTIFICATIONS,
+    ],
+  },
+  follow: {
+    usage: "follow <number|id> [--off]",
+    synopsis: "Follows a task: you are told of everything on it; --off takes that back.",
+    about:
+      "Follows a task (ADR-0157): you are told of everything that happens on it, whatever kinds you have on (console notify) and in a project you turned off too. It is your own choice of that one task, and changes what nobody else is told. --off takes the choice back, a mute too: you are then told of the task as your kinds say. console task <number> says where you follow a task or muted it.",
+    refusals: ["task.not_found: no task has that number or id", NO_NOTIFICATIONS],
+  },
+  mute: {
+    usage: "mute <number|id> [--off]",
+    synopsis: "Mutes a task: you are told of nothing of it; --off takes that back.",
+    about:
+      "Mutes a task (ADR-0157): you are told of nothing of it, whatever you are to it and whatever kinds you have on, so that an agent account is not woken by it either. It is your own choice of that one task, and changes what nobody else is told. --off takes the choice back, a follow too: you are then told of the task as your kinds say (console notify). console task <number> says where you follow a task or muted it.",
+    refusals: ["task.not_found: no task has that number or id", NO_NOTIFICATIONS],
+  },
   tasks: {
     usage:
       "tasks [--state <state>] [--open] [--mine] [--category <key>] [--goal <id>] [--due <day|today|week|overdue>] [--unassigned] [--search <words>] [--archived] [--limit <n>] [--offset <n>]",
@@ -199,7 +258,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       "task <number|id>  |  task new <title> [flags]  |  task edit <number|id> [flags]  |  task archive <number|id>|--goal <id>  |  task restore <number|id>",
     synopsis: "One task in full; or a task written, changed, put away or brought back.",
     about:
-      "One task in full, with the address of its page (page: ..., what a person told of the task is given to open), its plan (category, goal, start and due days), what happened to it (when it was started and done, which the board keeps itself, and when it was put away), the decisions about it, the runs on it and the discussion on it, each comment whole with its files; or a new task written down; or a task changed, only in what the flags say, where none clears a field (priorities: low, normal, high, urgent). task new --take writes the task and takes it in one command, for work given in chat: it prints what task new prints, the number first, then what console take prints, with --rules and --agent as take has them; the task is written ready where no state is said, and a state that cannot be taken, done or dropped, is refused before anything is written. Where the take fails after the task was written, the command says so with the number: console take <number> is the way on, and the task is not written again. Where the run began and only the reading of what a take prints failed, it says that the task is taken, by which run, and that it is not taken again. archive puts a task away, whatever its state (ADR-0029, ADR-0030): out of the listings, the board and the calendar, open by its number still; with --goal, every done or dropped task of the goal at once, for an owner. restore brings one back.",
+      "One task in full, with the address of its page (page: ..., what a person told of the task is given to open), that you follow it or muted it where you do (notifications: ..., console follow and console mute), its plan (category, goal, start and due days), what happened to it (when it was started and done, which the board keeps itself, and when it was put away), the decisions about it, the runs on it and the discussion on it, each comment whole with its files; or a new task written down; or a task changed, only in what the flags say, where none clears a field (priorities: low, normal, high, urgent). task new --take writes the task and takes it in one command, for work given in chat: it prints what task new prints, the number first, then what console take prints, with --rules and --agent as take has them; the task is written ready where no state is said, and a state that cannot be taken, done or dropped, is refused before anything is written. Where the take fails after the task was written, the command says so with the number: console take <number> is the way on, and the task is not written again. Where the run began and only the reading of what a take prints failed, it says that the task is taken, by which run, and that it is not taken again. archive puts a task away, whatever its state (ADR-0029, ADR-0030): out of the listings, the board and the calendar, open by its number still; with --goal, every done or dropped task of the goal at once, for an owner. restore brings one back.",
     limits: [
       `title: one line, up to ${MAX_TITLE_LENGTH} characters, saying what is to be done on its own; what it refers to goes in the body`,
       `body: ${MARKDOWN}`,
@@ -895,6 +954,10 @@ const SECTIONS: readonly { readonly title: string; readonly commands: readonly s
     title: "The board",
     commands: [
       "work",
+      "notifications",
+      "notify",
+      "follow",
+      "mute",
       "tasks",
       "task",
       "goals",

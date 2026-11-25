@@ -413,8 +413,8 @@ describe("the console command", () => {
     );
     expect(whole.out()).not.toContain("--parent <number|id>");
     // A map stays one: what the agent accounts added (ADR-0084, ADR-0087) is five commands, a
-    // line each.
-    expect(whole.out().length).toBeLessThan(11_300);
+    // line each, and what the notifications added (ADR-0157) four.
+    expect(whole.out().length).toBeLessThan(11_900);
     // What holds everywhere: every exit code, the fourth included.
     expect(whole.out()).toContain("4 the\ncommand and the console do not go together");
     // Where the skill is, when the command knows; else where to ask.
@@ -9608,6 +9608,547 @@ describe("the archive on the command line (ADR-0029)", () => {
       expect(h.err()).toContain("console task");
     }
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("what the board told a member, on the command line (ADR-0157)", () => {
+  const WEB = { key: "web", name: "The web app", color: null, symbol: null, icon: null };
+  const BOB = { ...PERSON, id: "0199c4d8-0000-7000-8000-000000000002", login: "bob" };
+  const happened = (over: Record<string, unknown>) => ({
+    id: 41,
+    kind: "task.commented",
+    actor: BOB,
+    agent: "Codex on the laptop",
+    projectId: PROJECT.id,
+    taskId: TASK.id,
+    decisionId: null,
+    runId: null,
+    documentId: null,
+    goalId: null,
+    plugin: null,
+    data: { number: 7, title: TASK.title, excerpt: "Which screen did you mean?" },
+    createdAt: WHEN,
+    ...over,
+  });
+  const COMMENTED = {
+    id: "0199c4d8-0000-7000-8000-000000000091",
+    kind: "commented",
+    followed: false,
+    readAt: null,
+    createdAt: WHEN,
+    event: happened({}),
+    project: WEB,
+  };
+  const MOVED = {
+    id: "0199c4d8-0000-7000-8000-000000000092",
+    kind: "moved",
+    followed: true,
+    readAt: "2026-10-09T11:00:00.000Z",
+    createdAt: WHEN,
+    event: happened({
+      id: 40,
+      kind: "task.moved",
+      actor: PERSON,
+      agent: null,
+      data: { number: 7, title: TASK.title, from: "ready", to: "in_progress" },
+    }),
+    project: WEB,
+  };
+  // What the console says of an agent account is of no project, and nobody did it.
+  const UNHEARD = {
+    id: "0199c4d8-0000-7000-8000-000000000093",
+    kind: "agent",
+    followed: false,
+    readAt: null,
+    createdAt: WHEN,
+    event: happened({
+      id: 39,
+      kind: "agent.state_changed",
+      actor: null,
+      agent: null,
+      projectId: null,
+      taskId: null,
+      data: { login: "acme-mira", handle: "mira", state: "unheard" },
+    }),
+    project: null,
+  };
+  // A decision that waits for the member: its event names no number, so the line says its id.
+  const ASKED = {
+    id: "0199c4d8-0000-7000-8000-000000000094",
+    kind: "decision",
+    followed: false,
+    readAt: null,
+    createdAt: WHEN,
+    event: happened({
+      id: 38,
+      kind: "decision.raised",
+      taskId: null,
+      decisionId: DECISION.id,
+      data: { question: DECISION.question },
+    }),
+    project: WEB,
+  };
+  const SETTINGS = {
+    kinds: {
+      assigned: false,
+      ready: true,
+      moved: false,
+      changed: false,
+      commented: false,
+      archived: false,
+      decision: false,
+      answered: false,
+      agent: true,
+    },
+    defaults: {
+      assigned: false,
+      ready: false,
+      moved: false,
+      changed: false,
+      commented: false,
+      archived: false,
+      decision: false,
+      answered: false,
+      agent: true,
+    },
+    projectsOff: [{ key: "ops", name: "Operations" }],
+    ownAgents: false,
+  };
+  const ALL = "GET /api/v1/notifications?limit=50&offset=0";
+  const READ = "POST /api/v1/notifications/read";
+  const SETTINGS_AT = "/api/v1/notifications/settings";
+  const OLDER = "has no notifications yet: it is older than the command.";
+
+  it("lists what one was told, newest first, each with why and what happened as the feed says it", async () => {
+    const { fetch, calls } = fakeConsole({
+      [ALL]: { body: { items: [COMMENTED, MOVED, UNHEARD, ASKED], more: false, unread: 3 } },
+      "GET /api/v1/notifications?unread=true&limit=2&offset=4": {
+        body: { items: [COMMENTED], more: true, unread: 7 },
+      },
+      "GET /api/v1/notifications?unread=true&limit=50&offset=0": {
+        body: { items: [], more: false, unread: 0 },
+      },
+      "GET /api/v1/notifications?limit=50&offset=50": {
+        body: { items: [MOVED], more: false, unread: 0 },
+      },
+      "GET /api/v1/notifications?limit=50&offset=100": {
+        body: { items: [], more: false, unread: 0 },
+      },
+    });
+    const listed = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["notifications"], listed.io)).toBe(EXIT.ok);
+    expect(listed.out()).toBe(
+      [
+        // Who did it, as which agent, and the feed's own sentence.
+        `${COMMENTED.id}  unread  ${WHEN}  commented  web  bob as Codex on the laptop commented on #7 Fix the parser: Which screen did you mean?`,
+        // Told because the task is followed, whatever the kinds say; and read already.
+        `${MOVED.id}  read  ${WHEN}  moved (followed)  web  alice moved #7 Fix the parser from Ready to In progress`,
+        // Of no project, and the console's own word.
+        `${UNHEARD.id}  unread  ${WHEN}  agent  the console has not heard from @mira`,
+        // A decision by its id, which the commands that read and answer it take.
+        `${ASKED.id}  unread  ${WHEN}  decision  web  bob as Codex on the laptop asked: Keep the old behaviour?  (decision ${DECISION.id})`,
+        "3 unread. Mark read: console notifications --read <id> [<id>...], or --read-all.",
+        "",
+      ].join("\n"),
+    );
+    // The member's own, across the projects: nothing of a project is asked for.
+    expect(calls.map((call) => call.key)).toEqual([ALL]);
+    // Those not read yet, a page of them, and how the next is asked for.
+    const paged = harness({ fetch, env: SIGNED_IN });
+    expect(
+      await runCli(["notifications", "--unread", "--limit", "2", "--offset", "4"], paged.io),
+    ).toBe(EXIT.ok);
+    expect(paged.out()).toMatch(
+      /\n7 unread\. Mark read: console notifications --read <id> \[<id>\.\.\.\], or --read-all\.\n\.\.\. more: --offset 6\n$/,
+    );
+    // Nothing to list is one plain line, and none unread is said so.
+    const none = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["notifications", "--unread"], none.io)).toBe(EXIT.ok);
+    expect(none.out()).toBe("No unread notifications.\n");
+    const all = harness({
+      fetch: fakeConsole({ [ALL]: { body: { items: [], more: false, unread: 0 } } }).fetch,
+      env: SIGNED_IN,
+    });
+    expect(await runCli(["notifications"], all.io)).toBe(EXIT.ok);
+    expect(all.out()).toBe("No notifications.\n");
+    const read = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["notifications", "--offset", "50"], read.io)).toBe(EXIT.ok);
+    expect(read.out()).toMatch(/\nNone unread\.\n$/);
+    const past = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["notifications", "--offset", "100"], past.io)).toBe(EXIT.ok);
+    expect(past.out()).toBe("No notifications that far back.\n");
+    // --json is the console's own answer.
+    const asJson = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["notifications", "--json"], asJson.io)).toBe(EXIT.ok);
+    expect(JSON.parse(asJson.out())).toEqual({
+      items: [COMMENTED, MOVED, UNHEARD, ASKED],
+      more: false,
+      unread: 3,
+    });
+  });
+
+  it("keeps a notification a line, whatever someone wrote in what it carries", async () => {
+    const broken = {
+      ...COMMENTED,
+      event: happened({ data: { number: 7, title: TASK.title, excerpt: "One.\n\nTwo.\tThree." } }),
+    };
+    const h = harness({
+      fetch: fakeConsole({ [ALL]: { body: { items: [broken], more: false, unread: 1 } } }).fetch,
+      env: SIGNED_IN,
+    });
+    expect(await runCli(["notifications"], h.io)).toBe(EXIT.ok);
+    expect(h.out().split("\n")).toHaveLength(3);
+    expect(h.out()).toContain("commented on #7 Fix the parser: One. Two. Three.\n");
+  });
+
+  it("marks the notifications named read, or every one, and says how many are still unread", async () => {
+    const { fetch, calls } = fakeConsole({
+      [READ]: [{ body: { read: 2, unread: 3 } }, { body: { read: 3, unread: 0 } }],
+    });
+    const some = harness({ fetch, env: SIGNED_IN });
+    expect(
+      await runCli(["notifications", "--read", COMMENTED.id, UNHEARD.id, COMMENTED.id], some.io),
+    ).toBe(EXIT.ok);
+    // Each id once, as given.
+    expect(calls.at(-1)?.key).toBe(READ);
+    expect(calls.at(-1)?.body).toEqual({ ids: [COMMENTED.id, UNHEARD.id] });
+    expect(some.out()).toBe("Marked 2 read; 3 still unread.\n");
+    const all = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["notifications", "--read-all"], all.io)).toBe(EXIT.ok);
+    expect(calls.at(-1)?.body).toEqual({ all: true });
+    expect(all.out()).toBe("Marked 3 read; 0 still unread.\n");
+  });
+
+  it("refuses a reading without an id, a listing's flags beside a reading, and a word it does not take", async () => {
+    const { fetch, calls } = fakeConsole({});
+    for (const [args, says] of [
+      [["notifications", "--read"], "Say which, by the ids the listing prints"],
+      [["notifications", "--read", COMMENTED.id, "--read-all"], "Say one: --read <id>"],
+      [["notifications", "--read-all", COMMENTED.id], "Say one: --read <id>"],
+      [["notifications", "--read", COMMENTED.id, "--unread"], "are a listing's"],
+      [["notifications", "--read-all", "--limit", "5"], "are a listing's"],
+      [["notifications", "--read-all", "--offset", "5"], "are a listing's"],
+      [["notifications", COMMENTED.id], "an id goes with --read"],
+      [["notifications", "--limit", "0"], "--limit takes an integer between 1 and 200"],
+      [["notifications", "--limit", "201"], "--limit takes an integer between 1 and 200"],
+      [["notifications", "--offset", "-1"], "offset"],
+      [["notifications", "--since", "today"], "--since"],
+    ] as const) {
+      const h = harness({ fetch, env: SIGNED_IN });
+      expect(await runCli([...args], h.io), args.join(" ")).toBe(EXIT.usage);
+      expect(h.err(), args.join(" ")).toContain(says);
+      expect(h.out()).toBe("");
+    }
+    // Nothing was asked of the console.
+    expect(calls).toHaveLength(0);
+  });
+
+  it("says what one is told of: each kind, the projects turned off, and one's own agents", async () => {
+    const { fetch, calls } = fakeConsole({
+      [`GET ${SETTINGS_AT}`]: {
+        // A kind a newer console has is read, and said by its name alone.
+        body: {
+          ...SETTINGS,
+          kinds: { ...SETTINGS.kinds, mentioned: true },
+          defaults: { ...SETTINGS.defaults, mentioned: true },
+        },
+      },
+    });
+    const h = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["notify"], h.io)).toBe(EXIT.ok);
+    expect(h.out()).toBe(
+      [
+        "assigned  off  a task was given to you, as its owner or to work on",
+        // Chosen otherwise than a member who chose nothing has it.
+        "ready  on  a task you work on is ready to begin  (default: off)",
+        "moved  off  a task you own went from one state to another",
+        "changed  off  the title, the body or the days of a task of yours changed",
+        "commented  off  someone wrote on a task of yours",
+        "archived  off  a task of yours was put away",
+        "decision  off  a decision waits for you",
+        "answered  off  a decision you raised was answered",
+        "agent  on  an agent account that reports to you stopped, was refused, failed or is not heard from, or runs again",
+        "mentioned  on",
+        "projects off: ops (Operations)",
+        "own agents: off  (what an agent of your own did as you is not told to you)",
+        "",
+      ].join("\n"),
+    );
+    expect(calls.map((call) => call.key)).toEqual([`GET ${SETTINGS_AT}`]);
+  });
+
+  it("turns kinds on and off, and one's own agents, in one change, and prints the settings as they are now", async () => {
+    const now = {
+      ...SETTINGS,
+      kinds: { ...SETTINGS.kinds, commented: true, decision: true, ready: false },
+      projectsOff: [],
+      ownAgents: true,
+    };
+    const { fetch, calls } = fakeConsole({ [`PUT ${SETTINGS_AT}`]: { body: now } });
+    const h = harness({ fetch, env: SIGNED_IN });
+    expect(
+      await runCli(
+        ["notify", "--on", "commented", "--on", "decision", "--off", "ready", "--own-agents", "on"],
+        h.io,
+      ),
+    ).toBe(EXIT.ok);
+    // Only what the flags say, the other kinds staying as they are; nothing is read first.
+    expect(calls.map((call) => call.key)).toEqual([`PUT ${SETTINGS_AT}`]);
+    expect(calls[0]?.body).toEqual({
+      kinds: { commented: true, decision: true, ready: false },
+      ownAgents: true,
+    });
+    expect(h.out()).toContain("commented  on  someone wrote on a task of yours  (default: off)\n");
+    expect(h.out()).toContain("ready  off  a task you work on is ready to begin\n");
+    expect(h.out()).toContain("projects off: none\n");
+    expect(h.out()).toContain(
+      "own agents: on  (what an agent of your own did as you is told to you too)\n",
+    );
+  });
+
+  it("turns a project off or on again by sending the whole list, read as it stands", async () => {
+    const now = { ...SETTINGS, projectsOff: [{ key: "web", name: "The web app" }] };
+    const { fetch, calls } = fakeConsole({
+      [`GET ${SETTINGS_AT}`]: { body: SETTINGS },
+      [`PUT ${SETTINGS_AT}`]: [
+        { body: now },
+        {
+          status: 404,
+          body: { error: { code: "project.not_found", message: "The project was not found." } },
+        },
+      ],
+    });
+    const h = harness({ fetch, env: SIGNED_IN });
+    expect(
+      await runCli(
+        ["notify", "--project-off", "web", "--project-on", "ops", "--off", "agent"],
+        h.io,
+      ),
+    ).toBe(EXIT.ok);
+    expect(calls.map((call) => call.key)).toEqual([`GET ${SETTINGS_AT}`, `PUT ${SETTINGS_AT}`]);
+    // Those that were, less the one turned on again, and the one turned off now.
+    expect(calls[1]?.body).toEqual({ kinds: { agent: false }, projectsOff: ["web"] });
+    expect(h.out()).toContain("projects off: web (The web app)\n");
+    // One that is off already is sent once; a key the console does not know is its to refuse.
+    const again = harness({ fetch, env: SIGNED_IN });
+    expect(
+      await runCli(["notify", "--project-off", "ops", "--project-off", "nowhere"], again.io),
+    ).toBe(EXIT.failed);
+    expect(calls.at(-1)?.body).toEqual({ projectsOff: ["ops", "nowhere"] });
+    expect(again.err()).toContain("project.not_found: The project was not found.");
+  });
+
+  it("puts everything back with --reset, alone", async () => {
+    const { fetch, calls } = fakeConsole({
+      [`PUT ${SETTINGS_AT}`]: { body: { ...SETTINGS, kinds: SETTINGS.defaults, projectsOff: [] } },
+    });
+    const h = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["notify", "--reset"], h.io)).toBe(EXIT.ok);
+    expect(calls.map((call) => call.key)).toEqual([`PUT ${SETTINGS_AT}`]);
+    expect(calls[0]?.body).toEqual({ reset: true });
+    expect(h.out()).toContain("ready  off  a task you work on is ready to begin\n");
+    expect(h.out()).not.toContain("(default:");
+  });
+
+  it("refuses a kind that is none, before any request, and what says two things at once", async () => {
+    const { fetch, calls } = fakeConsole({});
+    const KINDS =
+      "One of assigned, ready, moved, changed, commented, archived, decision, answered, agent";
+    for (const [args, says] of [
+      [["notify", "--on", "mentions"], `Not a kind of notification: mentions. ${KINDS}`],
+      [
+        ["notify", "--off", "ready", "--off", "Ready"],
+        `Not a kind of notification: Ready. ${KINDS}`,
+      ],
+      [["notify", "--on", "ready", "--off", "ready"], "ready is said both on and off"],
+      [["notify", "--project-off", "web", "--project-on", "web"], "web is said both on and off"],
+      [["notify", "--own-agents", "yes"], "Not what --own-agents takes: yes. One of on, off"],
+      [["notify", "--reset", "--on", "ready"], "--reset stands alone"],
+      [["notify", "--reset", "--project-off", "web"], "--reset stands alone"],
+      [["notify", "--reset", "--own-agents", "off"], "--reset stands alone"],
+      [["notify", "ready"], "ready"],
+      [["notify", "--on"], "--on"],
+    ] as const) {
+      const h = harness({ fetch, env: SIGNED_IN });
+      expect(await runCli([...args], h.io), args.join(" ")).toBe(EXIT.usage);
+      expect(h.err(), args.join(" ")).toContain(says);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it("follows a task, mutes it, and takes either back, saying what holds now", async () => {
+    const FOLLOW = `PUT ${IN}/tasks/${TASK.id}/follow`;
+    const { fetch, calls } = fakeConsole({
+      [`GET ${IN}/tasks/7`]: { body: TASK },
+      [`GET /api/v1/projects/ops/tasks/${TASK.id}`]: { body: TASK },
+      [FOLLOW]: [
+        { body: { state: "following" } },
+        { body: { state: "muted" } },
+        { body: { state: null } },
+        { body: { state: null } },
+      ],
+      [`PUT /api/v1/projects/ops/tasks/${TASK.id}/follow`]: { body: { state: "following" } },
+    });
+    const followed = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["follow", "7"], followed.io)).toBe(EXIT.ok);
+    // The task is read for what it is called, then the choice is kept by its id.
+    expect(calls.map((call) => call.key)).toEqual([`GET ${IN}/tasks/7`, FOLLOW]);
+    expect(calls.at(-1)?.body).toEqual({ state: "following" });
+    expect(followed.out()).toBe(
+      "Following #7 Fix the parser: you are told of everything that happens on it, whatever kinds you have on. Take it back: console follow 7 --off\n",
+    );
+    const muted = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["mute", "7"], muted.io)).toBe(EXIT.ok);
+    expect(calls.at(-1)?.body).toEqual({ state: "muted" });
+    expect(muted.out()).toBe(
+      "Muted #7 Fix the parser: you are told of nothing of it. Take it back: console mute 7 --off\n",
+    );
+    // --off on either takes the choice back, whichever it was.
+    for (const word of ["follow", "mute"]) {
+      const back = harness({ fetch, env: SIGNED_IN });
+      expect(await runCli([word, "7", "--off"], back.io)).toBe(EXIT.ok);
+      expect(calls.at(-1)?.key).toBe(FOLLOW);
+      expect(calls.at(-1)?.body).toEqual({ state: null });
+      expect(back.out()).toBe(
+        "#7 Fix the parser is neither followed nor muted: you are told of it as console notify says.\n",
+      );
+    }
+    // By its id, in the project the flag names; --json is the console's own answer.
+    const elsewhere = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["follow", TASK.id, "--project", "ops", "--json"], elsewhere.io)).toBe(
+      EXIT.ok,
+    );
+    expect(calls.at(-1)?.key).toBe(`PUT /api/v1/projects/ops/tasks/${TASK.id}/follow`);
+    expect(JSON.parse(elsewhere.out())).toEqual({ state: "following" });
+  });
+
+  it("asks which task to follow or to mute, and says a task that is not there as the console does", async () => {
+    const { fetch, calls } = fakeConsole({
+      [`GET ${IN}/tasks/99`]: {
+        status: 404,
+        body: { error: { code: "task.not_found", message: "The task was not found." } },
+      },
+    });
+    for (const word of ["follow", "mute"]) {
+      for (const args of [[word], [word, "7", "8"], [word, "--off"]]) {
+        const h = harness({ fetch, env: SIGNED_IN });
+        expect(await runCli(args, h.io), args.join(" ")).toBe(EXIT.usage);
+        expect(h.err()).toContain(`Say which task: console ${word} <number|id> [--off]`);
+      }
+    }
+    expect(calls).toHaveLength(0);
+    const missing = harness({ fetch, env: SIGNED_IN });
+    expect(await runCli(["mute", "99"], missing.io)).toBe(EXIT.failed);
+    expect(missing.err()).toContain("task.not_found: The task was not found.");
+    // In a directory that names no project, the command says so, and asks nothing.
+    const nowhere = harness({
+      fetch,
+      env: { CONSOLE_URL: ORIGIN, CONSOLE_TOKEN: "cns_t_secret" },
+    });
+    expect(await runCli(["follow", "7"], nowhere.io)).toBe(EXIT.failed);
+    expect(nowhere.err()).toContain("Say which project: --project <key>");
+  });
+
+  it("says on a task that one follows it or muted it, and nothing where one did neither", async () => {
+    const routes = {
+      [`GET ${IN}/tasks/7`]: { body: TASK },
+      [`GET ${IN}/decisions?task=${TASK.id}`]: { body: { more: false, items: [] } },
+      [`GET ${IN}/runs?task=${TASK.id}&brief=true`]: { body: { more: false, items: [] } },
+      [`GET ${IN}/runs?task=${TASK.id}`]: { body: { more: false, items: [] } },
+      [`GET ${IN}/tasks/${TASK.id}/comments`]: { body: { items: [] } },
+    };
+    const AT = `GET ${IN}/tasks/${TASK.id}/follow`;
+    const following = harness({
+      fetch: fakeConsole({ ...routes, [AT]: { body: { state: "following" } } }).fetch,
+      env: SIGNED_IN,
+    });
+    expect(await runCli(["task", "7"], following.io)).toBe(EXIT.ok);
+    expect(following.out()).toContain(
+      "\nnotifications: following, you are told of everything that happens on it, whatever kinds you have on\n",
+    );
+    const muted = harness({
+      fetch: fakeConsole({ ...routes, [AT]: { body: { state: "muted" } } }).fetch,
+      env: SIGNED_IN,
+    });
+    expect(await runCli(["task", "7"], muted.io)).toBe(EXIT.ok);
+    expect(muted.out()).toContain("\nnotifications: muted, you are told of nothing of it\n");
+    const neither = harness({
+      fetch: fakeConsole({ ...routes, [AT]: { body: { state: null } } }).fetch,
+      env: SIGNED_IN,
+    });
+    expect(await runCli(["task", "7"], neither.io)).toBe(EXIT.ok);
+    expect(neither.out()).not.toContain("notifications:");
+    // --json carries the choice beside the task.
+    const asJson = harness({
+      fetch: fakeConsole({ ...routes, [AT]: { body: { state: "muted" } } }).fetch,
+      env: SIGNED_IN,
+    });
+    expect(await runCli(["task", "7", "--json"], asJson.io)).toBe(EXIT.ok);
+    expect(JSON.parse(asJson.out())).toMatchObject({ task: { number: 7 }, follow: "muted" });
+    // A console of before has no such route: the task is printed, and nothing is said of it.
+    const older = harness({ fetch: fakeConsole(routes).fetch, env: SIGNED_IN });
+    expect(await runCli(["task", "7"], older.io)).toBe(EXIT.ok);
+    expect(older.out()).toContain("#7 Fix the parser\n");
+    expect(older.out()).not.toContain("notifications:");
+    expect(older.err()).toBe("");
+    // Anything else the console refuses the read with ends the command, as its other reads do.
+    const refused = harness({
+      fetch: fakeConsole({
+        ...routes,
+        [AT]: {
+          status: 403,
+          body: { error: { code: "auth.forbidden", message: "Not yours to read." } },
+        },
+      }).fetch,
+      env: SIGNED_IN,
+    });
+    expect(await runCli(["task", "7"], refused.io)).toBe(EXIT.failed);
+    expect(refused.err()).toContain("auth.forbidden: Not yours to read.");
+  });
+
+  it("says a console of before the notifications is one, on every command of theirs", async () => {
+    // It answers their paths as nothing; the task is one it has.
+    const old = fakeConsole({ [`GET ${IN}/tasks/7`]: { body: TASK } }, { version: "0.6.0" });
+    for (const args of [
+      ["notifications"],
+      ["notifications", "--read-all"],
+      ["notifications", "--read", COMMENTED.id],
+      ["notify"],
+      ["notify", "--on", "ready"],
+      ["notify", "--project-off", "web"],
+      ["notify", "--reset"],
+      ["follow", "7"],
+      ["mute", "7", "--off"],
+    ]) {
+      const h = harness({ fetch: old.fetch, env: SIGNED_IN });
+      expect(await runCli(args, h.io), args.join(" ")).toBe(EXIT.failed);
+      expect(h.err(), args.join(" ")).toBe(`This console, 0.6.0, ${OLDER}\n`);
+      expect(h.out()).toBe("");
+    }
+    // A console that does not say its version is said without one.
+    const silent = harness({ fetch: fakeConsole({}).fetch, env: SIGNED_IN });
+    expect(await runCli(["notifications"], silent.io)).toBe(EXIT.failed);
+    expect(silent.err()).toBe(`This console ${OLDER}\n`);
+  });
+
+  it("says each command in its own help, with the kinds and what is refused", async () => {
+    const { fetch } = fakeConsole({});
+    const notifications = harness({ fetch });
+    expect(await runCli(["help", "notifications"], notifications.io)).toBe(EXIT.ok);
+    expect(notifications.out()).toContain("notifications --read <id> [<id>...]");
+    expect(notifications.out()).toContain("limit: 1 to 200");
+    const notify = harness({ fetch });
+    expect(await runCli(["notify", "--help"], notify.io)).toBe(EXIT.ok);
+    expect(notify.out()).toContain(
+      "kind: one of assigned, ready, moved, changed, commented, archived, decision, answered, agent",
+    );
+    expect(notify.out()).toContain("--own-agents on|off");
+    for (const word of ["follow", "mute"]) {
+      const one = harness({ fetch });
+      expect(await runCli(["help", word], one.io)).toBe(EXIT.ok);
+      expect(one.out()).toContain(`console ${word} <number|id> [--off]`);
+      expect(one.out()).toContain("a console older than the command has no notifications yet");
+    }
   });
 });
 

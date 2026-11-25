@@ -279,6 +279,7 @@ export const ko: Messages = {
     projects: "프로젝트",
     work: "내 작업",
     myDecisions: "내 결정",
+    notifications: "알림",
     people: "사람들",
     agents: "에이전트",
     board: "보드",
@@ -447,6 +448,10 @@ export const ko: Messages = {
       "events:plugins": {
         name: "다른 플러그인의 이벤트",
         opens: "다른 플러그인이 내는 이벤트에 훅을 겁니다.",
+      },
+      "notifications:read": {
+        name: "알림",
+        opens: "보드 프로젝트에서 일어난 일을 콘솔이 누구에게 알렸는지 읽어, 다른 곳으로 전합니다.",
       },
       jobs: { name: "예약 실행", opens: "정해진 시간에 실행됩니다." },
       endpoints: {
@@ -770,6 +775,70 @@ export const ko: Messages = {
     },
   },
 
+  notifications: {
+    title: "알림",
+    list: "알림",
+    loading: "알림을 불러오는 중",
+    couldNotLoad: "알림을 불러오지 못했습니다.",
+    markAllRead: "모두 읽음으로 표시",
+    unread: "새 알림",
+    followed: "모두 받는 작업",
+    more: "더 보기",
+    views: {
+      aria: "알림 보기",
+      all: "전체",
+      unread: "안 읽음",
+      settings: "설정",
+    },
+    empty: {
+      title: "아직 알림이 없습니다",
+      body: "받기로 한 소식이 여기에 쌓입니다. 설정에서 종류를 켜거나, 작업 페이지에서 그 작업의 알림을 모두 받기로 바꾸세요.",
+    },
+    emptyUnread: {
+      title: "안 읽은 알림이 없습니다",
+      body: "받은 알림을 모두 읽었습니다.",
+    },
+    kinds: {
+      assigned: "나에게 맡겨짐",
+      ready: "시작할 수 있음",
+      commented: "댓글",
+      moved: "상태 변경",
+      changed: "내용 변경",
+      archived: "보관됨",
+      decision: "내 답을 기다리는 결정",
+      answered: "내 질문에 답변",
+      agent: "내 에이전트 계정",
+    },
+    settings: {
+      intro:
+        "무엇을 알림으로 받을지 고릅니다. 켠 종류는 이 목록에 쌓이고, 콘솔에 연결된 메신저가 있으면 그쪽으로도 전해집니다.",
+      introAgent:
+        "이 계정이 무엇을 알림으로 받을지 고릅니다. 켠 종류는 이 목록에 쌓이고 계정을 깨웁니다.",
+      groups: { tasks: "작업", decisions: "결정", agents: "에이전트 계정" },
+      hints: {
+        tasks: "내가 소유하거나 맡은 작업에서 일어난 일입니다.",
+        decisions: "나에게 온 결정과 내가 올린 결정입니다.",
+        agents:
+          "나에게 보고하는 에이전트 계정이 멈추거나 실패하거나 응답이 없을 때, 그리고 다시 실행될 때입니다.",
+      },
+      projects: "프로젝트",
+      projectsHint: "끈 프로젝트의 작업 소식은 받지 않습니다. 모두 받기로 한 작업은 예외입니다.",
+      ownAgents: "내 에이전트",
+      ownAgentsHint:
+        "내 에이전트가 나로서 한 일은 내가 한 일이라 알리지 않습니다. 받고 싶으면 켜세요.",
+      ownAgentsOn: "내 에이전트가 한 일도 알림으로 받기",
+      reset: "기본값으로",
+    },
+    task: {
+      label: "알림",
+      settings: "설정대로",
+      settingsHint: "알림 설정에서 켠 종류만 받습니다",
+      following: "모두 받기",
+      followingHint: "이 작업에서 일어나는 모든 일을 받습니다",
+      muted: "받지 않기",
+      mutedHint: "이 작업의 소식을 받지 않습니다",
+    },
+  },
   myDecisions: {
     title: "내 결정",
     loading: "내 결정을 불러오는 중",

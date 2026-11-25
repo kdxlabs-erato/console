@@ -1,6 +1,8 @@
+import { NOTIFICATIONS_KEPT_DAYS } from "@skillcdn/console/api";
 import { PLUGIN_EVENT_DAYS, PLUGIN_EVENTS_KEPT } from "@skillcdn/console/plugin";
 import type { Database } from "../db/client.js";
 import { deleteExpiredConnectRequests } from "../db/queries/connect.js";
+import { deleteNotificationsBefore } from "../db/queries/notifications.js";
 import { sweepPluginEvents } from "../db/queries/plugin-board.js";
 import { deleteExpiredSessions } from "../db/queries/sessions.js";
 import { deleteExpiredTokens } from "../db/queries/tokens.js";
@@ -9,7 +11,8 @@ import { deleteExpiredUploads } from "../plugins/records.js";
 import type { Clock } from "../ports/clock.js";
 
 /**
- * Removes what time has ended: sessions, tokens and connection requests past their end. None of it is needed for correctness,
+ * Removes what time has ended: sessions, tokens and connection requests past their end, and
+ * the notifications older than a member's list keeps (ADR-0157), whose record is the feed. None of it is needed for correctness,
  * since every read checks the time itself; this only keeps the tables from growing. Every
  * process may run it: deleting twice deletes once. The worker runs it on a schedule, and so
  * does the `api` role when told to carry the worker's work itself.
@@ -44,9 +47,20 @@ export class Janitor {
           before: new Date(now.getTime() - PLUGIN_EVENT_DAYS * 86_400_000),
           keep: PLUGIN_EVENTS_KEPT,
         });
-        if (sessions > 0 || tokens > 0 || requests > 0 || uploads > 0 || pluginEvents > 0) {
+        const notifications = await deleteNotificationsBefore(
+          this.#database,
+          new Date(now.getTime() - NOTIFICATIONS_KEPT_DAYS * 86_400_000),
+        );
+        if (
+          sessions > 0 ||
+          tokens > 0 ||
+          requests > 0 ||
+          uploads > 0 ||
+          pluginEvents > 0 ||
+          notifications > 0
+        ) {
           this.#logger.info(
-            { sessions, tokens, requests, uploads, pluginEvents },
+            { sessions, tokens, requests, uploads, pluginEvents, notifications },
             "what time has ended was removed",
           );
         }

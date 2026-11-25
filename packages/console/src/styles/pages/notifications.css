@@ -1,0 +1,32 @@
+/* Sources: components/notifications.tsx */
+
+/* A notification's line: who did it, then what happened, on one line, the words taking the
+   room that is left and breaking within it. */
+.sc-notification-line {
+  display: flex;
+  grid-column: 1;
+  align-items: baseline;
+  gap: var(--sc-space-2);
+  min-width: 0;
+}
+
+.sc-notification-line .sc-person,
+.sc-notification-line .sc-feed-agent {
+  flex: none;
+}
+
+.sc-notification-line .sc-task-row-title {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* On a phone the words stand under who did it: beside a name they would be a few letters wide. */
+@media (max-width: 40rem) {
+  .sc-notification-line {
+    flex-wrap: wrap;
+  }
+
+  .sc-notification-line .sc-task-row-title {
+    flex-basis: 100%;
+  }
+}

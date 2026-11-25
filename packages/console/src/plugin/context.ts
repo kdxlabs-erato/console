@@ -634,7 +634,23 @@ export interface PluginHookEvent {
   /** The plugin that emitted or caused it, or none. */
   readonly plugin: string | null;
   readonly project: { readonly id: string; readonly key: string } | null;
+  /**
+   * What the event carries. Of a console event, with `notifications:read`, `told` is among it
+   * (ADR-0157): whom the console told of the event, each `{ personId, kind, woken }`, the kind
+   * one of `NOTIFICATION_KINDS`, and `woken` where the console told the member itself, by a
+   * wake of its agent account, so that whoever carries notifications elsewhere carries that one
+   * to nobody.
+   */
   readonly data: unknown;
+}
+
+/** One member the console told of an event, as a hook with `notifications:read` is handed them in `data.told`. */
+export interface PluginHookTold {
+  readonly personId: string;
+  /** Why they were told, one of `NOTIFICATION_KINDS`. */
+  readonly kind: string;
+  /** Whether the console told the member itself, by a wake of its agent account. */
+  readonly woken: boolean;
 }
 
 /** What an endpoint receives: the request, bounded, with the headers the definition named. */

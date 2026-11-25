@@ -4,11 +4,13 @@ import type { PluginHookEvent } from "@skillcdn/console/plugin";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabase, type Database, drizzleOf } from "../db/client.js";
+import { moveWakeCursor, takeWakeCursor } from "../db/queries/board-wakes.js";
 import { holdEventOrder } from "../db/queries/event-order.js";
 import { recordEvent } from "../db/queries/events.js";
+import { makeNotification } from "../db/queries/notifications.js";
 import { emitPluginEvent } from "../db/queries/plugin-board.js";
 import { ensureWorkspace, type WorkspaceRecord } from "../db/queries/workspaces.js";
-import { pluginEvents } from "../db/schema.js";
+import { people, pluginEvents } from "../db/schema.js";
 import { createTestDatabase, DEV_DATABASE_URL, type TestDatabase } from "../db/testing.js";
 import type { Logger } from "../logger.js";
 import { type Dispatching, type DispatchTarget, PluginDispatcher } from "./dispatcher.js";
@@ -415,6 +417,103 @@ describe("the dispatcher", () => {
     finish();
     await running;
     expect(heard).toEqual([`plugin:${id}`]);
+    expect(warnings()).toEqual([]);
+  });
+});
+
+describe("whom the console told of an event, for a plugin that carries it elsewhere (ADR-0157)", () => {
+  it("hands it with the event once the board's pass has read it, and hears nothing of it before", async () => {
+    const database = testDatabase.database;
+    const [person] = await drizzleOf(database)
+      .insert(people)
+      .values({
+        workspaceId: workspace.id,
+        host: "gh",
+        hostAccountId: "9001",
+        login: "told-of-it",
+        lastLoginAt: new Date(),
+      })
+      .returning({ id: people.id });
+    const personId = person?.id ?? "";
+    const heard = new Map<string, unknown[]>();
+    const { logger, warnings } = capture();
+    const listener = (key: string, consent: readonly string[]): DispatchTarget => ({
+      key,
+      hooks: ["console:plugin.enabled"],
+      consent: [...consent],
+      boardProjectId: undefined,
+      projects: [],
+    });
+    const dispatcher = dispatcherOn(
+      database,
+      plugins(
+        [
+          listener("told-carrier", ["events:console", "notifications:read"]),
+          listener("told-plain", ["events:console"]),
+        ],
+        async (key, event) => {
+          heard.set(key, [...(heard.get(key) ?? []), event.data]);
+          return delivered;
+        },
+      ),
+      logger,
+    );
+    // The first pass begins each plugin at the end of the streams.
+    await dispatcher.dispatch();
+    const happened = (key: string) =>
+      drizzleOf(database).transaction((tx) =>
+        recordEvent(tx, {
+          workspaceId: workspace.id,
+          kind: "plugin.enabled",
+          actor: undefined,
+          plugin: key,
+          data: {},
+          now: new Date(),
+        }),
+      );
+    const first = await happened("told-carrier");
+    const second = await happened("told-plain");
+    await dispatcher.dispatch();
+    // The one that is handed whom the console told waits for the board's pass; the other does not.
+    expect(heard.get("told-carrier")).toBeUndefined();
+    expect(heard.get("told-plain")).toEqual([{}]);
+    // The board's pass reads the first event, and tells someone of it.
+    await drizzleOf(database).transaction(async (tx) => {
+      await takeWakeCursor(tx, workspace.id, new Date());
+      await makeNotification(tx, {
+        workspaceId: workspace.id,
+        personId,
+        eventId: first,
+        kind: "agent",
+        followed: false,
+        woken: true,
+        projectId: undefined,
+        taskId: undefined,
+        decisionId: undefined,
+        aboutId: undefined,
+        createdAt: new Date(),
+      });
+      await moveWakeCursor(tx, workspace.id, first, new Date());
+    });
+    await dispatcher.dispatch();
+    expect(heard.get("told-carrier")).toEqual([
+      { told: [{ personId, kind: "agent", woken: true }] },
+    ]);
+    // The next waits for the pass in its turn, and is handed an empty list where nobody was
+    // told of it: a list, and not one left out.
+    await drizzleOf(database).transaction((tx) =>
+      moveWakeCursor(tx, workspace.id, second, new Date()),
+    );
+    const third = await happened("told-carrier");
+    await dispatcher.dispatch();
+    expect(heard.get("told-carrier")).toHaveLength(1);
+    await drizzleOf(database).transaction((tx) =>
+      moveWakeCursor(tx, workspace.id, third, new Date()),
+    );
+    await dispatcher.dispatch();
+    expect(heard.get("told-carrier")?.[1]).toEqual({ told: [] });
+    // Whoever is not handed it is handed none, whatever the pass has read.
+    expect(heard.get("told-plain")).toEqual([{}]);
     expect(warnings()).toEqual([]);
   });
 });

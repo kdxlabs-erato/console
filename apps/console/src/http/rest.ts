@@ -1,4 +1,5 @@
 import {
+  type ChosenNotifications,
   CLAIM_PATH,
   EVENTS_PAGE_LIMIT,
   GLANCE_ROWS,
@@ -16,6 +17,7 @@ import {
   MAX_FILES_PER_DECISION,
   MAX_FILES_PER_DOCUMENT,
   MAX_LOGIN_LENGTH,
+  MAX_NOTIFICATIONS_PAGE,
   MAX_PROJECT_ICON_BYTES,
   MAX_PROJECT_KEY_LENGTH,
   MAX_REPORTS_PER_RUN,
@@ -24,7 +26,11 @@ import {
   MAX_TEAM_KEY_LENGTH,
   MAX_URL_LENGTH,
   MAX_VERSIONS_PER_DOCUMENT,
+  NOTIFICATION_DEFAULTS,
+  NOTIFICATION_KINDS,
+  NOTIFICATIONS_PAGE,
   normalizeConnectCode,
+  notificationSettingsOf,
   type ProjectIconType,
   type ProviderKey,
   projectPath,
@@ -42,6 +48,9 @@ import {
   type RestGoals,
   type RestMembers,
   type RestMyDecisions,
+  type RestNotificationSettings,
+  type RestNotifications,
+  type RestNotificationsRead,
   type RestPackConnect,
   type RestPackConnectStarted,
   type RestPeople,
@@ -62,6 +71,7 @@ import {
   type RestSkillRows,
   type RestSkills,
   type RestTaskBriefs,
+  type RestTaskFollow,
   type RestTasks,
   type RestTeams,
   type RestTokenCreated,
@@ -90,6 +100,8 @@ import {
   restListingInputSchema,
   restMemberInputSchema,
   restMemberPatchSchema,
+  restNotificationSettingsInputSchema,
+  restNotificationsReadInputSchema,
   restPackTokenInputSchema,
   restPersonPatchSchema,
   restProjectInputSchema,
@@ -98,6 +110,7 @@ import {
   restRulesInputSchema,
   restRunEndInputSchema,
   restRunInputSchema,
+  restTaskFollowInputSchema,
   restTaskInputSchema,
   restTaskPatchSchema,
   restTeamInputSchema,
@@ -181,6 +194,7 @@ import {
   type Actor,
   latestEventId,
   listEventsAfter,
+  listEventsByIds,
   listLatestEvents,
   type Scope,
 } from "../db/queries/events.js";
@@ -193,6 +207,15 @@ import {
   listGoals,
   updateGoal,
 } from "../db/queries/goals.js";
+import {
+  chosenNotificationsOf,
+  countUnreadNotifications,
+  followOf,
+  listNotificationsFor,
+  markNotificationsRead,
+  setChosenNotifications,
+  setFollow,
+} from "../db/queries/notifications.js";
 import {
   endPackConnect,
   type PackConnectRecord,
@@ -474,6 +497,11 @@ const myDecisionsQuery = z.object({
   open: z.enum(["true", "false"]).optional(),
   raised: z.enum(["true", "false"]).optional(),
   ...page,
+});
+const notificationsQuery = z.object({
+  unread: z.enum(["true", "false"]).optional(),
+  limit: z.coerce.number().int().min(1).max(MAX_NOTIFICATIONS_PAGE).default(NOTIFICATIONS_PAGE),
+  offset: page.offset,
 });
 const goalsQuery = z.object({
   state: z.enum(GOAL_STATES).optional(),
@@ -1822,6 +1850,166 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
     return c.json(body);
   });
 
+  // What the asker is told of what happens on the board (ADR-0157): their notifications, the
+  // newest first, each with the feed's own event and its project; which of them they read; and
+  // what they are told of. Each is the asker's own, a person's or an agent account's alike, and
+  // their agent's with their token (ADR-0021). A notification is answered only while the asker
+  // may still see the thing it is of.
+  app.get(REST_ROUTES.notifications, async (c) => {
+    const query = notificationsQuery.safeParse(c.req.query());
+    if (!query.success) {
+      return invalid(c, firstProblem(query));
+    }
+    const person = await asking(c);
+    if (person instanceof Response) {
+      return person;
+    }
+    const [found, unread] = await Promise.all([
+      listNotificationsFor(database, person, {
+        unread: query.data.unread === "true",
+        limit: query.data.limit,
+        offset: query.data.offset,
+      }),
+      countUnreadNotifications(database, person),
+    ]);
+    const [happened, refs] = await Promise.all([
+      listEventsByIds(
+        database,
+        person.workspaceId,
+        found.items.map((notification) => notification.eventId),
+      ),
+      findProjectRefs(database, person.workspaceId, [
+        ...new Set(found.items.flatMap((notification) => notification.projectId ?? [])),
+      ]),
+    ]);
+    const projectOf = projectRefsOf(refs);
+    const body: RestNotifications = {
+      items: found.items.flatMap((notification) => {
+        const event = happened.get(notification.eventId);
+        return event === undefined
+          ? []
+          : [
+              {
+                id: notification.id,
+                kind: notification.kind,
+                followed: notification.followed,
+                readAt: notification.readAt?.toISOString() ?? null,
+                createdAt: notification.createdAt.toISOString(),
+                event: restEvent(event),
+                project:
+                  notification.projectId === undefined
+                    ? null
+                    : (projectOf(notification.projectId) ?? null),
+              },
+            ];
+      }),
+      more: found.more,
+      unread,
+    };
+    return c.json(body);
+  });
+
+  app.post(`${REST_ROUTES.notifications}/read`, tooLarge, async (c) => {
+    const caller = await changingCaller(c);
+    if (caller instanceof Response) {
+      return caller;
+    }
+    const input = await bodyOf(c, restNotificationsReadInputSchema);
+    if (input instanceof Response) {
+      return input;
+    }
+    const read = await markNotificationsRead(
+      database,
+      caller.person,
+      input.ids === undefined ? "all" : { ids: input.ids },
+      clock.now(),
+    );
+    const body: RestNotificationsRead = {
+      read,
+      unread: await countUnreadNotifications(database, caller.person),
+    };
+    return c.json(body);
+  });
+
+  /** What a member is told of, as the API answers it: their choices over the defaults of what they are, the projects by their keys. */
+  const notificationSettingsOfPerson = async (
+    person: PersonRecord,
+  ): Promise<RestNotificationSettings> => {
+    const member = person.kind === "agent" ? "agent" : "person";
+    const settings = notificationSettingsOf(
+      member,
+      await chosenNotificationsOf(database, person.id),
+    );
+    const seen = await listProjectsFor(database, person.workspaceId, person);
+    return {
+      kinds: settings.kinds,
+      defaults: NOTIFICATION_DEFAULTS[member],
+      // A project they may no longer see is named to nobody; it stays turned off all the same.
+      projectsOff: seen
+        .filter((project) => settings.projectsOff.includes(project.id))
+        .map((project) => ({ key: project.key, name: project.name })),
+      ownAgents: settings.ownAgents,
+    };
+  };
+
+  app.get(`${REST_ROUTES.notifications}/settings`, async (c) => {
+    const person = await asking(c);
+    return person instanceof Response ? person : c.json(await notificationSettingsOfPerson(person));
+  });
+
+  app.put(`${REST_ROUTES.notifications}/settings`, tooLarge, async (c) => {
+    const caller = await changingCaller(c);
+    if (caller instanceof Response) {
+      return caller;
+    }
+    const input = await bodyOf(c, restNotificationSettingsInputSchema);
+    if (input instanceof Response) {
+      return input;
+    }
+    const { person } = caller;
+    if (input.reset === true) {
+      await setChosenNotifications(database, person.id, undefined, clock.now());
+      return c.json(await notificationSettingsOfPerson(person));
+    }
+    const unknown = Object.keys(input.kinds ?? {}).find(
+      (kind) => !(NOTIFICATION_KINDS as readonly string[]).includes(kind),
+    );
+    if (unknown !== undefined) {
+      return invalid(c, `There is no kind of notification called ${unknown}.`);
+    }
+    const before = (await chosenNotificationsOf(database, person.id)) ?? {};
+    let projectsOff = before.projectsOff;
+    if (input.projectsOff !== undefined) {
+      const seen = await listProjectsFor(database, person.workspaceId, person);
+      const ids: string[] = [];
+      for (const key of new Set(input.projectsOff)) {
+        const project = seen.find((one) => one.key === key);
+        if (project === undefined) {
+          return notFound(c, "project.not_found", "The project was not found.");
+        }
+        ids.push(project.id);
+      }
+      // What was turned off in a project they no longer see stays as it is: it is not theirs to name.
+      const visible = new Set(seen.map((project) => project.id));
+      projectsOff = [...(before.projectsOff ?? []).filter((id) => !visible.has(id)), ...ids];
+    }
+    await setChosenNotifications(
+      database,
+      person.id,
+      {
+        kinds: { ...before.kinds, ...(input.kinds as ChosenNotifications["kinds"]) },
+        ...(projectsOff === undefined ? {} : { projectsOff }),
+        ...(input.ownAgents === undefined
+          ? before.ownAgents === undefined
+            ? {}
+            : { ownAgents: before.ownAgents }
+          : { ownAgents: input.ownAgents }),
+      },
+      clock.now(),
+    );
+    return c.json(await notificationSettingsOfPerson(person));
+  });
+
   // One decision by its id, wherever it is (ADR-0068): in a project the asker may see, or one
   // that reaches them from elsewhere, addressed to them, raised by them, or a plugin's addressed
   // to someone they manage, a person's own while they are in its project (ADR-0077); with
@@ -2729,6 +2917,47 @@ export function registerRest(app: Hono<AppEnv>, dependencies: RestDependencies):
     }
     const task = await taskOf(found.scope, c.req.param("id"));
     return task === undefined ? noSuchTask(c) : c.json(restTask(task));
+  });
+
+  // What the asker made of one task for themselves (ADR-0157): following it, told of everything
+  // that happens on it; muted, told of nothing of it; or neither, told as their settings say.
+  // Anyone who may see the task, by its id or its number.
+  app.get(`${PROJECT}/tasks/:id/follow`, async (c) => {
+    const found = await reading(c);
+    if (found instanceof Response) {
+      return found;
+    }
+    const task = await taskOf(found.scope, c.req.param("id"));
+    if (task === undefined) {
+      return noSuchTask(c);
+    }
+    const body: RestTaskFollow = {
+      state: (await followOf(database, task.id, found.person.id)) ?? null,
+    };
+    return c.json(body);
+  });
+
+  app.put(`${PROJECT}/tasks/:id/follow`, tooLarge, async (c) => {
+    const found = await changing(c);
+    if (found instanceof Response) {
+      return found;
+    }
+    const input = await bodyOf(c, restTaskFollowInputSchema);
+    if (input instanceof Response) {
+      return input;
+    }
+    const task = await taskOf(found.scope, c.req.param("id"));
+    if (task === undefined) {
+      return noSuchTask(c);
+    }
+    await setFollow(database, {
+      taskId: task.id,
+      personId: found.person.id,
+      state: input.state ?? undefined,
+      now: clock.now(),
+    });
+    const body: RestTaskFollow = { state: input.state };
+    return c.json(body);
   });
 
   app.patch(`${PROJECT}/tasks/:id`, tooLarge, async (c) => {

@@ -606,3 +606,44 @@ describe("a project's image for its mark", () => {
     expect((file as File).type).toBe("image/png");
   });
 });
+
+describe("what a member is told of (ADR-0157)", () => {
+  it("asks every one of its addresses under the base URL, as the command does from a machine with no page", async () => {
+    const settings = {
+      kinds: { agent: true },
+      defaults: { agent: true },
+      projectsOff: [],
+      ownAgents: false,
+    };
+    const { send, calls } = fakeFetch({
+      "GET https://console.test/api/v1/notifications?unread=true&limit=5": {
+        body: { items: [], more: false, unread: 0 },
+      },
+      "POST https://console.test/api/v1/notifications/read": { body: { read: 2, unread: 1 } },
+      "GET https://console.test/api/v1/notifications/settings": { body: settings },
+      "PUT https://console.test/api/v1/notifications/settings": { body: settings },
+      "GET https://console.test/api/v1/projects/web/tasks/7/follow": { body: { state: null } },
+      "PUT https://console.test/api/v1/projects/web/tasks/7/follow": {
+        body: { state: "muted" },
+      },
+    });
+    const client = createClient({ baseUrl: "https://console.test", token: "t", fetch: send });
+    expect(await client.notifications({ unread: true, limit: 5 })).toEqual({
+      items: [],
+      more: false,
+      unread: 0,
+    });
+    expect(await client.readNotifications({ all: true })).toEqual({ read: 2, unread: 1 });
+    expect(await client.notificationSettings()).toEqual(settings);
+    expect(await client.updateNotificationSettings({ kinds: { agent: false } })).toEqual(settings);
+    const web = client.project("web");
+    expect(await web.taskFollow("7")).toEqual({ state: null });
+    expect(await web.followTask("7", "muted")).toEqual({ state: "muted" });
+    // None of them is left to an address of the page the code happens to run on.
+    expect(
+      calls.map((call) => call.url).every((url) => url.startsWith("https://console.test/")),
+    ).toBe(true);
+    expect(JSON.parse(String(calls[3]?.init?.body))).toEqual({ kinds: { agent: false } });
+    expect(JSON.parse(String(calls[5]?.init?.body))).toEqual({ state: "muted" });
+  });
+});

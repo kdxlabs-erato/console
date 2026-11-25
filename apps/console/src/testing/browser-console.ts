@@ -15,6 +15,7 @@ import { ensureWorkspace } from "../db/queries/workspaces.js";
 import { createTestDatabase, DEV_DATABASE_URL } from "../db/testing.js";
 import type { AppEnv } from "../http/request-context.js";
 import { startServer } from "../http/server.js";
+import { BoardWakes } from "../jobs/board-wakes.js";
 import { discoverPlugins } from "../plugins/discovery.js";
 import { PluginDispatcher } from "../plugins/dispatcher.js";
 import { PluginHost } from "../plugins/host.js";
@@ -189,7 +190,9 @@ export async function startBrowserConsole(options: BrowserConsoleOptions): Promi
   const logger = pino({ level: "warn" }, { write: () => {} });
   const holder: {
     current: Plugins | undefined;
-    streams: { dispatcher: PluginDispatcher; scheduler: PluginScheduler } | undefined;
+    streams:
+      | { dispatcher: PluginDispatcher; scheduler: PluginScheduler; wakes: BoardWakes }
+      | undefined;
   } = { current: undefined, streams: undefined };
   const host = new PluginHost({
     entry: HOST_ENTRY,
@@ -246,9 +249,18 @@ export async function startBrowserConsole(options: BrowserConsoleOptions): Promi
       clock,
       logger,
     });
+    // Whom the board tells of what happens on it (ADR-0157), in this process too: what is done
+    // here shows up among the notifications of whoever it concerns a few seconds later.
+    const wakes = new BoardWakes({
+      database: testDatabase.database,
+      workspaceId: async () => workspace.id,
+      clock,
+      logger,
+    });
     dispatcher.start(PREVIEW_DISPATCH_INTERVAL_MS);
     scheduler.start(PREVIEW_SCHEDULE_INTERVAL_MS);
-    holder.streams = { dispatcher, scheduler };
+    wakes.start();
+    holder.streams = { dispatcher, scheduler, wakes };
     const provider = createFixtureProvider("gh", {
       authorize: () => `${publicUrl}${fixture}/authorize`,
     });
@@ -391,6 +403,7 @@ export async function startBrowserConsole(options: BrowserConsoleOptions): Promi
         await server.close(2_000);
         await dispatcher.close();
         await scheduler.close();
+        await wakes.close();
         await plugins.stop();
         await harness.close();
         await testDatabase.drop(closing);
@@ -400,6 +413,7 @@ export async function startBrowserConsole(options: BrowserConsoleOptions): Promi
   } catch (error) {
     await holder.streams?.dispatcher.close().catch(() => undefined);
     await holder.streams?.scheduler.close().catch(() => undefined);
+    await holder.streams?.wakes.close().catch(() => undefined);
     await holder.current?.stop().catch(() => undefined);
     await testDatabase.drop().catch(() => undefined);
     await rm(root, { recursive: true, force: true }).catch(() => undefined);

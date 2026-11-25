@@ -133,6 +133,19 @@ export async function seedPreviewWork(options: {
     });
   const admin = clientOf({ cookie: options.admin });
 
+  // What the administrator is told of (ADR-0157): more than a person who chose nothing, so
+  // that what the others do on her work below shows up among her notifications.
+  await admin.updateNotificationSettings({
+    kinds: {
+      assigned: true,
+      commented: true,
+      moved: true,
+      changed: true,
+      decision: true,
+      answered: true,
+    },
+  });
+
   // The workspace, as an administrator keeps it: its week, the zone of the machine this runs
   // on, so that a day here is the day of whoever looks, and the services its agents work with.
   await admin.updateWorkspace({

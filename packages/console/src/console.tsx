@@ -27,6 +27,9 @@ import {
   type RestEvent,
   type RestMe,
   type RestMyDecisions,
+  type RestNotification,
+  type RestNotificationSettings,
+  type RestNotifications,
   type RestPluginDetail,
   type RestProject,
   type RestProjectInput,
@@ -36,6 +39,7 @@ import {
   type RestRules,
   type RestSessions,
   type RestTask,
+  type RestTaskFollow,
   type RestTaskInput,
   type RestToken,
   type RestTokenCreated,
@@ -69,6 +73,7 @@ import { EventFeed, type EventFeedProps } from "./components/event-feed.js";
 import { GoalForm, GoalList, type GoalListProps, GoalView, goalMonth } from "./components/goals.js";
 import { HomeGrid, type HomeGridProps, type ProjectGlance } from "./components/home.js";
 import { MyDecisions, ReachedDecision } from "./components/my-decisions.js";
+import { NotificationList, NotificationSettings } from "./components/notifications.js";
 import { PackTokenWays } from "./components/pack-token.js";
 import { PAGE_SIZE } from "./components/paged.js";
 import {
@@ -160,9 +165,11 @@ import {
   matchRoute,
   myDecisionHref,
   type Navigation,
+  type NotificationsView,
   newDecisionHref,
   newGoalHref,
   newTaskHref,
+  notificationsHref,
   PATHS,
   personAgentsHref,
   personWorkHref,
@@ -937,6 +944,26 @@ function TaskPage(props: {
     (fetched !== undefined && (fetched.id === route.id || fetched.number === route.number)
       ? fetched
       : undefined);
+  // What the reader is told of this task (ADR-0157): read with it, and not offered where the
+  // console keeps none, an older one.
+  const { taskFollow, followTask } = data.actions;
+  const [follow, setFollow] = useState<RestTaskFollow | undefined>(undefined);
+  const followed = task?.id;
+  useEffect(() => {
+    setFollow(undefined);
+    if (followed === undefined) {
+      return;
+    }
+    const controller = new AbortController();
+    taskFollow(followed, controller.signal)
+      .then((found) => {
+        if (!controller.signal.aborted) {
+          setFollow(found);
+        }
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [followed, taskFollow]);
   // The task this one is part of: among the board's, or asked for by itself when it was put away.
   const parentId = task?.parentId ?? null;
   const parentOnBoard =
@@ -1062,6 +1089,18 @@ function TaskPage(props: {
           ),
       }}
       onAbandonRun={(run) => void act(() => data.actions.abandonRun(run.id))}
+      follow={
+        follow === undefined
+          ? undefined
+          : {
+              state: follow.state,
+              busy,
+              onChange: (state) =>
+                void act(async () => {
+                  setFollow(await followTask(task.id, state));
+                }),
+            }
+      }
       onArchive={(target) =>
         void act(async () => {
           await data.actions.archiveTask(target.id);
@@ -2768,6 +2807,190 @@ function useMyDecisions(
   return { items, more, busy, problem, readMore, reload };
 }
 
+/** How many notifications the page reads at a time. */
+const NOTIFICATIONS_READ = 50;
+
+/**
+ * What the person is told of what happens on the board (ADR-0157): their notifications, the
+ * newest first, all of them or those not read, and what they chose to be told of. A
+ * notification opened is read; the count beside the page's name follows.
+ */
+function NotificationsPage(props: {
+  readonly data: ConsoleData;
+  readonly view: NotificationsView;
+}) {
+  const words = useWords();
+  const said = words.notifications;
+  const { data, view } = props;
+  const { notifications, readNotifications, notificationSettings, updateNotificationSettings } =
+    data.actions;
+  const [items, setItems] = useState<RestNotifications["items"] | undefined>(undefined);
+  const [more, setMore] = useState(false);
+  const [unread, setUnread] = useState<number | undefined>(undefined);
+  const [settings, setSettings] = useState<RestNotificationSettings | undefined>(undefined);
+  const [problem, setProblem] = useState<string | undefined>(undefined);
+  const { busy, error, act } = useAction();
+  const listed = view !== "settings";
+  const read = useCallback(
+    async (offset: number, signal?: AbortSignal) => {
+      try {
+        const page = await notifications(
+          { unread: view === "unread", limit: NOTIFICATIONS_READ, offset },
+          signal,
+        );
+        if (signal?.aborted === true) {
+          return;
+        }
+        setItems((before) => (offset === 0 ? page.items : [...(before ?? []), ...page.items]));
+        setMore(page.more);
+        setUnread(page.unread);
+      } catch (failure: unknown) {
+        if (signal?.aborted !== true) {
+          setProblem(errorWords(failure, said.couldNotLoad));
+        }
+      }
+    },
+    [notifications, view, said.couldNotLoad],
+  );
+  useEffect(() => {
+    const controller = new AbortController();
+    setProblem(undefined);
+    if (listed) {
+      setItems(undefined);
+      void read(0, controller.signal);
+    } else {
+      notificationSettings(controller.signal)
+        .then((found) => {
+          if (!controller.signal.aborted) {
+            setSettings(found);
+          }
+        })
+        .catch((failure: unknown) => {
+          if (!controller.signal.aborted) {
+            setProblem(errorWords(failure, said.couldNotLoad));
+          }
+        });
+    }
+    return () => controller.abort();
+  }, [listed, read, notificationSettings, said.couldNotLoad]);
+  const shown = unread ?? data.me?.notifications?.unread ?? 0;
+  const views: readonly {
+    readonly view: NotificationsView;
+    readonly label: string;
+    readonly count?: number;
+  }[] = [
+    { view: "all", label: said.views.all },
+    { view: "unread", label: said.views.unread, count: shown },
+    { view: "settings", label: said.views.settings },
+  ];
+  const visible = (key: string) => data.projects.some((project) => project.key === key);
+  /** Where what a notification is of is read: the task, the decision, the agent account. */
+  const hrefOf = (notification: RestNotification): string | undefined => {
+    const { event, project } = notification;
+    if (event.decisionId !== null) {
+      return project !== null && visible(project.key)
+        ? decisionHref(project.key, event.decisionId)
+        : myDecisionHref(event.decisionId);
+    }
+    if (project !== null && event.data.number !== undefined) {
+      return visible(project.key) ? taskHref(project.key, event.data.number) : undefined;
+    }
+    return event.data.handle === undefined ? undefined : agentHref(event.data.handle);
+  };
+  const shownProblem = problem ?? error;
+  return (
+    <>
+      <div className="sc-page-head">
+        <h1 className="sc-page-title">{said.title}</h1>
+        {listed && (
+          <Button
+            variant="secondary"
+            disabled={busy || shown === 0}
+            onClick={() =>
+              void act(async () => {
+                await readNotifications({ all: true });
+                await read(0);
+              })
+            }
+          >
+            {said.markAllRead}
+          </Button>
+        )}
+      </div>
+      <nav className="sc-subtabs sc-notifications-views" aria-label={said.views.aria}>
+        {views.map((one) => (
+          <a
+            key={one.view}
+            className={cx("sc-tab", one.view === view && "sc-tab-current")}
+            href={notificationsHref(one.view)}
+            aria-current={one.view === view ? "page" : undefined}
+          >
+            {one.label}
+            {one.count !== undefined && one.count > 0 && (
+              <span className="sc-tab-count">{one.count}</span>
+            )}
+          </a>
+        ))}
+      </nav>
+      {shownProblem !== undefined && <Callout tone="danger">{shownProblem}</Callout>}
+      {!listed ? (
+        settings === undefined ? (
+          shownProblem === undefined && (
+            <div className="sc-loading">
+              <Spinner label={said.loading} />
+            </div>
+          )
+        ) : (
+          <section className="sc-panel" aria-label={said.views.settings}>
+            <NotificationSettings
+              settings={settings}
+              projects={data.projects.map((project) => ({ key: project.key, name: project.name }))}
+              agent={data.me?.person?.kind === "agent"}
+              busy={busy}
+              onChange={(input) =>
+                void act(async () => {
+                  setSettings(await updateNotificationSettings(input));
+                })
+              }
+            />
+          </section>
+        )
+      ) : items === undefined ? (
+        shownProblem === undefined && (
+          <div className="sc-loading">
+            <Spinner label={said.loading} />
+          </div>
+        )
+      ) : items.length === 0 ? (
+        view === "unread" ? (
+          <EmptyState title={said.emptyUnread.title} body={said.emptyUnread.body} />
+        ) : (
+          <EmptyState
+            title={said.empty.title}
+            body={said.empty.body}
+            action={
+              <LinkButton href={notificationsHref("settings")} variant="secondary">
+                {said.views.settings}
+              </LinkButton>
+            }
+          />
+        )
+      ) : (
+        <NotificationList
+          notifications={items}
+          href={hrefOf}
+          onOpen={(notification) => {
+            // Read as it is opened: the page that follows needs no answer of this.
+            void readNotifications({ ids: [notification.id] }).catch(() => undefined);
+          }}
+          more={more}
+          onMore={() => void read(items.length)}
+        />
+      )}
+    </>
+  );
+}
+
 /**
  * A person's decisions (ADR-0042), laid out as a project's decisions page is: those waiting for
  * their answer, answered here, those they asked of others, and the record of both.
@@ -3087,6 +3310,9 @@ function WorkspacePage(props: {
   }
   if (route.name === "my-decision") {
     return <MyDecisionPage id={route.id} data={data} />;
+  }
+  if (route.name === "notifications") {
+    return <NotificationsPage data={data} view={route.view} />;
   }
   if (route.name === "person-work") {
     return <PersonWorkPage id={route.id} data={data} components={components} week={route.week} />;
@@ -3644,6 +3870,17 @@ export function createConsole(config: ConsoleConfig = {}): ConsoleApp {
           current: route.name === "my-decisions" || route.name === "my-decision",
           count: data.me?.decisions?.waiting,
         },
+        // Where the console keeps what a member is told of (ADR-0157): an older one answers none.
+        ...(data.me?.notifications === undefined || data.me.notifications === null
+          ? []
+          : [
+              {
+                href: PATHS.notifications,
+                label: words.nav.notifications,
+                current: route.name === "notifications",
+                count: data.me.notifications.unread,
+              },
+            ]),
         {
           href: PATHS.people,
           label: words.nav.people,

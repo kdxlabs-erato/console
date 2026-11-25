@@ -212,6 +212,7 @@ Declared in the manifest, consented to by an administrator when enabling, enforc
 | `board:decisions` | decisions raised in its projects; the answers to its own read | questions that mislead; never an answer of its own (an answer for a person is `people:act`) |
 | `board:documents` | pages written under `plugins/<key>/` in its projects | pages that mislead, in its folder |
 | `events:console` | hooks on the console's events of its board projects: the kind, the ids and the time, the content with `board:read` | when things happen on those boards |
+| `notifications:read` | with a console event it hears, whom the console told of it ([ADR-0157](../adr/0157-the-console-decides-who-is-told-of-what-and-keeps-the-record-and-a-plugin-carries-it-out.md)): `data.told`, each `{ personId, kind, woken }`, the kind one of the console's kinds of notification and `woken` where the console told the member itself, by a wake of its agent account, so that whoever carries notifications elsewhere carries that one to nobody; an empty list where nobody was told. A plugin that holds it hears an event once the board's pass has read it, a few seconds after it happened | who is told of what on those boards, and so what each member chose to be told of |
 | `events:plugins` | hooks on the events other plugins emit | what they publish |
 | `jobs` | runs on a schedule | time, within the bound |
 | `outbound:<host>` | `ctx.fetch` to that host, a public address, over https | what it may read, sent to that host; a cost there |
