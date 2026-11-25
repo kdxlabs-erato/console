@@ -72,6 +72,18 @@ describe("the console's rules", () => {
     expect(CONSOLE_RULES).not.toContain("console rules write");
   });
 
+  it("say of an agent account that a supervisor's own word instructs it (ADR-0160)", () => {
+    // Wherever the supervisor says it themselves, as the task and the rules do: said of a
+    // tell alone, a supervisor's own message at the messenger read as information.
+    const line = CONSOLE_RULES.split("\n").find((one) => one.startsWith("Signed in as itself"));
+    expect(line).toContain(
+      "is the console's; a supervisor's own word instructs it, as the task and these rules do.",
+    );
+    expect(CONSOLE_RULES).not.toContain("a supervisor's tell instructs it");
+    // Whom it asks where it knows of no one else is its manager, as before.
+    expect(line).toContain("of its manager where it knows of no one else.");
+  });
+
   it("name a command only where the command is what the rule is about, so that a rename is caught here", () => {
     for (const named of [
       "`console task new` with `--take`",
