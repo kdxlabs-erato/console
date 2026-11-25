@@ -1,6 +1,6 @@
 # ADR-0141: What an agent said is read as Markdown, and a sub-agent under the call that started it
 
-- Status: Accepted
+- Status: Accepted; points 5 and 6, how a sub-agent stands and when the page says who is at work, are amended by [ADR-0161](0161-a-sub-agent-that-goes-on-in-the-background-is-at-work-until-its-own-line-says-it-ended.md) for a sub-agent that goes on in the background: it is at work until its own line says it ended, whatever turn ended meanwhile
 - Date: 2026-11-20
 - Supersedes point 6 of [ADR-0131](0131-a-signal-is-delivered-when-the-product-took-it-and-an-event-says-which-sub-agent-made-it.md), "the page shows a sub-agent's event as a step, with a label", and its rejection of reading a sub-agent's events under the call that started it; adds a fact to its point 4. Amends point 2 of [ADR-0086](0086-a-session-leaves-a-transcript-that-is-kept-for-good.md) where it says an event is "shown as text": what the agent said is shown as Markdown rendered to elements, and nothing of an event is HTML, as before. The contract is in [specs/runner.md](../specs/runner.md).
 

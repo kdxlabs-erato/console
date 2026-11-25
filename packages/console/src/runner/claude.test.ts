@@ -727,6 +727,490 @@ describe("the claude driver", () => {
     ]);
   });
 
+  it("reads a sub-agent that goes on in the background as it reads one in the foreground, and says when either ended", async () => {
+    // As 2.1.330 printed one of each, the lines cut down and every id invented: a sub-agent in
+    // the background is answered for at once, its lines go on past the turn's result, and a
+    // line of the product's own says when it ended; one in the foreground is answered for
+    // when it is done, with the same line just before.
+    const { session, says, exits } = started();
+    const whose = { agent_id: "a0f1e2d3c4b5a6978", subagent_type: "general-purpose" };
+    says(INIT);
+    says({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_b1",
+            name: "Agent",
+            input: {
+              description: "Count the fixtures",
+              subagent_type: "general-purpose",
+              prompt: "Count them.",
+            },
+          },
+        ],
+      },
+      parent_tool_use_id: null,
+    });
+    says({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: [
+        { task_id: whose.agent_id, task_type: "local_agent", description: "Count the fixtures" },
+      ],
+    });
+    says({
+      type: "system",
+      subtype: "task_started",
+      task_id: whose.agent_id,
+      run_id: "0mwvunevw-9663c43a",
+      tool_use_id: "toolu_b1",
+      description: "Count the fixtures",
+      subagent_type: "general-purpose",
+      is_backgrounded: true,
+      spawn_depth: 1,
+      task_type: "local_agent",
+    });
+    // The call is answered at once: the sub-agent was started, and goes on.
+    says({
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            tool_use_id: "toolu_b1",
+            type: "tool_result",
+            content: [{ type: "text", text: "Async agent launched successfully." }],
+          },
+        ],
+      },
+      parent_tool_use_id: null,
+      tool_use_result: {
+        isAsync: true,
+        status: "async_launched",
+        agentId: whose.agent_id,
+        description: "Count the fixtures",
+        outputFile: "/tmp/tasks/a0f1e2d3c4b5a6978.output",
+      },
+    });
+    says(says1("Started."));
+    says(RESULT);
+    // What it does comes after the turn that started it is over.
+    says({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "toolu_s1", name: "Bash", input: { command: "ls fixtures" } },
+        ],
+      },
+      parent_tool_use_id: "toolu_b1",
+      ...whose,
+    });
+    says({
+      type: "system",
+      subtype: "task_progress",
+      task_id: whose.agent_id,
+      tool_use_id: "toolu_b1",
+      description: "Running ls fixtures",
+      usage: { total_tokens: 13956, tool_uses: 1, duration_ms: 966 },
+      last_tool_name: "Bash",
+    });
+    // A command of the sub-agent's is a task of the product's too, and no sub-agent.
+    says({
+      type: "system",
+      subtype: "task_started",
+      task_id: "bcns9s4e3",
+      tool_use_id: "toolu_s1",
+      description: "ls fixtures",
+      is_backgrounded: false,
+      task_type: "local_bash",
+    });
+    says({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "bcns9s4e3",
+      tool_use_id: "toolu_s1",
+      status: "completed",
+      output_file: "",
+      summary: "ls fixtures",
+    });
+    says({
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { tool_use_id: "toolu_s1", type: "tool_result", content: "two", is_error: false },
+        ],
+      },
+      parent_tool_use_id: "toolu_b1",
+      ...whose,
+    });
+    says({
+      type: "system",
+      subtype: "task_updated",
+      task_id: whose.agent_id,
+      patch: { status: "completed", end_time: 1795594585796 },
+    });
+    says({
+      type: "system",
+      subtype: "task_notification",
+      task_id: whose.agent_id,
+      tool_use_id: "toolu_b1",
+      status: "completed",
+      output_file: "/tmp/tasks/a0f1e2d3c4b5a6978.output",
+      summary: 'Agent "Count the fixtures" completed',
+      usage: { total_tokens: 15623, tool_uses: 1, duration_ms: 8624 },
+    });
+    says({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+    // Its report reaches the agent as a message of the product's own, in a turn of its own.
+    says({
+      type: "user",
+      message: { role: "user", content: "<agent-message>Two.</agent-message>" },
+      parent_tool_use_id: null,
+      uuid: "0199c4d8-0000-7000-8000-00000000e0b1",
+      isReplay: true,
+      isSynthetic: true,
+      origin: { kind: "peer", from: whose.agent_id },
+    });
+    says(says1("Two fixtures."));
+    says(RESULT);
+    // One in the foreground: the call waits for it, and is answered with what it answered.
+    says({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_f1",
+            name: "Agent",
+            input: {
+              description: "Name the fixtures",
+              subagent_type: "general-purpose",
+              run_in_background: false,
+              prompt: "Name them.",
+            },
+          },
+        ],
+      },
+      parent_tool_use_id: null,
+    });
+    says({
+      type: "system",
+      subtype: "task_started",
+      task_id: "a96a3fae8f118235f",
+      tool_use_id: "toolu_f1",
+      description: "Name the fixtures",
+      is_backgrounded: false,
+      spawn_depth: 1,
+      task_type: "local_agent",
+    });
+    says({
+      type: "assistant",
+      message: {
+        content: [{ type: "tool_use", id: "toolu_s2", name: "Bash", input: { command: "ls" } }],
+      },
+      parent_tool_use_id: "toolu_f1",
+      agent_id: "a96a3fae8f118235f",
+    });
+    says({
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { tool_use_id: "toolu_s2", type: "tool_result", content: "a b", is_error: false },
+        ],
+      },
+      parent_tool_use_id: "toolu_f1",
+      agent_id: "a96a3fae8f118235f",
+    });
+    says({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "a96a3fae8f118235f",
+      tool_use_id: "toolu_f1",
+      status: "completed",
+      output_file: "/tmp/tasks/a96a3fae8f118235f.output",
+      summary: 'Agent "Name the fixtures" completed',
+    });
+    says({
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            tool_use_id: "toolu_f1",
+            type: "tool_result",
+            content: [{ type: "text", text: "a and b" }],
+          },
+        ],
+      },
+      parent_tool_use_id: null,
+      tool_use_result: { status: "completed", agentId: "a96a3fae8f118235f", totalToolUseCount: 1 },
+    });
+    says(says1("Named."));
+    says(RESULT);
+    exits(0);
+    const all = await collect(session.events);
+    const counted = { parent: "toolu_b1", subagent: "general-purpose: Count the fixtures" };
+    const named = { parent: "toolu_f1", subagent: "general-purpose: Name the fixtures" };
+    expect(
+      all
+        .slice(STARTED.length)
+        .map((event) =>
+          event.type === "event" ? [event.kind, event.text, event.data] : event.type,
+        ),
+    ).toEqual([
+      [
+        "tool_call",
+        expect.stringContaining("Count the fixtures"),
+        { tool: "Agent", id: "toolu_b1", starts: counted.subagent },
+      ],
+      // The answer of a call whose sub-agent goes on says so.
+      [
+        "tool_result",
+        "Async agent launched successfully.",
+        { id: "toolu_b1", error: false, background: true },
+      ],
+      ["assistant", "Started.", undefined],
+      "turn_completed",
+      // In the same shape as one in the foreground, a turn's end between or none.
+      ["tool_call", "ls fixtures", { tool: "Bash", id: "toolu_s1", ...counted }],
+      ["tool_result", "two", { id: "toolu_s1", error: false, ...counted }],
+      ["status", "The sub-agent is done.", { ...counted, over: "completed" }],
+      ["assistant", "Two fixtures.", undefined],
+      "turn_completed",
+      [
+        "tool_call",
+        expect.stringContaining("Name the fixtures"),
+        { tool: "Agent", id: "toolu_f1", starts: named.subagent },
+      ],
+      ["tool_call", "ls", { tool: "Bash", id: "toolu_s2", ...named }],
+      ["tool_result", "a b", { id: "toolu_s2", error: false, ...named }],
+      ["status", "The sub-agent is done.", { ...named, over: "completed" }],
+      ["tool_result", "a and b", { id: "toolu_f1", error: false }],
+      ["assistant", "Named.", undefined],
+      "turn_completed",
+      "ended",
+    ]);
+  });
+
+  it("says how a sub-agent ended as the product does, by the task it knows the sub-agent as, and nothing of a task that is none", async () => {
+    // A sub-agent that failed and one that was stopped, as 2.1.322 wrote the line of each.
+    const SECRET = "not-a-real-token-4f9a2c71";
+    const redact = redactorOf([SECRET]);
+    const { session, says, exits } = started({
+      cut: (text, most, more) => cutShown(redact, text, most, more),
+    });
+    const starts = (id: string, about: string) => ({
+      type: "assistant",
+      message: {
+        content: [{ type: "tool_use", id, name: "Agent", input: { description: about } }],
+      },
+      parent_tool_use_id: null,
+    });
+    const ends = (task: unknown, call: unknown, status: unknown, summary?: unknown) => ({
+      type: "system",
+      subtype: "task_notification",
+      task_id: task,
+      tool_use_id: call,
+      status,
+      output_file: "",
+      summary,
+    });
+    says(INIT);
+    says(starts("toolu_a1", "Read the spec"));
+    says(starts("toolu_a2", "Run the tests"));
+    says(starts("toolu_a3", "Write the page"));
+    // Known by its task from the line that says the task started; by its lines, which hold
+    // over that, where it was started again by another call; and by the call alone.
+    says({
+      type: "system",
+      subtype: "task_started",
+      task_id: "task-1",
+      tool_use_id: "toolu_a1",
+      task_type: "local_agent",
+    });
+    says({
+      type: "system",
+      subtype: "task_started",
+      task_id: "task-2",
+      tool_use_id: "toolu_again",
+      task_type: "local_agent",
+    });
+    says({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "Running them." }] },
+      parent_tool_use_id: "toolu_a2",
+      agent_id: "task-2",
+    });
+    says(
+      ends("task-1", "toolu_elsewhere", "failed", `  API Error: 529 ${SECRET} ${"x".repeat(2000)}`),
+    );
+    says(ends("task-2", "toolu_again", "stopped", "Stopped."));
+    says(ends("task-3", "toolu_a3", "completed"));
+    // The same sub-agent, started again and done again: said again.
+    says(ends("task-2", "toolu_again", "completed"));
+    // A task that is no sub-agent's, an end that is none of the product's three, and lines
+    // that are no such line at all: nothing.
+    says(ends("task-9", "toolu_bash", "completed", "sleep 4"));
+    says(ends("task-1", "toolu_a1", "killed"));
+    says(ends(7, ["toolu_a1"], { status: "completed" }));
+    says({ type: "system", subtype: "task_notification" });
+    says({ type: "system", subtype: "task_started", task_id: {}, tool_use_id: 4 });
+    says({ type: "system", subtype: "task_started", task_id: "task-8", task_type: "local_bash" });
+    exits(0);
+    const events = (await collect(session.events)).filter((event) => event.type === "event");
+    const failed = events[5];
+    // The product's words for why, the secret out of them and cut to what an event shows.
+    const said = "The sub-agent failed.\n";
+    expect(failed?.text.startsWith(`${said}API Error: 529 ${WITHHELD} xxx`)).toBe(true);
+    expect(failed?.text.endsWith(`x${String.fromCodePoint(0x2026)}`)).toBe(true);
+    expect(failed?.text.length).toBe(said.length + 1001);
+    expect(failed?.text).not.toContain(SECRET);
+    expect(failed?.data).toEqual({ parent: "toolu_a1", subagent: "Read the spec", over: "failed" });
+    expect(events.slice(6).map((event) => [event.kind, event.text, event.data])).toEqual([
+      [
+        "status",
+        "The sub-agent was stopped.",
+        { parent: "toolu_a2", subagent: "Run the tests", over: "stopped" },
+      ],
+      [
+        "status",
+        "The sub-agent is done.",
+        { parent: "toolu_a3", subagent: "Write the page", over: "completed" },
+      ],
+      [
+        "status",
+        "The sub-agent is done.",
+        { parent: "toolu_a2", subagent: "Run the tests", over: "completed" },
+      ],
+    ]);
+  });
+
+  it("takes an answer for a sub-agent's start only where the product says so of the one result of a line", async () => {
+    const { session, says, exits } = started();
+    const result = (ids: readonly string[], output: unknown) => ({
+      type: "user",
+      message: {
+        role: "user",
+        content: ids.map((id) => ({ tool_use_id: id, type: "tool_result", content: "Launched." })),
+      },
+      parent_tool_use_id: null,
+      tool_use_result: output,
+    });
+    says(INIT);
+    says(result(["toolu_1"], { status: "async_launched" }));
+    // Started elsewhere, done, and what is no such output: an answer as any other.
+    says(result(["toolu_2"], { status: "remote_launched" }));
+    says(result(["toolu_3"], { status: "completed" }));
+    says(result(["toolu_4"], "async_launched"));
+    says(result(["toolu_5"], ["async_launched"]));
+    says(result(["toolu_6"], undefined));
+    // Two results in a line: the output beside them is of neither for sure.
+    says(result(["toolu_7", "toolu_8"], { status: "async_launched" }));
+    exits(0);
+    const events = (await collect(session.events)).filter((event) => event.type === "event");
+    expect(events.slice(1).map((event) => event.data)).toEqual([
+      { id: "toolu_1", error: false, background: true },
+      { id: "toolu_2", error: false },
+      { id: "toolu_3", error: false },
+      { id: "toolu_4", error: false },
+      { id: "toolu_5", error: false },
+      { id: "toolu_6", error: false },
+      { id: "toolu_7", error: false },
+      { id: "toolu_8", error: false },
+    ]);
+  });
+
+  it("reads a sub-agent that was stopped in the middle of a call, one started again, and one a sub-agent started", async () => {
+    // As 2.1.322 wrote each, the lines cut down and every id invented.
+    const { session, says, exits } = started();
+    const launches = (id: string, about: string, parent: string | null = null) => ({
+      type: "assistant",
+      message: {
+        content: [{ type: "tool_use", id, name: "Agent", input: { description: about } }],
+      },
+      parent_tool_use_id: parent,
+      ...(parent === null ? {} : { agent_id: "task-1" }),
+    });
+    const starts = (task: string, call: string, background = true) => ({
+      type: "system",
+      subtype: "task_started",
+      task_id: task,
+      tool_use_id: call,
+      is_backgrounded: background,
+      task_type: "local_agent",
+    });
+    const answers = (id: string, parent: string | null, more: object = {}) => ({
+      type: "user",
+      message: {
+        role: "user",
+        content: [{ tool_use_id: id, type: "tool_result", content: "Launched." }],
+      },
+      parent_tool_use_id: parent,
+      ...more,
+    });
+    const ends = (task: string, call: string, status: string) => ({
+      type: "system",
+      subtype: "task_notification",
+      task_id: task,
+      tool_use_id: call,
+      status,
+    });
+    const does = (id: string, parent: string, task: string) => ({
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id, name: "Bash", input: { command: "make" } }] },
+      parent_tool_use_id: parent,
+      agent_id: task,
+    });
+    says(INIT);
+    says(launches("toolu_a1", "Build"));
+    says(starts("task-1", "toolu_a1"));
+    says(answers("toolu_a1", null, { tool_use_result: { status: "async_launched" } }));
+    // It starts a sub-agent of its own: the answer carries no output beside it, and the line
+    // that says the sub-agent started says that it goes on in the background.
+    says(launches("toolu_n1", "Test", "toolu_a1"));
+    says(starts("task-2", "toolu_n1"));
+    says(answers("toolu_n1", "toolu_a1", { agent_id: "task-1" }));
+    // Stopped in the middle of a call: that it ended first, what became of the call after.
+    says(does("toolu_s1", "toolu_a1", "task-1"));
+    says(ends("task-1", "toolu_a1", "stopped"));
+    says(answers("toolu_s1", "toolu_a1", { agent_id: "task-1" }));
+    // The one it started goes on past it, is done, and is started again by a message: the
+    // message's call is answered as any other, and what it does names the call that made it.
+    says(ends("task-2", "toolu_n1", "completed"));
+    says(starts("task-2", "toolu_m1"));
+    says(answers("toolu_m1", null, { tool_use_result: { success: true } }));
+    says(does("toolu_s2", "toolu_n1", "task-2"));
+    // One in the foreground says it started too, and its call's answer is its own.
+    says(launches("toolu_f1", "Read"));
+    says(starts("task-3", "toolu_f1", false));
+    says(answers("toolu_f1", null, { tool_use_result: { status: "completed" } }));
+    exits(0);
+    const build = { parent: "toolu_a1", subagent: "Build" };
+    const test = { parent: "toolu_n1", subagent: "Test" };
+    expect(
+      (await collect(session.events))
+        .slice(STARTED.length)
+        .flatMap((event) => (event.type === "event" ? [[event.kind, event.data]] : [])),
+    ).toEqual([
+      ["tool_call", { tool: "Agent", id: "toolu_a1", starts: "Build" }],
+      ["tool_result", { id: "toolu_a1", error: false, background: true }],
+      ["tool_call", { tool: "Agent", id: "toolu_n1", starts: "Test", ...build }],
+      ["tool_result", { id: "toolu_n1", error: false, background: true, ...build }],
+      ["tool_call", { tool: "Bash", id: "toolu_s1", ...build }],
+      ["status", { ...build, over: "stopped" }],
+      ["tool_result", { id: "toolu_s1", error: false, ...build }],
+      ["status", { ...test, over: "completed" }],
+      ["status", test],
+      ["tool_result", { id: "toolu_m1", error: false }],
+      ["tool_call", { tool: "Bash", id: "toolu_s2", ...test }],
+      ["tool_call", { tool: "Agent", id: "toolu_f1", starts: "Read" }],
+      ["tool_result", { id: "toolu_f1", error: false }],
+    ]);
+  });
+
   it("tells two sub-agents of one kind apart by what each was started for", async () => {
     // Two calls of one kind at once, as a run of the product under the runner made them.
     const { session, says, exits } = started();
