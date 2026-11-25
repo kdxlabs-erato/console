@@ -273,20 +273,9 @@ function HeaderBar(props: { readonly children: ReactNode }) {
   return <div className="sc-header dev-static">{props.children}</div>;
 }
 
-/** The caret of a menu's label and of a tab that opens a list, as the shell draws it. */
+/** The caret of a menu's label and of a tab that opens a list, as the shell draws it: the pack's glyph at its smallest. */
 function Caret() {
-  return (
-    <svg className="sc-menu-caret" viewBox="0 0 16 16" aria-hidden="true">
-      <path
-        d="M4 6l4 4 4-4"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+  return <Icon name="chevron-down" size="xs" className="sc-menu-caret" />;
 }
 
 /** A form here sends nothing anywhere. */

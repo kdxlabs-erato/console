@@ -91,10 +91,10 @@
 }
 
 /* A menu opened from a glyph alone, the bell in the page's head: a square a little larger than
-   its glyph, centred in the head's row, with a dot at its corner while something there is new. */
+   its glyph, which the head's row centres, with a dot at its corner while something there is
+   new. */
 .sc-menu-summary-glyph {
   position: relative;
-  align-self: center;
   justify-content: center;
   width: 2rem;
   min-height: 2rem;
