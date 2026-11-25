@@ -420,6 +420,9 @@ function setup(
     now?: () => number;
     /** How often the runner's heartbeat timer fires; every forty milliseconds where left out. */
     heartbeatMs?: number;
+    /** How long the runner waits for sub-agents in the background, and for the turn that hands in a report; its own durations where left out. */
+    subagentsMs?: number;
+    reportMs?: number;
   } = {},
 ) {
   const console = fakeConsole();
@@ -491,6 +494,8 @@ function setup(
       holdMs: 150,
       maxHoldMs: 300,
       resetMarginMs: 30,
+      ...(over.subagentsMs === undefined ? {} : { subagentsMs: over.subagentsMs }),
+      ...(over.reportMs === undefined ? {} : { reportMs: over.reportMs }),
     },
   });
   const done = runner.run();
@@ -3353,5 +3358,254 @@ describe("the runner", () => {
     await until("the message", () => session.sent.length === 1);
     expect(asked).toBeGreaterThanOrEqual(2);
     expect(log.some((line) => line.includes("the stream of signals ended (network)"))).toBe(true);
+  });
+});
+
+// What goes on in a session once the agent's own turn is over (ADR-0162): sub-agents at work in
+// the background, as a driver says them (ADR-0161), and the turn the product starts to hand the
+// agent a report.
+describe("the runner, with sub-agents at work in the background", () => {
+  /** The call that starts a sub-agent, answered at once with the word that it goes on. */
+  const launched = (id: string): DriverEvent[] => [
+    { type: "event", kind: "tool_call", text: "Agent", data: { id, starts: "Explore: Count" } },
+    {
+      type: "event",
+      kind: "tool_result",
+      text: "Async agent launched successfully.",
+      data: { id, error: false, background: true },
+    },
+  ];
+  /** Something the sub-agent does, and its own line that says it ended. */
+  const step = (parent: string): DriverEvent => ({
+    type: "event",
+    kind: "tool_call",
+    text: "Bash",
+    data: { id: `${parent}-step`, parent, subagent: "Explore: Count" },
+  });
+  const over = (parent: string, how = "completed"): DriverEvent => ({
+    type: "event",
+    kind: "status",
+    text: "The sub-agent is done.",
+    data: { parent, subagent: "Explore: Count", over: how },
+  });
+  /** A session whose agent started a sub-agent in the background and ended its turn. */
+  async function atWork(made: ReturnType<typeof setup>, calls: readonly string[] = ["call-1"]) {
+    made.console.signal({ text: "Begin." });
+    const session = await sessionOf(made.product);
+    await until("the message", () => session.sent.length === 1);
+    session.emit(
+      ...STARTED,
+      ...calls.flatMap((call) => launched(call)),
+      { type: "event", kind: "assistant", text: "Started." },
+      { type: "turn_completed" },
+    );
+    await until("the turn to be over", () =>
+      made.console.events().some(([, , text]) => text === "The turn completed."),
+    );
+    return session;
+  }
+  const recordOf = (console: ReturnType<typeof fakeConsole>, index = 1) =>
+    console.events(index).map(([, kind, text]) => `${kind}: ${text}`);
+
+  it("holds a model chosen until no sub-agent is at work and its report was read, and says on the record that it waits", async () => {
+    const made = setup({ reportMs: 60 });
+    const { console, product } = made;
+    const session = await atWork(made, ["call-1", "call-2"]);
+    console.signal({ kind: "set", set: { model: "sonnet", effort: "low" } });
+    await until("the driver to be asked", () => session.state.set.length === 1);
+    session.emit(step("call-1"));
+    await sleep(120);
+    // No turn is under way, and the session is not ended under its sub-agents.
+    expect(console.ended).toEqual([]);
+    expect(session.state.stopped).toBe(false);
+    expect(recordOf(console)).toContain(
+      "status: The session is to end for the model or the effort chosen, and 2 sub-agents at work in the background would end with it: the runner waits until none is at work, 60 minutes at most.",
+    );
+    // One ended, one at work still.
+    session.emit(over("call-1"));
+    await sleep(120);
+    expect(console.ended).toEqual([]);
+    // The last one ended: the product hands the agent its report in a turn it starts itself,
+    // which the runner started none of, and the session is not ended in the middle of it.
+    session.emit(over("call-2"), { type: "event", kind: "assistant", text: "Both are done." });
+    await sleep(120);
+    expect(console.ended).toEqual([]);
+    session.emit({ type: "turn_completed" });
+    await until("the session to end", () => console.ended.length === 1);
+    expect(console.ended).toEqual(["restarted"]);
+    // Said once, however long it waited.
+    expect(
+      recordOf(console).filter((line) => line.includes("the runner waits until")),
+    ).toHaveLength(1);
+    console.signal({ text: "Go on." });
+    const second = await sessionOf(product, 2);
+    expect(second.options).toMatchObject({ model: "sonnet", effort: "low", resume: "c-1" });
+  });
+
+  it("ends the session a moment after the last sub-agent ended where the product starts no turn for its report", async () => {
+    const made = setup({ reportMs: 60 });
+    const { console } = made;
+    const session = await atWork(made);
+    console.signal({ kind: "set", set: { model: "sonnet", effort: null } });
+    await until("the driver to be asked", () => session.state.set.length === 1);
+    session.emit(over("call-1", "stopped"));
+    await sleep(30);
+    expect(console.ended).toEqual([]);
+    await until("the session to end", () => console.ended.length === 1);
+    expect(console.ended).toEqual(["restarted"]);
+  });
+
+  it("holds the account's own reset for its sub-agents, and no longer than it waits: the session then ends with them at work, and the record says so", async () => {
+    const made = setup({ account: MIRA.id, subagentsMs: 150, reportMs: 20 });
+    const { console, product, log } = made;
+    const session = await atWork(made);
+    console.signal({ kind: "reset", by: MIRA, text: "The work is handed over. Begin anew." });
+    await sleep(80);
+    expect(console.ended).toEqual([]);
+    // The sub-agent goes on, and says nothing of an end: the runner waits so long and no longer.
+    session.emit(step("call-1"));
+    const second = await sessionOf(product, 2);
+    await until("the message", () => second.sent.length === 1);
+    expect(console.ended).toEqual(["reset"]);
+    expect(second.options.resume).toBeUndefined();
+    expect(second.sent[0]?.text).toContain("The work is handed over. Begin anew.");
+    const record = recordOf(console);
+    expect(record).toContain(
+      "status: The session is to end for the account's own reset, and 1 sub-agent at work in the background would end with it: the runner waits until none is at work, 1 minute at most.",
+    );
+    expect(record).toContain(
+      "status: The runner waited 1 minute for the sub-agents at work in the background, and waits no longer: 1 sub-agent still at work ends with the session.",
+    );
+    expect(log.some((line) => line.includes("waited for long enough"))).toBe(true);
+  });
+
+  it("ends the session at once for a supervisor's stop, restart and reset, and for the runner's own stop, whatever is at work", async () => {
+    for (const kind of ["stop", "restart", "reset"] as const) {
+      const made = setup({ account: MIRA.id });
+      const session = await atWork(made);
+      session.emit(step("call-1"));
+      made.console.signal({ kind });
+      await until(`the ${kind}`, () => made.console.ended.length === 1);
+      expect(made.console.ended).toEqual([
+        kind === "stop" ? "stopped" : kind === "restart" ? "restarted" : "reset",
+      ]);
+      expect(session.state.stopped).toBe(true);
+      // Nothing was waited for, and nothing says so.
+      expect(recordOf(made.console).some((line) => line.includes("the runner waits"))).toBe(false);
+    }
+    const made = setup();
+    await atWork(made);
+    made.runner.stop();
+    expect(await made.done).toBe("stopped");
+    expect(made.console.ended).toEqual(["exited"]);
+  });
+
+  it("holds an update for its sub-agents and goes on handing over what arrives meanwhile, then ends for it", async () => {
+    let version = "0.5.0";
+    const made = setup({ installed: async () => version, reportMs: 20 });
+    const { console, done, log } = made;
+    const session = await atWork(made);
+    version = "0.5.1";
+    await until("the update to be seen", () =>
+      log.some((line) => line.startsWith("the command the runner runs from is 0.5.1 now")),
+    );
+    await sleep(80);
+    expect(console.ended).toEqual([]);
+    // An hour may pass so: the agent reads what it is sent meanwhile, in a turn of its own.
+    console.signal({ text: "And then this." });
+    await until("the message", () => session.sent.length === 2);
+    session.emit({ type: "taken" }, { type: "turn_completed" });
+    await sleep(80);
+    expect(console.ended).toEqual([]);
+    session.emit(over("call-1"), { type: "turn_completed" });
+    expect(await done).toBe("updated");
+    expect(console.ended).toEqual(["restarted"]);
+    const record = recordOf(console);
+    expect(record).toContain(
+      "status: The session is to end for an update of the command the runner runs from, and 1 sub-agent at work in the background would end with it: the runner waits until none is at work, 60 minutes at most.",
+    );
+    expect(record.at(-1)).toBe("status: The session ended: restarted.");
+  });
+
+  it("holds a runner.json that changed for its sub-agents, and counts anew where the file was put back meanwhile", async () => {
+    let now: "same" | "changed" = "same";
+    const made = setup({ reconfigured: async () => now, subagentsMs: 400, reportMs: 20 });
+    const { console, done, log } = made;
+    const session = await atWork(made);
+    now = "changed";
+    await until("the change to be seen", () =>
+      log.some((line) => line.startsWith("runner.json changed since the runner started")),
+    );
+    await sleep(60);
+    expect(console.ended).toEqual([]);
+    // Put back: nothing is to end the session, and what it waited is not counted on.
+    now = "same";
+    await until("the file to be seen as before", () =>
+      log.some((line) => line.startsWith("runner.json is as the runner was started with it")),
+    );
+    await sleep(400);
+    expect(console.ended).toEqual([]);
+    now = "changed";
+    await until(
+      "the change to be seen again",
+      () => log.filter((line) => line.startsWith("runner.json changed since")).length === 2,
+    );
+    await sleep(100);
+    expect(console.ended).toEqual([]);
+    session.emit(over("call-1"));
+    expect(await done).toBe("changed");
+    expect(console.ended).toEqual(["restarted"]);
+  });
+
+  it("goes on with the conversation at a new day where sub-agents are at work, as it does under a turn", async () => {
+    const made = setup({ config: { conversation: "daily" } });
+    const { console, product } = made;
+    const session = await atWork(made);
+    console.signal({
+      kind: "wake",
+      by: null,
+      source: "schedule",
+      key: "day",
+      text: "The day's briefing.",
+    });
+    await until("the briefing", () => session.sent.length === 2);
+    expect(console.ended).toEqual([]);
+    expect(product.sessions).toHaveLength(1);
+  });
+
+  it("takes a sub-agent that does something after it ended for at work again, and none in the foreground for one to wait for", async () => {
+    const made = setup({ reportMs: 20 });
+    const { console } = made;
+    const session = await atWork(made);
+    // Ended, and started again by the agent in a turn of the product's: at work until it ends anew.
+    session.emit(over("call-1"), step("call-1"), { type: "turn_completed" });
+    console.signal({ kind: "set", set: { model: "sonnet", effort: null } });
+    await until("the driver to be asked", () => session.state.set.length === 1);
+    await sleep(100);
+    expect(console.ended).toEqual([]);
+    session.emit(over("call-1"));
+    await until("the session to end", () => console.ended.length === 1);
+    // A sub-agent in the foreground ends with its turn, and its own line holds nothing; nor
+    // does a call answered with no word that anything goes on.
+    const plain = setup({ reportMs: 5000 });
+    plain.console.signal({ text: "Begin." });
+    const other = await sessionOf(plain.product);
+    await until("the message", () => other.sent.length === 1);
+    other.emit(
+      ...STARTED,
+      {
+        type: "event",
+        kind: "tool_call",
+        text: "Agent",
+        data: { id: "call-9", starts: "Explore" },
+      },
+      step("call-9"),
+      over("call-9"),
+      { type: "event", kind: "tool_result", text: "Nine.", data: { id: "call-9", error: false } },
+      { type: "turn_completed" },
+    );
+    plain.console.signal({ kind: "set", set: { model: "sonnet", effort: null } });
+    await until("the session to end", () => plain.console.ended.length === 1);
+    expect(plain.console.ended).toEqual(["restarted"]);
   });
 });

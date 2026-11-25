@@ -63,10 +63,12 @@ export {
   HOLD_MS,
   MAX_COOL_DOWN_MS,
   MAX_HOLD_MS,
+  REPORT_MS,
   type Runner,
   type RunnerClient,
   type RunnerOptions,
   type RunnerState,
+  SUBAGENTS_MS,
 } from "./runner/runner.js";
 export { SLACK_APP_TOKEN, slack, slackWakeOf } from "./runner/slack.js";
 export { SYSTEMD_UNIT, systemdUnit, systemdUser } from "./runner/systemd-user.js";
