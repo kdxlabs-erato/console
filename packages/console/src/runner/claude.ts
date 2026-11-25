@@ -209,6 +209,20 @@ const MAX_SUBAGENTS = 500;
 /** The product's tools that start a sub-agent, as it has called them: one whose input names a kind of sub-agent is one too. */
 const SUBAGENT_TOOLS: ReadonlySet<string> = new Set(["Agent", "Task"]);
 
+/** How much of what the product says of a sub-agent that failed an event shows. */
+const MAX_SUMMARY_LENGTH = 1000;
+
+/** Keeps a word under a key among at most `MAX_SUBAGENTS`: the oldest is let go past it. */
+function remember(kept: Map<string, string>, key: string, word: string): void {
+  if (!kept.has(key) && kept.size >= MAX_SUBAGENTS) {
+    const oldest = kept.keys().next().value;
+    if (oldest !== undefined) {
+      kept.delete(oldest);
+    }
+  }
+  kept.set(key, word);
+}
+
 /** A word of a call's input, trimmed, or nothing where it holds none. */
 const wordOf = (input: unknown, name: string): string | undefined => {
   const word = isObject(input) ? textOf(input[name])?.trim() : undefined;
@@ -318,6 +332,12 @@ interface Read {
   /** The calls that started a sub-agent, by their ids, with what each calls it. */
   readonly subagents: Map<string, string>;
   /**
+   * The sub-agents the product spoke of, by the id it knows each by as a task of its own, with
+   * the id of the call that started each: what it says of a task later, that it ended, names
+   * the task.
+   */
+  readonly tasks: Map<string, string>;
+  /**
    * The usage limit the turn under way ran into, where it did: until when, where the product
    * said, and the words it was said in, which the turn's result says again.
    */
@@ -339,9 +359,68 @@ function whoseOf(line: Json, state: Read): Record<string, Fact> {
   if (parent === undefined || parent.length === 0) {
     return {};
   }
+  // A sub-agent's line names the sub-agent too, by the id the product's word on its tasks
+  // names it by (`agent_id`; seen with 2.1.330): what the line says of the two holds over what
+  // a task's start said, which names another call where a sub-agent was started again.
+  const task = textOf(line.agent_id);
+  if (task !== undefined && task.length > 0) {
+    remember(state.tasks, task, parent);
+  }
+  return factsOf(parent, state);
+}
+
+/** The facts of an event of the sub-agent a call started: the call, and what it called the sub-agent where it was read. */
+function factsOf(parent: string, state: Read): Record<string, Fact> {
   const subagent = state.subagents.get(parent);
   return subagent === undefined ? { parent } : { parent, subagent };
 }
+
+/** How the product says a task ended, as its documentation has the three. */
+const TASK_ENDS: ReadonlySet<string> = new Set(["completed", "failed", "stopped"]);
+
+/**
+ * What the product says when a sub-agent ended (`task_notification`, as its documentation has
+ * the line; seen with 2.1.330 of one that completed, in the background and in the foreground),
+ * as an event of that sub-agent's: how it ended, `completed`, `failed` or `stopped`, under
+ * `over`. A sub-agent that goes on in the background is answered for when it starts, so this
+ * is the one word the record has of its end. Nothing for a task that is no sub-agent the
+ * driver knows the call of: a command, a watch, or one a process before this one started.
+ */
+function overOf(line: Json, state: Read): DriverEvent | undefined {
+  const how = textOf(line.status);
+  if (how === undefined || !TASK_ENDS.has(how)) {
+    return undefined;
+  }
+  const said = textOf(line.tool_use_id);
+  const parent =
+    state.tasks.get(textOf(line.task_id) ?? "") ??
+    (said !== undefined && state.subagents.has(said) ? said : undefined);
+  if (parent === undefined) {
+    return undefined;
+  }
+  // Why it failed is the product's to say, in words of its own that are not seen yet: shown
+  // within a bound, cut after the secrets are out.
+  const why = how === "failed" ? (textOf(line.summary)?.trim() ?? "") : "";
+  const text =
+    how === "completed"
+      ? "The sub-agent is done."
+      : how === "stopped"
+        ? "The sub-agent was stopped."
+        : `The sub-agent failed.${why.length === 0 ? "" : `\n${state.cut(why, MAX_SUMMARY_LENGTH)}`}`;
+  return { type: "event", kind: "status", text, data: { ...factsOf(parent, state), over: how } };
+}
+
+/**
+ * Whether what a tool answered is the product's word that the sub-agent the call started goes
+ * on in the background, and not what that sub-agent answered: the structured output the
+ * product writes beside the result says so (`tool_use_result`, whose `status` is
+ * `async_launched` there, as its own declaration of the tool's output has it; seen with
+ * 2.1.330). It is the output of the one result a line carries.
+ */
+const launchedOf = (line: Json, results: number): boolean =>
+  results === 1 &&
+  isObject(line.tool_use_result) &&
+  line.tool_use_result.status === "async_launched";
 
 /** The product's permission modes, as its documentation and its own help name them. */
 const MODES = [
@@ -461,6 +540,25 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
           text: "The product is asking the model again after a request that failed.",
           data: { attempt },
         });
+      } else if (line.subtype === "task_started") {
+        // A sub-agent is a task of the product's own, which names the call that started it
+        // (`task_type`, `tool_use_id`, as its documentation has them). One known already is
+        // one started again, by another call than the one its events name: left as it is.
+        const task = textOf(line.task_id);
+        const call = textOf(line.tool_use_id);
+        if (
+          line.task_type === "local_agent" &&
+          task !== undefined &&
+          call !== undefined &&
+          !state.tasks.has(task)
+        ) {
+          remember(state.tasks, task, call);
+        }
+      } else if (line.subtype === "task_notification") {
+        const over = overOf(line, state);
+        if (over !== undefined) {
+          events.push(over);
+        }
       } else if (line.subtype === "permission_denied") {
         // Said when it happens, and again in the turn's result, which is then not said twice.
         const denied = denialOf(line, state.cut);
@@ -522,13 +620,7 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
           const subagent = subagentOf(tool, block.input, state.cut);
           if (id !== undefined && subagent !== undefined) {
             // What the sub-agent this call starts does names the call: remembered by its id.
-            if (state.subagents.size >= MAX_SUBAGENTS) {
-              const oldest = state.subagents.keys().next().value;
-              if (oldest !== undefined) {
-                state.subagents.delete(oldest);
-              }
-            }
-            state.subagents.set(id, subagent);
+            remember(state.subagents, id, subagent);
           }
           events.push({
             type: "event",
@@ -560,8 +652,12 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
       }
       // What came back from a tool is recorded here, a sub-agent's tool as the session's own.
       const whose = whoseOf(line, state);
-      for (const block of blocks) {
-        if (!isObject(block) || block.type !== "tool_result") {
+      const results = blocks.filter((block) => isObject(block) && block.type === "tool_result");
+      // An answer that says the sub-agent goes on in the background is not that sub-agent's
+      // answer: said, so that whoever reads the session takes it for at work from there on.
+      const launched = launchedOf(line, results.length);
+      for (const block of results) {
+        if (!isObject(block)) {
           continue;
         }
         state.results += 1;
@@ -573,6 +669,7 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
           data: {
             id: textOf(block.tool_use_id) ?? null,
             error: block.is_error === true,
+            ...(launched ? { background: true } : {}),
             ...whose,
           },
           pictures: result.pictures,
@@ -774,6 +871,7 @@ function sessionOf(
     denied: new Set(),
     acknowledges: false,
     subagents: new Map(),
+    tasks: new Map(),
     limit: undefined,
     resets: undefined,
     cut,

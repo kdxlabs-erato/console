@@ -26,6 +26,7 @@ import {
   atWorkOf,
   ChatPane,
   isOwnReset,
+  lacksStarter,
   ownResetWaiting,
   SignalComposer,
   TalkWaiting,
@@ -63,7 +64,11 @@ import { useAction } from "./use-action.js";
 const REFRESH_MS = 10_000;
 /** How many of a session's last events the page reads first, and how many more a step back reads. */
 const TAIL = 200;
-/** How many steps back the page reads for the last word the agent took, where the events it shows hold none. */
+/**
+ * How many steps back the page reads for the last word the agent took, where the events it
+ * shows hold none; and for the call that started a sub-agent, where they hold what the
+ * sub-agent did and not that call.
+ */
 const LOOK_BACK_STEPS = 5;
 
 const TABS: readonly AgentTab[] = ["live", "work", "sessions", "settings"];
@@ -157,6 +162,8 @@ function SessionTranscript(props: {
   const [readingEarlier, setReadingEarlier] = useState(false);
   /** The last signal taken before the events read, once looked for: `0` where a few steps back say none. */
   const [before, setBefore] = useState<number | undefined>(undefined);
+  /** How many steps back were read for the call that started a sub-agent, of the session shown. */
+  const steppedBack = useRef(0);
   const ended = useRef(onEnded);
   ended.current = onEnded;
   const open = session.ended === null;
@@ -179,6 +186,7 @@ function SessionTranscript(props: {
     setStanding("waiting");
     setReadingEarlier(false);
     setBefore(undefined);
+    steppedBack.current = 0;
     // What is there is read, and what arrives is followed; a stream that closed for good, as
     // one does while the console restarts, is opened again from the last event read.
     return followSession({
@@ -252,6 +260,20 @@ function SessionTranscript(props: {
         }
       });
   };
+  // What a sub-agent did is read under the call that started it, and one that has worked for
+  // long, in the background above all (ADR-0161), has that call before the events read: the
+  // ones before are read too, a few steps back at most, until the call is among them. Past
+  // that, what it did stands where it arrived, under its name, as before.
+  const readEarlier = useRef(earlier);
+  readEarlier.current = earlier;
+  const lacks = from > 0 && lacksStarter(events);
+  useEffect(() => {
+    if (!lacks || readingEarlier || steppedBack.current >= LOOK_BACK_STEPS) {
+      return;
+    }
+    steppedBack.current += 1;
+    readEarlier.current();
+  }, [lacks, readingEarlier]);
   const taken = known ?? (before !== undefined && before > 0 ? before : undefined);
   return (
     <section className="sc-agent-transcript" aria-label={words.transcript}>
@@ -422,6 +444,9 @@ function AgentLive(props: {
   const foot = (events: readonly RestTranscriptEvent[], taken: number | undefined): ReactNode => {
     const open = session !== undefined && session.ended === null;
     const working = open && state === "running" ? workingOf(events) : undefined;
+    // A sub-agent that goes on in the background is at work past the turn that started it
+    // (ADR-0161): read of an agent at work in an open session, a turn under way or none.
+    const agents = open && state === "running" ? atWorkOf(events, Date.now()) : undefined;
     // Signals are taken in order: everything up to the last one the record says was taken is.
     // Where the record says none, what the runner says is delivered counts as taken: what the
     // product took, or the record of an earlier session says was never read (ADR-0131).
@@ -453,11 +478,7 @@ function AgentLive(props: {
                 : "call";
     return (
       <>
-        <TalkWorking
-          working={working}
-          agent={agent.person}
-          agents={working === undefined ? undefined : atWorkOf(events, Date.now())}
-        />
+        <TalkWorking working={working} agent={agent.person} agents={agents} />
         <TalkWaiting
           signals={waiting}
           why={why}

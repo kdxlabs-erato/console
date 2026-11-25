@@ -40,6 +40,7 @@ import {
   followsAfter,
   followsEnd,
   isOwnReset,
+  lacksStarter,
   NO_WHOLE,
   ownResetWaiting,
   pastedName,
@@ -2699,6 +2700,203 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
     expect(clockOf(Number.NaN)).toBe("0:00");
   });
 
+  it("reads a sub-agent that goes on in the background as at work until its own line says it ended, whatever turn ended meanwhile", () => {
+    const at = (seconds: number) => new Date(Date.parse(WHEN) + seconds * 1000).toISOString();
+    const of = { parent: "b1", subagent: "general-purpose: Count the fixtures" };
+    const turn = (n: number, seconds: number) =>
+      event(n, {
+        kind: "status",
+        text: "The turn completed.",
+        at: at(seconds),
+        data: { turn: "completed" },
+      });
+    const events = [
+      event(1, { kind: "person", text: "Go.", at: at(0), data: { signal: 1 } }),
+      event(2, {
+        kind: "tool_call",
+        text: "{}",
+        at: at(10),
+        data: { tool: "Agent", id: "b1", starts: of.subagent },
+      }),
+      // Answered at once, with the word that it was started and goes on.
+      event(3, {
+        kind: "tool_result",
+        text: "Async agent launched successfully.",
+        at: at(11),
+        data: { id: "b1", error: false, background: true },
+      }),
+      event(4, { kind: "assistant", text: "Started.", at: at(12) }),
+      turn(5, 13),
+      // What it does comes after the turn that started it is over.
+      event(6, {
+        kind: "tool_call",
+        text: "ls",
+        at: at(20),
+        data: { tool: "Bash", id: "s1", ...of },
+      }),
+      event(7, { kind: "tool_result", text: "two", at: at(21), data: { id: "s1", ...of } }),
+      event(8, {
+        kind: "tool_call",
+        text: "wc",
+        at: at(30),
+        data: { tool: "Bash", id: "s2", ...of },
+      }),
+    ];
+    const now = Date.parse(at(100));
+    const row = (all: Parameters<typeof talkOf>[0]) => {
+      const one = talkOf(all)[1];
+      return one === undefined ? undefined : subAgentOf(one, { now, live: true });
+    };
+    // Not done by its call's answer, and not ended by the turn's end: at work, by what it does.
+    expect(row(events)).toEqual({
+      n: 2,
+      name: of.subagent,
+      startedAt: at(10),
+      state: "running",
+      seconds: 90,
+      calls: 2,
+      at: { at: "tool", tool: "Bash" },
+    });
+    // The agent's own turn is over, and its sub-agent is at work all the same.
+    expect(workingOf(events)).toBeUndefined();
+    expect(atWorkOf(events, now).map((one) => [one.n, one.name, one.calls])).toEqual([
+      [2, of.subagent, 2],
+    ]);
+    // Another turn of the agent's, begun and ended meanwhile, ends nothing of it.
+    const later = [
+      ...events,
+      event(9, { kind: "wake", text: "", at: at(40), data: { signal: 2 } }),
+      event(10, { kind: "assistant", text: "Noted.", at: at(41) }),
+      turn(11, 42),
+    ];
+    expect(row(later)?.state).toBe("running");
+    expect(atWorkOf(later, now)).toHaveLength(1);
+    // Its own line says when it ended: done from there, with how long it ran until then.
+    const over = (n: number, seconds: number, how: string) =>
+      event(n, {
+        kind: "status",
+        text: "The sub-agent is done.",
+        at: at(seconds),
+        data: { ...of, over: how },
+      });
+    const done = [
+      ...later,
+      event(12, { kind: "tool_result", text: "2", at: at(50), data: { id: "s2", ...of } }),
+      over(13, 51, "completed"),
+    ];
+    expect(row(done)).toMatchObject({ state: "done", seconds: 41, calls: 2, at: undefined });
+    expect(atWorkOf(done, now)).toEqual([]);
+    expect(row([...later, over(12, 51, "failed")])?.state).toBe("failed");
+    expect(row([...later, over(12, 51, "stopped")])?.state).toBe("ended");
+    // Its word that it ended stands inside its row, and whose it is and how are not said twice.
+    const note = renderToStaticMarkup(<TranscriptView events={done} fileHref={(id) => id} live />);
+    expect(note).toContain(
+      `<span class="sc-name sc-talk-agent-name" title="${of.subagent}">${of.subagent}</span><span class="sc-badge sc-badge-neutral">Done</span>`,
+    );
+    expect(note).toMatch(
+      /data-n="13"><span class="sc-talk-note-line"><span class="sc-talk-kind">Status<\/span><span>The sub-agent is done\.<\/span>/,
+    );
+    // One started again does something after its word that it ended: at work again, until
+    // it says so again.
+    const again = [
+      ...done,
+      event(14, {
+        kind: "tool_call",
+        text: "ls",
+        at: at(60),
+        data: { tool: "Bash", id: "s3", ...of },
+      }),
+    ];
+    expect(row(again)).toMatchObject({ state: "running", calls: 3, seconds: 90 });
+    expect(row([...again, over(15, 70, "completed")])).toMatchObject({
+      state: "done",
+      seconds: 60,
+    });
+    // The session's end ends one still at work, there; a session that is not open has none.
+    const ended = [
+      ...later,
+      event(12, {
+        kind: "status",
+        text: "The session ended.",
+        at: at(45),
+        data: { ended: "stopped" },
+      }),
+    ];
+    expect(row(ended)).toMatchObject({ state: "ended", seconds: 35 });
+    expect(atWorkOf(ended, now)).toEqual([]);
+    const first = talkOf(later)[1];
+    expect(first && subAgentOf(first, { now, live: false })).toMatchObject({
+      state: "ended",
+      seconds: 20,
+    });
+    // One whose start failed was answered with an error, and no word that it goes on.
+    const refused = talkOf([
+      event(1, { kind: "tool_call", text: "{}", at: at(0), data: { id: "f", starts: "x" } }),
+      event(2, { kind: "tool_result", text: "no", at: at(1), data: { id: "f", error: true } }),
+      turn(3, 2),
+    ]);
+    expect(refused[0] && subAgentOf(refused[0], { now, live: true })?.state).toBe("failed");
+    // One in the foreground says it ended just before its call is answered: by the answer, as before.
+    const fore = [
+      event(1, { kind: "tool_call", text: "{}", at: at(0), data: { id: "f1", starts: "y" } }),
+      event(2, {
+        kind: "status",
+        text: "The sub-agent is done.",
+        at: at(5),
+        data: { parent: "f1", subagent: "y", over: "completed" },
+      }),
+    ];
+    const fored = (all: Parameters<typeof talkOf>[0]) => {
+      const one = talkOf(all)[0];
+      return one === undefined ? undefined : subAgentOf(one, { now, live: true });
+    };
+    expect(fored(fore)).toMatchObject({ state: "done", seconds: 5 });
+    expect(
+      fored([
+        ...fore,
+        event(3, { kind: "tool_result", text: "no", at: at(6), data: { id: "f1", error: true } }),
+      ]),
+    ).toMatchObject({ state: "failed", seconds: 6 });
+    // A word that is none, and a sealed one, say nothing of an end.
+    expect(
+      row([
+        ...events,
+        event(9, { kind: "status", text: "x", at: at(40), data: { ...of, over: 1 } }),
+      ])?.state,
+    ).toBe("running");
+    expect(
+      row([
+        ...done.slice(0, -1),
+        event(13, {
+          kind: "status",
+          at: at(51),
+          data: { ...of, over: "completed" },
+          sealed: { by: alice, at: WHEN, reason: "x" },
+        }),
+      ])?.state,
+    ).toBe("running");
+  });
+
+  it("says whether the events read hold a sub-agent's work without the call that started it", () => {
+    const call = event(1, { kind: "tool_call", text: "{}", data: { tool: "Agent", id: "a1" } });
+    const step = event(2, { kind: "tool_call", text: "ls", data: { id: "s1", parent: "a1" } });
+    expect(lacksStarter([])).toBe(false);
+    expect(lacksStarter([call, step])).toBe(false);
+    // The call stands before the events read: what the sub-agent did is there without it.
+    expect(lacksStarter([step])).toBe(true);
+    expect(lacksStarter([call, event(3, { kind: "assistant", data: { parent: "gone" } })])).toBe(
+      true,
+    );
+    // An event of the session's own names no call, and what is no id names none.
+    expect(lacksStarter([event(4, { kind: "assistant" }), event(5, { data: { parent: 7 } })])).toBe(
+      false,
+    );
+    // A call a sub-agent made is a call too: what the one it started did stands under it.
+    expect(lacksStarter([call, step, event(6, { kind: "thinking", data: { parent: "s1" } })])).toBe(
+      false,
+    );
+  });
+
   it("shows a session as a conversation, and nothing an agent's product printed as HTML", () => {
     const picture = {
       id: "0199c4d8-0000-7000-8000-0000000000f1",
@@ -3566,7 +3764,7 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
         </ol>,
       ),
     ).toContain("<span>1 sub-agent at work</span>");
-    // With none at work the row is as it was; and with no turn under way there is no row.
+    // With none at work the row is as it was; and with no turn under way and none there is no row.
     expect(
       renderToStaticMarkup(
         <ol>
@@ -3574,9 +3772,19 @@ describe("an agent account's page (ADR-0085, ADR-0086)", () => {
         </ol>,
       ),
     ).toContain('<li class="sc-talk-item sc-talk-working sc-note" role="status">');
-    expect(renderToStaticMarkup(<TalkWorking working={undefined} agents={[at("One", 1)]} />)).toBe(
-      "",
+    expect(renderToStaticMarkup(<TalkWorking working={undefined} agents={[]} />)).toBe("");
+    // Sub-agents that go on in the background are at work past the turn that started them:
+    // the row stands for them alone.
+    const past = renderToStaticMarkup(
+      <ol>
+        <TalkWorking working={undefined} agent={mira} agents={[at("One", 1)]} />
+      </ol>,
     );
+    expect(past).toContain(
+      '<li class="sc-talk-item sc-talk-working sc-note sc-talk-working-agents" role="status">',
+    );
+    expect(past).toContain("<span>1 sub-agent at work</span>");
+    expect(past).toMatch(/sc-talk-agent-name">One<\/span>[^/]*>Running Bash · 4 tool calls · /);
     const koreanAgents = renderToStaticMarkup(
       <LanguageContext.Provider value={KOREAN}>
         <ol>
