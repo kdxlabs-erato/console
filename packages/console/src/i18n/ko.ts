@@ -451,7 +451,8 @@ export const ko: Messages = {
       },
       "notifications:read": {
         name: "알림",
-        opens: "보드 프로젝트에서 일어난 일을 콘솔이 누구에게 알렸는지 읽어, 다른 곳으로 전합니다.",
+        opens:
+          "보드 프로젝트에서 일어난 일을 콘솔이 누구에게 알렸는지 읽어 다른 곳으로 전하고, 쓰는 사람 본인의 알림 설정을 읽습니다.",
       },
       jobs: { name: "예약 실행", opens: "정해진 시간에 실행됩니다." },
       endpoints: {
