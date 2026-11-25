@@ -9867,7 +9867,7 @@ describe("what the board told a member, on the command line (ADR-0157)", () => {
         "archived  off  a task of yours was put away",
         "decision  off  a decision waits for you",
         "answered  off  a decision you raised was answered",
-        "agent  on  an agent account that reports to you stopped, was refused, failed or is not heard from, or runs again",
+        "agent  on  an agent account that reports to you stopped, was refused, failed or is not heard from, or runs again, or raised a decision for you",
         "mentioned  on",
         "projects off: ops (Operations)",
         "own agents: off  (what an agent of your own did as you is not told to you)",

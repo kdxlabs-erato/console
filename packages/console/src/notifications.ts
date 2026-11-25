@@ -17,7 +17,8 @@
  * - `decision`: a decision waits for them;
  * - `answered`: a decision they raised was answered;
  * - `agent`: an agent account that reports to them stands otherwise: it stopped, was refused,
- *   failed or is not heard from, or runs again after.
+ *   failed or is not heard from, or runs again after; or it raised a decision for them, which
+ *   is how an account tells its manager of what it will not do by itself (ADR-0158).
  */
 export const NOTIFICATION_KINDS = [
   "assigned",

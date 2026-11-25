@@ -887,7 +887,7 @@ export const en = {
         tasks: "What happens on the tasks you own or work on.",
         decisions: "The decisions addressed to you, and the ones you raised.",
         agents:
-          "An agent account that reports to you stopped, failed or is not heard from, or runs again.",
+          "An agent account that reports to you stopped, failed or is not heard from, or runs again; or it raised a decision for you.",
       },
       projects: "Projects",
       projectsHint:

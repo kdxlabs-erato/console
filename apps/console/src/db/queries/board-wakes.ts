@@ -329,17 +329,31 @@ async function decisionTellings(database: Database, event: EventRecord): Promise
     return [];
   }
   const concerned = new Concerned();
-  if (event.kind === "decision.raised") {
-    concerned.add(decision.deciderIds, "decision");
-  } else if (event.kind === "decision.addressed") {
-    // Those the change named and nobody it was for already, and only where they are still
-    // among those it is for.
-    concerned.add(
-      (event.data.decidersAdded ?? []).filter((id) => decision.deciderIds.includes(id)),
-      "decision",
-    );
-  } else {
+  if (event.kind === "decision.answered") {
     concerned.add([decision.raisedById], "answered");
+  } else {
+    // Raised: whom it is for. Addressed anew: those the change named and nobody it was for
+    // already, and only where they are still among those it is for.
+    const asked =
+      event.kind === "decision.raised"
+        ? decision.deciderIds
+        : (event.data.decidersAdded ?? []).filter((id) => decision.deciderIds.includes(id));
+    concerned.add(asked, "decision");
+    // What an agent account asks of its own manager is news of that account too (ADR-0158):
+    // a manager who is told of their agent accounts and of no decision learns of it under
+    // that kind, since it is how the account tells them of what it will not do by itself. A
+    // project they turned off tells them nothing of it, as it tells them nothing else.
+    const [raiser] = await drizzleOf(database)
+      .select({ kind: people.kind, managerId: people.managerId })
+      .from(people)
+      .where(eq(people.id, decision.raisedById))
+      .limit(1);
+    if (raiser?.kind === "agent" && raiser.managerId !== null) {
+      concerned.add(
+        asked.filter((id) => id === raiser.managerId),
+        "agent",
+      );
+    }
   }
   const read = `console decision ${decision.id}`;
   const asked = `"${said(decision.question)}"`;

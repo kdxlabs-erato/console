@@ -3214,9 +3214,10 @@ describe("the runner", () => {
     console.signal({ text: "Begin." });
     const session = await sessionOf(product);
     await until("the message", () => session.sent.length === 1);
-    // A session's first message says what a header is first, then this, then what woke the agent.
+    // A session's first message says what a header is first and what every account holds to
+    // (ADR-0158), then this, then what woke the agent.
     expect(session.sent[0]?.text).toMatch(
-      /^\[console [a-z0-9]{6} · session\]\n[^\n]+\n\n\[console [a-z0-9]{6} · runner\]\nThe runner did not run for 5 hours between \S+Z and \S+Z, in 2 stretches: [^\n]+\n\n\[console [a-z0-9]{6} #1 · tell · Jane · 14:02\]\nBegin\.$/,
+      /^\[console [a-z0-9]{6} · session\]\n[^\n]+\nHow you are set up, you change at the asking of your manager[^\n]+\n\n\[console [a-z0-9]{6} · runner\]\nThe runner did not run for 5 hours between \S+Z and \S+Z, in 2 stretches: [^\n]+\n\n\[console [a-z0-9]{6} #1 · tell · Jane · 14:02\]\nBegin\.$/,
     );
   });
 

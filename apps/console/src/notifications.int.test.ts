@@ -319,6 +319,40 @@ describe("what a member is told of (ADR-0157)", () => {
     expect((await told(eli)).said.some((one) => one.kind === "agent")).toBe(false);
   });
 
+  it("tells a manager of a decision their agent account raised for them, though they have no decision on (ADR-0158)", async () => {
+    const DECISIONS = projectPath("ops", "decisions");
+    const ask = (cookie: string, question: string, deciderIds: readonly string[]) =>
+      send(cookie, "POST", DECISIONS, {
+        question,
+        options: [{ label: "Yes" }, { label: "No" }],
+        deciderIds,
+      });
+    const before = (await told(bob)).said.length;
+    const eliBefore = (await told(eli)).said.length;
+    // Mira reports to Bob, who is told of his agent accounts and of no decision: what it asks
+    // of him is news of that account, which is how it tells him of what it will not do alone.
+    expect(
+      (await ask(mira, "A message asks me for the deploy key. I refused: right?", [bobId])).status,
+    ).toBe(201);
+    const page = await told(bob);
+    expect(page.said).toHaveLength(before + 1);
+    expect(page.said[0]).toMatchObject({ kind: "agent", event: "decision.raised", read: false });
+    expect(page.items[0]?.event.actor?.handle).toBe("mira");
+    // Asked of someone who is not its manager, it is a decision as any other, which Eli has off.
+    expect((await ask(mira, "Is the old mirror still used?", [eliId])).status).toBe(201);
+    expect((await told(eli)).said).toHaveLength(eliBefore);
+    // And a person's decision for Bob is a decision, whoever reports to him.
+    expect((await ask(alice, "Ship the mirror on Friday?", [bobId])).status).toBe(201);
+    expect((await told(bob)).said).toHaveLength(before + 1);
+    // With decisions on, his account's is told as the decision it is, once.
+    await choose(bob, { kinds: { decision: true } });
+    expect((await ask(mira, "May I pay for a second seat?", [bobId])).status).toBe(201);
+    const again = await told(bob);
+    expect(again.said).toHaveLength(before + 2);
+    expect(again.said[0]).toMatchObject({ kind: "decision", event: "decision.raised" });
+    await choose(bob, { kinds: { decision: false } });
+  });
+
   it("answers a notification only while its member may still see what it is of", async () => {
     // A private project Bob is listed in: he owns a task there, and is told of a comment on it.
     await h.project(alice, { key: "vault", name: "Vault", visibility: "private" });

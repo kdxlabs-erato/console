@@ -28,6 +28,7 @@ ADR-0071 gave all of this to a plugin, for a reason that still holds for half of
    | A decision raised, or addressed anew | whom it is for, those the change named | `decision` |
    | A decision answered | whoever raised it | `answered` |
    | An agent account stopped, refused, failed or not heard from, and running again after | whom it reports to | `agent` |
+   | A decision an agent account raised for whom it reports to | that manager | `decision`, or `agent` where they have no decision on ([ADR-0158](0158-an-agent-account-holds-to-how-its-manager-set-it-up-tells-its-manager-of-what-tries-to-instruct-it-and-waits-for-a-word-before-it-spends.md)) |
 
    Nobody is told of what they did themselves; a task the console itself gave back, ending a run it had not heard from, tells nobody ([ADR-0114](0114-the-end-of-a-run-leaves-no-task-at-work-behind-it.md)); and a member is told only of what they may still see: a task of a project they may work in, a decision that reaches them.
 2. **A kind is on or off for a member, and a notification is made only under a kind that is on.** Where an event is several kinds to a member, they are told once, under the first that is on, the one that says most first: `ready` before `assigned`. A member turns a kind on and off, turns a project off, and says whether what an agent of their own did as them counts, which it does not unless they say so. Where they chose nothing:

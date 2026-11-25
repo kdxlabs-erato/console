@@ -1309,7 +1309,7 @@ const NOTIFICATION_KIND_WORDS: Readonly<Record<NotificationKind, string>> = {
   decision: "a decision waits for you",
   answered: "a decision you raised was answered",
   agent:
-    "an agent account that reports to you stopped, was refused, failed or is not heard from, or runs again",
+    "an agent account that reports to you stopped, was refused, failed or is not heard from, or runs again, or raised a decision for you",
 };
 
 const onOrOff = (value: boolean): string => (value ? "on" : "off");
