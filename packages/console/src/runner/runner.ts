@@ -23,6 +23,7 @@ import {
   makeMark,
   type Slept,
   sleptOf,
+  wakeTextOf,
 } from "./message.js";
 import { cutShown, cutShownEnd, type Redactor, redactorOf } from "./redact.js";
 import type {
@@ -2401,8 +2402,12 @@ export function createRunner(options: RunnerOptions): Runner {
         if (wakesHeld !== undefined && options.now() < wakesHeld.until) {
           return;
         }
+        // Written in parts whatever the source handed over (ADR-0162): its own lines apart from
+        // what someone else wrote, and a text with no line of the source's as words whole, so
+        // that no word of a message reads as a line of the source's when the signal returns.
+        const text = wakeTextOf("parts" in raised ? raised.parts : [{ words: raised.text }]);
         try {
-          await client.raiseWake({ source: "messenger", key: raised.key, text: raised.text });
+          await client.raiseWake({ source: "messenger", key: raised.key, text });
         } catch (error) {
           if (codeOf(error) !== "signal.too_many") {
             throw error;
