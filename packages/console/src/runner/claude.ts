@@ -339,6 +339,8 @@ interface Read {
   readonly tasks: Map<string, string>;
   /** The calls the product started a sub-agent of in the background, until each is answered. */
   readonly launched: Set<string>;
+  /** How many sub-agents it last said are at work in the background; nothing until one is. */
+  background: number | undefined;
   /**
    * The usage limit the turn under way ran into, where it did: until when, where the product
    * said, and the words it was said in, which the turn's result says again.
@@ -425,6 +427,26 @@ const launchedOf = (line: Json, results: number): boolean =>
   isObject(line.tool_use_result) &&
   line.tool_use_result.status === "async_launched";
 
+/**
+ * The sub-agents at work in the background, by the product's list of its tasks there, which it
+ * writes whole as it changes (`background_tasks_changed`; seen with 2.1.322). A command a
+ * sub-agent left running there (`parent_task_id`) is that sub-agent at work, though it ended
+ * its turn: the product starts it again when the command ends. A command of the session's own
+ * is none.
+ */
+function agentsOf(tasks: unknown): number {
+  const agents = new Set<string>();
+  for (const task of listOf(tasks)) {
+    if (isObject(task)) {
+      const id = textOf(task.task_type === "local_agent" ? task.task_id : task.parent_task_id);
+      if (id !== undefined) {
+        agents.add(id);
+      }
+    }
+  }
+  return agents.size;
+}
+
 /** The product's permission modes, as its documentation and its own help name them. */
 const MODES = [
   "default",
@@ -482,6 +504,9 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
         const runs = JSON.stringify([model, effort, version, mode]);
         state.model = model ?? undefined;
         const conversation = textOf(line.session_id);
+        if (state.background !== undefined) {
+          events.push({ type: "turn_started" });
+        }
         if (runs !== state.runs) {
           events.push({ type: "running", model, effort, version });
         }
@@ -566,6 +591,12 @@ function eventsOf(line: Json, state: Read): DriverEvent[] {
               data: factsOf(known, state),
             });
           }
+        }
+      } else if (line.subtype === "background_tasks_changed") {
+        const agents = agentsOf(line.tasks);
+        if (agents !== (state.background ?? 0)) {
+          state.background = agents;
+          events.push({ type: "background", agents });
         }
       } else if (line.subtype === "task_notification") {
         const over = overOf(line, state);
@@ -887,6 +918,7 @@ function sessionOf(
     subagents: new Map(),
     tasks: new Map(),
     launched: new Set(),
+    background: undefined,
     limit: undefined,
     resets: undefined,
     cut,

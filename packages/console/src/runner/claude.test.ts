@@ -966,6 +966,7 @@ describe("the claude driver", () => {
         expect.stringContaining("Count the fixtures"),
         { tool: "Agent", id: "toolu_b1", starts: counted.subagent },
       ],
+      "background",
       // The answer of a call whose sub-agent goes on says so.
       [
         "tool_result",
@@ -978,6 +979,7 @@ describe("the claude driver", () => {
       ["tool_call", "ls fixtures", { tool: "Bash", id: "toolu_s1", ...counted }],
       ["tool_result", "two", { id: "toolu_s1", error: false, ...counted }],
       ["status", "The sub-agent is done.", { ...counted, over: "completed" }],
+      "background",
       ["assistant", "Two fixtures.", undefined],
       "turn_completed",
       [
@@ -1209,6 +1211,54 @@ describe("the claude driver", () => {
       ["tool_call", { tool: "Agent", id: "toolu_f1", starts: "Read" }],
       ["tool_result", { id: "toolu_f1", error: false }],
     ]);
+  });
+
+  it("says how many sub-agents are at work in the background, by the product's list of its tasks, and each turn from then on", async () => {
+    // As 2.1.322 wrote the list as it changed, the lines cut down and every id invented.
+    const { session, says, exits } = started();
+    const list = (...tasks: unknown[]) =>
+      says({ type: "system", subtype: "background_tasks_changed", tasks });
+    const agent = (id: string, more: object = {}) => ({
+      task_id: id,
+      task_type: "local_agent",
+      ...more,
+    });
+    const shell = (id: string, more: object = {}) => ({
+      task_id: id,
+      task_type: "local_bash",
+      ...more,
+    });
+    says(INIT);
+    // A command of the session's own is no sub-agent: nothing is said, of a turn either.
+    list(shell("b1"));
+    says(INIT);
+    list(shell("b1"), agent("a1"));
+    // A command the sub-agent left running is that sub-agent at work, its own turn over or not.
+    list(shell("b1"), agent("a1"), shell("b2", { parent_task_id: "a1" }));
+    list(shell("b2", { parent_task_id: "a1" }));
+    says(INIT);
+    // One a sub-agent started is one more, and goes on past the end of that one.
+    list(agent("a1"), agent("a2", { parent_task_id: "a1" }));
+    list(agent("a2", { parent_task_id: "a1" }));
+    list();
+    says(INIT);
+    // What is no such list names none.
+    list(agent("a3"));
+    list(
+      null,
+      "a3",
+      { task_id: 7, task_type: "local_agent" },
+      { task_type: "local_agent" },
+      shell("b3"),
+    );
+    list(agent("a3"));
+    says({ type: "system", subtype: "background_tasks_changed", tasks: { a3: "local_agent" } });
+    exits(0);
+    expect(
+      (await collect(session.events))
+        .slice(STARTED.length)
+        .map((event) => (event.type === "background" ? event.agents : event.type)),
+    ).toEqual([1, "turn_started", 2, 1, 0, "turn_started", 1, 0, 1, 0, "ended"]);
   });
 
   it("tells two sub-agents of one kind apart by what each was started for", async () => {
