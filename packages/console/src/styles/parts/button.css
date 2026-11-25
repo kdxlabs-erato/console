@@ -82,6 +82,14 @@
   padding: 0;
 }
 
+/* Its glyph is a little larger than one by itself, to fill the square as a word fills a button;
+   the stroke a little lighter on the grid, so that it draws about as heavy. */
+.sc-button-glyph > .sc-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  stroke-width: 1.375;
+}
+
 .sc-button-glyph[aria-pressed="true"] {
   color: var(--sc-color-text);
 }
