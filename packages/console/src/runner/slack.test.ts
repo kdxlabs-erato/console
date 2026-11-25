@@ -2155,5 +2155,56 @@ describe("the slack wake source", () => {
         "2 minutes ago, from the member U0ALICE (@alice in the console, a supervisor of yours), the message 1762800480.000100",
       ]);
     });
+
+    it("says of each other agent account a wake names how it stands to the agent", async () => {
+      const through = (ts: string, user: string, text: string) => ({
+        type: "message",
+        user,
+        text,
+        ts,
+        team: "T0ACME",
+        bot_id: "B0APP",
+      });
+      const at = fakeHost({
+        token: "xapp-not-a-real-token",
+        member: TOKEN,
+        writers: console_({
+          [TOM]: { login: "tom", kind: "person", supervisor: false },
+          U0LEAD: { login: "lead", kind: "agent", supervisor: true },
+          U0NOVA: { login: "nova", kind: "agent", supervisor: false },
+        }),
+        // The agent wrote last, so nothing was said since: the others are named all the same.
+        read: () => ({
+          ok: true,
+          messages: [
+            through("1762800480.000100", MEMBER, "On it."),
+            through("1762800300.000100", "U0LEAD", "Mira takes the deploy."),
+            through("1762800200.000100", "U0NOVA", "I can take the report."),
+          ],
+          has_more: false,
+        }),
+        arrives: arrives(
+          payload(
+            message({
+              channel: "G0TEAM",
+              channel_type: "mpim",
+              text: "Who ships?",
+              ts: "1762800600.000100",
+              team: "T0ACME",
+            }),
+          ),
+        ),
+      });
+      await run(at.host);
+      const wake = at.raised[0];
+      expect(
+        (wake !== undefined && "parts" in wake ? wake.parts : []).flatMap((part) =>
+          "says" in part ? [part.says] : [],
+        ),
+      ).toEqual([
+        "A message in a group conversation at Slack, from the member U0TOM (@tom in the console, no supervisor of yours), in the conversation G0TEAM",
+        "Others here write through an app, as an agent account does, the last to write first: you, U0LEAD (@lead in the console, an agent account, a supervisor of yours), U0NOVA (@nova in the console, an agent account, no supervisor of yours). One message wakes each of you, and none sees what another is about to answer. Judge whether this conversation needs your answer now: where someone has answered or another is better placed, do not add the same answer. Before you send, read what was said meanwhile: console agent messages slack:G0TEAM",
+      ]);
+    });
   });
 });

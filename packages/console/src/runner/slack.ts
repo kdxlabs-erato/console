@@ -1117,14 +1117,40 @@ async function beforeOf(
     }
   }
   const others = writers.filter((one) => one !== heard.member);
-  const named = writers
-    .slice(0, MAX_OTHERS + 1)
-    .map((one) => (one === heard.member ? "you" : one))
-    .join(", ");
   // Where the event does not say which member it was delivered for, the agent's own account
   // cannot be told from another's, and nobody is named: it would be told to leave it to itself.
-  const answering: WakePart[] =
+  const shown =
     heard.direct || heard.member === undefined || others.length === 0
+      ? []
+      : writers.slice(0, MAX_OTHERS + 1);
+  const last =
+    heard.member === undefined
+      ? -1
+      : earlier.findLastIndex((message) => message.user === heard.member);
+  const since = earlier.slice(last + 1);
+  const latest = since.toReversed().slice(0, MAX_BEFORE);
+  // Who wrote each, as the console says it (ADR-0164), asked once: said of an earlier message
+  // as of the one that woke, and information all the same, whoever wrote it; and said of each
+  // of the others named, by a message of theirs, since how one stands to the agent, a
+  // supervisor of its own say, is among what it judges by whether to answer.
+  const theirs = new Map<string, Written>();
+  for (const one of shown) {
+    const written = earlier.findLast(
+      (message) => message.user === one && message.bot_id !== undefined,
+    );
+    if (one !== heard.member && written !== undefined) {
+      theirs.set(one, written);
+    }
+  }
+  const who = await whoOf(host, [...latest, ...theirs.values()], signal);
+  const named = shown
+    .map((one) => {
+      const written = theirs.get(one);
+      return one === heard.member ? "you" : `${one}${written === undefined ? "" : who(written)}`;
+    })
+    .join(", ");
+  const answering: WakePart[] =
+    shown.length === 0
       ? []
       : [
           {
@@ -1134,11 +1160,6 @@ async function beforeOf(
             } One message wakes each of you, and none sees what another is about to answer. Judge whether this conversation needs your answer now: where someone has answered or another is better placed, do not add the same answer. Before you send, read what was said meanwhile: ${command}`,
           },
         ];
-  const last =
-    heard.member === undefined
-      ? -1
-      : earlier.findLastIndex((message) => message.user === heard.member);
-  const since = earlier.slice(last + 1);
   if (since.length === 0) {
     return answering;
   }
@@ -1165,10 +1186,6 @@ async function beforeOf(
     ) - 1;
   const carried: (readonly [WakePart, WakePart])[] = [];
   let length = 0;
-  const latest = since.toReversed().slice(0, MAX_BEFORE);
-  // Who wrote each, as the console says it: said of an earlier message as of the one that
-  // woke, and information all the same, whoever wrote it.
-  const who = await whoOf(host, latest, signal);
   for (const message of latest) {
     const one = earlierOf(message, heard, who);
     const takes = wakeTextOf(one).length + 1;
