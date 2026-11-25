@@ -301,7 +301,15 @@ const endsTurn = (event: RestTranscriptEvent): boolean =>
 
 /** Whether an event is a sub-agent's word that it ended: a runner writes how under `over` (ADR-0161). */
 const saysOver = (event: RestTranscriptEvent): boolean =>
-  event.kind === "status" && event.sealed === null && typeof event.data.over === "string";
+  event.kind === "status" && typeof event.data.over === "string";
+
+/**
+ * The kinds of event by which a sub-agent that ended is at work again: what it says, thinks and
+ * calls, and its own word that it was started again. A tool's answer is none: a product that
+ * stops a sub-agent in the middle of a call says first that it ended, and then what became of
+ * the call.
+ */
+const AT_WORK: ReadonlySet<string> = new Set(["assistant", "thinking", "tool_call", "status"]);
 
 type ToolItem = Extract<TalkItem, { type: "tool" }>;
 
@@ -393,9 +401,9 @@ export function talkOf(events: readonly RestTranscriptEvent[]): TalkItem[] {
     const line = parent === undefined || starter === undefined ? top : lineOf(parent, starter);
     // What a sub-agent's own line says of its end stands until the sub-agent does something
     // after it, as one that was started again does: then it is at work again.
-    const begun = event.sealed === null ? toolAt(starter) : undefined;
-    const over = saysOver(event) ? event : undefined;
-    if (starter !== undefined && begun !== undefined && begun.over !== over) {
+    const begun = toolAt(starter);
+    if (starter !== undefined && begun !== undefined && event.sealed === null) {
+      const over = saysOver(event) ? event : AT_WORK.has(event.kind) ? undefined : begun.over;
       set(starter, { ...begun, over });
     }
     // A sealed event says who sealed it and why, wherever it stood.
