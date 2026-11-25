@@ -90,19 +90,21 @@
   }
 }
 
-/* A menu opened from a glyph alone, the bell in the page's head: a square as high as a
-   control, with a dot at its corner while something there is new. */
+/* A menu opened from a glyph alone, the bell in the page's head: a square a little larger than
+   its glyph, centred in the head's row, with a dot at its corner while something there is new. */
 .sc-menu-summary-glyph {
   position: relative;
+  align-self: center;
   justify-content: center;
-  width: var(--sc-control-size);
+  width: 2rem;
+  min-height: 2rem;
   padding-inline: 0;
 }
 
 .sc-menu-summary-glyph > .sc-nav-dot {
   position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
+  top: 0.3125rem;
+  right: 0.3125rem;
   box-shadow: 0 0 0 2px var(--sc-color-bg);
 }
 
