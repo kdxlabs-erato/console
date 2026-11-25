@@ -5945,14 +5945,41 @@ describe("a task with no day of its plan (ADR-0159)", () => {
     const on = (day: string) => ({ from: day, to: day });
     // Written and taken at once: on the day it was started.
     expect(daysOf(task({ state: "in_progress", startedAt: at(TODAY) }), TODAY)).toEqual(on(TODAY));
-    // Still at work days later, or waiting for its review: from that day through today.
-    for (const state of ["in_progress", "in_review"] as const) {
-      expect(daysOf(task({ state, startedAt: at("2026-10-08") }), TODAY)).toEqual({
-        from: "2026-10-08",
-        to: TODAY,
-      });
+    // Still at work days later: from that day through today, whatever run of it ended.
+    for (const lastRunEndedAt of [null, at("2026-10-09")]) {
+      expect(
+        daysOf(task({ state: "in_progress", startedAt: at("2026-10-08"), lastRunEndedAt }), TODAY),
+      ).toEqual({ from: "2026-10-08", to: TODAY });
     }
-    // Done: through the day it was done, and no further however long ago that was.
+    // Its work ended with its last run, whatever became of it since: it waits for its review,
+    // was given back, dropped, or passed days later.
+    for (const state of ["idea", "ready", "in_review", "done", "dropped"] as const) {
+      expect(
+        daysOf(
+          task({
+            state,
+            startedAt: at("2026-10-05"),
+            lastRunEndedAt: at("2026-10-06"),
+            doneAt: state === "done" ? at("2026-10-10") : null,
+          }),
+          TODAY,
+        ),
+      ).toEqual({ from: "2026-10-05", to: "2026-10-06" });
+    }
+    // A run left open by hand ended after the task was done: the work ended as it was done.
+    expect(
+      daysOf(
+        task({
+          state: "done",
+          startedAt: at("2026-10-05"),
+          doneAt: at("2026-10-07"),
+          lastRunEndedAt: at("2026-10-09"),
+        }),
+        TODAY,
+      ),
+    ).toEqual({ from: "2026-10-05", to: "2026-10-07" });
+    // Worked with no run, a card moved by hand, or said by a console of before, which names no
+    // run's end: done, through the day it was done.
     expect(
       daysOf(task({ state: "done", startedAt: at("2026-10-05"), doneAt: at("2026-10-07") }), TODAY),
     ).toEqual({ from: "2026-10-05", to: "2026-10-07" });
@@ -5963,8 +5990,9 @@ describe("a task with no day of its plan (ADR-0159)", () => {
         TODAY,
       ),
     ).toEqual(on("2026-10-07"));
-    // Given back or dropped, nobody is at it: the day it was started, alone.
-    for (const state of ["idea", "ready", "dropped"] as const) {
+    // With no run that ended, given back, dropped or waiting for its review, nobody is at it:
+    // the day it was started, alone.
+    for (const state of ["idea", "ready", "in_review", "dropped"] as const) {
       expect(daysOf(task({ state, startedAt: at("2026-10-08") }), TODAY)).toEqual(on("2026-10-08"));
     }
     // Neither planned nor started, it lies nowhere, as before.
@@ -6011,6 +6039,7 @@ describe("a task with no day of its plan (ADR-0159)", () => {
     title: "Worked for days",
     state: "in_review",
     startedAt: at("2026-10-07"),
+    lastRunEndedAt: at("2026-10-09"),
     category: engineering,
   });
   const finished = task({
@@ -6039,9 +6068,10 @@ describe("a task with no day of its plan (ADR-0159)", () => {
         segment.begins,
         segment.ends,
       ]),
-    ).toEqual([[22, 2, 6, true, true]]);
+    ).toEqual([[22, 2, 4, true, true]]);
     expect(n(tasksOn("2026-10-09", all, TODAY))).toEqual([22]);
-    expect(n(tasksOn(TODAY, all, TODAY))).toEqual([21, 22]);
+    // It waits for its review since, which is no day it was worked.
+    expect(n(tasksOn(TODAY, all, TODAY))).toEqual([21]);
     expect(n(tasksOn("2026-10-02", all, TODAY))).toEqual([23]);
     // Through today and no further: the plan is not written, and tomorrow is nobody's yet.
     expect(tasksOn("2026-10-12", all, TODAY)).toEqual([]);

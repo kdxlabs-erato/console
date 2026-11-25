@@ -5,7 +5,6 @@ import {
   type RestGoal,
   type RestPerson,
   type RestTaskBrief,
-  type TaskState,
   type WeekStart,
 } from "../api.js";
 import {
@@ -43,9 +42,6 @@ import { CategoryBadge, cx, PersonChip, personName, StateBadge, Time, Workers } 
 
 const isOpen = (task: RestTaskBrief): boolean => OPEN_TASK_STATES.includes(task.state);
 
-/** The states a task is worked in or waits for its review in: its work has no end yet. */
-const UNDER_WAY: readonly TaskState[] = ["in_progress", "in_review"];
-
 /** The day a moment fell on, by this machine's clock, as the calendar spells a day. */
 function dayOfMoment(moment: string | null): string | undefined {
   if (moment === null) {
@@ -65,9 +61,10 @@ export interface TaskDays {
  * Where a task lies on a calendar, counted from `today`, or nowhere. A task with a day of its
  * plan lies on its plan (ADR-0019): from its start to its due day, or on the one day it has. A
  * task with none lies where it was worked, by the moments the board keeps (ADR-0159): from the
- * day it was started through the day it was done; through today while it is in progress or in
- * review; and on the day it was started alone once it was given back or dropped. The plan is
- * read and never written: a task neither planned nor started lies nowhere.
+ * day it was started through today while it is in progress, and else through the day its last
+ * run ended, which is where its work ended however long it waits for its review; with no run
+ * that ended, through the day it was done, or on the day it was started alone. The plan is read
+ * and never written: a task neither planned nor started lies nowhere.
  */
 export function daysOf(task: RestTaskBrief, today: string): TaskDays | undefined {
   const planned = task.dueOn ?? task.startsOn;
@@ -81,7 +78,10 @@ export function daysOf(task: RestTaskBrief, today: string): TaskDays | undefined
   if (from === undefined) {
     return undefined;
   }
-  const to = done ?? (UNDER_WAY.includes(task.state) ? today : from);
+  const ended = dayOfMoment(task.lastRunEndedAt ?? null);
+  // A run left open by hand may end after the task was done, which ended the work.
+  const over = ended !== undefined && done !== undefined && done < ended ? done : (ended ?? done);
+  const to = task.state === "in_progress" ? today : (over ?? from);
   // The reader's clock may be behind the board's: such a task sits on the day it reaches.
   return to < from ? { from: to, to } : { from, to };
 }
@@ -121,7 +121,7 @@ export interface WeekSegment<T extends RestTaskBrief = RestTaskBrief> {
  * The bars of one week: every task lying across days that touches the week, cut to it, each
  * in the first lane where it crosses nothing that was laid before it. The longest and earliest
  * go first, so that the lanes stay few. A task with no day of its plan lies across the days it
- * was worked, through `today` while it still is ({@link daysOf}); the browser's today when left
+ * was worked, through `today` while it is at work ({@link daysOf}); the browser's today when left
  * out.
  */
 export function weekSegments<T extends RestTaskBrief>(
